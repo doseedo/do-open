@@ -1,0 +1,12 @@
+# Use the same parent image
+FROM python:3.9
+
+RUN apt-get update && apt-get install -y ffmpeg
+
+WORKDIR /usr/src/app
+
+COPY . .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+CMD ["celery", "-A", "celery_config.celery_app", "worker", "--loglevel=INFO", "-Q", "video_queue,audio_queue"]

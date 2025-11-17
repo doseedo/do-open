@@ -1,0 +1,107 @@
+# Large model files
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+
+# Audio/Video files
+*.wav
+*.mp3
+*.mp4
+*.mov
+*.flac
+*.ogg
+*.m4a
+
+# Large data files
+*.sf2
+*.rar
+*.h5
+*.tflite
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+.npm
+
+# Virtual environments
+home/arlo/Data/pyaafenv/
+home/arlo/Data/pyaaf2/
+home/arlo/Data/ACE-Step/
+home/arlo/Data/RVC-WebUI/
+
+# Data and temp directories
+home/arlo/Data/checkpoints/
+home/arlo/Data/extracted_conditioning/
+home/arlo/Data/voice_debug/
+home/arlo/Data/soundfonts/
+home/arlo/Data/plugin/
+home/arlo/Data/test/
+home/arlo/Data/test_*/
+home/arlo/Data/miditest/
+home/arlo/Data/temp_*/
+home/arlo/Data/categorized_*/
+home/arlo/Data/chord_*/
+home/arlo/Data/midi_*/
+home/arlo/Data/note_search_results/
+home/arlo/Data/extraction_logs/
+home/arlo/Data/pitch_coverage/
+home/arlo/Data/focused_debug*/
+home/arlo/Data/TempoMidi/
+home/arlo/Data/songboy/
+
+# Build artifacts
+var/www/html/build/
+var/www/html/doseedo-react/build/
+var/www/html/doseedo-react/node_modules/
+
+# IDE and OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+nohup.out
+
+# Temporary files
+*.tmp
+*.bak
+*.save
+*.backup*
+
+# Git subdirectories
+home/arlo/Data/.git/
+var/www/html/.git/
+var/www/html/Data/.git/
+
+# Large media files in html
+var/www/html/*.mp4
+var/www/html/*.mov
+var/www/html/*.gif
+var/www/html/*.png
+var/www/html/*.jpg
+var/www/html/*.wav
+var/www/html/*.mp3
+
+# Backup and test files
+*backup*
+*test_*
+*.html.save*

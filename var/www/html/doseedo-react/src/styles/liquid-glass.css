@@ -1,0 +1,98 @@
+/**
+ * Liquid Glass Effects - Applied directly to buttons in glass theme
+ * Based on Apple's glassmorphism design language
+ */
+
+/* Only apply when glass theme is active */
+body.theme-glass {
+  /* Make buttons have glass appearance */
+  button:not(.theme-editor *):not(.theme-presets *):not(.theme-editor-tabs *):not(.theme-editor-actions *),
+  .generateButton,
+  .downloadBtn,
+  .regenerateBtn,
+  .inpaintBtn,
+  .stemBtn,
+  .splitButton {
+    position: relative;
+    background: rgba(255, 255, 255, 0.05) !important;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-color: rgba(255, 255, 255, 0.18) !important;
+    border-style: solid !important;
+    box-shadow:
+      0 8px 32px 0 rgba(0, 0, 0, 0.37),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+    overflow: visible;
+  }
+
+  /* Hover state */
+  button:not(.theme-editor *):hover:not(:disabled),
+  .generateButton:hover:not(:disabled),
+  .downloadBtn:hover:not(:disabled),
+  .regenerateBtn:hover:not(:disabled),
+  .inpaintBtn:hover:not(:disabled),
+  .stemBtn:hover:not(:disabled),
+  .splitButton:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+    box-shadow:
+      0 8px 32px 0 rgba(0, 0, 0, 0.37),
+      0 0 20px 0 rgba(255, 255, 255, 0.1),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+  }
+
+  /* Active/pressed state */
+  button:not(.theme-editor *):active,
+  .generateButton:active,
+  .downloadBtn:active,
+  .regenerateBtn:active,
+  .inpaintBtn:active,
+  .stemBtn:active,
+  .splitButton:active {
+    transform: translateY(0px);
+    box-shadow:
+      0 4px 16px 0 rgba(0, 0, 0, 0.37),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  }
+
+  /* Ensure text is white and visible */
+  button:not(.theme-editor *),
+  button:not(.theme-editor *) *,
+  .generateButton,
+  .generateButton *,
+  .downloadBtn,
+  .downloadBtn *,
+  .regenerateBtn,
+  .regenerateBtn *,
+  .inpaintBtn,
+  .inpaintBtn *,
+  .stemBtn,
+  .stemBtn *,
+  .splitButton,
+  .splitButton * {
+    color: rgba(255, 255, 255, 0.9) !important;
+  }
+
+  /* Disabled state */
+  button:disabled,
+  .generateButton:disabled,
+  .downloadBtn:disabled {
+    background: rgba(255, 255, 255, 0.02) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+    opacity: 0.5;
+  }
+}
+
+/* Fallback for browsers without backdrop-filter support */
+@supports not (backdrop-filter: blur(20px)) {
+  body.theme-glass button:not(.theme-editor *),
+  body.theme-glass .generateButton,
+  body.theme-glass .downloadBtn,
+  body.theme-glass .regenerateBtn,
+  body.theme-glass .inpaintBtn,
+  body.theme-glass .stemBtn,
+  body.theme-glass .splitButton {
+    background: rgba(30, 30, 30, 0.8) !important;
+  }
+}

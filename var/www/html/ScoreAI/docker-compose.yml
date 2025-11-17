@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    command: uvicorn main:app --host 0.0.0.0 --port 8080
+    restart: always
+    volumes:
+      - .:/usr/src/app
+      - /home/arlo/ScoreAI/audiofiles:/usr/src/app/audiofiles
+      - ./temp_exports:/usr/src/app/temp_exports
+    ports:
+      - "8000:8080"
+    depends_on:
+      - rabbitmq
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/usr/src/app/audiocraft-411005-640c9d89cc0b.json
+    networks:
+      mynetwork:
+        ipv4_address: 10.5.0.2
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile-celery
+    restart: always
+    volumes:
+      - .:/usr/src/app
+      - /home/arlo/ScoreAI/audiofiles:/usr/src/app/audiofiles
+      - ./temp_exports:/usr/src/app/temp_exports
+    depends_on:
+      - rabbitmq
+    networks:
+      mynetwork:
+        ipv4_address: 10.5.0.3
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - GOOGLE_APPLICATION_CREDENTIALS=/usr/src/app/audiocraft-411005-640c9d89cc0b.json
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+
+  rabbitmq:
+    image: "rabbitmq:3-management"
+    restart: always
+    hostname: rabbitmq  
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    networks:
+      mynetwork:
+        ipv4_address: 10.5.0.4
+
+networks:
+  mynetwork:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.5.0.0/24

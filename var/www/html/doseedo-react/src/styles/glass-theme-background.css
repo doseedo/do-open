@@ -1,0 +1,752 @@
+/**
+ * Glass Theme - Global Effects
+ * Applies liquid glass effects to all UI elements when glass theme is active
+ */
+
+body.theme-glass {
+  /* Keep main background black */
+  background: #000000;
+
+  /* Base glass mode gradients - vibrant, saturated colors */
+  --glass-gradient-normal: linear-gradient(135deg, #a855f7 0%, #ec4899 25%, #f472b6 50%, #fb7185 75%, #fbbf24 100%);
+  --glass-gradient-hover: linear-gradient(135deg, #c084fc 0%, #f472b6 20%, #fb7185 40%, #fbbf24 60%, #34d399 80%, #60a5fa 100%);
+  --glass-gradient-full: linear-gradient(135deg, #d8b4fe 0%, #f9a8d4 15%, #fda4af 30%, #fcd34d 50%, #6ee7b7 70%, #93c5fd 85%, #d8b4fe 100%);
+
+  /* Opacity controls */
+  --glass-opacity-normal: 0.45;
+  --glass-opacity-hover: 0.55;
+  --glass-opacity-active: 0.65;
+
+  /* Blur controls */
+  --glass-blur-normal: 3px;
+  --glass-blur-hover: 4px;
+  --glass-blur-active: 5px;
+
+  /* Upload container specific controls */
+  --glass-upload-gradient-normal: linear-gradient(135deg, #a855f7 0%, #ec4899 25%, #f472b6 50%, #fb7185 75%, #fbbf24 100%);
+  --glass-upload-gradient-hover: linear-gradient(135deg, #c084fc 0%, #f472b6 20%, #fb7185 40%, #fbbf24 60%, #34d399 80%, #60a5fa 100%);
+  --glass-upload-blur-normal: 3px;
+  --glass-upload-blur-hover: 4px;
+  --glass-upload-opacity-normal: 0.45;
+  --glass-upload-opacity-hover: 0.55;
+
+  /* Glow intensity controls (for box-shadow opacity) */
+  --glass-glow-normal: 0.15;
+  --glass-glow-hover: 0.25;
+  --glass-glow-active: 0.4;
+
+  /* Glow detail controls (for box-shadow parameters) */
+  --glass-glow-color: 102, 126, 234; /* RGB values for rgba() */
+  --glass-glow-blur: 12px;
+  --glass-glow-spread: 0px;
+  --glass-glow-offset-x: 0px;
+  --glass-glow-offset-y: 4px;
+
+  /* Track-specific settings */
+  /* Normal (non-selected) track */
+  --glass-track-normal-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+  --glass-track-normal-opacity: 0.3;
+  --glass-track-normal-blur: 3px;
+  --glass-track-normal-speed: 10s;
+
+  /* Selected track */
+  --glass-track-selected-gradient: linear-gradient(135deg, #d8b4fe 0%, #f9a8d4 15%, #fda4af 30%, #fcd34d 50%, #6ee7b7 70%, #93c5fd 85%, #d8b4fe 100%);
+  --glass-track-selected-opacity: 0.65;
+  --glass-track-selected-blur: 5px;
+  --glass-track-selected-speed: 8s;
+}
+
+@keyframes glassGradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* ===== INSTRUMENT SELECTOR ===== */
+body.theme-glass select,
+body.theme-glass [class*="instrumentSelect"],
+body.theme-glass [class*="select"] {
+  position: relative;
+  background: rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(30px) saturate(200%);
+  -webkit-backdrop-filter: blur(30px) saturate(200%);
+  border: 0.2px solid #ffffff1a !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+body.theme-glass select::before,
+body.theme-glass [class*="instrumentSelect"]::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(135deg, #8b7cf6 0%, #764ba2 25%, #f093fb 50%, #e100ff 75%, #ff006e 100%);
+  background-size: 300% 300%;
+  animation: glassGradient 10s ease infinite;
+  border-radius: 10px;
+  filter: blur(5px);
+  opacity: 0.4;
+  z-index: -1;
+  pointer-events: none;
+}
+
+body.theme-glass select:focus,
+body.theme-glass [class*="instrumentSelect"]:focus,
+body.theme-glass select.active,
+body.theme-glass [class*="instrumentSelect"].selected {
+  background: rgba(255, 255, 255, 0.2) !important;
+  border: 0.2px solid #ffffff1a !important;
+  box-shadow:
+    var(--glass-glow-offset-x) var(--glass-glow-offset-y) var(--glass-glow-blur) var(--glass-glow-spread) rgba(var(--glass-glow-color), var(--glass-glow-active)),
+    0 0 30px 0 rgba(255, 255, 255, 0.4),
+    inset 0 2px 0 0 rgba(255, 255, 255, 0.5);
+  transform: scale(1.02);
+}
+
+/* ===== MODE SELECTOR DIVS ===== */
+/* Inactive buttons get minimal glass effect with normal gradient */
+body.theme-glass [class*="modeButton"]:not([class*="active"]):not([class*="selected"]),
+body.theme-glass [class*="modeSelector"] button:not([class*="active"]):not([class*="selected"]),
+body.theme-glass [class*="mode"][class*="tab"]:not([class*="active"]):not([class*="selected"]) {
+  position: relative;
+  background: transparent !important;
+  backdrop-filter: saturate(200%);
+  -webkit-backdrop-filter: saturate(200%);
+  box-shadow:
+    0 4px 12px 0 rgba(139, 124, 246, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+/* Inactive mode buttons - normal gradient overlay */
+body.theme-glass [class*="modeButton"]:not([class*="active"]):not([class*="selected"])::before,
+body.theme-glass [class*="modeSelector"] button:not([class*="active"]):not([class*="selected"])::before,
+body.theme-glass [class*="mode"][class*="tab"]:not([class*="active"]):not([class*="selected"])::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: var(--glass-gradient-normal);
+  background-size: 300% 300%;
+  animation: glassGradient 10s ease infinite;
+  border-radius: 0 10px 10px 0;
+  filter: blur(var(--glass-blur-normal));
+  opacity: var(--glass-opacity-normal);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Hover state - enhanced gradient */
+body.theme-glass [class*="modeButton"]:not([class*="active"]):hover::before,
+body.theme-glass [class*="modeSelector"] button:not([class*="active"]):hover::before,
+body.theme-glass [class*="mode"][class*="tab"]:not([class*="active"]):hover::before {
+  background: var(--glass-gradient-hover);
+  opacity: var(--glass-opacity-hover);
+  filter: blur(var(--glass-blur-hover));
+}
+
+/* Active mode buttons - full gradient overlay */
+body.theme-glass [class*="modeButton"][class*="active"],
+body.theme-glass [class*="modeSelector"] button[class*="active"],
+body.theme-glass [class*="mode"][class*="tab"][class*="active"] {
+  position: relative;
+  background: transparent !important;
+  backdrop-filter: saturate(200%);
+  -webkit-backdrop-filter: saturate(200%);
+  border: 2px solid rgba(255, 255, 255, 0.35) !important;
+  box-shadow:
+    0 3px 10px 0 rgba(102, 126, 234, var(--glass-glow-hover)),
+    0 0 6px 0 rgba(255, 255, 255, var(--glass-glow-hover)),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.25) !important;
+  transform: translateX(-5px) !important;
+}
+
+body.theme-glass [class*="modeButton"][class*="active"]::before,
+body.theme-glass [class*="modeSelector"] button[class*="active"]::before,
+body.theme-glass [class*="mode"][class*="tab"][class*="active"]::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: var(--glass-gradient-full);
+  background-size: 300% 300%;
+  animation: glassGradient 8s ease infinite;
+  border-radius: 0 10px 10px 0;
+  filter: blur(var(--glass-blur-active));
+  opacity: var(--glass-opacity-active);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* ===== TRACK CONTAINERS ===== */
+/* Only apply glass effects to bus containers, NOT sidebar track rows */
+body.theme-glass [class*="track"][class*="container"],
+body.theme-glass [class*="busRow"] {
+  position: relative;
+  background: rgba(255, 255, 255, 0.1) !important;
+  backdrop-filter: blur(25px) saturate(200%);
+  -webkit-backdrop-filter: blur(25px) saturate(200%);
+  border: 1.5px solid rgba(255, 255, 255, 0.3) !important;
+  box-shadow:
+    0 8px 32px 0 rgba(139, 124, 246, 0.6),
+    inset 0 2px 0 0 rgba(255, 255, 255, 0.25);
+}
+
+body.theme-glass [class*="track"][class*="container"]::before,
+body.theme-glass [class*="busRow"]::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(135deg, #8b7cf6 0%, #e100ff 25%, #f093fb 50%, #ff006e 75%, #8b7cf6 100%);
+  background-size: 300% 300%;
+  animation: glassGradient 12s ease infinite;
+  border-radius: 8px;
+  filter: blur(5px);
+  opacity: 0.3;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Keep sidebar track rows with default dark styling - NO glass effects */
+body.theme-glass [class*="trackRow"] {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+body.theme-glass [class*="trackRow"]::before {
+  display: none !important;
+}
+
+/* Track row children maintain their default styles */
+body.theme-glass [class*="trackRow"] [class*="trackIconContainer"],
+body.theme-glass [class*="trackRow"] [class*="trackLabel"] {
+  background: transparent !important;
+}
+
+/* ===== SIDEBAR SECTIONS & SECTION CONTENT ===== */
+/* Remove all glass styling from container divs - they should be invisible */
+/* Only the child elements (buttons, inputs, etc.) should have glass effects */
+body.theme-glass .section,
+body.theme-glass [class*="section"]:not([class*="Header"]):not([class*="Title"]),
+body.theme-glass [class*="sectionContent"],
+body.theme-glass [class*="section"][class*="Content"] {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Remove gradient overlays from section containers */
+body.theme-glass .section::before,
+body.theme-glass [class*="section"]::before,
+body.theme-glass [class*="sectionContent"]::before,
+body.theme-glass [class*="section"][class*="Content"]::before {
+  display: none !important;
+}
+
+/* ===== VIDEO UPLOAD GLOW CONTAINER ===== */
+body.theme-glass [class*="glowContainer"] {
+  position: relative;
+  background: transparent !important;
+  backdrop-filter: saturate(200%);
+  -webkit-backdrop-filter: saturate(200%);
+  border: 2px solid rgba(255, 255, 255, 0.2) !important;
+  box-shadow:
+    0 8px 32px 0 rgba(102, 126, 234, 0.4),
+    inset 0 2px 0 0 rgba(255, 255, 255, 0.2) !important;
+}
+
+body.theme-glass [class*="glowContainer"]::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: var(--glass-upload-gradient-normal, var(--glass-gradient-normal));
+  background-size: 300% 300%;
+  animation: glassGradient 10s ease infinite;
+  border-radius: 8px;
+  filter: blur(var(--glass-upload-blur-normal, var(--glass-blur-normal)));
+  opacity: var(--glass-upload-opacity-normal, var(--glass-opacity-normal));
+  z-index: -1;
+  pointer-events: none;
+}
+
+body.theme-glass [class*="glowContainer"]:hover::before {
+  background: var(--glass-upload-gradient-hover, var(--glass-gradient-hover));
+  opacity: var(--glass-upload-opacity-hover, var(--glass-opacity-hover));
+  filter: blur(var(--glass-upload-blur-hover, var(--glass-blur-hover)));
+}
+
+/* ===== UPLOAD ICON (fa-plus) ===== */
+/* Exclude zoom buttons from glass effects */
+body.theme-glass .fa-plus:not([class*="zoomButton"] *):not([class*="zoom"] *),
+body.theme-glass [class*="uploadIcon"] {
+  position: relative;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: transparent !important;
+  backdrop-filter: saturate(200%);
+  -webkit-backdrop-filter: saturate(200%);
+  border: 2px solid rgba(255, 255, 255, 0.4) !important;
+  border-radius: 50% !important;
+  box-shadow:
+    0 15px 45px 0 rgba(139, 124, 246, 0.7),
+    inset 0 3px 0 0 rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.95) !important;
+  transition: all 0.3s ease;
+  z-index: 1;
+  font-size: 24px !important;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+}
+
+/* Font Awesome uses ::before for icon, so we use a wrapper approach */
+body.theme-glass label:has([class*="uploadIcon"]) {
+  position: relative;
+  display: inline-block;
+}
+
+body.theme-glass label:has([class*="uploadIcon"])::before,
+body.theme-glass [class*="uploadIcon"].fa-plus::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: var(--glass-gradient-normal);
+  background-size: 300% 300%;
+  animation: glassGradient 10s ease infinite;
+  border-radius: 50%;
+  filter: blur(var(--glass-blur-normal));
+  opacity: var(--glass-opacity-normal);
+  z-index: -1;
+  pointer-events: none;
+}
+
+body.theme-glass .fa-plus:not([class*="zoomButton"] *):not([class*="zoom"] *):hover,
+body.theme-glass [class*="uploadIcon"]:hover {
+  background: transparent !important;
+  border: 2px solid rgba(255, 255, 255, 0.6) !important;
+  box-shadow:
+    0 20px 60px 0 rgba(139, 124, 246, 1),
+    0 0 50px 0 rgba(255, 255, 255, 0.6),
+    inset 0 4px 0 0 rgba(255, 255, 255, 0.5);
+  transform: scale(1.08);
+}
+
+body.theme-glass label:has([class*="uploadIcon"]):hover::before,
+body.theme-glass [class*="uploadIcon"].fa-plus:hover::after {
+  background: var(--glass-gradient-hover);
+  filter: blur(var(--glass-blur-hover));
+  opacity: var(--glass-opacity-hover);
+}
+
+/* Remove glass effects from zoom buttons */
+body.theme-glass [class*="zoomButton"],
+body.theme-glass [class*="zoom"] button {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+body.theme-glass [class*="zoomButton"]::before,
+body.theme-glass [class*="zoom"] button::before {
+  display: none !important;
+}
+
+/* ===== INSTRUMENT GROUP/SUBGROUP BUTTONS ===== */
+/* Unselected state - normal gradient */
+body.theme-glass [class*="instrumentGroupBtn"]:not([class*="active"]),
+body.theme-glass [class*="instrumentSubgroupBtn"]:not([class*="active"]) {
+  position: relative;
+  background: transparent !important;
+  backdrop-filter: saturate(200%);
+  -webkit-backdrop-filter: saturate(200%);
+  border: 0.2px solid #ffffff1a !important;
+  box-shadow:
+    0 2px 8px 0 rgba(102, 126, 234, var(--glass-glow-normal)),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.95) !important;
+  transition: all 0.3s ease;
+}
+
+/* Unselected - normal gradient overlay */
+body.theme-glass [class*="instrumentGroupBtn"]:not([class*="active"])::before,
+body.theme-glass [class*="instrumentSubgroupBtn"]:not([class*="active"])::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: var(--glass-gradient-normal);
+  background-size: 300% 300%;
+  animation: glassGradient 10s ease infinite;
+  border-radius: 8px;
+  filter: blur(var(--glass-blur-normal));
+  opacity: var(--glass-opacity-normal);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Hover state - enhanced gradient */
+body.theme-glass [class*="instrumentGroupBtn"]:not([class*="active"]):hover::before,
+body.theme-glass [class*="instrumentSubgroupBtn"]:not([class*="active"]):hover::before {
+  background: var(--glass-gradient-hover);
+  opacity: var(--glass-opacity-hover);
+  filter: blur(var(--glass-blur-hover));
+}
+
+body.theme-glass [class*="instrumentGroupBtn"]:not([class*="active"]):hover,
+body.theme-glass [class*="instrumentSubgroupBtn"]:not([class*="active"]):hover {
+  background: transparent !important;
+  border: 0.2px solid #ffffff1a !important;
+  box-shadow:
+    0 3px 10px 0 rgba(102, 126, 234, var(--glass-glow-hover)),
+    0 0 6px 0 rgba(255, 255, 255, var(--glass-glow-hover)),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.25);
+}
+
+/* Selected/Active state - full gradient */
+body.theme-glass [class*="instrumentGroupBtn"][class*="active"],
+body.theme-glass [class*="instrumentSubgroupBtn"][class*="active"] {
+  position: relative;
+  background: transparent !important;
+  backdrop-filter: saturate(200%);
+  -webkit-backdrop-filter: saturate(200%);
+  border: 0.2px solid #ffffff1a !important;
+  box-shadow:
+    0 3px 10px 0 rgba(102, 126, 234, var(--glass-glow-hover)),
+    0 0 6px 0 rgba(255, 255, 255, var(--glass-glow-hover)),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.25) !important;
+  transform: translateY(-2px) !important;
+}
+
+body.theme-glass [class*="instrumentGroupBtn"][class*="active"]::before,
+body.theme-glass [class*="instrumentSubgroupBtn"][class*="active"]::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: var(--glass-gradient-full);
+  background-size: 300% 300%;
+  animation: glassGradient 8s ease infinite;
+  border-radius: 8px;
+  filter: blur(var(--glass-blur-active));
+  opacity: var(--glass-opacity-active);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Active button hover state - enhanced border and gradient */
+body.theme-glass [class*="instrumentGroupBtn"][class*="active"]:hover,
+body.theme-glass [class*="instrumentSubgroupBtn"][class*="active"]:hover {
+  border: 0.2px solid #ffffff1a !important;
+  box-shadow:
+    0 3px 10px 0 rgba(102, 126, 234, var(--glass-glow-hover)),
+    0 0 6px 0 rgba(255, 255, 255, var(--glass-glow-hover)),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.25) !important;
+}
+
+body.theme-glass [class*="instrumentGroupBtn"][class*="active"]:hover::before,
+body.theme-glass [class*="instrumentSubgroupBtn"][class*="active"]:hover::before {
+  opacity: var(--glass-opacity-hover);
+  filter: blur(var(--glass-blur-hover));
+}
+
+/* ===== THEME EDITOR TOGGLE ===== */
+/* Ensure theme editor toggle stays in bottom-right */
+body.theme-glass .theme-editor-toggle {
+  position: fixed !important;
+  bottom: 20px !important;
+  right: 20px !important;
+  top: auto !important;
+  left: auto !important;
+}
+
+/* ===== BUTTONS (Global) ===== */
+body.theme-glass button:not(.theme-editor *):not(.glass-button-container *):not([class*="instrumentGroupBtn"]):not([class*="instrumentSubgroupBtn"]):not([class*="settingsButton"]) {
+  position: relative;
+  background: rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow:
+    0 6px 24px 0 rgba(102, 126, 234, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+body.theme-glass button:not(.theme-editor *):hover:not(:disabled) {
+  box-shadow:
+    0 3px 10px 0 rgba(102, 126, 234, 0.2),
+    0 0 8px 0 rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+/* Make sure text is visible */
+body.theme-glass {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+body.theme-glass h1,
+body.theme-glass h2,
+body.theme-glass h3,
+body.theme-glass h4,
+body.theme-glass h5,
+body.theme-glass h6,
+body.theme-glass p,
+body.theme-glass span,
+body.theme-glass label {
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* Input fields */
+body.theme-glass input:not([type="range"]),
+body.theme-glass textarea {
+  background: rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(15px);
+  border: 0.2px solid #ffffff1a !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+body.theme-glass input::placeholder {
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+/* Range inputs (sliders) - ensure they're interactive */
+body.theme-glass input[type="range"] {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  background: transparent !important;
+  border: none !important;
+  backdrop-filter: none !important;
+}
+
+/* ===== GLASS UI BUTTON CONTENT ===== */
+/* Style the parent container with the gradient */
+body.theme-glass .glass-button-container {
+  position: relative;
+  overflow: visible !important;
+}
+
+body.theme-glass .glass-ui-button-content,
+body.theme-glass .glass-button-content,
+body.theme-glass [class*="glass"][class*="button"] {
+  position: relative;
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-radius: 8px !important;
+  box-shadow:
+    0 2px 8px 0 rgba(102, 126, 234, 0.15),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+  z-index: 1;
+  outline: none !important;
+}
+
+/* Remove default button borders */
+body.theme-glass .glass-ui-button-content button,
+body.theme-glass .glass-button-content button,
+body.theme-glass .glass-ui-button-content,
+body.theme-glass .glass-button-content {
+  border: none !important;
+  outline: none !important;
+  border-radius: 8px !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+}
+
+/* ===== DAW TRACK SELECTION ===== */
+/* Prevent track label background highlighting in glass mode */
+body.theme-glass [class*="trackRow"]:has([class*="trackLabel"][class*="selected"]) [class*="trackIconContainer"],
+body.theme-glass [class*="trackRow"]:has([class*="trackLabel"][class*="selected"]) [class*="trackLabel"] {
+  background: transparent !important;
+}
+
+/* ===== DAW TRACK WAVEFORMS ===== */
+/* Only target the actual waveform track divs, not sidebar track rows */
+/* Normal/inactive track - with gradient */
+body.theme-glass [class*="DAW_track__"]:not([class*="Row"]):not([class*="selected"]) {
+  position: relative;
+  background: transparent !important;
+  backdrop-filter: saturate(150%);
+  -webkit-backdrop-filter: saturate(150%);
+  border: 0.8px solid var(--track-border) !important;
+  box-shadow: none !important;
+  transition: all 0.3s ease;
+}
+
+/* Normal track - gradient overlay */
+body.theme-glass [class*="DAW_track__"]:not([class*="Row"]):not([class*="selected"])::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--glass-track-normal-gradient);
+  background-size: 300% 300%;
+  animation: glassGradient var(--glass-track-normal-speed) ease infinite;
+  border-radius: 3.2px;
+  filter: blur(var(--glass-track-normal-blur));
+  opacity: var(--glass-track-normal-opacity);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Hover state - still transparent, just subtle border change */
+body.theme-glass [class*="DAW_track__"]:not([class*="Row"]):not([class*="selected"]):hover {
+  border: 0.8px solid var(--color-primary-purple) !important;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2) !important;
+}
+
+/* Selected track - full gradient */
+body.theme-glass [class*="DAW_track__"]:not([class*="Row"])[class*="selected"] {
+  position: relative;
+  background: transparent !important;
+  backdrop-filter: saturate(200%);
+  -webkit-backdrop-filter: saturate(200%);
+  border: none !important;
+  box-shadow:
+    var(--glass-glow-offset-x) var(--glass-glow-offset-y) var(--glass-glow-blur) var(--glass-glow-spread) rgba(var(--glass-glow-color), var(--glass-glow-active)),
+    0 0 12px 0 rgba(255, 255, 255, 0.2),
+    inset 0 2px 0 0 rgba(255, 255, 255, 0.3) !important;
+}
+
+body.theme-glass [class*="DAW_track__"]:not([class*="Row"])[class*="selected"]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--glass-track-selected-gradient);
+  background-size: 300% 300%;
+  animation: glassGradient var(--glass-track-selected-speed) ease infinite;
+  border-radius: 3.2px;
+  filter: blur(var(--glass-track-selected-blur));
+  opacity: var(--glass-track-selected-opacity);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* ===== SIDEBAR TRACK ICON CONTAINER ===== */
+/* Apply glass effect only to the icon container background */
+body.theme-glass [class*="trackIconContainer"] {
+  position: relative;
+  background: transparent !important;
+  backdrop-filter: saturate(200%);
+  -webkit-backdrop-filter: saturate(200%);
+}
+
+/* Selected track icon container - use glass mode active gradient for left indicator */
+body.theme-glass [class*="trackRow"]:has([class*="selected"]) [class*="trackIconContainer"]::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--glass-gradient-full) !important;
+  background-size: 400% 400% !important;
+  animation: glassGradient 8s ease infinite !important;
+  border-radius: 3.2px 0 0 0 !important;
+  filter: none !important;
+  opacity: 1 !important;
+  z-index: 1 !important;
+  overflow: hidden;
+}
+
+/* ===== BUS ICON CONTAINER ===== */
+/* Apply glass mode active gradient to bus icon left border */
+body.theme-glass [class*="busIconContainer"]::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--glass-gradient-full) !important;
+  background-size: 400% 400% !important;
+  animation: glassGradient 8s ease infinite !important;
+  border-radius: 3.2px 0 0 0 !important;
+  filter: none !important;
+  opacity: 1 !important;
+  z-index: 1 !important;
+  overflow: hidden;
+}
+
+body.theme-glass .glass-ui-button-content:hover,
+body.theme-glass .glass-button-content:hover,
+body.theme-glass [class*="glass"][class*="button"]:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  box-shadow:
+    0 4px 12px 0 rgba(102, 126, 234, 0.25),
+    0 0 15px 0 rgba(255, 255, 255, 0.15),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.25);
+}
+
+/* Force glass UI button content to match default theme sizing */
+body.theme-glass .glass-ui-container {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: unset !important;
+  max-height: unset !important;
+}
+
+body.theme-glass .glass-ui-button-content {
+  width: 100% !important;
+  height: 100% !important;
+  padding: 12px 24px !important;
+  box-sizing: border-box !important;
+  min-height: unset !important;
+  max-height: unset !important;
+}
+
+/* ===== GENERATE BUTTON GLASS STYLING ===== */
+/* Apply glass effect to generate button matching active instrument buttons */
+body.theme-glass button[class*="generateButton"],
+body.theme-glass [class*="GenerationPanel"] [class*="generateButton"] {
+  position: relative;
+  background: transparent !important;
+  backdrop-filter: saturate(200%) !important;
+  -webkit-backdrop-filter: saturate(200%) !important;
+  border: 0.2px solid #ffffff1a !important;
+  box-shadow:
+    0 3px 10px 0 rgba(102, 126, 234, var(--glass-glow-hover)),
+    0 0 6px 0 rgba(255, 255, 255, var(--glass-glow-hover)),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.25) !important;
+}
+
+/* Animated gradient behind generate button */
+body.theme-glass button[class*="generateButton"]::before,
+body.theme-glass [class*="GenerationPanel"] [class*="generateButton"]::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: var(--glass-gradient-full);
+  background-size: 300% 300%;
+  animation: glassGradient 8s ease infinite;
+  border-radius: 8px;
+  filter: blur(var(--glass-blur-active));
+  opacity: var(--glass-opacity-active);
+  z-index: -1;
+  pointer-events: none;
+}
+
+body.theme-glass button[class*="generateButton"]:hover:not(:disabled),
+body.theme-glass [class*="GenerationPanel"] [class*="generateButton"]:hover:not(:disabled) {
+  border: 0.2px solid #ffffff1a !important;
+  box-shadow:
+    0 3px 10px 0 rgba(102, 126, 234, var(--glass-glow-hover)),
+    0 0 6px 0 rgba(255, 255, 255, var(--glass-glow-hover)),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.25) !important;
+}
+
+body.theme-glass button[class*="generateButton"]:hover:not(:disabled)::before,
+body.theme-glass [class*="GenerationPanel"] [class*="generateButton"]:hover:not(:disabled)::before {
+  opacity: var(--glass-opacity-hover);
+  filter: blur(var(--glass-blur-hover));
+}

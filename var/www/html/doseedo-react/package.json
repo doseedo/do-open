@@ -1,0 +1,49 @@
+{
+  "name": "doseedo-react",
+  "version": "0.1.0",
+  "private": true,
+  "description": "React conversion of Doseedo audio production web app",
+  "proxy": "https://doseedo.com",
+  "dependencies": {
+    "@gradio/client": "^2.0.0-dev.1",
+    "@huggingface/inference": "^4.13.0",
+    "@tonejs/midi": "^2.0.28",
+    "axios": "^1.6.0",
+    "interactjs": "^1.10.0",
+    "jszip": "^3.10.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-draggable": "^4.5.0",
+    "react-scripts": "5.0.1",
+    "soundfont-player": "^0.12.0",
+    "wavesurfer.js": "^7.4.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "dotenv": "^17.2.3"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

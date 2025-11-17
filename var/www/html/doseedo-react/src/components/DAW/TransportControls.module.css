@@ -1,0 +1,47 @@
+/* Transport Controls - Play/Pause/Stop */
+.transportControls {
+  display: flex;
+  align-items: center;
+  gap: 0px;
+}
+
+.button {
+  background: rgba(57, 57, 57, 0.8);
+  border: 0.8px solid rgba(85, 85, 85, 0.6);
+  color: #ccc;
+  width: 25.6px;
+  height: 25.6px;
+  border-radius: 3.2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-size: 10.4px;
+}
+
+.button:hover {
+  background: #4a4a4a;
+  border-color: #667eea;
+  color: white;
+}
+
+.button.active {
+  background: rgb(168, 127, 255);
+  border-color: rgb(168, 127, 255);
+  color: white;
+}
+
+.timeDisplay {
+  color: var(--text-primary, #fff);
+  font-size: 10.4px;
+  font-weight: 600;
+  min-width: 40px;
+  padding: 0 4.8px;
+  background: rgba(20, 20, 20, 0.6);
+  border-radius: 3.2px;
+  height: 25.6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
