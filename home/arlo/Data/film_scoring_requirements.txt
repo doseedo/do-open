@@ -1,0 +1,104 @@
+# Film Scoring Engine Dependencies
+
+# ============================================================================
+# CORE REQUIREMENTS (Essential)
+# ============================================================================
+
+# MIDI file generation
+mido>=1.2.10
+
+# Numerical operations (tension interpolation, video analysis)
+numpy>=1.21.0
+
+# ============================================================================
+# VIDEO ANALYSIS REQUIREMENTS (Highly Recommended)
+# ============================================================================
+
+# Scene detection and video processing
+scenedetect[opencv]>=0.6.0
+
+# Computer vision for color/motion analysis
+opencv-python>=4.5.0
+
+# ============================================================================
+# AUDIO ANALYSIS REQUIREMENTS (Optional)
+# ============================================================================
+
+# Audio processing for dialogue detection
+pydub>=0.25.0
+
+# ============================================================================
+# INTEGRATION WITH EXISTING MODULES
+# ============================================================================
+
+# Note: These are local modules, not PyPI packages
+# - chord_progression_generator.py (included in project)
+# - melody_generator_proper.py (included in project)
+# - melody_harmonizer_improved.py (included in project)
+
+# ============================================================================
+# DEVELOPMENT/TESTING REQUIREMENTS
+# ============================================================================
+
+# Unit testing (built-in, no install needed)
+# - unittest (Python stdlib)
+
+# ============================================================================
+# OPTIONAL ENHANCEMENTS
+# ============================================================================
+
+# Machine learning for advanced features (future)
+# torch>=2.0.0  # PyTorch for neural music generation
+# transformers>=4.30.0  # HuggingFace models
+
+# Audio synthesis (MIDI to audio)
+# fluidsynth>=0.2.0  # For audio export
+
+# Advanced audio analysis
+# librosa>=0.10.0  # Audio feature extraction
+
+# ============================================================================
+# INSTALLATION INSTRUCTIONS
+# ============================================================================
+
+# Minimal installation (core features only):
+#   pip install mido numpy
+
+# Standard installation (with video analysis):
+#   pip install -r film_scoring_requirements.txt
+
+# Full installation (all optional features):
+#   pip install mido numpy scenedetect[opencv] opencv-python pydub
+
+# ============================================================================
+# PLATFORM-SPECIFIC NOTES
+# ============================================================================
+
+# macOS/Linux:
+#   All packages should install without issues
+
+# Windows:
+#   - OpenCV may require Visual C++ redistributables
+#   - PySceneDetect works best with ffmpeg in PATH
+
+# ============================================================================
+# VERSION COMPATIBILITY
+# ============================================================================
+
+# Python: 3.7+
+# Tested on: Python 3.8, 3.9, 3.10, 3.11
+
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+
+# If scenedetect fails to install:
+#   pip install scenedetect --no-deps
+#   pip install opencv-python numpy
+
+# If OpenCV has import errors:
+#   pip uninstall opencv-python opencv-python-headless
+#   pip install opencv-python
+
+# For best video analysis performance:
+#   Install ffmpeg system-wide (not Python package)
