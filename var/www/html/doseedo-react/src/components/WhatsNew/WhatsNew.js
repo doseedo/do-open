@@ -8,36 +8,16 @@ import styles from './WhatsNew.module.css';
 const WhatsNew = () => {
   const updates = [
     {
-      version: 'v1.2.0',
-      date: 'November 2024',
-      title: 'URL Routing & Session Management',
+      version: 'Open Beta',
+      date: 'November 2025',
+      title: 'Open Beta Launch',
       features: [
-        'Added URL-based navigation (/dashboard, /projects, /studio, etc.)',
-        'Implemented session save/load functionality',
-        'Auto-save sessions every 3 seconds',
-        'Spotify-style sessions list with waveform previews'
-      ]
-    },
-    {
-      version: 'v1.1.0',
-      date: 'November 2024',
-      title: 'UI Improvements',
-      features: [
-        'Redesigned My Sessions page',
-        'Added smooth sidebar transitions',
-        'Improved responsive layout',
-        'Enhanced theme system'
-      ]
-    },
-    {
-      version: 'v1.0.0',
-      date: 'October 2024',
-      title: 'Initial Release',
-      features: [
-        'AI-powered music generation',
-        'Multi-track DAW interface',
-        'Real-time audio playback',
-        'Video to music conversion'
+        'Video to Music - Transform your videos into professional music',
+        'Lyric Edit - Edit and generate lyrics with AI assistance',
+        'Voice to Instrument - Convert voice recordings to instrumental tracks',
+        'Sample Regenerator - Regenerate and enhance audio samples',
+        'Stem Separation - Separate audio into individual stems',
+        'Beat Generator - Generate custom beats and rhythms'
       ]
     }
   ];
