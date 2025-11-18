@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gradio Web UI for ACE-Step generation (ControlBranch-ready)
+Web UI backend for Dø v1
 
 - Loads the same Pipeline you trained with and restores hparams from the Lightning .ckpt
 - Works with ctrl_enc + ctrlnet residual injection (ControlBranch1D)
