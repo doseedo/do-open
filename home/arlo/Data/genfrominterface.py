@@ -27,9 +27,9 @@ torch.set_float32_matmul_precision("high")
 # ------------------------------------------------------------------------------
 # Project imports
 # ------------------------------------------------------------------------------
-sys.path.append('/home/arlo/Data')  # folder that has trainer_performer.py
-sys.path.append('/home/arlo/Data/dø')  # Add dø directory first (has DoTrainComponents for generate-do endpoint)
-sys.path.append('/home/arlo/Data/ACE-Step')  # Add ACE-Step directory for schedulers and generate-ace-step endpoint
+sys.path.insert(0, '/home/arlo/Data')  # folder that has trainer_performer.py
+sys.path.insert(0, '/home/arlo/Data/dø')  # Add dø directory first (has DoTrainComponents for generate-do endpoint)
+sys.path.insert(0, '/home/arlo/Data/ACE-Step')  # Add ACE-Step directory for schedulers and generate-ace-step endpoint
 
 try:
     from trainer_performerCN2 import Pipeline  # Use the actual training script
@@ -5800,6 +5800,7 @@ def select_random_file_by_group(target_group):
     return str(Path(shutil.copy(src, tmp)))
 
 def create_ui():
+    import gradio as gr  # Lazy import
     with gr.Blocks(theme=gr.themes.Soft()) as iface:
         gr.Markdown("### dø stem — ControlBranch Pipeline")
         with gr.Row():
@@ -6150,9 +6151,9 @@ def init_worker(**kwargs):
     print(f"   Checkpoint Dir: {checkpoint_dir}")
     print(f"   Manifest: {manifest}")
 
-    # Load manifest
-    with open(manifest, "r") as f:
-        MANIFEST_DATA = json.load(f)
+    # Manifest not needed - removed random file selection feature
+    MANIFEST_DATA = []
+    print(f"ℹ️  Manifest loading disabled (random file selection feature removed)")
 
     # Load model
     MODEL = load_model_any_ckpt(checkpoint, checkpoint_dir, manifest)
@@ -12558,12 +12559,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--checkpoint", default=DEFAULT_CKPT)
     ap.add_argument("--checkpoint_dir", required=True)
-    ap.add_argument("--manifest", required=True)
+    ap.add_argument("--manifest", required=False)  # Now optional
     ap.add_argument("--share", action="store_true")
     args = ap.parse_args()
 
-    with open(args.manifest, "r") as f:
-        MANIFEST_DATA = json.load(f)
+    # Manifest not needed - removed random file selection feature
+    MANIFEST_DATA = []
+    MANIFEST_PATHS = []
+    print(f"ℹ️  Manifest loading disabled (random file selection feature removed)")
 
     print("--- Initializing model ---")
     MODEL = load_model_any_ckpt(args.checkpoint, args.checkpoint_dir, args.manifest)
@@ -12573,8 +12576,7 @@ def main():
 
     GROUP_NAMES = list(APPROVED_GROUPS) if not isinstance(APPROVED_GROUPS, dict) else list(APPROVED_GROUPS.keys())
     SUBGROUP_NAMES = sorted({sg for subs in APPROVED_SUBGROUPS.values() for sg in subs})
-    MANIFEST_PATHS = [it["audio_path"] for it in MANIFEST_DATA if it.get("audio_path")]
-    print(f"Groups: {len(GROUP_NAMES)} | Subgroups: {len(SUBGROUP_NAMES)} | Manifest files: {len(MANIFEST_PATHS)}")
+    print(f"Groups: {len(GROUP_NAMES)} | Subgroups: {len(SUBGROUP_NAMES)}")
 
     ui = create_ui()
     ui.launch(share=args.share, server_name="0.0.0.0", server_port=7860)
@@ -12591,10 +12593,16 @@ def main():
 # DrumSampler API Endpoints (replaces HuggingFace Space)
 # ------------------------------------------------------------------------------
 
-# Import the drum sampler module
-import sys
-sys.path.insert(0, "/home/arlo/harmonymodule/harmonymodule")
-from drum_sampler_simple import SimpleDrumSampler
+# Import the drum sampler module (optional)
+try:
+    import sys
+    sys.path.insert(0, "/home/arlo/harmonymodule/harmonymodule")
+    from drum_sampler_simple import SimpleDrumSampler
+    DRUM_SAMPLER_AVAILABLE = True
+except ImportError:
+    SimpleDrumSampler = None
+    DRUM_SAMPLER_AVAILABLE = False
+    print("⚠️  Warning: drum_sampler_simple not available - drum sampling features will be disabled")
 
 # Global drum sampler instance
 _drum_sampler = None
@@ -12602,6 +12610,8 @@ _drum_sampler = None
 def get_drum_sampler():
     """Get or create the global drum sampler instance"""
     global _drum_sampler
+    if not DRUM_SAMPLER_AVAILABLE:
+        raise ImportError("drum_sampler_simple module is not available")
     if _drum_sampler is None:
         _drum_sampler = SimpleDrumSampler()
     return _drum_sampler
