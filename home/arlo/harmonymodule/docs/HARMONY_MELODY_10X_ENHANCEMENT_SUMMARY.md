@@ -584,7 +584,7 @@ narrative_melody = MusicalNarrative.apply_narrative_to_melody(
 pip install numpy
 
 # Run demonstrations
-cd /home/user/Do/home/arlo/Data
+cd home/arlo/harmonymodule/advanced_modules
 python harmony_advanced.py
 python melody_advanced.py
 
