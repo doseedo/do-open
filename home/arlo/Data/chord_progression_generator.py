@@ -12,7 +12,7 @@ Features:
 
 This module is designed to be called from genfrominterface.py to generate
 conditioning MIDI from user-specified chord progressions.
-TEST
+TEST2
 Author: Adapted from free-midi-chords project
 """
 
