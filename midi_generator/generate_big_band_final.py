@@ -36,7 +36,6 @@ try:
         SwingTiming, SwingFeel, JazzStyle
     )
     from algorithms.rhythm_engine import RhythmNote, HumanizationEngine, TimingStyle
-    from algorithms.groove_library import FamousGrooves, GenreTimingProfiles
 except ImportError as e:
     print(f"ERROR: {e}")
     sys.exit(1)
