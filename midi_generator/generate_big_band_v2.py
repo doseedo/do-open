@@ -29,26 +29,36 @@ Author: Phase 3 Big Band Module
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent))
+
+# Add parent directory to path for imports
+current_dir = Path(__file__).parent
+sys.path.insert(0, str(current_dir))
 
 import random
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from enum import Enum
-import mido
-from mido import MidiFile, MidiTrack, Message, MetaMessage
+
+try:
+    import mido
+    from mido import MidiFile, MidiTrack, Message, MetaMessage
+except ImportError:
+    print("ERROR: mido library not installed.")
+    print("Please install with: pip install mido")
+    sys.exit(1)
 
 # Import jazz and funk generators
-from genres.jazz import (
-    JazzGenerator, JazzStyle, JazzForm, SwingFeel,
-    JazzNote, JazzChord, JazzProgressions,
-    BebopMelodyGenerator, JazzWalkingBass, PianoComping, CompingStyle
-)
-from genres.funk_soul import FunkSoulGenerator, Note as FunkNote
-
-# Import rhythm and groove libraries
-from algorithms.groove_library import FamousGrooves
-from algorithms.rhythm_engine import GrooveTemplate, RhythmNote, DEFAULT_PPQN
+try:
+    from genres.jazz import (
+        JazzGenerator, JazzStyle, JazzForm, SwingFeel,
+        JazzNote, JazzChord, JazzProgressions,
+        BebopMelodyGenerator, JazzWalkingBass, PianoComping, CompingStyle
+    )
+    from genres.funk_soul import FunkSoulGenerator, Note as FunkNote
+except ImportError as e:
+    print(f"ERROR: Failed to import required modules: {e}")
+    print("Make sure you're running from the midi_generator directory")
+    sys.exit(1)
 
 
 # =============================================================================
