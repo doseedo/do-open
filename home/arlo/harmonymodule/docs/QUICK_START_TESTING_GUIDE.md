@@ -35,7 +35,7 @@ python3 -c "import mido; print('✅ MIDI library ready!')"
 ### **1. Neo-Riemannian Film Score** (Hans Zimmer style)
 
 ```bash
-cd midi_generator
+cd home/arlo/harmonymodule/midi_generator
 python examples/01_neo_riemannian_film_score.py
 ```
 
@@ -102,10 +102,10 @@ python examples/orchestration_demo.py
 ### **6. Blues Progression** (12-bar blues)
 
 ```bash
-cd ..
+cd home/arlo/harmonymodule
 python3 -c "
 import sys
-sys.path.insert(0, 'midi_generator')
+sys.path.insert(0, 'home/arlo/harmonymodule/midi_generator')
 from genres.blues import BluesGenerator
 from midi_generator.examples.export_to_midi import save_to_midi
 
@@ -127,7 +127,7 @@ print('✅ Generated: blues_in_g.mid')
 ```bash
 python3 -c "
 import sys
-sys.path.insert(0, 'midi_generator')
+sys.path.insert(0, 'home/arlo/harmonymodule/midi_generator')
 from genres.gospel import GospelGenerator
 from midi_generator.examples.export_to_midi import save_to_midi
 
@@ -146,7 +146,7 @@ print('✅ Generated: gospel_progression.mid')
 ### **8. Advanced Melody with Motif Development** (Beethoven style)
 
 ```bash
-cd home/arlo/Data
+cd home/arlo/harmonymodule/advanced_modules
 python3 -c "
 from melody_advanced import MotifDevelopment, Motif, ContourTheory, ContourType
 import mido
@@ -213,7 +213,7 @@ print('✅ Neo-Riemannian progression created!')
 ### **10. Complete Form Example** (Sonata form)
 
 ```bash
-cd ../../midi_generator
+cd home/arlo/harmonymodule/midi_generator
 python examples/complete_form_example.py
 ```
 
@@ -246,7 +246,7 @@ python examples/agent2_comprehensive_demo.py
 ```bash
 python3 -c "
 import sys
-sys.path.insert(0, 'midi_generator')
+sys.path.insert(0, 'home/arlo/harmonymodule/midi_generator')
 from genres.world.african import AfricanRhythms
 from midi_generator.examples.export_to_midi import save_to_midi
 
@@ -267,7 +267,7 @@ print('✅ Generated: african_polyrhythm.mid')
 ```bash
 python3 -c "
 import sys
-sys.path.insert(0, 'midi_generator')
+sys.path.insert(0, 'home/arlo/harmonymodule/midi_generator')
 from genres.world.indian import IndianMusic
 
 indian = IndianMusic()
@@ -284,7 +284,7 @@ print('✅ Indian raga generated!')
 ```bash
 python3 -c "
 import sys
-sys.path.insert(0, 'midi_generator')
+sys.path.insert(0, 'home/arlo/harmonymodule/midi_generator')
 from genres.electronic import EDMGenerator
 
 edm = EDMGenerator(tempo=128, key='A')
@@ -299,7 +299,7 @@ print('✅ Ready for export')
 ### **15. Film Scoring with Video Analysis**
 
 ```bash
-cd ../home/arlo/Data
+cd home/arlo/harmonymodule/advanced_modules
 python film_scoring_engine.py
 ```
 
@@ -322,7 +322,7 @@ cat > test_all_modules.sh << 'SCRIPT'
 echo "🎵 Testing Unified MIDI Library - All Modules"
 echo "=============================================="
 
-cd midi_generator
+cd home/arlo/harmonymodule/midi_generator
 
 echo ""
 echo "1️⃣  Testing Neo-Riemannian Film Score..."
@@ -344,7 +344,7 @@ echo ""
 echo "5️⃣  Testing Orchestration..."
 python examples/orchestration_demo.py && echo "✅ Orchestration OK" || echo "❌ Failed"
 
-cd ../home/arlo/Data
+cd ../advanced_modules
 
 echo ""
 echo "6️⃣  Testing Advanced Melody Module..."
@@ -379,8 +379,8 @@ Use this template to create your own compositions:
 """Custom MIDI composition template"""
 
 import sys
-sys.path.insert(0, 'midi_generator')
-sys.path.insert(0, 'home/arlo/Data')
+sys.path.insert(0, 'home/arlo/harmonymodule/midi_generator')
+sys.path.insert(0, 'home/arlo/harmonymodule/advanced_modules')
 
 import mido
 from mido import Message, MidiFile, MidiTrack
@@ -436,13 +436,13 @@ After running the examples, check these locations:
 
 ```bash
 # MIDI generator examples
-ls -lh midi_generator/output/*.mid
+ls -lh home/arlo/harmonymodule/midi_generator/output/*.mid
 
-# Custom generated files
+# Custom generated files (from repository root)
 ls -lh *.mid
 
-# Film scoring outputs
-ls -lh home/arlo/Data/*.mid
+# Advanced modules outputs
+ls -lh home/arlo/harmonymodule/advanced_modules/*.mid
 ```
 
 ---
@@ -504,23 +504,23 @@ chmod +x test_all_modules.sh
 
 1. **Read documentation:**
    ```bash
-   cat midi_generator/README.md
-   cat HARMONY_MELODY_10X_ENHANCEMENT_SUMMARY.md
+   cat home/arlo/harmonymodule/docs/HARMONY_MELODY_10X_ENHANCEMENT_SUMMARY.md
+   cat home/arlo/harmonymodule/docs/COMPLETE_LIBRARY_SUMMARY.md
    ```
 
 2. **Explore examples:**
    ```bash
-   ls midi_generator/examples/
+   ls home/arlo/harmonymodule/midi_generator/examples/
    ```
 
 3. **Try different genres:**
    ```bash
-   ls midi_generator/genres/
+   ls home/arlo/harmonymodule/midi_generator/genres/
    ```
 
 4. **Experiment with ML:**
    ```bash
-   python midi_generator/examples/pattern_learning_demo.py
+   python home/arlo/harmonymodule/midi_generator/examples/pattern_learning_demo.py
    ```
 
 ---
