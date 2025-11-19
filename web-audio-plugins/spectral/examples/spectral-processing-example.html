@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spectral Processing Plugins Demo</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: white;
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 2.5em;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .subtitle {
+      color: rgba(255,255,255,0.9);
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 1.1em;
+    }
+
+    .audio-controls {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+
+    .plugin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .plugin {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+      transition: transform 0.2s;
+    }
+
+    .plugin:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+    }
+
+    .plugin h2 {
+      color: #667eea;
+      margin-bottom: 15px;
+      font-size: 1.5em;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 10px;
+    }
+
+    .plugin.active h2 {
+      color: #764ba2;
+    }
+
+    .control-group {
+      margin-bottom: 15px;
+    }
+
+    .control-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #555;
+      font-size: 0.9em;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: #e0e0e0;
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #667eea;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      background: #764ba2;
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #667eea;
+      cursor: pointer;
+      border: none;
+    }
+
+    .value-display {
+      min-width: 60px;
+      text-align: right;
+      font-weight: 600;
+      color: #667eea;
+      font-size: 0.9em;
+    }
+
+    select {
+      width: 100%;
+      padding: 8px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      background: white;
+      font-size: 0.9em;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+      font-size: 1em;
+    }
+
+    button:hover {
+      background: #764ba2;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button.active {
+      background: #764ba2;
+    }
+
+    button.danger {
+      background: #e74c3c;
+    }
+
+    button.danger:hover {
+      background: #c0392b;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .toggle-btn {
+      padding: 8px 16px;
+      font-size: 0.9em;
+    }
+
+    .status {
+      background: rgba(255,255,255,0.9);
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
+      border-left: 4px solid #667eea;
+    }
+
+    .status.error {
+      border-left-color: #e74c3c;
+      background: #fee;
+    }
+
+    .status.success {
+      border-left-color: #2ecc71;
+      background: #efe;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .processing {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .info-box {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+      color: white;
+    }
+
+    .info-box h3 {
+      margin-bottom: 8px;
+      color: #fff;
+    }
+
+    .info-box ul {
+      margin-left: 20px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🌈 Spectral Processing Plugins</h1>
+    <p class="subtitle">Advanced FFT-based audio effects for Web Audio API</p>
+
+    <div class="info-box">
+      <h3>📖 Quick Start</h3>
+      <ul>
+        <li>Click "Start Audio" to initialize the audio context</li>
+        <li>Load an audio file or use the test oscillator</li>
+        <li>Enable plugins and adjust parameters in real-time</li>
+        <li>Combine multiple effects for complex spectral transformations</li>
+      </ul>
+    </div>
+
+    <!-- Audio Controls -->
+    <div class="audio-controls">
+      <h2>🎵 Audio Source</h2>
+      <div class="button-group">
+        <button id="startBtn">Start Audio</button>
+        <button id="stopBtn" style="display:none;">Stop Audio</button>
+        <input type="file" id="fileInput" accept="audio/*" style="display:none;">
+        <button id="loadFileBtn">Load Audio File</button>
+        <button id="testOscBtn">Test Oscillator</button>
+        <button id="stopSourceBtn" class="danger" style="display:none;">Stop Source</button>
+      </div>
+      <div id="status" class="status" style="display:none;"></div>
+    </div>
+
+    <!-- Plugin Grid -->
+    <div class="plugin-grid">
+
+      <!-- Spectral Time -->
+      <div class="plugin" id="spectralTime">
+        <h2>⏱️ Spectral Time</h2>
+        <div class="control-group">
+          <button class="toggle-btn" data-plugin="spectralTime">Enable</button>
+        </div>
+
+        <div class="control-group">
+          <label>Time Stretch (0.1x - 4x)</label>
+          <div class="control-row">
+            <input type="range" id="stretch" min="0.1" max="4" step="0.1" value="1">
+            <span class="value-display" id="stretchValue">1.0x</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Spectral Blur</label>
+          <div class="control-row">
+            <input type="range" id="blur" min="0" max="100" step="1" value="0">
+            <span class="value-display" id="blurValue">0%</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Pitch Shift (semitones)</label>
+          <div class="control-row">
+            <input type="range" id="pitchShift" min="-24" max="24" step="1" value="0">
+            <span class="value-display" id="pitchShiftValue">0</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <button id="freezeBtn" class="toggle-btn">Freeze Spectrum</button>
+        </div>
+
+        <div class="control-group">
+          <label>Mix</label>
+          <div class="control-row">
+            <input type="range" id="timeMix" min="0" max="100" step="1" value="100">
+            <span class="value-display" id="timeMixValue">100%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Spectral Resonator -->
+      <div class="plugin" id="spectralResonator">
+        <h2>🎸 Spectral Resonator</h2>
+        <div class="control-group">
+          <button class="toggle-btn" data-plugin="spectralResonator">Enable</button>
+        </div>
+
+        <div class="control-group">
+          <label>Pitch (MIDI Note)</label>
+          <div class="control-row">
+            <input type="range" id="resPitch" min="24" max="96" step="1" value="60">
+            <span class="value-display" id="resPitchValue">C4 (60)</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Decay Time (seconds)</label>
+          <div class="control-row">
+            <input type="range" id="resDecay" min="0.1" max="10" step="0.1" value="1">
+            <span class="value-display" id="resDecayValue">1.0s</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Harmonics</label>
+          <div class="control-row">
+            <input type="range" id="resHarmonics" min="1" max="32" step="1" value="8">
+            <span class="value-display" id="resHarmonicsValue">8</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Color</label>
+          <div class="control-row">
+            <input type="range" id="resColor" min="0" max="100" step="1" value="50">
+            <span class="value-display" id="resColorValue">50%</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Mix</label>
+          <div class="control-row">
+            <input type="range" id="resMix" min="0" max="100" step="1" value="50">
+            <span class="value-display" id="resMixValue">50%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Frequency Shifter -->
+      <div class="plugin" id="frequencyShifter">
+        <h2>↔️ Frequency Shifter</h2>
+        <div class="control-group">
+          <button class="toggle-btn" data-plugin="frequencyShifter">Enable</button>
+        </div>
+
+        <div class="control-group">
+          <label>Shift Frequency (Hz)</label>
+          <div class="control-row">
+            <input type="range" id="shiftFreq" min="-1000" max="1000" step="1" value="0">
+            <span class="value-display" id="shiftFreqValue">0 Hz</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Mode</label>
+          <select id="shiftMode">
+            <option value="up">Up (Upper Sideband)</option>
+            <option value="down">Down (Lower Sideband)</option>
+            <option value="wide">Wide (Stereo Spread)</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>Wide Amount</label>
+          <div class="control-row">
+            <input type="range" id="wideAmount" min="0" max="100" step="1" value="50">
+            <span class="value-display" id="wideAmountValue">50%</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Drive</label>
+          <div class="control-row">
+            <input type="range" id="shiftDrive" min="0" max="100" step="1" value="0">
+            <span class="value-display" id="shiftDriveValue">0%</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Mix</label>
+          <div class="control-row">
+            <input type="range" id="shiftMix" min="0" max="100" step="1" value="100">
+            <span class="value-display" id="shiftMixValue">100%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vocoder -->
+      <div class="plugin" id="vocoder">
+        <h2>🎙️ Vocoder</h2>
+        <div class="control-group">
+          <button class="toggle-btn" data-plugin="vocoder">Enable</button>
+        </div>
+
+        <div class="control-group">
+          <label>Bands</label>
+          <select id="vocoderBands">
+            <option value="8">8 Bands</option>
+            <option value="16" selected>16 Bands</option>
+            <option value="32">32 Bands</option>
+            <option value="40">40 Bands</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>Carrier Type</label>
+          <select id="carrierType">
+            <option value="saw" selected>Sawtooth</option>
+            <option value="pulse">Pulse</option>
+            <option value="noise">Noise</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>Carrier Frequency</label>
+          <div class="control-row">
+            <input type="range" id="carrierFreq" min="55" max="440" step="1" value="110">
+            <span class="value-display" id="carrierFreqValue">110 Hz</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Formant Shift (semitones)</label>
+          <div class="control-row">
+            <input type="range" id="vocoderFormant" min="-4" max="4" step="1" value="0">
+            <span class="value-display" id="vocoderFormantValue">0</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Resonance</label>
+          <div class="control-row">
+            <input type="range" id="vocoderResonance" min="0" max="100" step="1" value="50">
+            <span class="value-display" id="vocoderResonanceValue">50%</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Mix</label>
+          <div class="control-row">
+            <input type="range" id="vocoderMix" min="0" max="100" step="1" value="100">
+            <span class="value-display" id="vocoderMixValue">100%</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Load plugin scripts -->
+  <script src="../SpectralTime.js"></script>
+  <script src="../SpectralResonator.js"></script>
+  <script src="../FrequencyShifter.js"></script>
+  <script src="../Vocoder.js"></script>
+
+  <script>
+    // Application state
+    let audioContext;
+    let audioSource;
+    let plugins = {
+      spectralTime: { instance: null, enabled: false },
+      spectralResonator: { instance: null, enabled: false },
+      frequencyShifter: { instance: null, enabled: false },
+      vocoder: { instance: null, enabled: false }
+    };
+
+    // MIDI note names
+    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    function midiToNoteName(midi) {
+      const octave = Math.floor(midi / 12) - 1;
+      const note = noteNames[midi % 12];
+      return `${note}${octave} (${midi})`;
+    }
+
+    // Initialize audio context
+    async function initAudio() {
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Create plugins
+        plugins.spectralTime.instance = new SpectralTime(audioContext);
+        plugins.spectralResonator.instance = new SpectralResonator(audioContext);
+        plugins.frequencyShifter.instance = new FrequencyShifter(audioContext);
+        plugins.vocoder.instance = new Vocoder(audioContext);
+
+        // Wait for worklet-based plugins to be ready
+        await plugins.spectralTime.instance.ready();
+        await plugins.frequencyShifter.instance.ready();
+
+        showStatus('Audio initialized successfully!', 'success');
+
+        document.getElementById('startBtn').style.display = 'none';
+        document.getElementById('stopBtn').style.display = 'inline-block';
+
+        return true;
+      } catch (error) {
+        showStatus('Error initializing audio: ' + error.message, 'error');
+        return false;
+      }
+    }
+
+    // Create audio routing
+    function createAudioRouting() {
+      if (!audioSource) return;
+
+      // Connect source through enabled plugins to destination
+      let currentNode = audioSource;
+
+      // Chain enabled plugins
+      Object.values(plugins).forEach(plugin => {
+        if (plugin.enabled && plugin.instance) {
+          currentNode.connect(plugin.instance.input);
+          currentNode = plugin.instance.output;
+        }
+      });
+
+      // Connect final node to destination
+      currentNode.connect(audioContext.destination);
+    }
+
+    // Update audio routing when plugins are toggled
+    function updateAudioRouting() {
+      if (!audioSource) return;
+
+      // Disconnect everything
+      audioSource.disconnect();
+      Object.values(plugins).forEach(plugin => {
+        if (plugin.instance) {
+          plugin.instance.disconnect();
+        }
+      });
+
+      // Recreate routing
+      createAudioRouting();
+    }
+
+    // Load audio file
+    async function loadAudioFile(file) {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+        stopAudioSource();
+
+        audioSource = audioContext.createBufferSource();
+        audioSource.buffer = audioBuffer;
+        audioSource.loop = true;
+        audioSource.start();
+
+        updateAudioRouting();
+
+        showStatus(`Loaded: ${file.name}`, 'success');
+        document.getElementById('stopSourceBtn').style.display = 'inline-block';
+      } catch (error) {
+        showStatus('Error loading audio file: ' + error.message, 'error');
+      }
+    }
+
+    // Create test oscillator
+    function createTestOscillator() {
+      stopAudioSource();
+
+      audioSource = audioContext.createOscillator();
+      audioSource.type = 'sawtooth';
+      audioSource.frequency.value = 220;
+      audioSource.start();
+
+      updateAudioRouting();
+
+      showStatus('Test oscillator started (A3 - 220 Hz)', 'success');
+      document.getElementById('stopSourceBtn').style.display = 'inline-block';
+    }
+
+    // Stop audio source
+    function stopAudioSource() {
+      if (audioSource) {
+        try {
+          audioSource.stop();
+        } catch (e) {
+          // Already stopped
+        }
+        audioSource.disconnect();
+        audioSource = null;
+        document.getElementById('stopSourceBtn').style.display = 'none';
+      }
+    }
+
+    // Show status message
+    function showStatus(message, type = 'info') {
+      const status = document.getElementById('status');
+      status.textContent = message;
+      status.className = 'status ' + type;
+      status.style.display = 'block';
+
+      if (type === 'success') {
+        setTimeout(() => {
+          status.style.display = 'none';
+        }, 3000);
+      }
+    }
+
+    // Event Listeners
+    document.getElementById('startBtn').addEventListener('click', initAudio);
+
+    document.getElementById('stopBtn').addEventListener('click', () => {
+      stopAudioSource();
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+      document.getElementById('startBtn').style.display = 'inline-block';
+      document.getElementById('stopBtn').style.display = 'none';
+      showStatus('Audio stopped');
+    });
+
+    document.getElementById('loadFileBtn').addEventListener('click', () => {
+      document.getElementById('fileInput').click();
+    });
+
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+      if (e.target.files.length > 0) {
+        if (!audioContext) {
+          await initAudio();
+        }
+        loadAudioFile(e.target.files[0]);
+      }
+    });
+
+    document.getElementById('testOscBtn').addEventListener('click', async () => {
+      if (!audioContext) {
+        await initAudio();
+      }
+      createTestOscillator();
+    });
+
+    document.getElementById('stopSourceBtn').addEventListener('click', stopAudioSource);
+
+    // Plugin toggle buttons
+    document.querySelectorAll('.toggle-btn[data-plugin]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pluginName = btn.dataset.plugin;
+        const plugin = plugins[pluginName];
+
+        plugin.enabled = !plugin.enabled;
+        btn.classList.toggle('active');
+        btn.textContent = plugin.enabled ? 'Disable' : 'Enable';
+
+        document.getElementById(pluginName).classList.toggle('active');
+
+        updateAudioRouting();
+      });
+    });
+
+    // Spectral Time controls
+    document.getElementById('stretch').addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      document.getElementById('stretchValue').textContent = value.toFixed(1) + 'x';
+      if (plugins.spectralTime.instance) {
+        plugins.spectralTime.instance.setStretch(value);
+      }
+    });
+
+    document.getElementById('blur').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('blurValue').textContent = value + '%';
+      if (plugins.spectralTime.instance) {
+        plugins.spectralTime.instance.setBlur(value);
+      }
+    });
+
+    document.getElementById('pitchShift').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('pitchShiftValue').textContent = value > 0 ? '+' + value : value;
+      if (plugins.spectralTime.instance) {
+        plugins.spectralTime.instance.setPitchShift(value);
+      }
+    });
+
+    let freezeEnabled = false;
+    document.getElementById('freezeBtn').addEventListener('click', () => {
+      freezeEnabled = !freezeEnabled;
+      document.getElementById('freezeBtn').classList.toggle('active');
+      if (plugins.spectralTime.instance) {
+        plugins.spectralTime.instance.setFreeze(freezeEnabled);
+      }
+    });
+
+    document.getElementById('timeMix').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('timeMixValue').textContent = value + '%';
+      if (plugins.spectralTime.instance) {
+        plugins.spectralTime.instance.setMix(value);
+      }
+    });
+
+    // Spectral Resonator controls
+    document.getElementById('resPitch').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('resPitchValue').textContent = midiToNoteName(value);
+      if (plugins.spectralResonator.instance) {
+        plugins.spectralResonator.instance.setPitch(value);
+      }
+    });
+
+    document.getElementById('resDecay').addEventListener('input', (e) => {
+      const value = parseFloat(e.target.value);
+      document.getElementById('resDecayValue').textContent = value.toFixed(1) + 's';
+      if (plugins.spectralResonator.instance) {
+        plugins.spectralResonator.instance.setDecay(value);
+      }
+    });
+
+    document.getElementById('resHarmonics').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('resHarmonicsValue').textContent = value;
+      if (plugins.spectralResonator.instance) {
+        plugins.spectralResonator.instance.setHarmonics(value);
+      }
+    });
+
+    document.getElementById('resColor').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('resColorValue').textContent = value + '%';
+      if (plugins.spectralResonator.instance) {
+        plugins.spectralResonator.instance.setColor(value);
+      }
+    });
+
+    document.getElementById('resMix').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('resMixValue').textContent = value + '%';
+      if (plugins.spectralResonator.instance) {
+        plugins.spectralResonator.instance.setMix(value);
+      }
+    });
+
+    // Frequency Shifter controls
+    document.getElementById('shiftFreq').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('shiftFreqValue').textContent = (value > 0 ? '+' : '') + value + ' Hz';
+      if (plugins.frequencyShifter.instance) {
+        plugins.frequencyShifter.instance.setFrequency(value);
+      }
+    });
+
+    document.getElementById('shiftMode').addEventListener('change', (e) => {
+      if (plugins.frequencyShifter.instance) {
+        plugins.frequencyShifter.instance.setMode(e.target.value);
+      }
+    });
+
+    document.getElementById('wideAmount').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('wideAmountValue').textContent = value + '%';
+      if (plugins.frequencyShifter.instance) {
+        plugins.frequencyShifter.instance.setWideAmount(value);
+      }
+    });
+
+    document.getElementById('shiftDrive').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('shiftDriveValue').textContent = value + '%';
+      if (plugins.frequencyShifter.instance) {
+        plugins.frequencyShifter.instance.setDrive(value);
+      }
+    });
+
+    document.getElementById('shiftMix').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('shiftMixValue').textContent = value + '%';
+      if (plugins.frequencyShifter.instance) {
+        plugins.frequencyShifter.instance.setMix(value);
+      }
+    });
+
+    // Vocoder controls
+    document.getElementById('vocoderBands').addEventListener('change', (e) => {
+      if (plugins.vocoder.instance) {
+        plugins.vocoder.instance.setBands(parseInt(e.target.value));
+      }
+    });
+
+    document.getElementById('carrierType').addEventListener('change', (e) => {
+      if (plugins.vocoder.instance) {
+        plugins.vocoder.instance.setCarrierType(e.target.value);
+      }
+    });
+
+    document.getElementById('carrierFreq').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('carrierFreqValue').textContent = value + ' Hz';
+      if (plugins.vocoder.instance) {
+        plugins.vocoder.instance.setCarrierFrequency(value);
+      }
+    });
+
+    document.getElementById('vocoderFormant').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('vocoderFormantValue').textContent = value > 0 ? '+' + value : value;
+      if (plugins.vocoder.instance) {
+        plugins.vocoder.instance.setFormant(value);
+      }
+    });
+
+    document.getElementById('vocoderResonance').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('vocoderResonanceValue').textContent = value + '%';
+      if (plugins.vocoder.instance) {
+        plugins.vocoder.instance.setResonance(value);
+      }
+    });
+
+    document.getElementById('vocoderMix').addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('vocoderMixValue').textContent = value + '%';
+      if (plugins.vocoder.instance) {
+        plugins.vocoder.instance.setMix(value);
+      }
+    });
+  </script>
+</body>
+</html>
