@@ -9,6 +9,7 @@ services:
       - .:/usr/src/app
       - /home/arlo/ScoreAI/audiofiles:/usr/src/app/audiofiles
       - ./temp_exports:/usr/src/app/temp_exports
+      - /mnt/models/temp_videos:/mnt/models/temp_videos
     ports:
       - "8000:8080"
     depends_on:
@@ -28,6 +29,7 @@ services:
       - .:/usr/src/app
       - /home/arlo/ScoreAI/audiofiles:/usr/src/app/audiofiles
       - ./temp_exports:/usr/src/app/temp_exports
+      - /mnt/models/temp_videos:/mnt/models/temp_videos
     depends_on:
       - rabbitmq
     networks:
