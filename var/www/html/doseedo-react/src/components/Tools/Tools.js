@@ -20,18 +20,6 @@ const Tools = () => {
       color: 'rgba(102, 126, 234, 0.2)'
     },
     {
-      name: 'Video to SFX',
-      icon: 'fa-volume-high',
-      description: 'Generate sound effects from video content',
-      color: 'rgba(186, 156, 255, 0.2)'
-    },
-    {
-      name: 'AI Voiceover',
-      icon: 'fa-microphone',
-      description: 'Create AI-powered voiceovers for your projects',
-      color: 'rgba(118, 75, 162, 0.2)'
-    },
-    {
       name: 'Lyric Edit',
       icon: 'fa-pen-to-square',
       description: 'Edit and generate lyrics with AI assistance',
@@ -48,12 +36,6 @@ const Tools = () => {
       icon: 'fa-rotate',
       description: 'Regenerate and enhance audio samples',
       color: 'rgba(186, 156, 255, 0.2)'
-    },
-    {
-      name: 'Audio Mastering',
-      icon: 'fa-sliders',
-      description: 'Professional AI-powered audio mastering',
-      color: 'rgba(118, 75, 162, 0.2)'
     },
     {
       name: 'Stem Separation',
