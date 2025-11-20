@@ -17,6 +17,13 @@ from .universal_registry import (
     get_default
 )
 
+# Import structure expansion module
+from .structure_expansion import (
+    register_all_structure_parameters,
+    get_structure_defaults,
+    GENRE_PRESETS
+)
+
 # Global registry instance (for convenience)
 registry = REGISTRY
 
@@ -30,5 +37,8 @@ __all__ = [
     'registry',
     'get_parameter',
     'validate',
-    'get_default'
+    'get_default',
+    'register_all_structure_parameters',
+    'get_structure_defaults',
+    'GENRE_PRESETS'
 ]
