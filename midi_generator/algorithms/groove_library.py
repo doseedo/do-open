@@ -22,8 +22,8 @@ from dataclasses import dataclass
 import numpy as np
 
 # Import from rhythm_engine
-from .rhythm_engine import GrooveTemplate, RhythmNote
-from ..midi.midi_constants import (
+from algorithms.rhythm_engine import GrooveTemplate, RhythmNote
+from midi.midi_constants import (
     GM_DRUM_MAP,
     DEFAULT_PPQN,
     PPQN_HIGH_RES
