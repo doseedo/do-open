@@ -1,0 +1,185 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Musical Parameter Specification Schema",
+  "description": "Schema for declarative parameter definitions in the Musical Program Synthesis system",
+  "type": "object",
+  "required": ["name", "type", "default", "description", "domain"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z_]+\\.[a-z_]+\\.[a-z_]+$",
+      "description": "Namespaced parameter name (domain.subdomain.param_name)",
+      "examples": ["harmony.voicing.extended_type", "rhythm.swing.amount"]
+    },
+    "type": {
+      "type": "string",
+      "enum": ["categorical", "float", "int", "boolean", "probability"],
+      "description": "Parameter data type"
+    },
+    "domain": {
+      "type": "string",
+      "enum": ["harmony", "melody", "rhythm", "dynamics", "structure", "instrumentation", "texture", "form"],
+      "description": "Primary musical domain"
+    },
+    "subdomain": {
+      "type": "string",
+      "description": "Subdomain within the primary domain",
+      "examples": ["voicing", "contour", "swing", "articulation"]
+    },
+    "default": {
+      "description": "Default value (must be valid according to type constraints)"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 20,
+      "description": "Clear description using musical terminology"
+    },
+    "values": {
+      "type": "array",
+      "description": "Valid values for categorical parameters",
+      "minItems": 2
+    },
+    "range": {
+      "type": "object",
+      "properties": {
+        "min": {"type": "number"},
+        "max": {"type": "number"}
+      },
+      "required": ["min", "max"],
+      "description": "Valid range for numeric parameters"
+    },
+    "constraints": {
+      "type": "object",
+      "properties": {
+        "requires": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List of required parameter dependencies"
+        },
+        "conflicts_with": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List of conflicting parameters"
+        },
+        "mutually_exclusive": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Parameters that cannot be used together"
+        }
+      }
+    },
+    "feature_mappings": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Feature names from Agent 8 that map to this parameter",
+      "examples": ["voicing_spread_semitones", "chord_density"]
+    },
+    "examples": {
+      "type": "object",
+      "description": "Example values with explanations"
+    },
+    "theory_reference": {
+      "type": "object",
+      "properties": {
+        "source": {"type": "string"},
+        "page": {"type": "integer"},
+        "url": {"type": "string"}
+      },
+      "description": "Music theory reference for this parameter"
+    },
+    "training_hints": {
+      "type": "object",
+      "properties": {
+        "importance": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low"]
+        },
+        "training_samples": {
+          "type": "integer",
+          "minimum": 100
+        },
+        "feature_selection_method": {
+          "type": "string",
+          "enum": ["correlation", "mutual_info", "f_test", "variance"]
+        }
+      }
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Parameter spec version (semantic versioning)"
+    },
+    "created_by": {
+      "type": "string",
+      "enum": ["human", "llm_agent", "self_expansion"],
+      "description": "How this parameter was created"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"type": {"const": "categorical"}}
+      },
+      "then": {
+        "required": ["values"],
+        "properties": {
+          "default": {
+            "description": "Must be one of the values"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"type": {"enum": ["float", "int"]}}
+      },
+      "then": {
+        "required": ["range"],
+        "properties": {
+          "default": {
+            "type": "number",
+            "description": "Must be within range"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"type": {"const": "boolean"}}
+      },
+      "then": {
+        "properties": {
+          "default": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"type": {"const": "probability"}}
+      },
+      "then": {
+        "required": ["range"],
+        "properties": {
+          "range": {
+            "properties": {
+              "min": {"const": 0.0},
+              "max": {"const": 1.0}
+            }
+          },
+          "default": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+          }
+        }
+      }
+    }
+  ]
+}
