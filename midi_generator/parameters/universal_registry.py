@@ -208,6 +208,9 @@ class UniversalParameterRegistry:
         # DYNAMICS PARAMETERS
         self._register_dynamics_parameters()
 
+        # INSTRUMENTATION PARAMETERS (Agent 1 Expansion)
+        self._register_instrumentation_parameters()
+
     def register(self, param_def: ParameterDefinition):
         """Register a parameter"""
         self.parameters[param_def.full_path] = param_def
@@ -628,6 +631,32 @@ class UniversalParameterRegistry:
             category=ParameterCategory.DYNAMICS,
             musical_impact=MusicalImpact.MEDIUM
         ))
+
+    def _register_instrumentation_parameters(self):
+        """
+        Register instrumentation parameters (Agent 1 expansion)
+
+        Imports and registers all 80 instrumentation parameters from
+        the instrumentation_expansion module.
+        """
+        try:
+            from .instrumentation_expansion import (
+                register_piano_parameters,
+                register_bass_parameters,
+                register_drums_parameters,
+                register_brass_parameters,
+                register_strings_parameters
+            )
+
+            # Register all instrumentation parameter groups
+            register_piano_parameters()
+            register_bass_parameters()
+            register_drums_parameters()
+            register_brass_parameters()
+            register_strings_parameters()
+        except ImportError:
+            # If module not available, skip (for backward compatibility)
+            pass
 
     # ========================================================================
     # Utility Methods
