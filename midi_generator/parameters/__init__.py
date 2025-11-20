@@ -17,6 +17,10 @@ from .universal_registry import (
     get_default
 )
 
+# Import expansion modules to auto-register parameters
+from . import registry_expansion  # Agent 1: Core parameters
+from . import melody_rhythm_expansion  # Agent 4: Melody & Rhythm expansion (120 params)
+
 # Global registry instance (for convenience)
 registry = REGISTRY
 
