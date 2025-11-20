@@ -1,0 +1,23 @@
+name: harmony.chord_type
+type: categorical
+domain: harmony
+subdomain: harmony
+description: Core parameter for harmony.chord_type
+version: 1.0.0
+created_by: human
+created_at: '2025-11-20T10:25:15.775531'
+values:
+- major
+- minor
+- dominant
+- diminished
+- augmented
+default: major
+feature_mappings:
+- harmony_complexity
+- harmony_density
+- harmony_variation
+training_hints:
+  importance: medium
+  training_samples: 1000
+  feature_selection_method: mutual_info

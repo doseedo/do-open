@@ -1,0 +1,82 @@
+# Example parameter specification in declarative .params format
+# This replaces LLM-generated Python code with safe, validatable YAML
+
+name: "harmony.jazz_voicing.extended_type"
+type: "categorical"
+domain: "harmony"
+subdomain: "voicing"
+
+# Valid values (exhaustive list)
+values:
+  - "drop_2"
+  - "drop_3"
+  - "drop_2_4"
+  - "spread"
+  - "cluster"
+  - "rootless_a"
+  - "rootless_b"
+  - "fourths"
+  - "so_what"
+  - "locked_hands"
+
+# Default value
+default: "drop_2"
+
+# Description using musical terminology
+description: >
+  Type of jazz piano voicing for extended harmony chords (9th, 11th, 13th).
+  Drop voicings lower specific chord tones by an octave to create wider spacing.
+  Used extensively in big band arranging and jazz piano comping.
+
+# Example values with explanations
+examples:
+  drop_2: "Root, 3rd, 7th, 9th with 2nd voice (3rd) dropped an octave - most common"
+  drop_3: "Root, 7th, 3rd, 9th with 3rd voice (7th) dropped an octave"
+  drop_2_4: "Root, 7th, 9th, 3rd with 2nd and 4th voices dropped"
+  spread: "Wide voicing spanning 2+ octaves - orchestral sound"
+  cluster: "Close voicing with 2nds - modern jazz sound"
+  rootless_a: "3rd, 5th/6th, 7th, 9th (no root) - A voicing"
+  rootless_b: "7th, 9th, 3rd, 5th/6th (no root) - B voicing"
+  fourths: "Voicing built on 4th intervals - McCoy Tyner style"
+  so_what: "Specific cluster voicing from Miles Davis tune"
+  locked_hands: "Melody doubled with block chords - George Shearing style"
+
+# Parameter constraints
+constraints:
+  requires:
+    - "harmony.chord_type"
+    - "harmony.extension"
+  conflicts_with:
+    - "harmony.voicing.close_position"
+  mutually_exclusive:
+    - "harmony.voicing.simple_triad"
+
+# Feature mappings for training (from Agent 8's 1000 features)
+feature_mappings:
+  - "voicing_spread_semitones"
+  - "interval_between_top_voices"
+  - "interval_between_bottom_voices"
+  - "chord_density"
+  - "voice_count"
+  - "lowest_note_midi"
+  - "highest_note_midi"
+  - "harmonic_complexity"
+
+# Training hints for Agent 15
+training_hints:
+  importance: "high"
+  training_samples: 5000
+  feature_selection_method: "mutual_info"
+  model_type: "xgboost_multiclass"
+
+# Music theory grounding
+theory_reference:
+  source: "Mark Levine - The Jazz Piano Book"
+  page: 47
+  section: "Drop 2 and Drop 3 Voicings"
+  url: "https://www.jazzbooks.com/jazz/product/MLJP"
+
+# Metadata
+version: "1.0.0"
+created_by: "human"
+created_at: "2025-11-20T12:00:00Z"
