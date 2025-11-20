@@ -12,6 +12,7 @@ Each expert focuses on a specific musical domain and provides:
 4. Training data generation for XGBoost models
 
 Experts:
+- Agent 19: Melody Specialist (motif development, sequences, ornamentation)
 - Agent 23: Structure Specialist (form, transitions, climax, motifs)
 
 Author: Musical Program Synthesis Team
@@ -21,5 +22,6 @@ License: MIT
 __version__ = "1.0.0"
 
 __all__ = [
+    "melody_specialist",
     "structure_specialist",
 ]
