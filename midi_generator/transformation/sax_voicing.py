@@ -185,13 +185,14 @@ class SaxSoliVoicing:
 
             # Optimize voice leading for this chord's melody notes
             if optimize_voice_leading:
-                voicing_sequence = VoiceLeadingOptimizer.optimize_chord_sequence(
+                optimization_result = VoiceLeadingOptimizer.optimize_chord_sequence(
                     chords=chord_sequence,
                     num_voices=num_voices,
                     voice_ranges=voice_ranges,
-                    voicing_type=voicing_type,
-                    melody_pitches=melody_pitches
+                    voicing_types=[voicing_type]
                 )
+                # Extract pitch lists from OptimizationResult
+                voicing_sequence = [v.pitches for v in optimization_result.voicings]
             else:
                 # No optimization: generate voicing for each note independently
                 voicing_sequence = []
@@ -276,13 +277,15 @@ class SaxSoliVoicing:
         voicing_type = voicing_type_map.get(voicing_style.lower(), VoicingType.DROP_2)
 
         # Optimize voice leading across chord sequence
-        voicing_sequence = VoiceLeadingOptimizer.optimize_chord_sequence(
+        optimization_result = VoiceLeadingOptimizer.optimize_chord_sequence(
             chords=chords,
             num_voices=num_voices,
             voice_ranges=voice_ranges,
-            voicing_type=voicing_type,
-            melody_pitches=None  # Let optimizer choose top voice
+            voicing_types=[voicing_type]
         )
+
+        # Extract pitch lists from OptimizationResult
+        voicing_sequence = [v.pitches for v in optimization_result.voicings]
 
         # Apply register spacing
         voicing_sequence = [
