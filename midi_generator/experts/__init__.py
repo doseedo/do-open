@@ -14,6 +14,7 @@ Each expert focuses on a specific musical domain and provides:
 Experts:
 - Agent 18: Harmony Specialist (jazz voicings, modal harmony, voice leading)
 - Agent 19: Melody Specialist (motif development, sequences, ornamentation)
+- Agent 20: Rhythm Specialist (polyrhythm, swing, syncopation, world rhythms)
 - Agent 23: Structure Specialist (form, transitions, climax, motifs)
 
 Author: Musical Program Synthesis Team
@@ -53,9 +54,12 @@ from .melody_specialist import (
     create_example_melody,
 )
 
+from .rhythm_specialist import RhythmSpecialist, get_rhythm_specialist
+
 __all__ = [
     # Modules
     "melody_specialist",
+    "rhythm_specialist",
     "structure_specialist",
     "harmony_specialist",
 
@@ -90,4 +94,8 @@ __all__ = [
 
     # Melody Specialist Functions
     "create_example_melody",
+
+    # Rhythm Specialist
+    "RhythmSpecialist",
+    "get_rhythm_specialist",
 ]
