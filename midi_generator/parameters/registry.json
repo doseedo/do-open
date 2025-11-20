@@ -1628,6 +1628,7 @@
     "options": null,
     "category": "harmony",
     "impact": "medium",
+<<<<<<< HEAD
     "genres": [
       "contemporary",
       "minimalist"
@@ -1769,10 +1770,61 @@
     "name": "strings_vibrato_intensity",
     "description": "Vibrato intensity (0.0=none, 1.0=wide/expressive)",
     "type": "continuous",
+=======
+    "genres": []
+  },
+  "texture.polyphonic.density": {
+    "name": "texture_polyphonic_density",
+    "description": "Average number of simultaneous voices (0=monophonic, 1=very dense)",
+    "type": "probability",
+    "default": 0.3,
+    "min": 0.0,
+    "max": 1.0,
+    "options": null,
+    "category": "texture",
+    "impact": "critical",
+    "genres": [],
+    "agent": 24,
+    "musical_function": "Controls vertical density of texture"
+  },
+  "texture.voice.independence": {
+    "name": "texture_voice_independence",
+    "description": "Degree of independence between voices (0=homophonic, 1=contrapuntal)",
+    "type": "probability",
+    "default": 0.5,
+    "min": 0.0,
+    "max": 1.0,
+    "options": null,
+    "category": "texture",
+    "impact": "high",
+    "genres": ["classical", "jazz", "baroque"],
+    "agent": 24,
+    "musical_function": "Controls melodic and rhythmic independence"
+  },
+  "texture.vertical.density": {
+    "name": "texture_vertical_density",
+    "description": "Harmonic complexity at any moment (0=sparse, 1=dense chords)",
+    "type": "probability",
+    "default": 0.4,
+    "min": 0.0,
+    "max": 1.0,
+    "options": null,
+    "category": "texture",
+    "impact": "high",
+    "genres": [],
+    "agent": 24,
+    "musical_function": "Controls chordal density"
+  },
+  "texture.horizontal.density": {
+    "name": "texture_horizontal_density",
+    "description": "Temporal activity level (0=sparse, 1=continuous)",
+    "type": "probability",
+>>>>>>> origin/claude/music-generation-agents-01WZqhjSdvRTNb1SqCKZww6Q
     "default": 0.6,
     "min": 0.0,
     "max": 1.0,
     "options": null,
+<<<<<<< HEAD
     "category": "articulation",
     "impact": "medium",
     "genres": [
@@ -1798,5 +1850,96 @@
     ]
 =======
 >>>>>>> origin/claude/music-generation-agents-01Gdbm7ZPnSUT25SKLbzQdUX
+=======
+    "category": "texture",
+    "impact": "high",
+    "genres": [],
+    "agent": 24,
+    "musical_function": "Controls temporal continuity"
+  },
+  "texture.layering.count": {
+    "name": "texture_layering_count",
+    "description": "Number of distinct textural layers (1=single layer, 8=complex)",
+    "type": "integer",
+    "default": 3,
+    "min": 1,
+    "max": 8,
+    "options": null,
+    "category": "texture",
+    "impact": "high",
+    "genres": ["orchestral", "ambient", "progressive"],
+    "agent": 24,
+    "musical_function": "Controls number of textural strata"
+  },
+  "texture.register.spread": {
+    "name": "texture_register_spread",
+    "description": "Pitch range usage (0=narrow, 1=full keyboard)",
+    "type": "probability",
+    "default": 0.5,
+    "min": 0.0,
+    "max": 1.0,
+    "options": null,
+    "category": "texture",
+    "impact": "medium",
+    "genres": [],
+    "agent": 24,
+    "musical_function": "Controls vertical pitch space usage"
+  },
+  "texture.contrast.rate": {
+    "name": "texture_contrast_rate",
+    "description": "Frequency of texture changes (0=static, 1=constantly changing)",
+    "type": "probability",
+    "default": 0.3,
+    "min": 0.0,
+    "max": 1.0,
+    "options": null,
+    "category": "texture",
+    "impact": "medium",
+    "genres": ["progressive", "experimental"],
+    "agent": 24,
+    "musical_function": "Controls textural variety over time"
+  },
+  "texture.homophonic.ratio": {
+    "name": "texture_homophonic_ratio",
+    "description": "Proportion of homophonic texture (0=polyphonic, 1=chordal)",
+    "type": "probability",
+    "default": 0.4,
+    "min": 0.0,
+    "max": 1.0,
+    "options": null,
+    "category": "texture",
+    "impact": "high",
+    "genres": ["pop", "hymnal", "choral"],
+    "agent": 24,
+    "musical_function": "Balance between homophony and polyphony"
+  },
+  "texture.voice_crossing.density": {
+    "name": "texture_voice_crossing_density",
+    "description": "Frequency of voice crossings (0=none, 1=frequent)",
+    "type": "probability",
+    "default": 0.1,
+    "min": 0.0,
+    "max": 1.0,
+    "options": null,
+    "category": "texture",
+    "impact": "low",
+    "genres": ["baroque", "renaissance", "contemporary"],
+    "agent": 24,
+    "musical_function": "Controls voice crossing frequency"
+  },
+  "texture.rhythmic.independence": {
+    "name": "texture_rhythmic_independence",
+    "description": "Rhythmic independence between voices (0=synchronized, 1=independent)",
+    "type": "probability",
+    "default": 0.5,
+    "min": 0.0,
+    "max": 1.0,
+    "options": null,
+    "category": "texture",
+    "impact": "high",
+    "genres": ["jazz", "polyrhythmic", "african"],
+    "agent": 24,
+    "musical_function": "Controls rhythmic coordination"
+>>>>>>> origin/claude/music-generation-agents-01WZqhjSdvRTNb1SqCKZww6Q
   }
 }
