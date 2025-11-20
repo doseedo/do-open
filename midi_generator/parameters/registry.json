@@ -412,5 +412,1031 @@
     "category": "dynamics",
     "impact": "medium",
     "genres": []
+  },
+  "harmony.neo_riemannian.transformation_sequence": {
+    "name": "neo_riemannian_transformation_sequence",
+    "description": "Sequence of transformations (P, L, R)",
+    "type": "categorical",
+    "default": "PLR",
+    "min": null,
+    "max": null,
+    "options": [
+      "P",
+      "L",
+      "R",
+      "PL",
+      "PR",
+      "LR",
+      "PLR",
+      "custom"
+    ],
+    "category": "harmony",
+    "impact": "critical",
+    "genres": [
+      "classical",
+      "film_score",
+      "progressive"
+    ]
+  },
+  "harmony.neo_riemannian.apply_voice_leading": {
+    "name": "neo_riemannian_voice_leading",
+    "description": "Apply smooth voice leading to transformations",
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "high",
+    "genres": []
+  },
+  "harmony.neo_riemannian.hexatonic_pole": {
+    "name": "hexatonic_pole",
+    "description": "Hexatonic system pole (0-3: Northern, Southern, Eastern, Western)",
+    "type": "integer",
+    "default": 0,
+    "min": 0,
+    "max": 3,
+    "options": null,
+    "category": "harmony",
+    "impact": "high",
+    "genres": []
+  },
+  "harmony.modal.dorian_probability": {
+    "name": "modal_dorian_probability",
+    "description": "Probability of using Dorian mode",
+    "type": "probability",
+    "default": 0.14,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "classical",
+      "world"
+    ]
+  },
+  "harmony.modal.phrygian_probability": {
+    "name": "modal_phrygian_probability",
+    "description": "Probability of using Phrygian mode",
+    "type": "probability",
+    "default": 0.14,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "classical",
+      "world"
+    ]
+  },
+  "harmony.modal.lydian_probability": {
+    "name": "modal_lydian_probability",
+    "description": "Probability of using Lydian mode",
+    "type": "probability",
+    "default": 0.14,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "classical",
+      "world"
+    ]
+  },
+  "harmony.modal.mixolydian_probability": {
+    "name": "modal_mixolydian_probability",
+    "description": "Probability of using Mixolydian mode",
+    "type": "probability",
+    "default": 0.14,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "classical",
+      "world"
+    ]
+  },
+  "harmony.modal.aeolian_probability": {
+    "name": "modal_aeolian_probability",
+    "description": "Probability of using Aeolian mode",
+    "type": "probability",
+    "default": 0.14,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "classical",
+      "world"
+    ]
+  },
+  "harmony.modal.locrian_probability": {
+    "name": "modal_locrian_probability",
+    "description": "Probability of using Locrian mode",
+    "type": "probability",
+    "default": 0.14,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "classical",
+      "world"
+    ]
+  },
+  "harmony.modal.progression_type": {
+    "name": "modal_progression_type",
+    "description": "Type of modal progression",
+    "type": "categorical",
+    "default": "characteristic",
+    "min": null,
+    "max": null,
+    "options": [
+      "characteristic",
+      "vamp",
+      "plagal",
+      "descending",
+      "ascending"
+    ],
+    "category": "harmony",
+    "impact": "high",
+    "genres": []
+  },
+  "harmony.modal.interchange_intensity": {
+    "name": "modal_interchange_intensity",
+    "description": "How often to borrow from parallel modes (0.0-1.0)",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "rock",
+      "progressive"
+    ]
+  },
+  "harmony.modal.cadence_type": {
+    "name": "modal_cadence_type",
+    "description": "Type of modal cadence",
+    "type": "categorical",
+    "default": "plagal",
+    "min": null,
+    "max": null,
+    "options": [
+      "plagal",
+      "phrygian",
+      "dorian",
+      "lydian",
+      "subtonic"
+    ],
+    "category": "harmony",
+    "impact": "high",
+    "genres": []
+  },
+  "harmony.chromatic.mediant_pattern": {
+    "name": "chromatic_mediant_pattern",
+    "description": "Chromatic mediant progression pattern",
+    "type": "categorical",
+    "default": "UCM LCM",
+    "min": null,
+    "max": null,
+    "options": [
+      "UCM",
+      "LCM",
+      "UFM",
+      "LFM",
+      "UCM LCM",
+      "UFM LFM",
+      "mixed"
+    ],
+    "category": "harmony",
+    "impact": "high",
+    "genres": [
+      "romantic",
+      "film_score",
+      "progressive"
+    ]
+  },
+  "harmony.chromatic.secondary_dominant_probability": {
+    "name": "secondary_dominant_probability",
+    "description": "Probability of using secondary dominants",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "jazz",
+      "musical_theatre"
+    ]
+  },
+  "harmony.chromatic.diminished_passing_probability": {
+    "name": "diminished_passing_probability",
+    "description": "Probability of diminished passing chords",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "medium",
+    "genres": [
+      "jazz",
+      "classical"
+    ]
+  },
+  "harmony.chromatic.augmented_sixth_probability": {
+    "name": "augmented_sixth_probability",
+    "description": "Probability of augmented sixth chords",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "romantic"
+    ]
+  },
+  "harmony.voice_leading.max_motion": {
+    "name": "voice_leading_max_motion",
+    "description": "Maximum voice motion in semitones",
+    "type": "integer",
+    "default": 7,
+    "min": 1,
+    "max": 24,
+    "options": null,
+    "category": "harmony",
+    "impact": "high",
+    "genres": []
+  },
+  "harmony.voice_leading.prefer_contrary_motion": {
+    "name": "voice_leading_prefer_contrary",
+    "description": "Preference for contrary motion (0.0-1.0)",
+    "type": "probability",
+    "default": 0.6,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "choral"
+    ]
+  },
+  "harmony.voice_leading.allow_voice_crossing": {
+    "name": "voice_leading_allow_voice_crossing",
+    "description": "Allow voices to cross",
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "medium",
+    "genres": []
+  },
+  "harmony.voice_leading.common_tone_weight": {
+    "name": "voice_leading_common_tone_weight",
+    "description": "Weight for maintaining common tones (0.0-1.0)",
+    "type": "probability",
+    "default": 0.7,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "high",
+    "genres": []
+  },
+  "harmony.extensions.seventh_probability": {
+    "name": "seventh_chord_probability",
+    "description": "Probability of using 7th chords",
+    "type": "probability",
+    "default": 0.8,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "blues",
+      "R&B"
+    ]
+  },
+  "harmony.extensions.altered_dominant_probability": {
+    "name": "altered_dominant_probability",
+    "description": "Probability of altered dominants (b9, #9, b13, etc.)",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "bebop",
+      "fusion"
+    ]
+  },
+  "harmony.extensions.sus_probability": {
+    "name": "sus_chord_probability",
+    "description": "Probability of suspended chords",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "medium",
+    "genres": [
+      "jazz",
+      "pop",
+      "rock"
+    ]
+  },
+  "harmony.extensions.add9_probability": {
+    "name": "add9_probability",
+    "description": "Probability of add9 chords",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "medium",
+    "genres": [
+      "pop",
+      "rock",
+      "singer_songwriter"
+    ]
+  },
+  "melody.contour.arch_probability": {
+    "name": "contour_arch_probability",
+    "description": "Probability of arch contour (low-high-low)",
+    "type": "probability",
+    "default": 0.35,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "critical",
+    "genres": []
+  },
+  "melody.contour.inverted_arch_probability": {
+    "name": "contour_inverted_arch_probability",
+    "description": "Probability of inverted arch (high-low-high)",
+    "type": "probability",
+    "default": 0.15,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.contour.ascending_probability": {
+    "name": "contour_ascending_probability",
+    "description": "Probability of ascending contour",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.contour.descending_probability": {
+    "name": "contour_descending_probability",
+    "description": "Probability of descending contour",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.contour.wave_probability": {
+    "name": "contour_wave_probability",
+    "description": "Probability of wave contour",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": []
+  },
+  "melody.intervals.unison_probability": {
+    "name": "interval_unison_probability",
+    "description": "Probability of repeated notes",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": []
+  },
+  "melody.intervals.second_probability": {
+    "name": "interval_second_probability",
+    "description": "Probability of stepwise motion (seconds)",
+    "type": "probability",
+    "default": 0.5,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "critical",
+    "genres": []
+  },
+  "melody.intervals.third_probability": {
+    "name": "interval_third_probability",
+    "description": "Probability of third leaps",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.intervals.fourth_probability": {
+    "name": "interval_fourth_probability",
+    "description": "Probability of fourth leaps",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": []
+  },
+  "melody.intervals.fifth_probability": {
+    "name": "interval_fifth_probability",
+    "description": "Probability of fifth leaps",
+    "type": "probability",
+    "default": 0.05,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": []
+  },
+  "melody.intervals.large_leap_probability": {
+    "name": "interval_large_leap_probability",
+    "description": "Probability of leaps > fifth",
+    "type": "probability",
+    "default": 0.05,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": []
+  },
+  "melody.intervals.leap_recovery_probability": {
+    "name": "leap_recovery_probability",
+    "description": "Probability of stepwise recovery after leap",
+    "type": "probability",
+    "default": 0.8,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.ornaments.trill_probability": {
+    "name": "trill_probability",
+    "description": "Probability of trills",
+    "type": "probability",
+    "default": 0.05,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "baroque"
+    ]
+  },
+  "melody.ornaments.mordent_probability": {
+    "name": "mordent_probability",
+    "description": "Probability of mordents",
+    "type": "probability",
+    "default": 0.05,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "baroque"
+    ]
+  },
+  "melody.ornaments.turn_probability": {
+    "name": "turn_probability",
+    "description": "Probability of turns",
+    "type": "probability",
+    "default": 0.05,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "baroque"
+    ]
+  },
+  "melody.ornaments.appoggiatura_probability": {
+    "name": "appoggiatura_probability",
+    "description": "Probability of appoggiaturas",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "jazz"
+    ]
+  },
+  "melody.ornaments.grace_note_probability": {
+    "name": "grace_note_probability",
+    "description": "Probability of grace notes",
+    "type": "probability",
+    "default": 0.15,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "folk",
+      "country"
+    ]
+  },
+  "melody.phrasing.length_min": {
+    "name": "phrase_length_min",
+    "description": "Minimum phrase length in beats",
+    "type": "integer",
+    "default": 4,
+    "min": 2,
+    "max": 32,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.phrasing.length_max": {
+    "name": "phrase_length_max",
+    "description": "Maximum phrase length in beats",
+    "type": "integer",
+    "default": 16,
+    "min": 4,
+    "max": 64,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.phrasing.rest_probability": {
+    "name": "phrase_rest_probability",
+    "description": "Probability of rest between phrases",
+    "type": "probability",
+    "default": 0.8,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.phrasing.antecedent_consequent_probability": {
+    "name": "antecedent_consequent_probability",
+    "description": "Probability of antecedent-consequent phrase pairs",
+    "type": "probability",
+    "default": 0.6,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.motif.repetition_probability": {
+    "name": "motif_repetition_probability",
+    "description": "Probability of exact motif repetition",
+    "type": "probability",
+    "default": 0.4,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.motif.sequence_probability": {
+    "name": "motif_sequence_probability",
+    "description": "Probability of motif sequencing",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.motif.inversion_probability": {
+    "name": "motif_inversion_probability",
+    "description": "Probability of motif inversion",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": []
+  },
+  "melody.motif.retrograde_probability": {
+    "name": "motif_retrograde_probability",
+    "description": "Probability of motif retrograde",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": []
+  },
+  "melody.motif.augmentation_probability": {
+    "name": "motif_augmentation_probability",
+    "description": "Probability of rhythmic augmentation",
+    "type": "probability",
+    "default": 0.15,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": []
+  },
+  "melody.motif.diminution_probability": {
+    "name": "motif_diminution_probability",
+    "description": "Probability of rhythmic diminution",
+    "type": "probability",
+    "default": 0.15,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": []
+  },
+  "rhythm.swing.ratio": {
+    "name": "swing_ratio",
+    "description": "Swing ratio (0.5=straight, 0.67=standard, 0.75=hard)",
+    "type": "continuous",
+    "default": 0.67,
+    "min": 0.5,
+    "max": 0.8,
+    "options": null,
+    "category": "rhythm",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "swing",
+      "blues",
+      "shuffle"
+    ]
+  },
+  "rhythm.swing.intensity": {
+    "name": "swing_intensity",
+    "description": "How consistently swing is applied (0.0-1.0)",
+    "type": "probability",
+    "default": 1.0,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "high",
+    "genres": []
+  },
+  "rhythm.groove.pocket_depth": {
+    "name": "groove_pocket_depth",
+    "description": "How far behind/ahead of beat (ms, negative=behind)",
+    "type": "integer",
+    "default": 0,
+    "min": -50,
+    "max": 50,
+    "options": null,
+    "category": "rhythm",
+    "impact": "high",
+    "genres": [
+      "funk",
+      "R&B",
+      "neo_soul"
+    ]
+  },
+  "rhythm.groove.shuffle_feel": {
+    "name": "shuffle_feel",
+    "description": "Shuffle feel intensity (0.0-1.0)",
+    "type": "probability",
+    "default": 0.0,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "high",
+    "genres": [
+      "blues",
+      "shuffle",
+      "R&B"
+    ]
+  },
+  "rhythm.syncopation.level": {
+    "name": "syncopation_level",
+    "description": "Overall syncopation level (0.0=none, 1.0=maximum)",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "funk",
+      "latin",
+      "afrobeat"
+    ]
+  },
+  "rhythm.syncopation.anticipation_probability": {
+    "name": "anticipation_probability",
+    "description": "Probability of anticipating strong beats",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "high",
+    "genres": []
+  },
+  "rhythm.syncopation.offbeat_emphasis_probability": {
+    "name": "offbeat_emphasis_probability",
+    "description": "Probability of emphasizing offbeats",
+    "type": "probability",
+    "default": 0.4,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "high",
+    "genres": [
+      "reggae",
+      "ska",
+      "funk"
+    ]
+  },
+  "rhythm.polyrhythm.probability": {
+    "name": "polyrhythm_probability",
+    "description": "Probability of polyrhythmic patterns",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "high",
+    "genres": [
+      "african",
+      "afrobeat",
+      "progressive",
+      "jazz"
+    ]
+  },
+  "rhythm.polyrhythm.ratio": {
+    "name": "polyrhythm_ratio",
+    "description": "Polyrhythm ratio (e.g., 3:2, 4:3, 5:4)",
+    "type": "categorical",
+    "default": "3:2",
+    "min": null,
+    "max": null,
+    "options": [
+      "3:2",
+      "4:3",
+      "5:4",
+      "7:4",
+      "3:4",
+      "5:3"
+    ],
+    "category": "rhythm",
+    "impact": "high",
+    "genres": []
+  },
+  "rhythm.metric_modulation.probability": {
+    "name": "metric_modulation_probability",
+    "description": "Probability of metric modulation",
+    "type": "probability",
+    "default": 0.05,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "high",
+    "genres": [
+      "progressive",
+      "contemporary_classical"
+    ]
+  },
+  "rhythm.subdivision.triplet_probability": {
+    "name": "triplet_subdivision_probability",
+    "description": "Probability of triplet subdivisions",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "high",
+    "genres": []
+  },
+  "rhythm.subdivision.quintuplet_probability": {
+    "name": "quintuplet_probability",
+    "description": "Probability of quintuplet subdivisions",
+    "type": "probability",
+    "default": 0.05,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "medium",
+    "genres": [
+      "progressive",
+      "jazz"
+    ]
+  },
+  "rhythm.subdivision.sextuplet_probability": {
+    "name": "sextuplet_probability",
+    "description": "Probability of sextuplet subdivisions",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "medium",
+    "genres": []
+  },
+  "rhythm.density.note_density": {
+    "name": "note_density",
+    "description": "Average notes per beat (0.5-8.0)",
+    "type": "continuous",
+    "default": 2.0,
+    "min": 0.5,
+    "max": 8.0,
+    "options": null,
+    "category": "rhythm",
+    "impact": "critical",
+    "genres": []
+  },
+  "rhythm.density.rest_frequency": {
+    "name": "rest_frequency",
+    "description": "Frequency of rests (0.0-1.0)",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "high",
+    "genres": []
+  },
+  "rhythm.density.sustained_note_probability": {
+    "name": "sustained_note_probability",
+    "description": "Probability of long sustained notes",
+    "type": "probability",
+    "default": 0.15,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "medium",
+    "genres": []
+  },
+  "transformation.transposition.semitones": {
+    "name": "transposition_amount",
+    "description": "Transposition in semitones",
+    "type": "integer",
+    "default": 0,
+    "min": -24,
+    "max": 24,
+    "options": null,
+    "category": "harmony",
+    "impact": "critical",
+    "genres": []
+  },
+  "transformation.tempo.change_ratio": {
+    "name": "tempo_change_ratio",
+    "description": "Tempo change ratio (0.5=half, 2.0=double)",
+    "type": "continuous",
+    "default": 1.0,
+    "min": 0.25,
+    "max": 4.0,
+    "options": null,
+    "category": "rhythm",
+    "impact": "critical",
+    "genres": []
+  },
+  "transformation.dynamics.scaling": {
+    "name": "dynamic_scaling",
+    "description": "Dynamic scaling factor (0.5=softer, 2.0=louder)",
+    "type": "continuous",
+    "default": 1.0,
+    "min": 0.1,
+    "max": 3.0,
+    "options": null,
+    "category": "dynamics",
+    "impact": "high",
+    "genres": []
+  },
+  "transformation.humanization.amount": {
+    "name": "humanization_amount",
+    "description": "Humanization intensity (0.0=robotic, 1.0=very human)",
+    "type": "probability",
+    "default": 0.5,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "high",
+    "genres": []
+  },
+  "transformation.humanization.timing_variance": {
+    "name": "humanization_timing_variance",
+    "description": "Timing variance in milliseconds",
+    "type": "integer",
+    "default": 15,
+    "min": 0,
+    "max": 50,
+    "options": null,
+    "category": "rhythm",
+    "impact": "medium",
+    "genres": []
+  },
+  "transformation.humanization.velocity_variance": {
+    "name": "humanization_velocity_variance",
+    "description": "Velocity variance (+/-)",
+    "type": "integer",
+    "default": 10,
+    "min": 0,
+    "max": 40,
+    "options": null,
+    "category": "dynamics",
+    "impact": "medium",
+    "genres": []
   }
 }
