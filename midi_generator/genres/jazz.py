@@ -74,6 +74,11 @@ except ImportError:
     Difficulty = None
     StyleEra = None
 
+# Use TYPE_CHECKING to avoid numpy dependency at runtime  
+if TYPE_CHECKING:
+    from algorithms.rhythm_engine import GrooveTemplate, TimingStyle
+
+
 
 # ============================================================================
 # JAZZ STYLES AND ENUMS
