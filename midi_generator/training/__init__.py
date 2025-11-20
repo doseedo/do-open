@@ -1,5 +1,6 @@
 """
 <<<<<<< HEAD
+<<<<<<< HEAD
 Training Data Generation Module - Agent 14
 ===========================================
 
@@ -54,10 +55,23 @@ balanced_data = generator.generate_balanced_dataset(
 ```
 
 Author: Agent 14 - Synthetic Training Data Generator
+=======
+Training Module
+===============
+
+This module contains agents for training data generation and model training.
+
+Modules:
+- synthetic_data_generator: Agent 14 - Synthetic Training Data Generator
+- model_trainer: Agent 15 - Model Training Specialist
+
+Author: Musical Program Synthesis Team
+>>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
 License: MIT
 """
 
 from .synthetic_data_generator import (
+<<<<<<< HEAD
     # Main generator class
     SyntheticTrainingDataGenerator,
 
@@ -166,3 +180,29 @@ __all__ = [
 __version__ = '1.0.0'
 __author__ = 'Agent 15 - Model Training Specialist'
 >>>>>>> origin/claude/music-generation-agents-01Gi7dHdzZMrKvdMYFvonT1n
+=======
+    SyntheticTrainingDataGenerator,
+    TrainingExample,
+    TrainingDataset,
+    MusicalCoherenceValidator
+)
+
+from .model_trainer import (
+    ModelTrainingSpecialist,
+    TrainingMetrics,
+    ModelTrainingResult
+)
+
+__all__ = [
+    # Data generation
+    'SyntheticTrainingDataGenerator',
+    'TrainingExample',
+    'TrainingDataset',
+    'MusicalCoherenceValidator',
+
+    # Model training
+    'ModelTrainingSpecialist',
+    'TrainingMetrics',
+    'ModelTrainingResult'
+]
+>>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
