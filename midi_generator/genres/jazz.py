@@ -51,7 +51,7 @@ License: MIT
 
 import random
 import math
-from typing import List, Dict, Tuple, Optional, Union
+from typing import List, Dict, Tuple, Optional, Union, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum
 
