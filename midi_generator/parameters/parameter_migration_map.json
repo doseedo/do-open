@@ -1,0 +1,628 @@
+{
+  "version": "2.0",
+  "migration_version": "1.0.0",
+  "created_date": "2025-11-20",
+  "author": "Agent 01 - Parameter Consolidation Architect",
+  "description": "Complete mapping from 118 legacy parameters to 50 hierarchical parameters",
+  "total_old_parameters": 118,
+  "total_new_parameters": 50,
+  "reduction_percentage": 57.6,
+
+  "mapping_categories": {
+    "direct_mapping": "1:1 mapping, parameter kept as-is or renamed",
+    "merged_mapping": "N:1 mapping, multiple old parameters consolidated into one",
+    "computed_mapping": "1:1 mapping via computation/transformation",
+    "new_parameter": "New parameter computed from MIDI analysis",
+    "dropped_parameter": "Parameter dropped (justification provided)"
+  },
+
+  "direct_mappings": [
+    {
+      "old_parameter": "harmony.voicing.spread",
+      "new_parameter": "harmony.voicing_spread",
+      "mapping_type": "direct",
+      "transformation": "none",
+      "notes": "Kept as-is, measures vertical spread of chord voicings"
+    },
+    {
+      "old_parameter": "rhythm.swing.amount",
+      "new_parameter": "rhythm.swing_amount",
+      "mapping_type": "direct",
+      "transformation": "none",
+      "notes": "Kept as-is, critical for jazz feel"
+    },
+    {
+      "old_parameter": "rhythm.syncopation.probability",
+      "new_parameter": "rhythm.syncopation",
+      "mapping_type": "direct",
+      "transformation": "none",
+      "notes": "Kept as-is, measures rhythmic displacement"
+    },
+    {
+      "old_parameter": "bass.style.walking_probability",
+      "new_parameter": "jazz.walking_bass",
+      "mapping_type": "direct",
+      "transformation": "moved to genre-specific",
+      "notes": "Now activated only for jazz genre"
+    },
+    {
+      "old_parameter": "genre.rock.power_chord_probability",
+      "new_parameter": "rock.power_chord_ratio",
+      "mapping_type": "direct",
+      "transformation": "none",
+      "notes": "Kept as-is, critical for rock/metal genres"
+    },
+    {
+      "old_parameter": "articulation.duration.ratio",
+      "new_parameter": "articulation.legato_ratio",
+      "mapping_type": "direct",
+      "transformation": "none",
+      "notes": "Measures note connection (staccato vs legato)"
+    }
+  ],
+
+  "merged_mappings": [
+    {
+      "old_parameters": [
+        "harmony.voicing.density",
+        "harmony.voicing.type"
+      ],
+      "new_parameter": "harmony.chord_density",
+      "mapping_type": "merged",
+      "formula": "chords_per_measure * avg_notes_per_chord",
+      "justification": "Consolidates voicing information into single density measure",
+      "transformation_function": "compute_chord_density(voicing_density, voicing_type)",
+      "notes": "Aggregates vertical and horizontal harmonic density"
+    },
+    {
+      "old_parameters": [
+        "harmony.extensions.use_9ths",
+        "harmony.extensions.use_11ths",
+        "harmony.extensions.use_13ths"
+      ],
+      "new_parameter": "harmony.complexity",
+      "mapping_type": "merged",
+      "formula": "0.3 * use_9ths + 0.3 * use_11ths + 0.4 * use_13ths",
+      "justification": "Three boolean flags consolidated into single complexity score",
+      "transformation_function": "aggregate_chord_extensions(use_9ths, use_11ths, use_13ths)",
+      "notes": "Higher-order extensions weighted more heavily"
+    },
+    {
+      "old_parameters": [
+        "harmony.substitution.tritone_probability",
+        "harmony.substitution.modal_interchange_probability"
+      ],
+      "new_parameter": "harmony.chromaticism",
+      "mapping_type": "merged",
+      "formula": "(tritone_sub_prob + modal_interchange_prob) / 2",
+      "justification": "Both parameters measure chromatic alteration",
+      "transformation_function": "average_chromatic_techniques(tritone, modal_interchange)",
+      "notes": "Represents overall chromatic sophistication"
+    },
+    {
+      "old_parameters": [
+        "melody.intervals.max_leap",
+        "melody.intervals.stepwise_probability"
+      ],
+      "new_parameter": "melody.contour_smoothness",
+      "mapping_type": "merged",
+      "formula": "stepwise_prob * (1 - max_leap/24)",
+      "justification": "Both parameters describe melodic continuity",
+      "transformation_function": "compute_contour_smoothness(max_leap, stepwise_prob)",
+      "notes": "Higher stepwise motion + smaller leaps = smoother contour"
+    },
+    {
+      "old_parameters": [
+        "dynamics.velocity.base",
+        "drums.kick.velocity_min",
+        "drums.kick.velocity_max"
+      ],
+      "new_parameter": "dynamics.overall_level",
+      "mapping_type": "merged",
+      "formula": "mean(all_velocities_across_instruments) / 127",
+      "justification": "Instrument-specific velocities consolidated into overall level",
+      "transformation_function": "compute_overall_dynamics(all_instrument_velocities)",
+      "notes": "Normalized to 0.0-1.0 range"
+    },
+    {
+      "old_parameters": [
+        "dynamics.velocity.variation",
+        "drums.kick.velocity_max - drums.kick.velocity_min"
+      ],
+      "new_parameter": "dynamics.range",
+      "mapping_type": "merged",
+      "formula": "std(all_velocities) / 127",
+      "justification": "Velocity variation consolidated across instruments",
+      "transformation_function": "compute_dynamic_range(all_velocities)",
+      "notes": "Measures dynamic expressiveness"
+    },
+    {
+      "old_parameters": [
+        "texture.polyphonic.density",
+        "texture.layering.count",
+        "texture.vertical.density"
+      ],
+      "new_parameter": "texture.polyphony",
+      "mapping_type": "merged",
+      "formula": "max_simultaneous_notes",
+      "justification": "Multiple texture density measures consolidated",
+      "transformation_function": "compute_polyphony(midi_file)",
+      "notes": "Simple max voice count"
+    },
+    {
+      "old_parameters": [
+        "texture.horizontal.density",
+        "texture.register.spread",
+        "texture.contrast.rate"
+      ],
+      "new_parameter": "texture.density",
+      "mapping_type": "merged",
+      "formula": "total_notes / duration_seconds",
+      "justification": "Temporal activity measures consolidated",
+      "transformation_function": "compute_note_density(midi_file)",
+      "notes": "Overall temporal fullness"
+    }
+  ],
+
+  "computed_mappings": [
+    {
+      "old_parameter": "melody.intervals.*",
+      "new_parameter": "melody.range_semitones",
+      "mapping_type": "computed",
+      "formula": "max(melody_pitches) - min(melody_pitches)",
+      "transformation_function": "compute_melodic_range(melody_track)",
+      "notes": "Calculated from actual melody notes"
+    },
+    {
+      "old_parameter": "melody.chromaticism.amount + melody.ornaments.probability",
+      "new_parameter": "melody.note_density",
+      "mapping_type": "computed",
+      "formula": "notes_per_measure",
+      "transformation_function": "count_notes_per_measure(melody_track)",
+      "notes": "Direct count of melodic activity"
+    },
+    {
+      "old_parameter": "rhythm.syncopation.probability + rhythm.subdivision.*",
+      "new_parameter": "rhythm.subdivision",
+      "mapping_type": "computed",
+      "formula": "detect_smallest_duration()",
+      "transformation_function": "detect_rhythmic_subdivision(midi_file)",
+      "notes": "Categorical determination of temporal grid"
+    },
+    {
+      "old_parameter": "instrumentation.ensemble.size",
+      "new_parameter": "orchestration.instrument_count",
+      "mapping_type": "computed",
+      "formula": "count(distinct_midi_programs)",
+      "transformation_function": "count_instruments(midi_file)",
+      "notes": "Direct count of unique instruments"
+    },
+    {
+      "old_parameter": "genre.rock.vibrato_probability + genre.rock.vibrato_depth",
+      "new_parameter": "rock.distortion_level",
+      "mapping_type": "computed",
+      "formula": "velocity_intensity * accent_density",
+      "transformation_function": "estimate_distortion_level(articulation_data)",
+      "notes": "Proxy for timbral aggression"
+    }
+  ],
+
+  "new_parameters": [
+    {
+      "new_parameter": "genre.primary",
+      "mapping_type": "new",
+      "extraction": "genre_classification_algorithm",
+      "justification": "Needed for hierarchical conditioning",
+      "implementation": "Use existing genre detection or ML classifier",
+      "notes": "Determines which Level 3 parameters activate"
+    },
+    {
+      "new_parameter": "tempo.bpm",
+      "mapping_type": "new",
+      "extraction": "midi_meta_events or beat_tracking",
+      "justification": "Essential global context",
+      "implementation": "Read from MIDI tempo changes or compute via beat tracking",
+      "notes": "Already exists in MIDI meta data"
+    },
+    {
+      "new_parameter": "time_signature",
+      "mapping_type": "new",
+      "extraction": "midi_meta_events",
+      "justification": "Essential global context",
+      "implementation": "Read from MIDI time signature events",
+      "notes": "Already exists in MIDI meta data"
+    },
+    {
+      "new_parameter": "key.tonic",
+      "mapping_type": "new",
+      "extraction": "key_detection_algorithm",
+      "justification": "Essential global context",
+      "implementation": "Use music21 or custom key detection",
+      "notes": "Krumhansl-Schmuckler or template matching"
+    },
+    {
+      "new_parameter": "key.mode",
+      "mapping_type": "new",
+      "extraction": "key_detection_algorithm",
+      "justification": "Essential global context",
+      "implementation": "Detect major/minor/modal from pitch content",
+      "notes": "Important for harmonic context"
+    },
+    {
+      "new_parameter": "energy.level",
+      "mapping_type": "new",
+      "extraction": "aggregate(dynamics, tempo, texture)",
+      "justification": "High-level descriptor for generation control",
+      "implementation": "Weighted combination: 0.3*dynamics + 0.3*tempo_norm + 0.4*density",
+      "notes": "Captures overall intensity"
+    },
+    {
+      "new_parameter": "complexity.overall",
+      "mapping_type": "new",
+      "extraction": "aggregate(harmony.complexity, melody.rhythmic_complexity)",
+      "justification": "High-level descriptor for generation control",
+      "implementation": "Weighted combination: 0.5*harmony + 0.3*melody + 0.2*rhythm",
+      "notes": "Captures overall sophistication"
+    },
+    {
+      "new_parameter": "structure.form",
+      "mapping_type": "new",
+      "extraction": "structure_analysis",
+      "justification": "Essential for large-scale organization",
+      "implementation": "Pattern matching on section repetitions",
+      "notes": "AABA, verse-chorus, etc."
+    },
+    {
+      "new_parameter": "harmony.tension",
+      "mapping_type": "new",
+      "extraction": "dissonance_analysis",
+      "justification": "Important harmonic descriptor not captured before",
+      "implementation": "Compute dissonance score from interval content",
+      "notes": "Based on psychoacoustic dissonance models"
+    },
+    {
+      "new_parameter": "harmony.progression_predictability",
+      "mapping_type": "new",
+      "extraction": "progression_entropy",
+      "justification": "Captures harmonic predictability",
+      "implementation": "Compute entropy of chord transitions",
+      "notes": "Lower entropy = more predictable"
+    },
+    {
+      "new_parameter": "melody.rhythmic_complexity",
+      "mapping_type": "new",
+      "extraction": "rhythm_entropy",
+      "justification": "Captures melodic rhythmic variety",
+      "implementation": "Compute entropy of note durations",
+      "notes": "Complements melody.note_density"
+    },
+    {
+      "new_parameter": "melody.repetition",
+      "mapping_type": "new",
+      "extraction": "motif_detection",
+      "justification": "Measures melodic recurrence",
+      "implementation": "Pattern matching for repeated motifs",
+      "notes": "Important for understanding form"
+    },
+    {
+      "new_parameter": "rhythm.groove_consistency",
+      "mapping_type": "new",
+      "extraction": "timing_deviation_analysis",
+      "justification": "Measures rhythmic tightness",
+      "implementation": "1.0 - normalized_std(note_timings)",
+      "notes": "High value = tight groove"
+    },
+    {
+      "new_parameter": "rhythm.polyrhythm",
+      "mapping_type": "new",
+      "extraction": "cross_rhythm_detection",
+      "justification": "Captures polyrhythmic complexity",
+      "implementation": "Detect conflicting rhythmic layers",
+      "notes": "Important for African, Latin, progressive styles"
+    },
+    {
+      "new_parameter": "orchestration.register_balance",
+      "mapping_type": "new",
+      "extraction": "pitch_register_analysis",
+      "justification": "Captures vertical pitch distribution",
+      "implementation": "Ratio of notes below/above middle C",
+      "notes": "0.0=bass-heavy, 1.0=treble-heavy"
+    },
+    {
+      "new_parameter": "structure.section_contrast",
+      "mapping_type": "new",
+      "extraction": "section_variation_analysis",
+      "justification": "Measures formal variety",
+      "implementation": "Feature distance between sections",
+      "notes": "Important for understanding form"
+    },
+    {
+      "new_parameter": "structure.repetition_level",
+      "mapping_type": "new",
+      "extraction": "material_repetition_analysis",
+      "justification": "Captures structural recurrence",
+      "implementation": "Repeated measures / total measures",
+      "notes": "Complements melody.repetition at larger scale"
+    },
+    {
+      "new_parameter": "jazz.improvisation_ratio",
+      "mapping_type": "new",
+      "extraction": "non_thematic_material_analysis",
+      "justification": "Estimates improvised content",
+      "implementation": "Non-repeating material / total material",
+      "notes": "Heuristic for jazz improvisation"
+    },
+    {
+      "new_parameter": "jazz.bebop_vocabulary",
+      "mapping_type": "new",
+      "extraction": "bebop_lick_detection",
+      "justification": "Identifies bebop language",
+      "implementation": "Pattern matching for bebop phrases",
+      "notes": "Requires bebop lick database"
+    },
+    {
+      "new_parameter": "jazz.swing_feel",
+      "mapping_type": "new",
+      "extraction": "categorize(rhythm.swing_amount)",
+      "justification": "Categorical swing classification",
+      "implementation": "Map swing_amount to categories",
+      "notes": "straight/light/medium/hard"
+    },
+    {
+      "new_parameter": "classical.counterpoint",
+      "mapping_type": "new",
+      "extraction": "voice_independence_analysis",
+      "justification": "Measures contrapuntal writing",
+      "implementation": "Analyze melodic + rhythmic independence",
+      "notes": "Important for Bach, Renaissance styles"
+    },
+    {
+      "new_parameter": "classical.development_density",
+      "mapping_type": "new",
+      "extraction": "thematic_development_analysis",
+      "justification": "Measures motivic development",
+      "implementation": "Detect variation techniques",
+      "notes": "Important for sonata form, etc."
+    },
+    {
+      "new_parameter": "classical.voice_leading_quality",
+      "mapping_type": "new",
+      "extraction": "voice_leading_cost_function",
+      "justification": "Evaluates voice leading",
+      "implementation": "Use existing voice leading optimizer",
+      "notes": "Already exists in codebase"
+    },
+    {
+      "new_parameter": "rock.riff_repetition",
+      "mapping_type": "new",
+      "extraction": "riff_pattern_detection",
+      "justification": "Identifies riff-based structure",
+      "implementation": "Pattern matching for repeated riffs",
+      "notes": "Important for rock/metal"
+    },
+    {
+      "new_parameter": "electronic.quantization",
+      "mapping_type": "new",
+      "extraction": "grid_alignment_measure",
+      "justification": "Measures timing precision",
+      "implementation": "Notes on grid / total notes",
+      "notes": "High for electronic, low for human feel"
+    },
+    {
+      "new_parameter": "electronic.filter_movement",
+      "mapping_type": "new",
+      "extraction": "spectral_variation_proxy",
+      "justification": "Estimates timbral modulation",
+      "implementation": "Timbre change rate (proxy)",
+      "notes": "Difficult to extract from MIDI, use proxy"
+    },
+    {
+      "new_parameter": "electronic.arpeggio_density",
+      "mapping_type": "new",
+      "extraction": "arpeggio_pattern_detection",
+      "justification": "Identifies arpeggiated patterns",
+      "implementation": "Detect ascending/descending note patterns",
+      "notes": "Common in electronic music"
+    },
+    {
+      "new_parameter": "hiphop.sample_based",
+      "mapping_type": "new",
+      "extraction": "loop_repetition_analysis",
+      "justification": "Identifies loop-based production",
+      "implementation": "Detect repeated loop structures",
+      "notes": "High for sample-based hip-hop"
+    },
+    {
+      "new_parameter": "hiphop.boom_bap_feel",
+      "mapping_type": "new",
+      "extraction": "drum_pattern_classification",
+      "justification": "Categorizes drum style",
+      "implementation": "Pattern matching for boom-bap",
+      "notes": "Classic vs modern hip-hop"
+    },
+    {
+      "new_parameter": "latin.clave_pattern",
+      "mapping_type": "new",
+      "extraction": "clave_detection_algorithm",
+      "justification": "Identifies rhythmic foundation",
+      "implementation": "Pattern matching for clave types",
+      "notes": "Essential for Latin genres"
+    },
+    {
+      "new_parameter": "latin.montuno_complexity",
+      "mapping_type": "new",
+      "extraction": "montuno_pattern_analysis",
+      "justification": "Measures piano montuno sophistication",
+      "implementation": "Analyze montuno variation",
+      "notes": "Important for salsa, Latin jazz"
+    }
+  ],
+
+  "dropped_parameters": [
+    {
+      "old_parameter": "harmony.voice_leading.parallel_motion_tolerance",
+      "justification": "LOW IMPACT - Validation reports show minimal effect on output quality",
+      "impact": "low",
+      "alternative": "Covered by classical.voice_leading_quality",
+      "notes": "Too specific, classical parameter captures this"
+    },
+    {
+      "old_parameter": "melody.ornaments.probability",
+      "justification": "LOW IMPACT - Covered by melody.note_density",
+      "impact": "low",
+      "alternative": "melody.note_density captures ornament effect",
+      "notes": "Ornaments increase note density"
+    },
+    {
+      "old_parameter": "melody.contour.type",
+      "justification": "REDUNDANT - melody.contour_smoothness captures essence",
+      "impact": "medium",
+      "alternative": "melody.contour_smoothness + melody.range_semitones",
+      "notes": "Smoothness + range describe contour sufficiently"
+    },
+    {
+      "old_parameter": "rhythm.microtiming.variation",
+      "justification": "LOW IMPACT - Human feel not critical for ML-based generation",
+      "impact": "low",
+      "alternative": "rhythm.groove_consistency (inverse relationship)",
+      "notes": "Can be added back in post-processing if needed"
+    },
+    {
+      "old_parameter": "instrumentation.piano.* (20+ parameters)",
+      "justification": "TOO GRANULAR - Instrumentation-specific, not generalizable",
+      "impact": "medium",
+      "alternative": "Universal orchestration parameters",
+      "notes": "Focus on musical function, not instrument specifics"
+    },
+    {
+      "old_parameter": "instrumentation.bass.* (14 parameters)",
+      "justification": "TOO GRANULAR - Most covered by jazz.walking_bass + orchestration",
+      "impact": "low",
+      "alternative": "jazz.walking_bass, rock.riff_repetition",
+      "notes": "Genre-specific bass styles captured at higher level"
+    },
+    {
+      "old_parameter": "instrumentation.drums.* (25+ parameters)",
+      "justification": "TOO GRANULAR - Drum-specific patterns not core to learning task",
+      "impact": "medium",
+      "alternative": "rhythm.* parameters + genre-specific (hiphop.boom_bap_feel)",
+      "notes": "Rhythmic essence captured, not drum specifics"
+    },
+    {
+      "old_parameter": "instrumentation.brass.* (11 parameters)",
+      "justification": "INSTRUMENTATION-SPECIFIC - Not generalizable",
+      "impact": "low",
+      "alternative": "orchestration.instrument_count, articulation.legato_ratio",
+      "notes": "Brass-specific articulations too granular"
+    },
+    {
+      "old_parameter": "instrumentation.strings.* (10+ parameters)",
+      "justification": "INSTRUMENTATION-SPECIFIC - Not generalizable",
+      "impact": "low",
+      "alternative": "orchestration parameters + classical.voice_leading_quality",
+      "notes": "String-specific techniques too granular"
+    },
+    {
+      "old_parameter": "texture.voice.independence",
+      "justification": "REDUNDANT - Captured by classical.counterpoint for classical genre",
+      "impact": "low",
+      "alternative": "classical.counterpoint",
+      "notes": "Voice independence = counterpoint"
+    },
+    {
+      "old_parameter": "texture.homophonic.ratio",
+      "justification": "REDUNDANT - Inverse of classical.counterpoint",
+      "impact": "low",
+      "alternative": "1.0 - classical.counterpoint",
+      "notes": "Can be computed if needed"
+    },
+    {
+      "old_parameter": "texture.voice_crossing.density",
+      "justification": "TOO SPECIFIC - Low impact on overall quality",
+      "impact": "low",
+      "alternative": "None needed",
+      "notes": "Very low-level detail"
+    },
+    {
+      "old_parameter": "texture.rhythmic.independence",
+      "justification": "REDUNDANT - Captured by rhythm.polyrhythm",
+      "impact": "low",
+      "alternative": "rhythm.polyrhythm",
+      "notes": "Polyrhythm implies rhythmic independence"
+    },
+    {
+      "old_parameter": "genre.rock.bend_probability",
+      "justification": "TOO SPECIFIC - Instrument-specific articulation",
+      "impact": "low",
+      "alternative": "rock.distortion_level (general intensity)",
+      "notes": "Guitar bends too instrument-specific"
+    },
+    {
+      "old_parameter": "genre.rock.vibrato_probability",
+      "justification": "TOO SPECIFIC - Instrument-specific articulation",
+      "impact": "low",
+      "alternative": "rock.distortion_level",
+      "notes": "Vibrato covered by general distortion/intensity"
+    },
+    {
+      "old_parameter": "genre.rock.vibrato_depth",
+      "justification": "TOO SPECIFIC - Instrument-specific articulation",
+      "impact": "low",
+      "alternative": "rock.distortion_level",
+      "notes": "Too granular for high-level parameter system"
+    }
+  ],
+
+  "backward_compatibility": {
+    "description": "Legacy API adapter for old parameter system",
+    "adapter_class": "LegacyParameterAdapter",
+    "methods": {
+      "old_to_new": {
+        "description": "Map old 118-parameter dict to new 50-parameter dict",
+        "implementation": "Apply mappings from this file",
+        "example": "new_params = adapter.old_to_new(old_params)"
+      },
+      "new_to_old": {
+        "description": "Map new 50-parameter dict back to old 118-parameter dict (lossy)",
+        "implementation": "Reverse mappings + defaults for dropped params",
+        "example": "old_params = adapter.new_to_old(new_params)",
+        "notes": "Lossy conversion - dropped parameters set to defaults"
+      }
+    },
+    "deprecation_warnings": true,
+    "support_timeline": "Legacy API supported for 6 months, then deprecated"
+  },
+
+  "validation": {
+    "description": "Validation tests for migration accuracy",
+    "test_cases": [
+      {
+        "test": "Direct mappings preserve values",
+        "assertion": "old_params['rhythm.swing.amount'] == new_params['rhythm.swing_amount']"
+      },
+      {
+        "test": "Merged mappings maintain semantic meaning",
+        "assertion": "harmony_complexity reflects extension usage"
+      },
+      {
+        "test": "Computed mappings are accurate",
+        "assertion": "melody.range_semitones matches actual pitch range"
+      },
+      {
+        "test": "New parameters are reasonable",
+        "assertion": "0.0 <= energy.level <= 1.0 and correlates with tempo/dynamics"
+      },
+      {
+        "test": "Genre-specific parameters activate correctly",
+        "assertion": "jazz.* only present when genre.primary == 'jazz'"
+      }
+    ]
+  },
+
+  "implementation_notes": {
+    "priority": "Implement in this order: direct mappings → computed mappings → merged mappings → new parameters",
+    "testing": "Test each mapping category independently before integration",
+    "performance": "Target: <100ms for full 118→50 conversion",
+    "documentation": "Each transformation function must be documented with examples"
+  }
+}
