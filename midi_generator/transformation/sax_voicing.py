@@ -40,7 +40,7 @@ import copy
 sys.path.append(str(Path(__file__).parent.parent))
 from analysis.midi_analyzer import ChordEvent, NoteEvent
 from transformation.voice_leading_optimizer import (
-    VoiceLeadingOptimizer, VoicingType, Voicing, VoicingGenerator
+    VoiceLeadingOptimizer, VoicingType, Voicing, VoicingGenerator, VoiceRange
 )
 
 
@@ -151,7 +151,12 @@ class SaxSoliVoicing:
 
             sax = SAX_SECTION[voice_name]
             # Use comfortable range for better sound
-            voice_ranges.append((sax.comfortable_min, sax.comfortable_max))
+            voice_ranges.append(VoiceRange(
+                low=sax.range_min,
+                high=sax.range_max,
+                comfortable_low=sax.comfortable_min,
+                comfortable_high=sax.comfortable_max
+            ))
 
         # Map voicing style string to VoicingType enum
         voicing_type_map = {
@@ -272,7 +277,12 @@ class SaxSoliVoicing:
         voice_ranges = []
         for voice_name in section:
             sax = SAX_SECTION[voice_name]
-            voice_ranges.append((sax.comfortable_min, sax.comfortable_max))
+            voice_ranges.append(VoiceRange(
+                low=sax.range_min,
+                high=sax.range_max,
+                comfortable_low=sax.comfortable_min,
+                comfortable_high=sax.comfortable_max
+            ))
 
         # Map voicing style
         voicing_type_map = {
