@@ -1,0 +1,442 @@
+# Agent 08: Validation Configuration
+# =====================================
+#
+# Configuration for validation framework including thresholds,
+# parameter specifications, and validation settings.
+#
+# Author: Agent 08 - Validation Framework Builder
+# Date: 2025-11-20
+
+# ==============================================================================
+# GLOBAL SETTINGS
+# ==============================================================================
+
+global:
+  results_storage_dir: "validation_results"
+  enable_logging: true
+  log_level: "INFO"
+  parallel_validation: false
+  max_workers: 4
+
+# ==============================================================================
+# PARAMETER VALIDATION THRESHOLDS
+# ==============================================================================
+
+# Thresholds for each of the 50 hierarchical parameters
+# Format: {parameter_path: {threshold, type, range}}
+
+parameter_thresholds:
+  # Level 1: Global Context (8 parameters)
+  genre.primary:
+    type: "categorical"
+    threshold: 0.90  # 90% accuracy required
+    options: ["jazz", "classical", "rock", "electronic", "pop", "hip-hop", "latin"]
+
+  tempo.bpm:
+    type: "continuous"
+    threshold: 0.05  # 5% error allowed
+    range: [40, 240]
+    mae_threshold: 5.0  # Max 5 BPM error
+
+  time_signature:
+    type: "categorical"
+    threshold: 1.0  # Exact match required
+    options: ["4/4", "3/4", "6/8", "5/4", "7/8", "2/4"]
+
+  key.tonic:
+    type: "categorical"
+    threshold: 0.85  # 85% accuracy
+    range: [0, 11]  # Pitch classes
+
+  key.mode:
+    type: "categorical"
+    threshold: 0.90
+    options: ["major", "minor"]
+
+  energy.level:
+    type: "continuous"
+    threshold: 0.10  # 10% error
+    range: [0.0, 1.0]
+
+  complexity.overall:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  structure.form:
+    type: "categorical"
+    threshold: 0.80
+    options: ["aaba", "abab", "verse-chorus", "through-composed", "blues"]
+
+  # Level 2: Universal Dimensions (20 parameters)
+
+  # Harmony (6 params)
+  harmony.chord_density:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 10.0]  # Chords per measure
+
+  harmony.complexity:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  harmony.chromaticism:
+    type: "continuous"
+    threshold: 0.10
+    range: [0.0, 1.0]
+
+  harmony.tension:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  harmony.voicing_spread:
+    type: "continuous"
+    threshold: 0.20
+    range: [2.0, 12.0]  # Semitones
+
+  harmony.progression_predictability:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  # Melody (5 params)
+  melody.note_density:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 16.0]  # Notes per measure
+
+  melody.range_semitones:
+    type: "continuous"
+    threshold: 0.10
+    range: [0, 60]  # Max 5 octaves
+
+  melody.contour_smoothness:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  melody.rhythmic_complexity:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  melody.repetition:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  # Rhythm (5 params)
+  rhythm.subdivision:
+    type: "categorical"
+    threshold: 0.85
+    options: ["8th", "16th", "32nd", "triplet", "quintuplet"]
+
+  rhythm.syncopation:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  rhythm.groove_consistency:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  rhythm.polyrhythm:
+    type: "continuous"
+    threshold: 0.20
+    range: [0.0, 1.0]
+
+  rhythm.swing_amount:
+    type: "continuous"
+    threshold: 0.10
+    range: [0.0, 1.0]
+
+  # Dynamics (2 params)
+  dynamics.overall_level:
+    type: "continuous"
+    threshold: 0.10
+    range: [0, 127]  # MIDI velocity
+
+  dynamics.range:
+    type: "continuous"
+    threshold: 0.15
+    range: [0, 127]
+
+  # Texture (2 params)
+  texture.polyphony:
+    type: "continuous"
+    threshold: 0.15
+    range: [1, 16]  # Max simultaneous notes
+
+  texture.density:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 20.0]  # Notes per second
+
+  # Level 3: Genre-Specific (22 parameters)
+
+  # Universal (5 params)
+  orchestration.instrument_count:
+    type: "continuous"
+    threshold: 0.20
+    range: [1, 32]
+
+  orchestration.register_balance:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  articulation.legato_ratio:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  structure.section_contrast:
+    type: "continuous"
+    threshold: 0.20
+    range: [0.0, 1.0]
+
+  structure.repetition_level:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  # Jazz (4 params)
+  jazz.swing_feel:
+    type: "categorical"
+    threshold: 0.85
+    options: ["straight", "light", "medium", "hard"]
+
+  jazz.walking_bass:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  jazz.improvisation_ratio:
+    type: "continuous"
+    threshold: 0.20
+    range: [0.0, 1.0]
+
+  jazz.bebop_vocabulary:
+    type: "continuous"
+    threshold: 0.20
+    range: [0.0, 1.0]
+
+  # Classical (3 params)
+  classical.counterpoint:
+    type: "continuous"
+    threshold: 0.20
+    range: [0.0, 1.0]
+
+  classical.development_density:
+    type: "continuous"
+    threshold: 0.20
+    range: [0.0, 1.0]
+
+  classical.voice_leading_quality:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  # Rock/Metal (3 params)
+  rock.power_chord_ratio:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  rock.riff_repetition:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  rock.distortion_level:
+    type: "continuous"
+    threshold: 0.20
+    range: [0.0, 1.0]
+
+  # Electronic (3 params)
+  electronic.quantization:
+    type: "continuous"
+    threshold: 0.10
+    range: [0.0, 1.0]
+
+  electronic.filter_movement:
+    type: "continuous"
+    threshold: 0.20
+    range: [0.0, 1.0]
+
+  electronic.arpeggio_density:
+    type: "continuous"
+    threshold: 0.15
+    range: [0.0, 1.0]
+
+  # Hip-Hop (2 params)
+  hiphop.sample_based:
+    type: "continuous"
+    threshold: 0.20
+    range: [0.0, 1.0]
+
+  hiphop.boom_bap_feel:
+    type: "continuous"
+    threshold: 0.20
+    range: [0.0, 1.0]
+
+  # Latin (2 params)
+  latin.clave_pattern:
+    type: "categorical"
+    threshold: 0.80
+    options: ["son", "rumba", "bossa", "none"]
+
+  latin.montuno_complexity:
+    type: "continuous"
+    threshold: 0.20
+    range: [0.0, 1.0]
+
+
+# ==============================================================================
+# MUSICAL QUALITY VALIDATION THRESHOLDS
+# ==============================================================================
+
+musical_quality:
+  # Interval validation
+  intervals:
+    threshold: 0.85
+    max_leap: 12  # Semitones
+    min_stepwise_ratio: 0.50
+
+  # Harmony validation
+  harmony:
+    threshold: 0.80
+    allow_parallel_fifths: true  # Jazz style
+    max_parallel_fifths_ratio: 0.10
+    max_avg_voice_movement: 5.0  # Semitones
+
+  # Rhythm validation
+  rhythm:
+    threshold: 0.90
+    max_timing_deviation: 0.05  # Beats
+    min_complexity: 0.2
+    max_complexity: 0.8
+
+  # Voice range validation
+  voice_range:
+    threshold: 0.95  # 95% of notes must be in range
+    default_instrument: "piano"
+
+  # Overall musical quality
+  overall:
+    threshold: 0.85  # Required overall score
+    weights:
+      intervals: 0.25
+      harmony: 0.30
+      rhythm: 0.25
+      voice_range: 0.10
+      coherence: 0.10
+
+
+# ==============================================================================
+# GENRE-SPECIFIC VALIDATION SETTINGS
+# ==============================================================================
+
+genre_validation:
+  jazz:
+    authenticity_threshold: 0.85
+    required_characteristics:
+      - swing_feel
+      - walking_bass
+      - improvisation_ratio
+    optional_characteristics:
+      - bebop_vocabulary
+
+  classical:
+    authenticity_threshold: 0.85
+    required_characteristics:
+      - counterpoint
+      - voice_leading_quality
+    optional_characteristics:
+      - development_density
+
+  rock:
+    authenticity_threshold: 0.80
+    required_characteristics:
+      - power_chord_ratio
+      - riff_repetition
+    optional_characteristics:
+      - distortion_level
+
+  electronic:
+    authenticity_threshold: 0.80
+    required_characteristics:
+      - quantization
+    optional_characteristics:
+      - filter_movement
+      - arpeggio_density
+
+  pop:
+    authenticity_threshold: 0.80
+    required_characteristics:
+      - structure.repetition_level
+    optional_characteristics:
+      - structure.section_contrast
+
+  hiphop:
+    authenticity_threshold: 0.80
+    required_characteristics:
+      - sample_based
+      - boom_bap_feel
+
+  latin:
+    authenticity_threshold: 0.85
+    required_characteristics:
+      - clave_pattern
+    optional_characteristics:
+      - montuno_complexity
+
+
+# ==============================================================================
+# REGRESSION TESTING SETTINGS
+# ==============================================================================
+
+regression:
+  baseline_model_path: "models/baseline_v1.0"
+  baseline_results_path: "validation/baselines/v1.0_results.json"
+  max_performance_degradation: 0.05  # 5% max accuracy drop
+  alert_on_degradation: true
+  store_all_results: true
+  comparison_metrics:
+    - mae
+    - r2_score
+    - accuracy
+    - musical_quality_score
+
+
+# ==============================================================================
+# CROSS-GENRE GENERALIZATION SETTINGS
+# ==============================================================================
+
+generalization:
+  enabled: true
+  test_genres:
+    - jazz
+    - classical
+    - rock
+    - electronic
+    - pop
+  max_accuracy_drop: 0.15  # 15% max drop on held-out genre
+  min_transfer_score: 0.70  # Minimum score on held-out genre
+
+
+# ==============================================================================
+# REPORTING SETTINGS
+# ==============================================================================
+
+reporting:
+  generate_html_reports: true
+  generate_text_reports: true
+  generate_json_exports: true
+  include_visualizations: true
+  save_individual_validations: true
+  save_summary_only: false
+  output_directory: "validation_reports"
