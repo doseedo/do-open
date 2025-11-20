@@ -1,385 +1,114 @@
 /**
- * Reverb.js - Algorithmic Reverb Plugin
+ * ReverbPlugin - AudioWorklet-based algorithmic reverb
  *
- * Creates artificial room ambience using feedback delay networks (FDN)
- * Based on Freeverb/Schroeder reverberator architecture with:
- * - Early reflections (simulating room geometry)
- * - Diffuse reverb tail (parallel comb filters + series all-pass)
- * - Frequency-dependent damping
- * - Subtle modulation to avoid metallic artifacts
+ * Freeverb-style reverb using Schroeder reverberator architecture.
+ * High-performance implementation for production use.
+ *
+ * Features:
+ * - Room size control
+ * - Decay time (RT60)
+ * - High-frequency damping
  * - Stereo width control
+ * - Pre-delay
+ * - Dry/wet mix
+ * - Offline rendering support
  *
- * @author Agent 5: Reverb & Spatial Effects
+ * @author Agent 6: Reverb Plugins
  * @version 1.0.0
  */
 
-class Reverb {
+import { BasePlugin } from '../core/BasePlugin.js';
+
+export class ReverbPlugin extends BasePlugin {
   /**
-   * Create a new Reverb instance
+   * Create a new ReverbPlugin
    * @param {AudioContext} audioContext - Web Audio API context
-   * @param {Object} options - Initial parameters
+   * @param {Object} options - Plugin configuration
    */
   constructor(audioContext, options = {}) {
-    this.context = audioContext;
-    this.sampleRate = audioContext.sampleRate;
-
-    // Create audio nodes
-    this.input = audioContext.createGain();
-    this.output = audioContext.createGain();
-
-    // Pre-delay
-    this.predelay = audioContext.createDelay(0.25);
-
-    // Early reflections network
-    this.earlyReflections = this.createEarlyReflections();
-
-    // Reverb tail (diffuse network)
-    this.reverbTail = this.createReverbTail();
-
-    // Gain stages
-    this.dryGain = audioContext.createGain();
-    this.wetGain = audioContext.createGain();
-    this.earlyGain = audioContext.createGain();
-    this.tailGain = audioContext.createGain();
-
-    // Stereo width control nodes
-    this.stereoSplitter = audioContext.createChannelSplitter(2);
-    this.stereoMerger = audioContext.createChannelMerger(2);
-    this.midGain = audioContext.createGain();
-    this.sideGain = audioContext.createGain();
-
-    // Modulation (LFO for subtle pitch variation)
-    this.lfo = audioContext.createOscillator();
-    this.lfoGain = audioContext.createGain();
-    this.lfo.frequency.value = 0.5;
-    this.lfoGain.gain.value = 0;
-    this.lfo.start();
-
-    // Setup routing
-    this.setupRouting();
-
-    // Initialize with default parameters
-    this.initialize(options);
-  }
-
-  /**
-   * Create early reflections network
-   * Simulates discrete echoes from room surfaces
-   * @returns {Array} Array of early reflection delay nodes
-   */
-  createEarlyReflections() {
-    const delays = [];
-
-    // Early reflection delay times (in seconds)
-    // Based on typical room geometry
-    const delayTimes = [
-      0.019, 0.022, 0.027, 0.031, 0.037, 0.043, 0.048, 0.053
-    ];
-
-    delayTimes.forEach((time, index) => {
-      const delay = this.context.createDelay(0.1);
-      const gain = this.context.createGain();
-      const pan = this.context.createStereoPanner();
-
-      delay.delayTime.value = time;
-      // Exponential decay for early reflections
-      gain.gain.value = Math.pow(0.7, index + 1);
-      // Spread reflections across stereo field
-      pan.pan.value = (Math.random() * 2 - 1) * 0.6;
-
-      delays.push({ delay, gain, pan });
+    super(audioContext, {
+      name: 'Algorithmic Reverb',
+      category: 'reverb',
+      description: 'Freeverb-style algorithmic reverb with full parameter control',
+      ...options
     });
 
-    return delays;
-  }
+    // AudioWorklet node
+    this.workletNode = null;
 
-  /**
-   * Create reverb tail using Freeverb-style architecture
-   * Parallel comb filters + series all-pass filters
-   * @returns {Object} Reverb tail nodes
-   */
-  createReverbTail() {
-    const tail = {
-      combFilters: [],
-      allpassFilters: [],
-      modulation: []
+    // Plugin state
+    this.isInitialized = false;
+
+    // Default parameters
+    this.params = {
+      roomSize: 50,      // 0-100%
+      decayTime: 2.0,    // 0.1-20 seconds
+      damping: 50,       // 0-100%
+      width: 100,        // 0-100%
+      predelay: 0,       // 0-250ms
+      mix: 30            // 0-100%
     };
-
-    // Comb filter delay times (in seconds)
-    // Tuned to avoid resonances (prime-related ratios)
-    // 8 comb filters (4 per stereo channel)
-    const combDelayTimes = [
-      0.0297, 0.0371, 0.0411, 0.0437, // Left channel
-      0.0306, 0.0379, 0.0420, 0.0445  // Right channel (slightly detuned)
-    ];
-
-    combDelayTimes.forEach((time, index) => {
-      const delay = this.context.createDelay(0.1);
-      const feedback = this.context.createGain();
-      const damping = this.context.createBiquadFilter();
-      const output = this.context.createGain();
-
-      delay.delayTime.value = time;
-      feedback.gain.value = 0.84; // Initial decay factor
-      damping.type = 'lowpass';
-      damping.frequency.value = 5000;
-      damping.Q.value = 0.5;
-      output.gain.value = 0.125; // 1/8 for mixing 8 combs
-
-      tail.combFilters.push({
-        delay,
-        feedback,
-        damping,
-        output,
-        channel: index < 4 ? 0 : 1 // Left or right channel
-      });
-    });
-
-    // All-pass filter delay times (for diffusion)
-    // Series configuration to increase echo density
-    const allpassTimes = [
-      0.0051, 0.0126, 0.0100, 0.0077
-    ];
-
-    allpassTimes.forEach(time => {
-      const delayL = this.context.createDelay(0.1);
-      const delayR = this.context.createDelay(0.1);
-      const feedbackL = this.context.createGain();
-      const feedbackR = this.context.createGain();
-      const feedforwardL = this.context.createGain();
-      const feedforwardR = this.context.createGain();
-
-      delayL.delayTime.value = time;
-      delayR.delayTime.value = time * 1.02; // Slight stereo detuning
-      feedbackL.gain.value = 0.5;
-      feedbackR.gain.value = 0.5;
-      feedforwardL.gain.value = -0.5;
-      feedforwardR.gain.value = -0.5;
-
-      tail.allpassFilters.push({
-        delayL,
-        delayR,
-        feedbackL,
-        feedbackR,
-        feedforwardL,
-        feedforwardR
-      });
-    });
-
-    return tail;
   }
 
   /**
-   * Setup audio routing
+   * Initialize the plugin (load AudioWorklet)
+   * Must be called before use
+   * @returns {Promise<boolean>} Success status
    */
-  setupRouting() {
-    // Dry path
-    this.input.connect(this.dryGain);
-    this.dryGain.connect(this.output);
+  async initialize() {
+    if (this.isInitialized) {
+      return true;
+    }
 
-    // Wet path: input → predelay → early reflections + reverb tail
-    this.input.connect(this.predelay);
-
-    // ===== EARLY REFLECTIONS =====
-    this.earlyReflections.forEach(er => {
-      this.predelay.connect(er.delay);
-      er.delay.connect(er.gain);
-      er.gain.connect(er.pan);
-      er.pan.connect(this.earlyGain);
-    });
-
-    // ===== REVERB TAIL =====
-    // Comb filters (parallel configuration)
-    const leftCombSum = this.context.createGain();
-    const rightCombSum = this.context.createGain();
-
-    this.reverbTail.combFilters.forEach(comb => {
-      // Input to comb filter
-      this.predelay.connect(comb.delay);
-
-      // Feedback loop: delay → damping → feedback → delay
-      comb.delay.connect(comb.damping);
-      comb.damping.connect(comb.feedback);
-      comb.feedback.connect(comb.delay);
-
-      // Output from feedback to stereo sum
-      comb.damping.connect(comb.output);
-      if (comb.channel === 0) {
-        comb.output.connect(leftCombSum);
-      } else {
-        comb.output.connect(rightCombSum);
-      }
-    });
-
-    // All-pass filters (series configuration for diffusion)
-    // Create stereo path
-    let currentL = leftCombSum;
-    let currentR = rightCombSum;
-
-    this.reverbTail.allpassFilters.forEach(ap => {
-      // Left channel all-pass
-      const inputL = this.context.createGain();
-      currentL.connect(inputL);
-
-      inputL.connect(ap.delayL);
-      inputL.connect(ap.feedforwardL);
-      ap.delayL.connect(ap.feedbackL);
-      ap.feedbackL.connect(ap.delayL); // Feedback loop
-
-      const outputL = this.context.createGain();
-      ap.delayL.connect(outputL);
-      ap.feedforwardL.connect(outputL);
-      currentL = outputL;
-
-      // Right channel all-pass
-      const inputR = this.context.createGain();
-      currentR.connect(inputR);
-
-      inputR.connect(ap.delayR);
-      inputR.connect(ap.feedforwardR);
-      ap.delayR.connect(ap.feedbackR);
-      ap.feedbackR.connect(ap.delayR); // Feedback loop
-
-      const outputR = this.context.createGain();
-      ap.delayR.connect(outputR);
-      ap.feedforwardR.connect(outputR);
-      currentR = outputR;
-    });
-
-    // Connect to tail gain
-    currentL.connect(this.tailGain);
-    currentR.connect(this.tailGain);
-
-    // LFO modulation (connected to some delay times for subtle variation)
-    this.lfo.connect(this.lfoGain);
-
-    // Mix early reflections and tail
-    this.earlyGain.connect(this.wetGain);
-    this.tailGain.connect(this.wetGain);
-    this.wetGain.connect(this.output);
-  }
-
-  /**
-   * Initialize parameters
-   * @param {Object} options - Parameter values
-   */
-  initialize(options) {
-    this.setPreDelay(options.preDelay || 0);
-    this.setDecayTime(options.decayTime || 2.0);
-    this.setSize(options.size || 50);
-    this.setDiffusion(options.diffusion || 70);
-    this.setDamping(options.damping || 50);
-    this.setModulation(options.modulation || 20);
-    this.setStereoWidth(options.stereoWidth || 100);
-    this.setEarlyLevel(options.earlyLevel || -12);
-    this.setTailLevel(options.tailLevel || -6);
-    this.setMix(options.mix || 30);
-  }
-
-  /**
-   * Set pre-delay time
-   * @param {number} ms - Pre-delay in milliseconds (0-250)
-   */
-  setPreDelay(ms) {
-    const seconds = Math.max(0, Math.min(250, ms)) / 1000;
-    this.predelay.delayTime.setTargetAtTime(
-      seconds,
-      this.context.currentTime,
-      0.01
-    );
-  }
-
-  /**
-   * Set decay time
-   * @param {number} seconds - Decay time in seconds (0.1-20)
-   */
-  setDecayTime(seconds) {
-    seconds = Math.max(0.1, Math.min(20, seconds));
-
-    // Calculate feedback gain for desired decay time
-    // Using RT60 formula: feedback = 10^(-3 * delay / RT60)
-    this.reverbTail.combFilters.forEach(comb => {
-      const delayTime = comb.delay.delayTime.value;
-      const feedback = Math.pow(10, (-3 * delayTime) / seconds);
-      comb.feedback.gain.setTargetAtTime(
-        Math.min(0.98, feedback), // Clamp to prevent runaway
-        this.context.currentTime,
-        0.01
+    try {
+      // Load the AudioWorklet module
+      await this.audioContext.audioWorklet.addModule(
+        new URL('./worklets/reverb-processor.js', import.meta.url).href
       );
-    });
+
+      // Create the AudioWorklet node
+      this.workletNode = new AudioWorkletNode(
+        this.audioContext,
+        'reverb-processor',
+        {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [2]
+        }
+      );
+
+      // Connect input -> worklet -> output
+      this.input.connect(this.workletNode);
+      this.workletNode.connect(this.output);
+
+      // Send initial parameters
+      this.updateWorkletParams();
+
+      this.isInitialized = true;
+      return true;
+
+    } catch (error) {
+      console.error('Failed to initialize ReverbPlugin:', error);
+      return false;
+    }
   }
 
   /**
    * Set room size
-   * @param {number} percent - Size percentage (0-100)
+   * @param {number} percent - Room size percentage (0-100)
    */
-  setSize(percent) {
-    percent = Math.max(0, Math.min(100, percent));
-    const scale = 0.5 + (percent / 100) * 1.5; // 0.5x to 2x
-
-    // Scale comb filter delay times
-    const baseCombTimes = [
-      0.0297, 0.0371, 0.0411, 0.0437,
-      0.0306, 0.0379, 0.0420, 0.0445
-    ];
-
-    this.reverbTail.combFilters.forEach((comb, index) => {
-      const newTime = baseCombTimes[index] * scale;
-      comb.delay.delayTime.setTargetAtTime(
-        newTime,
-        this.context.currentTime,
-        0.01
-      );
-    });
-
-    // Scale all-pass delay times
-    const baseAllpassTimes = [0.0051, 0.0126, 0.0100, 0.0077];
-    this.reverbTail.allpassFilters.forEach((ap, index) => {
-      const newTime = baseAllpassTimes[index] * scale;
-      ap.delayL.delayTime.setTargetAtTime(
-        newTime,
-        this.context.currentTime,
-        0.01
-      );
-      ap.delayR.delayTime.setTargetAtTime(
-        newTime * 1.02,
-        this.context.currentTime,
-        0.01
-      );
-    });
+  setRoomSize(percent) {
+    this.params.roomSize = Math.max(0, Math.min(100, percent));
+    this.updateWorkletParams();
   }
 
   /**
-   * Set diffusion amount
-   * @param {number} percent - Diffusion percentage (0-100)
+   * Set decay time (RT60)
+   * @param {number} seconds - Decay time in seconds (0.1-20)
    */
-  setDiffusion(percent) {
-    percent = Math.max(0, Math.min(100, percent));
-    const amount = percent / 100 * 0.7; // 0 to 0.7
-
-    // Adjust all-pass feedback gains
-    this.reverbTail.allpassFilters.forEach(ap => {
-      ap.feedbackL.gain.setTargetAtTime(
-        amount,
-        this.context.currentTime,
-        0.01
-      );
-      ap.feedbackR.gain.setTargetAtTime(
-        amount,
-        this.context.currentTime,
-        0.01
-      );
-      ap.feedforwardL.gain.setTargetAtTime(
-        -amount,
-        this.context.currentTime,
-        0.01
-      );
-      ap.feedforwardR.gain.setTargetAtTime(
-        -amount,
-        this.context.currentTime,
-        0.01
-      );
-    });
+  setDecayTime(seconds) {
+    this.params.decayTime = Math.max(0.1, Math.min(20, seconds));
+    this.updateWorkletParams();
   }
 
   /**
@@ -387,165 +116,248 @@ class Reverb {
    * @param {number} percent - Damping percentage (0-100)
    */
   setDamping(percent) {
-    percent = Math.max(0, Math.min(100, percent));
-    // Map to lowpass frequency: 100% damping = 1kHz, 0% = 20kHz
-    const freq = 20000 * Math.pow(0.05, percent / 100);
-
-    this.reverbTail.combFilters.forEach(comb => {
-      comb.damping.frequency.setTargetAtTime(
-        freq,
-        this.context.currentTime,
-        0.01
-      );
-    });
-  }
-
-  /**
-   * Set modulation amount
-   * @param {number} percent - Modulation percentage (0-100)
-   */
-  setModulation(percent) {
-    percent = Math.max(0, Math.min(100, percent));
-    // Subtle modulation to prevent metallic sound
-    const depth = percent / 100 * 0.0003; // Max 0.3ms variation
-
-    this.lfoGain.gain.setTargetAtTime(
-      depth,
-      this.context.currentTime,
-      0.01
-    );
-
-    // Vary LFO frequency slightly
-    this.lfo.frequency.setTargetAtTime(
-      0.3 + (percent / 100) * 0.7, // 0.3 to 1 Hz
-      this.context.currentTime,
-      0.01
-    );
+    this.params.damping = Math.max(0, Math.min(100, percent));
+    this.updateWorkletParams();
   }
 
   /**
    * Set stereo width
    * @param {number} percent - Width percentage (0-100)
    */
-  setStereoWidth(percent) {
-    percent = Math.max(0, Math.min(100, percent));
-    // 0% = mono, 100% = full stereo
-    // Using mid-side technique
-    const width = percent / 100;
-    const mid = 1.0;
-    const side = width;
-
-    this.midGain.gain.setTargetAtTime(
-      mid,
-      this.context.currentTime,
-      0.01
-    );
-    this.sideGain.gain.setTargetAtTime(
-      side,
-      this.context.currentTime,
-      0.01
-    );
+  setWidth(percent) {
+    this.params.width = Math.max(0, Math.min(100, percent));
+    this.updateWorkletParams();
   }
 
   /**
-   * Set early reflections level
-   * @param {number} db - Level in dB (-inf to 0)
+   * Set pre-delay
+   * @param {number} ms - Pre-delay in milliseconds (0-250)
    */
-  setEarlyLevel(db) {
-    const gain = db <= -60 ? 0 : Math.pow(10, db / 20);
-    this.earlyGain.gain.setTargetAtTime(
-      gain,
-      this.context.currentTime,
-      0.01
-    );
+  setPreDelay(ms) {
+    this.params.predelay = Math.max(0, Math.min(250, ms));
+    this.updateWorkletParams();
   }
 
   /**
-   * Set reverb tail level
-   * @param {number} db - Level in dB (-inf to 0)
-   */
-  setTailLevel(db) {
-    const gain = db <= -60 ? 0 : Math.pow(10, db / 20);
-    this.tailGain.gain.setTargetAtTime(
-      gain,
-      this.context.currentTime,
-      0.01
-    );
-  }
-
-  /**
-   * Set dry/wet mix
+   * Set mix parameter (dry/wet)
    * @param {number} percent - Mix percentage (0-100)
    */
   setMix(percent) {
-    percent = Math.max(0, Math.min(100, percent));
-    const wet = percent / 100;
-    const dry = 1 - wet;
-
-    this.dryGain.gain.setTargetAtTime(
-      dry,
-      this.context.currentTime,
-      0.01
-    );
-    this.wetGain.gain.setTargetAtTime(
-      wet,
-      this.context.currentTime,
-      0.01
-    );
+    this.params.mix = Math.max(0, Math.min(100, percent));
+    this.updateWorkletParams();
   }
 
   /**
-   * Connect this reverb to an audio node
-   * @param {AudioNode} destination - Destination node
-   * @returns {Reverb} This reverb instance (for chaining)
+   * Set size (alias for setRoomSize for compatibility)
+   * @param {number} percent - Size percentage (0-100)
    */
-  connect(destination) {
-    this.output.connect(destination);
-    return this;
+  setSize(percent) {
+    this.setRoomSize(percent);
   }
 
   /**
-   * Disconnect this reverb
-   * @returns {Reverb} This reverb instance (for chaining)
+   * Update worklet parameters
    */
-  disconnect() {
-    this.output.disconnect();
-    return this;
+  updateWorkletParams() {
+    if (!this.workletNode) return;
+
+    this.workletNode.port.postMessage({
+      type: 'setParams',
+      params: {
+        roomSize: this.params.roomSize,
+        decayTime: this.params.decayTime,
+        damping: this.params.damping,
+        width: this.params.width,
+        predelay: this.params.predelay,
+        mix: this.params.mix
+      }
+    });
+  }
+
+  /**
+   * Get current parameters
+   * @returns {Object} Parameter values
+   */
+  getParams() {
+    return { ...this.params };
+  }
+
+  /**
+   * Load a preset
+   * @param {Object} preset - Preset configuration
+   */
+  loadPreset(preset) {
+    if (!preset || !preset.parameters) {
+      console.warn('Invalid preset');
+      return;
+    }
+
+    const { parameters } = preset;
+
+    if (parameters.roomSize !== undefined) this.setRoomSize(parameters.roomSize);
+    if (parameters.decayTime !== undefined) this.setDecayTime(parameters.decayTime);
+    if (parameters.damping !== undefined) this.setDamping(parameters.damping);
+    if (parameters.width !== undefined) this.setWidth(parameters.width);
+    if (parameters.predelay !== undefined) this.setPreDelay(parameters.predelay);
+    if (parameters.mix !== undefined) this.setMix(parameters.mix);
+  }
+
+  /**
+   * Save current state as preset
+   * @param {string} name - Preset name
+   * @returns {Object} Preset object
+   */
+  savePreset(name) {
+    return {
+      name,
+      plugin: 'ReverbPlugin',
+      category: 'reverb',
+      parameters: { ...this.params }
+    };
+  }
+
+  /**
+   * Process audio offline (for rendering)
+   * @param {AudioBuffer} inputBuffer - Input audio buffer
+   * @returns {Promise<AudioBuffer>} Processed audio buffer
+   */
+  async processOffline(inputBuffer) {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    // Create offline context
+    const offlineContext = new OfflineAudioContext(
+      inputBuffer.numberOfChannels,
+      inputBuffer.length,
+      inputBuffer.sampleRate
+    );
+
+    // Load worklet in offline context
+    await offlineContext.audioWorklet.addModule(
+      new URL('./worklets/reverb-processor.js', import.meta.url).href
+    );
+
+    // Create nodes
+    const source = offlineContext.createBufferSource();
+    source.buffer = inputBuffer;
+
+    const worklet = new AudioWorkletNode(offlineContext, 'reverb-processor', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [2]
+    });
+
+    // Send parameters
+    worklet.port.postMessage({
+      type: 'setParams',
+      params: this.params
+    });
+
+    // Connect and render
+    source.connect(worklet);
+    worklet.connect(offlineContext.destination);
+    source.start();
+
+    return await offlineContext.startRendering();
+  }
+
+  /**
+   * Check if plugin uses AudioWorklet
+   * @returns {boolean} Always true for this plugin
+   */
+  usesAudioWorklet() {
+    return true;
   }
 
   /**
    * Cleanup and release resources
    */
   dispose() {
-    this.lfo.stop();
-    this.disconnect();
+    if (this.workletNode) {
+      this.workletNode.disconnect();
+      this.workletNode = null;
+    }
 
-    // Disconnect all internal nodes
-    this.earlyReflections.forEach(er => {
-      er.delay.disconnect();
-      er.gain.disconnect();
-      er.pan.disconnect();
-    });
+    this.isInitialized = false;
 
-    this.reverbTail.combFilters.forEach(comb => {
-      comb.delay.disconnect();
-      comb.feedback.disconnect();
-      comb.damping.disconnect();
-      comb.output.disconnect();
-    });
-
-    this.reverbTail.allpassFilters.forEach(ap => {
-      ap.delayL.disconnect();
-      ap.delayR.disconnect();
-      ap.feedbackL.disconnect();
-      ap.feedbackR.disconnect();
-      ap.feedforwardL.disconnect();
-      ap.feedforwardR.disconnect();
-    });
+    super.dispose();
   }
 }
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = Reverb;
-}
+// Factory presets
+export const ReverbPresets = {
+  smallRoom: {
+    name: 'Small Room',
+    parameters: {
+      roomSize: 25,
+      decayTime: 0.8,
+      damping: 60,
+      width: 80,
+      predelay: 5,
+      mix: 25
+    }
+  },
+
+  mediumHall: {
+    name: 'Medium Hall',
+    parameters: {
+      roomSize: 50,
+      decayTime: 2.0,
+      damping: 50,
+      width: 100,
+      predelay: 20,
+      mix: 35
+    }
+  },
+
+  largeHall: {
+    name: 'Large Hall',
+    parameters: {
+      roomSize: 75,
+      decayTime: 4.0,
+      damping: 40,
+      width: 100,
+      predelay: 30,
+      mix: 40
+    }
+  },
+
+  cathedral: {
+    name: 'Cathedral',
+    parameters: {
+      roomSize: 90,
+      decayTime: 8.0,
+      damping: 30,
+      width: 100,
+      predelay: 40,
+      mix: 45
+    }
+  },
+
+  plate: {
+    name: 'Plate',
+    parameters: {
+      roomSize: 40,
+      decayTime: 2.5,
+      damping: 70,
+      width: 100,
+      predelay: 0,
+      mix: 30
+    }
+  },
+
+  spring: {
+    name: 'Spring',
+    parameters: {
+      roomSize: 30,
+      decayTime: 1.5,
+      damping: 80,
+      width: 60,
+      predelay: 0,
+      mix: 35
+    }
+  }
+};
+
+export default ReverbPlugin;

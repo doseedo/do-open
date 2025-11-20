@@ -1,10 +1,9 @@
 /**
  * Distortion & Saturation - Index
  *
- * Exports all distortion and saturation plugins
+ * Exports all distortion and saturation plugins (AudioWorklet-based)
  */
 
-export { default as Overdrive } from './Overdrive.js';
-export { default as Saturator } from './Saturator.js';
-export { default as Distortion } from './Distortion.js';
-export { default as Redux } from './Redux.js';
+export { Distortion } from './Distortion.js';
+export { Saturator } from './Saturator.js';
+export { Redux } from './Redux.js';
