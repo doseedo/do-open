@@ -1,0 +1,182 @@
+# Example parameter with causal structure annotations
+# This enables more accurate predictions by respecting music theory relationships
+
+name: "harmony.chord_density"
+type: "float"
+domain: "harmony"
+subdomain: "chord"
+
+range:
+  min: 0.0
+  max: 1.0
+
+default: 0.5
+
+description: >
+  Number of chord changes per measure, normalized to 0-1 scale.
+  0.0 = one chord per 4 measures (very slow harmonic rhythm)
+  0.5 = one chord per measure (moderate)
+  1.0 = 4+ chords per measure (rapid harmonic rhythm)
+
+# ========================================
+# CAUSAL STRUCTURE (NEW!)
+# ========================================
+
+# Parameters that CAUSE this parameter (parents in causal graph)
+caused_by:
+  - parameter: "style.genre"
+    strength: 0.9
+    mechanism: "Genre determines typical harmonic rhythm (jazz=high, folk=low)"
+
+  - parameter: "harmony.complexity"
+    strength: 0.8
+    mechanism: "Complex harmony allows higher chord density"
+
+  - parameter: "tempo.bpm"
+    strength: 0.7
+    mechanism: "Faster tempo typically requires lower chord density"
+    direction: "inverse"  # Faster tempo → LOWER density
+
+  - parameter: "melody.note_density"
+    strength: 0.6
+    mechanism: "High melodic density typically pairs with low harmonic density"
+    direction: "inverse"
+
+# Parameters CAUSED by this parameter (children in causal graph)
+causes:
+  - parameter: "harmony.voicing.spread"
+    strength: 0.8
+    mechanism: "High chord density → tight voicings (less space between chords)"
+    direction: "inverse"
+
+  - parameter: "melody.note_density"
+    strength: 0.7
+    mechanism: "High chord density → simpler melody (avoid clutter)"
+    direction: "inverse"
+
+  - parameter: "texture.voice_count"
+    strength: 0.6
+    mechanism: "High chord density → fuller texture"
+    direction: "positive"
+
+  - parameter: "dynamics.articulation"
+    strength: 0.5
+    mechanism: "High chord density → more articulated playing"
+
+# ========================================
+# HIERARCHICAL STRUCTURE
+# ========================================
+
+hierarchy_level: "mid"  # mid-level parameter (between genre and details)
+
+parent_parameters:
+  - "style.genre"
+  - "harmony.complexity"
+  - "tempo.bpm"
+
+child_parameters:
+  - "harmony.voicing.spread"
+  - "harmony.voicing.type"
+  - "melody.note_density"
+
+# ========================================
+# TRAINING CONFIGURATION
+# ========================================
+
+feature_mappings:
+  - "chord_changes_per_measure"
+  - "harmonic_rhythm_rate"
+  - "avg_chord_duration"
+  - "chord_change_frequency"
+  - "harmonic_density"
+
+training_hints:
+  importance: "high"
+  training_samples: 3000
+  feature_selection_method: "mutual_info"
+
+  # Use causal features (from parent parameters)
+  causal_features:
+    - "style.genre"           # Most important!
+    - "harmony.complexity"
+    - "tempo.bpm"
+
+  # Train conditional model (conditioned on parent parameters)
+  conditional_training: true
+
+# ========================================
+# EXAMPLES WITH CAUSAL CONTEXT
+# ========================================
+
+examples:
+  - value: 0.1
+    description: "Very slow harmonic rhythm - one chord every 2-4 measures"
+    typical_genres: ["folk", "minimalism", "ambient"]
+    caused_by:
+      style.genre: "folk"
+      harmony.complexity: 0.2
+      tempo.bpm: 60
+    causes:
+      harmony.voicing.spread: 0.8  # Wide voicings possible
+      melody.note_density: 0.8     # Complex melody possible
+
+  - value: 0.5
+    description: "Moderate harmonic rhythm - one chord per measure"
+    typical_genres: ["pop", "rock", "blues"]
+    caused_by:
+      style.genre: "pop"
+      harmony.complexity: 0.5
+      tempo.bpm: 120
+    causes:
+      harmony.voicing.spread: 0.5  # Moderate voicing spread
+      melody.note_density: 0.5     # Moderate melody density
+
+  - value: 0.9
+    description: "Rapid harmonic rhythm - 3-4 chords per measure"
+    typical_genres: ["bebop", "jazz_fusion", "progressive_rock"]
+    caused_by:
+      style.genre: "bebop"
+      harmony.complexity: 0.9
+      tempo.bpm: 180
+    causes:
+      harmony.voicing.spread: 0.2  # Tight voicings required
+      melody.note_density: 0.3     # Simple melody to avoid clutter
+
+# ========================================
+# MUSIC THEORY GROUNDING
+# ========================================
+
+theory_reference:
+  source: "Walter Piston - Harmony"
+  page: 123
+  section: "Harmonic Rhythm"
+  key_concept: >
+    Harmonic rhythm is the rate of chord change.
+    Fast harmonic rhythm creates energy but limits melodic complexity.
+    Slow harmonic rhythm allows melodic development but may lack momentum.
+
+# ========================================
+# CONSTRAINTS
+# ========================================
+
+constraints:
+  # Must have these parent parameters
+  requires:
+    - "style.genre"
+    - "harmony.complexity"
+
+  # Cannot have very high values simultaneously
+  conflicts_with:
+    - parameter: "melody.note_density"
+      condition: "both > 0.8"
+      reason: "High harmonic AND melodic density creates clutter"
+
+# ========================================
+# METADATA
+# ========================================
+
+version: "2.0.0"
+created_by: "human"
+created_at: "2025-11-20T14:00:00Z"
+includes_causality: true
+includes_hierarchy: true
