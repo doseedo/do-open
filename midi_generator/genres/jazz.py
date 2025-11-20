@@ -65,6 +65,15 @@ from core.modal_harmony import (
     ModalScale, ModalScaleLibrary, ModalProgressionGenerator
 )
 
+# Import bebop vocabulary library (Agent 1 enhancement)
+try:
+    from genres.jazz_vocabulary import BebopVocabulary, Difficulty, StyleEra
+except ImportError:
+    # Fallback if vocabulary module not available
+    BebopVocabulary = None
+    Difficulty = None
+    StyleEra = None
+
 
 # ============================================================================
 # JAZZ STYLES AND ENUMS
@@ -392,74 +401,327 @@ class JazzWalkingBass:
 
 class BebopMelodyGenerator:
     """
-    Bebop melody generator with chromatic approach notes.
+    Enhanced bebop melody generator with authentic vocabulary and phrase shaping.
+
+    ENHANCEMENTS (Agent 1):
+    ----------------------
+    - Authentic bebop vocabulary integration (II-V-I licks, enclosures, turnarounds)
+    - Phrase shaping with configurable contour (arch, ascending, descending, peak_early)
+    - Rhythmic variation patterns (not just uniform subdivision)
+    - Register adaptation based on harmonic context
+    - Rest patterns for natural phrasing
+    - Dynamic contour (velocity variation across phrase)
 
     Based on bebop language principles:
     - Chromatic enclosures
     - Approach notes (chromatic and diatonic)
     - Chord tone targeting
     - Scalar runs and arpeggios
+    - Charlie Parker vocabulary patterns
     """
 
     def __init__(self):
         self.register_low = 60   # C4
         self.register_high = 84  # C6
 
+        # Initialize vocabulary library (Agent 1 enhancement)
+        if BebopVocabulary is not None:
+            self.vocabulary = BebopVocabulary()
+        else:
+            self.vocabulary = None
+
     def generate_phrase(
         self,
         chord: JazzChord,
         length_beats: int = 4,
-        density: float = 0.8
+        density: float = 0.8,
+        use_vocabulary: bool = True,
+        phrase_shape: str = "arch",
+        rhythmic_density_curve: Optional[List[float]] = None,
+        target_register: Optional[Tuple[int, int]] = None,
+        include_rests: bool = True,
+        vocabulary_probability: float = 0.4
     ) -> List[JazzNote]:
         """
-        Generate bebop phrase over single chord.
+        Generate bebop phrase over single chord with enhanced features.
 
         Args:
             chord: JazzChord to improvise over
             length_beats: Length of phrase in beats
             density: Note density (0.0-1.0, higher = more notes)
+            use_vocabulary: Whether to use authentic bebop licks
+            phrase_shape: Melodic contour shape
+                - "arch": Start low/mid, peak in middle, end mid/low (natural)
+                - "ascending": Generally upward motion
+                - "descending": Generally downward motion
+                - "peak_early": Peak in first half, descend
+                - "random": No specific shape
+            rhythmic_density_curve: Custom rhythm density per beat (if None, uses density)
+            target_register: Target register range (low, high) in MIDI notes
+            include_rests: Whether to include rest patterns
+            vocabulary_probability: Probability of using vocabulary licks (0.0-1.0)
 
         Returns:
             List of JazzNote objects
         """
+        # Use vocabulary lick if enabled and available
+        if (use_vocabulary and
+            self.vocabulary is not None and
+            random.random() < vocabulary_probability and
+            length_beats >= 2):
+            return self._generate_vocabulary_phrase(chord, length_beats, phrase_shape)
+
+        # Generate phrase using algorithmic approach
         phrase = []
-        scale = BebopScale.dominant_bebop(chord.root)
+        scale = self._get_appropriate_scale(chord)
         scale_notes = scale.get_notes(octave=5)
+
+        # Determine register
+        if target_register:
+            register_low, register_high = target_register
+        else:
+            register_low, register_high = self._adapt_register_to_harmony(chord)
 
         # Generate note sequence
         current_beat = 0.0
-        subdivision = 0.5 if density > 0.6 else 1.0  # 8ths or quarters
+        subdivision_options = [0.25, 0.5, 0.75, 1.0]  # 16ths, 8ths, dotted 8ths, quarters
 
+        # Create rhythmic variation
+        if rhythmic_density_curve is None:
+            rhythmic_density_curve = [density] * int(length_beats)
+
+        phrase_notes = []
         while current_beat < length_beats:
+            # Determine subdivision based on density curve
+            beat_idx = min(int(current_beat), len(rhythmic_density_curve) - 1)
+            current_density = rhythmic_density_curve[beat_idx]
+
+            if current_density > 0.8:
+                subdivision = random.choice([0.25, 0.5])  # Fast notes
+            elif current_density > 0.5:
+                subdivision = 0.5  # 8th notes
+            else:
+                subdivision = random.choice([0.5, 1.0])  # 8ths or quarters
+
+            # Add rest occasionally for phrasing
+            if include_rests and random.random() < (1.0 - current_density) * 0.3:
+                current_beat += subdivision
+                continue
+
             # Target chord tone on strong beats
             if current_beat % 1.0 == 0:
                 note = random.choice(self._get_chord_tones(chord, octave=5))
             else:
                 note = random.choice(scale_notes)
 
+            # Constrain to register
+            while note < register_low:
+                note += 12
+            while note > register_high:
+                note -= 12
+
             # Add chromatic approach note occasionally
             if random.random() < 0.3 and current_beat < length_beats - 0.5:
-                # Chromatic enclosure
-                phrase.append(JazzNote(
-                    pitch=note + 1,
-                    velocity=random.randint(70, 90),
-                    start_time=current_beat,
-                    duration=subdivision * 0.4,
-                    articulation="staccato"
-                ))
-                current_beat += subdivision * 0.5
+                # Use authentic enclosure from vocabulary
+                if self.vocabulary:
+                    enclosure = self.vocabulary.get_chromatic_enclosure(
+                        note,
+                        approach_style=random.choice(["single_below", "double"])
+                    )
+                    for enc_note, enc_beat, enc_dur in enclosure[:-1]:  # All but target
+                        phrase_notes.append({
+                            'pitch': enc_note,
+                            'start': current_beat + enc_beat,
+                            'duration': enc_dur,
+                            'articulation': 'staccato'
+                        })
+                    current_beat += 0.25
+                else:
+                    # Fallback: simple chromatic approach
+                    phrase_notes.append({
+                        'pitch': note + 1,
+                        'start': current_beat,
+                        'duration': subdivision * 0.4,
+                        'articulation': 'staccato'
+                    })
+                    current_beat += subdivision * 0.5
 
-            phrase.append(JazzNote(
-                pitch=note,
-                velocity=random.randint(80, 110),
-                start_time=current_beat,
-                duration=subdivision * 0.9,
-                articulation="normal"
-            ))
+            phrase_notes.append({
+                'pitch': note,
+                'start': current_beat,
+                'duration': subdivision * 0.9,
+                'articulation': 'normal'
+            })
 
             current_beat += subdivision
 
+        # Apply phrase shape and dynamic contour
+        phrase = self._apply_phrase_shaping(phrase_notes, phrase_shape, length_beats)
+
         return phrase
+
+    def _generate_vocabulary_phrase(
+        self,
+        chord: JazzChord,
+        length_beats: int,
+        phrase_shape: str
+    ) -> List[JazzNote]:
+        """
+        Generate phrase using authentic bebop vocabulary.
+
+        Args:
+            chord: Chord to play over
+            length_beats: Phrase length
+            phrase_shape: Desired contour
+
+        Returns:
+            List of JazzNote with vocabulary lick
+        """
+        # Get appropriate lick based on chord context
+        if "dom7" in chord.quality.lower():
+            lick = self.vocabulary.get_ii_V_I_lick(
+                key=chord.root,
+                difficulty=Difficulty.INTERMEDIATE,
+                style=StyleEra.BEBOP
+            )
+        else:
+            lick = self.vocabulary.get_random_lick(difficulty=Difficulty.INTERMEDIATE)
+
+        # Convert vocabulary pattern to JazzNote objects
+        phrase = []
+        base_octave = 5
+        base_note = 12 * base_octave + chord.root
+
+        for i, (interval, beat, duration) in enumerate(zip(
+            lick.intervals,
+            lick.rhythm,
+            lick.duration
+        )):
+            if beat >= length_beats:
+                break
+
+            pitch = base_note + interval
+
+            # Constrain to register
+            while pitch < self.register_low:
+                pitch += 12
+            while pitch > self.register_high:
+                pitch -= 12
+
+            phrase.append({
+                'pitch': pitch,
+                'start': beat,
+                'duration': duration,
+                'articulation': 'normal'
+            })
+
+        # Apply phrase shaping
+        phrase = self._apply_phrase_shaping(phrase, phrase_shape, length_beats)
+
+        return phrase
+
+    def _apply_phrase_shaping(
+        self,
+        phrase_notes: List[Dict],
+        phrase_shape: str,
+        length_beats: int
+    ) -> List[JazzNote]:
+        """
+        Apply melodic contour and dynamic shaping to phrase.
+
+        Args:
+            phrase_notes: List of note dicts with pitch, start, duration, articulation
+            phrase_shape: Contour type (arch, ascending, descending, peak_early, random)
+            length_beats: Total phrase length
+
+        Returns:
+            List of JazzNote with shaped velocity contour
+        """
+        if not phrase_notes:
+            return []
+
+        # Calculate velocity curve based on phrase shape
+        shaped_phrase = []
+        num_notes = len(phrase_notes)
+
+        for i, note_dict in enumerate(phrase_notes):
+            # Position in phrase (0.0 to 1.0)
+            position = i / max(num_notes - 1, 1)
+
+            # Calculate velocity based on shape
+            if phrase_shape == "arch":
+                # Arch shape: start medium, peak at middle, end medium
+                # Parabola: -(x - 0.5)^2 + 0.25, normalized
+                curve_value = -(position - 0.5) ** 2 + 0.25
+                velocity = int(70 + (curve_value * 4) * 50)  # 70-120 range
+            elif phrase_shape == "ascending":
+                # Crescendo throughout
+                velocity = int(70 + position * 50)
+            elif phrase_shape == "descending":
+                # Diminuendo throughout
+                velocity = int(120 - position * 50)
+            elif phrase_shape == "peak_early":
+                # Peak at 1/3, then descend
+                if position < 0.33:
+                    velocity = int(70 + (position / 0.33) * 50)
+                else:
+                    velocity = int(120 - ((position - 0.33) / 0.67) * 40)
+            else:  # random
+                velocity = random.randint(80, 110)
+
+            # Clamp velocity to valid MIDI range
+            velocity = max(20, min(127, velocity))
+
+            # Add slight random variation for humanization
+            velocity = max(20, min(127, velocity + random.randint(-5, 5)))
+
+            shaped_phrase.append(JazzNote(
+                pitch=note_dict['pitch'],
+                velocity=velocity,
+                start_time=note_dict['start'],
+                duration=note_dict['duration'],
+                articulation=note_dict['articulation']
+            ))
+
+        return shaped_phrase
+
+    def _adapt_register_to_harmony(self, chord: JazzChord) -> Tuple[int, int]:
+        """
+        Adapt melodic register based on chord quality and harmonic context.
+
+        Args:
+            chord: JazzChord to analyze
+
+        Returns:
+            (register_low, register_high) tuple in MIDI note numbers
+        """
+        # Darker chords (minor, dim) tend lower, brighter (major, dom) tend higher
+        if "min" in chord.quality.lower() or "dim" in chord.quality.lower():
+            # Minor/diminished: slightly lower register
+            return (self.register_low - 5, self.register_high - 5)
+        elif "maj" in chord.quality.lower():
+            # Major: slightly higher register
+            return (self.register_low + 3, self.register_high + 3)
+        else:
+            # Dominant and others: standard register
+            return (self.register_low, self.register_high)
+
+    def _get_appropriate_scale(self, chord: JazzChord) -> BebopScale:
+        """
+        Get appropriate bebop scale for chord quality.
+
+        Args:
+            chord: JazzChord
+
+        Returns:
+            Appropriate BebopScale
+        """
+        if "dom7" in chord.quality.lower() or "7" in chord.quality:
+            return BebopScale.dominant_bebop(chord.root)
+        elif "min" in chord.quality.lower():
+            return BebopScale.minor_bebop(chord.root)
+        else:  # maj7, etc.
+            return BebopScale.major_bebop(chord.root)
 
     def _get_chord_tones(self, chord: JazzChord, octave: int = 5) -> List[int]:
         """Get chord tones for targeting"""
