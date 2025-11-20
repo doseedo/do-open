@@ -58,6 +58,10 @@ except ImportError:
     BRASS_ARRANGER_AVAILABLE = False
     print("Warning: BrassArranger not available, using legacy brass implementation")
 
+# Import new drum system (Agent 7)
+from .drum_arranger import DrumArranger
+from ..algorithms.rhythm_engine import RhythmNote
+
 
 # ==============================================================================
 # INSTRUMENT DEFINITIONS
@@ -408,14 +412,92 @@ class BigBandArranger:
         return bass_line
 
     @staticmethod
-    def _create_swing_drums(melody: List[NoteEvent]) -> List[NoteEvent]:
-        """Create swing drum pattern."""
+    def _create_swing_drums(melody: List[NoteEvent],
+                           style: str = "swing",
+                           add_fills: bool = True) -> List[NoteEvent]:
+        """
+        Create sophisticated big band drum pattern using new DrumArranger (Agent 7).
+
+        Args:
+            melody: Lead melody to determine duration
+            style: Drum style ("swing", "bebop", "latin_afro", "latin_bossa")
+            add_fills: Whether to add fills at phrase endings
+
+        Returns:
+            List of NoteEvent for complete drum arrangement
+        """
         drums = []
 
         if not melody:
             return drums
 
-        # Simple swing pattern: ride cymbal, hi-hat on 2&4
+        # Calculate duration in bars (assuming 4 beats per bar)
+        duration = melody[-1].end_time
+        total_bars = int(duration / 4)  # Approximate bars
+
+        # Create dynamic map for form-aware dynamics
+        # Simple version: build intensity throughout
+        sections_per_8bars = total_bars // 8
+        dynamic_map = {}
+
+        # Add intro if long enough
+        if total_bars >= 32:
+            dynamic_map["intro"] = 0.3
+            remaining_bars = total_bars - 4
+        else:
+            remaining_bars = total_bars
+
+        # Create sections (every 8 bars)
+        section_names = ["A1", "A2", "B", "A3", "C", "D"]
+        intensity_curve = [0.5, 0.6, 0.7, 0.9, 0.8, 0.85]  # A3 is shout chorus
+
+        for i in range(min(sections_per_8bars, len(section_names))):
+            dynamic_map[section_names[i]] = intensity_curve[i]
+
+        # Generate drums with form-aware dynamics
+        try:
+            rhythm_notes = DrumArranger.arrange_drums_for_form(
+                form=None,  # TODO: Pass actual MusicalForm when available
+                style=style,
+                dynamic_map=dynamic_map,
+                ppqn=480  # MIDI standard ppqn
+            )
+
+            # Add fills at phrase endings if requested
+            if add_fills and total_bars >= 8:
+                rhythm_notes = DrumArranger.add_fills_at_phrase_endings(
+                    drums=rhythm_notes,
+                    phrase_length_bars=4,  # Fill every 4 bars
+                    fill_length_beats=2,   # 2-beat fills
+                    intensity=0.7,
+                    ppqn=480
+                )
+
+            # Apply groove template for authentic feel
+            rhythm_notes = DrumArranger.apply_groove_template(
+                drums=rhythm_notes,
+                genre="jazz_bebop" if style == "bebop" else "jazz_swing",
+                ppqn=480
+            )
+
+            # Convert RhythmNote to NoteEvent
+            drums = DrumArranger.convert_to_note_events(rhythm_notes, tempo=120)
+
+        except Exception as e:
+            # Fallback to simple pattern if new system fails
+            print(f"Warning: Advanced drum system failed ({e}), using simple pattern")
+            drums = BigBandArranger._create_simple_swing_pattern(melody)
+
+        return drums
+
+    @staticmethod
+    def _create_simple_swing_pattern(melody: List[NoteEvent]) -> List[NoteEvent]:
+        """
+        Simple fallback swing pattern (original implementation).
+
+        Used if advanced drum system encounters errors.
+        """
+        drums = []
         duration = melody[-1].end_time
         beats = int(duration)
 
