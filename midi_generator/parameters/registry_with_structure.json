@@ -1,0 +1,1483 @@
+{
+  "harmony.voicing.type": {
+    "name": "voicing_type",
+    "description": "Type of chord voicing (close, spread, drop2, etc.)",
+    "type": "categorical",
+    "default": "close",
+    "min": null,
+    "max": null,
+    "options": [
+      "close",
+      "spread",
+      "drop2",
+      "drop3",
+      "drop2_4",
+      "rootless_a",
+      "rootless_b",
+      "quartal"
+    ],
+    "category": "harmony",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "classical",
+      "pop",
+      "rock"
+    ]
+  },
+  "harmony.voicing.spread": {
+    "name": "voicing_spread",
+    "description": "How spread out the voicing is (0.0=close, 1.0=wide)",
+    "type": "probability",
+    "default": 0.5,
+    "min": 0.0,
+    "max": 1.0,
+    "options": null,
+    "category": "harmony",
+    "impact": "medium",
+    "genres": []
+  },
+  "harmony.voicing.density": {
+    "name": "voicing_density",
+    "description": "Number of notes in chord (3-7)",
+    "type": "integer",
+    "default": 4,
+    "min": 3,
+    "max": 7,
+    "options": null,
+    "category": "harmony",
+    "impact": "high",
+    "genres": []
+  },
+  "harmony.extensions.use_9ths": {
+    "name": "use_9ths",
+    "description": "Whether to include 9th extensions",
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "medium",
+    "genres": [
+      "jazz",
+      "fusion",
+      "neo_soul"
+    ]
+  },
+  "harmony.extensions.use_11ths": {
+    "name": "use_11ths",
+    "description": "Whether to include 11th extensions",
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "medium",
+    "genres": [
+      "jazz",
+      "fusion"
+    ]
+  },
+  "harmony.extensions.use_13ths": {
+    "name": "use_13ths",
+    "description": "Whether to include 13th extensions",
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "medium",
+    "genres": [
+      "jazz",
+      "fusion"
+    ]
+  },
+  "harmony.substitution.tritone_probability": {
+    "name": "tritone_sub_probability",
+    "description": "Probability of tritone substitution",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "bebop"
+    ]
+  },
+  "harmony.substitution.modal_interchange_probability": {
+    "name": "modal_interchange_probability",
+    "description": "Probability of modal interchange",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "rock",
+      "classical"
+    ]
+  },
+  "harmony.voice_leading.smoothness": {
+    "name": "voice_leading_smoothness",
+    "description": "Preference for smooth voice leading (0.0=none, 1.0=always)",
+    "type": "probability",
+    "default": 0.8,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "classical",
+      "choral"
+    ]
+  },
+  "harmony.voice_leading.parallel_motion_tolerance": {
+    "name": "parallel_motion_tolerance",
+    "description": "Tolerance for parallel 5ths/octaves (0.0=strict, 1.0=permissive)",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "harmony",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "choral"
+    ]
+  },
+  "melody.contour.type": {
+    "name": "contour_type",
+    "description": "Melodic contour shape",
+    "type": "categorical",
+    "default": "arch",
+    "min": null,
+    "max": null,
+    "options": [
+      "arch",
+      "inverted_arch",
+      "ascending",
+      "descending",
+      "wave",
+      "static"
+    ],
+    "category": "melody",
+    "impact": "critical",
+    "genres": []
+  },
+  "melody.intervals.stepwise_probability": {
+    "name": "stepwise_motion_probability",
+    "description": "Probability of stepwise motion (vs leaps)",
+    "type": "probability",
+    "default": 0.7,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.intervals.max_leap": {
+    "name": "max_leap_interval",
+    "description": "Maximum melodic leap in semitones",
+    "type": "integer",
+    "default": 12,
+    "min": 1,
+    "max": 24,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": []
+  },
+  "melody.chromaticism.amount": {
+    "name": "chromaticism",
+    "description": "Amount of chromatic passing tones (0.0=diatonic, 1.0=chromatic)",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "high",
+    "genres": [
+      "bebop",
+      "jazz",
+      "classical"
+    ]
+  },
+  "melody.ornaments.probability": {
+    "name": "ornament_probability",
+    "description": "Probability of adding ornaments (trills, mordents, etc.)",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "melody",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "baroque",
+      "jazz"
+    ]
+  },
+  "rhythm.swing.amount": {
+    "name": "swing_amount",
+    "description": "Swing ratio (0.5=straight, 0.67=standard swing, 0.75=hard swing)",
+    "type": "continuous",
+    "default": 0.67,
+    "min": 0.5,
+    "max": 0.75,
+    "options": null,
+    "category": "rhythm",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "swing",
+      "blues"
+    ]
+  },
+  "rhythm.syncopation.probability": {
+    "name": "syncopation_probability",
+    "description": "Probability of syncopated rhythms",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "rhythm",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "funk",
+      "latin",
+      "reggae"
+    ]
+  },
+  "rhythm.microtiming.variation": {
+    "name": "microtiming_variation",
+    "description": "Amount of microtiming humanization (ms)",
+    "type": "integer",
+    "default": 10,
+    "min": 0,
+    "max": 50,
+    "options": null,
+    "category": "rhythm",
+    "impact": "medium",
+    "genres": []
+  },
+  "genre.rock.power_chord_probability": {
+    "name": "rock_power_chord_probability",
+    "description": "Probability of using power chords",
+    "type": "probability",
+    "default": 0.7,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "genre",
+    "impact": "critical",
+    "genres": [
+      "rock",
+      "punk",
+      "metal"
+    ]
+  },
+  "genre.rock.bend_probability": {
+    "name": "rock_bend_probability",
+    "description": "Probability of guitar bends",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "genre",
+    "impact": "high",
+    "genres": [
+      "rock",
+      "blues"
+    ]
+  },
+  "genre.rock.vibrato_probability": {
+    "name": "rock_vibrato_probability",
+    "description": "Probability of vibrato on sustained notes",
+    "type": "probability",
+    "default": 0.4,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "genre",
+    "impact": "medium",
+    "genres": [
+      "rock",
+      "blues"
+    ]
+  },
+  "genre.rock.vibrato_depth": {
+    "name": "rock_vibrato_depth",
+    "description": "Vibrato depth range (cents)",
+    "type": "continuous",
+    "default": 30.0,
+    "min": 0.0,
+    "max": 100.0,
+    "options": null,
+    "category": "genre",
+    "impact": "medium",
+    "genres": [
+      "rock",
+      "blues"
+    ]
+  },
+  "bass.style.walking_probability": {
+    "name": "bass_walking_probability",
+    "description": "Probability of walking bass line",
+    "type": "probability",
+    "default": 0.8,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "bass",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "swing"
+    ]
+  },
+  "drums.kick.velocity_min": {
+    "name": "drum_kick_velocity_min",
+    "description": "Minimum kick drum velocity",
+    "type": "velocity",
+    "default": 80,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "drums",
+    "impact": "medium",
+    "genres": []
+  },
+  "drums.kick.velocity_max": {
+    "name": "drum_kick_velocity_max",
+    "description": "Maximum kick drum velocity",
+    "type": "velocity",
+    "default": 110,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "drums",
+    "impact": "medium",
+    "genres": []
+  },
+  "articulation.duration.ratio": {
+    "name": "note_duration_ratio",
+    "description": "Note duration as ratio of full length (0.5=staccato, 1.0=legato)",
+    "type": "probability",
+    "default": 0.9,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "articulation",
+    "impact": "high",
+    "genres": []
+  },
+  "dynamics.velocity.base": {
+    "name": "velocity_base",
+    "description": "Base velocity for notes",
+    "type": "velocity",
+    "default": 80,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "dynamics",
+    "impact": "medium",
+    "genres": []
+  },
+  "dynamics.velocity.variation": {
+    "name": "velocity_variation",
+    "description": "Amount of velocity variation (+/-)",
+    "type": "integer",
+    "default": 20,
+    "min": 0,
+    "max": 63,
+    "options": null,
+    "category": "dynamics",
+    "impact": "medium",
+    "genres": []
+  },
+  "structure.form.type": {
+    "name": "form_type",
+    "description": "Primary form structure type (AABA, ABAB, blues, sonata, etc.)",
+    "type": "categorical",
+    "default": "AABA",
+    "min": null,
+    "max": null,
+    "options": [
+      "AABA",
+      "ABAB",
+      "ABAC",
+      "AAA",
+      "through_composed",
+      "binary",
+      "ternary",
+      "rondo",
+      "sonata",
+      "blues",
+      "rhythm_changes"
+    ],
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "pop",
+      "rock",
+      "classical",
+      "blues"
+    ]
+  },
+  "structure.form.length_bars": {
+    "name": "form_length_bars",
+    "description": "Total form length in bars (standard: 12, 16, 24, 32, 48, 64)",
+    "type": "categorical",
+    "default": 32,
+    "min": null,
+    "max": null,
+    "options": [
+      12,
+      16,
+      24,
+      32,
+      48,
+      64
+    ],
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "jazz",
+      "pop",
+      "rock",
+      "blues"
+    ]
+  },
+  "structure.form.intro_bars": {
+    "name": "intro_bars",
+    "description": "Introduction length in bars (0 = no intro)",
+    "type": "categorical",
+    "default": 4,
+    "min": null,
+    "max": null,
+    "options": [
+      0,
+      2,
+      4,
+      8,
+      16
+    ],
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "pop",
+      "rock",
+      "electronic"
+    ]
+  },
+  "structure.form.outro_bars": {
+    "name": "outro_bars",
+    "description": "Outro/coda length in bars (0 = direct ending)",
+    "type": "categorical",
+    "default": 4,
+    "min": null,
+    "max": null,
+    "options": [
+      0,
+      2,
+      4,
+      8,
+      16
+    ],
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "pop",
+      "rock",
+      "jazz"
+    ]
+  },
+  "structure.form.verse_length": {
+    "name": "verse_length",
+    "description": "Verse section length in bars",
+    "type": "categorical",
+    "default": 8,
+    "min": null,
+    "max": null,
+    "options": [
+      8,
+      16,
+      24,
+      32
+    ],
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "pop",
+      "rock",
+      "country",
+      "gospel"
+    ]
+  },
+  "structure.form.chorus_length": {
+    "name": "chorus_length",
+    "description": "Chorus section length in bars",
+    "type": "categorical",
+    "default": 8,
+    "min": null,
+    "max": null,
+    "options": [
+      8,
+      16,
+      24,
+      32
+    ],
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "pop",
+      "rock",
+      "country",
+      "gospel"
+    ]
+  },
+  "structure.form.bridge_length": {
+    "name": "bridge_length",
+    "description": "Bridge/middle eight section length in bars",
+    "type": "categorical",
+    "default": 8,
+    "min": null,
+    "max": null,
+    "options": [
+      4,
+      8,
+      16
+    ],
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "pop",
+      "rock",
+      "jazz"
+    ]
+  },
+  "structure.form.solo_section_length": {
+    "name": "solo_section_length",
+    "description": "Solo/improvisation section length in bars",
+    "type": "categorical",
+    "default": 32,
+    "min": null,
+    "max": null,
+    "options": [
+      12,
+      16,
+      24,
+      32,
+      64
+    ],
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "blues",
+      "rock"
+    ]
+  },
+  "structure.form.vamp_probability": {
+    "name": "vamp_probability",
+    "description": "Probability of extended vamp sections for improvisation/intensity",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "funk",
+      "gospel",
+      "electronic"
+    ]
+  },
+  "structure.form.coda_type": {
+    "name": "coda_type",
+    "description": "Type of ending/coda",
+    "type": "categorical",
+    "default": "fade",
+    "min": null,
+    "max": null,
+    "options": [
+      "none",
+      "fade",
+      "ritardando",
+      "fermata",
+      "tag"
+    ],
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "pop",
+      "rock",
+      "jazz",
+      "classical"
+    ]
+  },
+  "structure.form.tag_repetitions": {
+    "name": "tag_repetitions",
+    "description": "Number of tag ending repetitions (country, gospel style)",
+    "type": "categorical",
+    "default": 2,
+    "min": null,
+    "max": null,
+    "options": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "country",
+      "gospel",
+      "blues"
+    ]
+  },
+  "structure.form.interlude_prob": {
+    "name": "interlude_prob",
+    "description": "Probability of instrumental interlude sections",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "country",
+      "funk",
+      "electronic"
+    ]
+  },
+  "structure.form.solo_trading": {
+    "name": "solo_trading",
+    "description": "Enable solo trading (4s, 8s, 12s) between instruments",
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "bebop"
+    ]
+  },
+  "structure.form.trading_length": {
+    "name": "trading_length",
+    "description": "Length of solo trading exchanges in bars (4s, 8s, etc.)",
+    "type": "categorical",
+    "default": 8,
+    "min": null,
+    "max": null,
+    "options": [
+      2,
+      4,
+      8,
+      12,
+      16
+    ],
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "jazz",
+      "bebop"
+    ]
+  },
+  "structure.form.shout_chorus": {
+    "name": "shout_chorus",
+    "description": "Include shout chorus (climactic ensemble section)",
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "big_band",
+      "gospel"
+    ]
+  },
+  "structure.form.stop_time_prob": {
+    "name": "stop_time_prob",
+    "description": "Probability of stop-time sections (rhythm section drops out)",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "funk",
+      "blues"
+    ]
+  },
+  "structure.form.breakdown_prob": {
+    "name": "breakdown_prob",
+    "description": "Probability of breakdown sections (reduced texture/dynamics)",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "electronic",
+      "funk",
+      "pop",
+      "rock"
+    ]
+  },
+  "structure.form.grand_pause_prob": {
+    "name": "grand_pause_prob",
+    "description": "Probability of grand pause (complete silence for dramatic effect)",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "jazz",
+      "pop",
+      "electronic"
+    ]
+  },
+  "structure.form.section_markers": {
+    "name": "section_markers",
+    "description": "Use explicit rehearsal marks/section boundaries in output",
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "low",
+    "genres": [
+      "classical",
+      "jazz",
+      "big_band"
+    ]
+  },
+  "structure.form.asymmetric_sections": {
+    "name": "asymmetric_sections",
+    "description": "Allow asymmetric phrase lengths (7, 11, 13 bars)",
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "progressive",
+      "electronic",
+      "funk",
+      "contemporary"
+    ]
+  },
+  "structure.transition.type": {
+    "name": "transition_type",
+    "description": "Primary transition technique between sections",
+    "type": "categorical",
+    "default": "pivot_chord",
+    "min": null,
+    "max": null,
+    "options": [
+      "direct",
+      "pivot_chord",
+      "common_tone",
+      "chromatic",
+      "sequential",
+      "elision"
+    ],
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "jazz",
+      "pop"
+    ]
+  },
+  "structure.transition.smoothness": {
+    "name": "transition_smoothness",
+    "description": "How smooth transitions are (0.0=abrupt/dramatic, 1.0=seamless)",
+    "type": "probability",
+    "default": 0.7,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "jazz",
+      "pop"
+    ]
+  },
+  "structure.transition.drum_fill_prob": {
+    "name": "drum_fill_prob",
+    "description": "Probability of drum fill at section transitions",
+    "type": "probability",
+    "default": 0.7,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "rock",
+      "funk",
+      "pop",
+      "jazz"
+    ]
+  },
+  "structure.transition.key_change_prob": {
+    "name": "key_change_prob",
+    "description": "Probability of modulation/key change at transitions",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "pop",
+      "gospel",
+      "classical",
+      "country"
+    ]
+  },
+  "structure.transition.tempo_change_prob": {
+    "name": "tempo_change_prob",
+    "description": "Probability of tempo change at transitions",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "progressive",
+      "jazz"
+    ]
+  },
+  "structure.transition.meter_change_prob": {
+    "name": "meter_change_prob",
+    "description": "Probability of meter/time signature change at transitions",
+    "type": "probability",
+    "default": 0.05,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "progressive",
+      "classical",
+      "jazz"
+    ]
+  },
+  "structure.transition.texture_change_prob": {
+    "name": "texture_change_prob",
+    "description": "Probability of significant texture change at transitions",
+    "type": "probability",
+    "default": 0.6,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "pop",
+      "electronic",
+      "rock"
+    ]
+  },
+  "structure.transition.dynamic_change_prob": {
+    "name": "dynamic_change_prob",
+    "description": "Probability of dynamic level change at transitions",
+    "type": "probability",
+    "default": 0.7,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "pop",
+      "rock"
+    ]
+  },
+  "structure.transition.turnaround_complexity": {
+    "name": "turnaround_complexity",
+    "description": "Harmonic complexity of turnarounds (1=simple I-V, 7=complex jazz)",
+    "type": "continuous",
+    "default": 3.0,
+    "min": 1.0,
+    "max": 7.0,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "jazz",
+      "blues",
+      "country"
+    ]
+  },
+  "structure.transition.pickup_notes": {
+    "name": "pickup_notes",
+    "description": "Use pickup/anacrusis notes before sections",
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "jazz",
+      "country",
+      "pop"
+    ]
+  },
+  "structure.development.variation_intensity": {
+    "name": "variation_intensity",
+    "description": "Overall intensity of thematic variation (0.0=literal, 1.0=free)",
+    "type": "probability",
+    "default": 0.5,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "classical",
+      "jazz",
+      "progressive"
+    ]
+  },
+  "structure.development.motivic_transformation": {
+    "name": "motivic_transformation",
+    "description": "Amount of motivic transformation across sections (0.0=none, 1.0=maximum)",
+    "type": "probability",
+    "default": 0.5,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "jazz",
+      "progressive"
+    ]
+  },
+  "structure.development.fragmentation_prob": {
+    "name": "fragmentation_prob",
+    "description": "Probability of breaking themes into smaller fragments",
+    "type": "probability",
+    "default": 0.3,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "jazz"
+    ]
+  },
+  "structure.development.augmentation_prob": {
+    "name": "augmentation_prob",
+    "description": "Probability of rhythmic augmentation (lengthening note values)",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "jazz"
+    ]
+  },
+  "structure.development.diminution_prob": {
+    "name": "diminution_prob",
+    "description": "Probability of rhythmic diminution (shortening note values)",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "jazz",
+      "bebop"
+    ]
+  },
+  "structure.development.inversion_prob": {
+    "name": "inversion_prob",
+    "description": "Probability of melodic inversion (mirror contour)",
+    "type": "probability",
+    "default": 0.2,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "jazz",
+      "progressive"
+    ]
+  },
+  "structure.development.retrograde_prob": {
+    "name": "retrograde_prob",
+    "description": "Probability of retrograde (theme in reverse)",
+    "type": "probability",
+    "default": 0.1,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "avant_garde"
+    ]
+  },
+  "structure.development.sequence_prob": {
+    "name": "sequence_prob",
+    "description": "Probability of sequential repetition at different pitch levels",
+    "type": "probability",
+    "default": 0.4,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "jazz",
+      "baroque"
+    ]
+  },
+  "structure.development.sequence_interval": {
+    "name": "sequence_interval",
+    "description": "Interval for sequences in semitones (2=whole step, 5=fourth, etc.)",
+    "type": "categorical",
+    "default": 2,
+    "min": null,
+    "max": null,
+    "options": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      7
+    ],
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "jazz"
+    ]
+  },
+  "structure.development.climax_placement": {
+    "name": "climax_placement",
+    "description": "Where to place structural climax (0.0=beginning, 1.0=end)",
+    "type": "probability",
+    "default": 0.75,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "classical",
+      "pop",
+      "rock",
+      "gospel"
+    ]
+  },
+  "structure.repetition.exact_repeat_prob": {
+    "name": "exact_repeat_prob",
+    "description": "Probability of exact repetition of sections",
+    "type": "probability",
+    "default": 0.5,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "blues",
+      "rock",
+      "electronic"
+    ]
+  },
+  "structure.repetition.varied_repeat_prob": {
+    "name": "varied_repeat_prob",
+    "description": "Probability of varied repetition (with embellishments/changes)",
+    "type": "probability",
+    "default": 0.5,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "classical",
+      "gospel"
+    ]
+  },
+  "structure.repetition.variation_amount": {
+    "name": "variation_amount",
+    "description": "How much variation on repeated sections (0.0=minimal, 1.0=extensive)",
+    "type": "probability",
+    "default": 0.4,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "jazz",
+      "classical"
+    ]
+  },
+  "structure.repetition.motif_recall_prob": {
+    "name": "motif_recall_prob",
+    "description": "Probability of recalling earlier motifs in later sections",
+    "type": "probability",
+    "default": 0.7,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "jazz",
+      "gospel"
+    ]
+  },
+  "structure.repetition.theme_return_prob": {
+    "name": "theme_return_prob",
+    "description": "Probability of returning to opening theme (recapitulation)",
+    "type": "probability",
+    "default": 0.9,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "classical",
+      "jazz",
+      "pop"
+    ]
+  },
+  "structure.repetition.ostinato_usage": {
+    "name": "ostinato_usage",
+    "description": "Amount of ostinato (repeated pattern) usage (0.0=none, 1.0=extensive)",
+    "type": "probability",
+    "default": 0.4,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "electronic",
+      "funk",
+      "minimalist",
+      "baroque"
+    ]
+  },
+  "structure.repetition.pedal_point_duration": {
+    "name": "pedal_point_duration",
+    "description": "Duration of pedal points (sustained bass notes) in bars",
+    "type": "categorical",
+    "default": 8,
+    "min": null,
+    "max": null,
+    "options": [
+      2,
+      4,
+      8,
+      16,
+      32
+    ],
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "baroque",
+      "electronic"
+    ]
+  },
+  "structure.repetition.riff_based": {
+    "name": "riff_based",
+    "description": "Construct piece around repeated riffs (blues/rock style)",
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "blues",
+      "rock",
+      "funk",
+      "electronic"
+    ]
+  },
+  "structure.repetition.hook_emphasis": {
+    "name": "hook_emphasis",
+    "description": "Emphasis on catchy hooks/memorable phrases (0.0=none, 1.0=maximum)",
+    "type": "probability",
+    "default": 0.7,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "pop",
+      "rock",
+      "gospel",
+      "country"
+    ]
+  },
+  "structure.repetition.call_response": {
+    "name": "call_response",
+    "description": "Use call-and-response phrase structure",
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "blues",
+      "gospel",
+      "funk",
+      "african"
+    ]
+  },
+  "structure.repetition.phrase_length": {
+    "name": "phrase_length",
+    "description": "Standard phrase length in bars",
+    "type": "categorical",
+    "default": 4,
+    "min": null,
+    "max": null,
+    "options": [
+      2,
+      4,
+      8,
+      16
+    ],
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "classical",
+      "jazz",
+      "pop",
+      "rock"
+    ]
+  },
+  "structure.repetition.phrase_grouping": {
+    "name": "phrase_grouping",
+    "description": "How phrases are grouped and related",
+    "type": "categorical",
+    "default": "regular",
+    "min": null,
+    "max": null,
+    "options": [
+      "regular",
+      "irregular",
+      "overlapping"
+    ],
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "jazz",
+      "progressive"
+    ]
+  },
+  "structure.repetition.antecedent_consequent": {
+    "name": "antecedent_consequent",
+    "description": "Use antecedent-consequent phrase pairs (question-answer)",
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "jazz",
+      "pop"
+    ]
+  },
+  "structure.repetition.parallel_period": {
+    "name": "parallel_period",
+    "description": "Use parallel period construction (similar phrase beginnings)",
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "pop"
+    ]
+  },
+  "structure.repetition.contrast_middle": {
+    "name": "contrast_middle",
+    "description": "Create contrast in middle sections (B section different from A)",
+    "type": "boolean",
+    "default": true,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "jazz",
+      "pop",
+      "classical"
+    ]
+  },
+  "structure.repetition.return_variation": {
+    "name": "return_variation",
+    "description": "Amount of variation when themes return (0.0=exact, 1.0=extensively varied)",
+    "type": "probability",
+    "default": 0.4,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "medium",
+    "genres": [
+      "classical",
+      "jazz"
+    ]
+  },
+  "structure.repetition.thematic_unity": {
+    "name": "thematic_unity",
+    "description": "Overall thematic unity/coherence (0.0=episodic, 1.0=highly unified)",
+    "type": "probability",
+    "default": 0.7,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "critical",
+    "genres": [
+      "classical",
+      "jazz",
+      "progressive"
+    ]
+  },
+  "structure.repetition.motivic_consistency": {
+    "name": "motivic_consistency",
+    "description": "Consistency of motivic material across sections (0.0=varied, 1.0=consistent)",
+    "type": "probability",
+    "default": 0.7,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "bebop"
+    ]
+  },
+  "structure.repetition.rhythmic_motif_recurrence": {
+    "name": "rhythmic_motif_recurrence",
+    "description": "How often rhythmic motifs recur (0.0=rarely, 1.0=constantly)",
+    "type": "probability",
+    "default": 0.6,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "funk",
+      "electronic",
+      "minimalist"
+    ]
+  },
+  "structure.repetition.melodic_cell_recurrence": {
+    "name": "melodic_cell_recurrence",
+    "description": "How often melodic cells/fragments recur (0.0=rarely, 1.0=constantly)",
+    "type": "probability",
+    "default": 0.6,
+    "min": null,
+    "max": null,
+    "options": null,
+    "category": "structure",
+    "impact": "high",
+    "genres": [
+      "classical",
+      "jazz",
+      "pop"
+    ]
+  }
+}
