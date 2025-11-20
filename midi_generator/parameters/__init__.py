@@ -17,12 +17,22 @@ from .universal_registry import (
     get_default
 )
 
+<<<<<<< HEAD
 # Import structure expansion module
 from .structure_expansion import (
     register_all_structure_parameters,
     get_structure_defaults,
     GENRE_PRESETS
 )
+=======
+# Import and auto-register expansion modules
+from . import registry_expansion
+from . import harmony_deep_expansion
+
+# Auto-register all expansion parameters
+registry_expansion.register_all_expansions()
+harmony_deep_expansion.register_all_harmony_deep_expansion()
+>>>>>>> origin/claude/music-generation-agents-01KHsxYd7UXSFQAsHutaMgBi
 
 # Global registry instance (for convenience)
 registry = REGISTRY
