@@ -20,7 +20,6 @@ class ReduxProcessor extends AudioWorkletProcessor {
     this.hardness = 0.5;
     this.dither = 0.0;
     this.jitter = 0.0;
-    this.mix = 1.0;
 
     // Listen for parameter changes from main thread
     this.port.onmessage = (event) => {
@@ -49,9 +48,6 @@ class ReduxProcessor extends AudioWorkletProcessor {
     }
     if (params.jitter !== undefined) {
       this.jitter = Math.max(0, Math.min(1, params.jitter / 100));
-    }
-    if (params.mix !== undefined) {
-      this.mix = Math.max(0, Math.min(100, params.mix)) / 100;
     }
   }
 
@@ -106,41 +102,29 @@ class ReduxProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < inputL.length; i++) {
       this.sampleCounter++;
 
-      // Store dry signal
-      const dryL = inputL[i];
-      const dryR = inputR[i];
-
       // Calculate jitter (random timing variation)
       const jitter = (Math.random() * 2 - 1) * jitterAmount * reduction;
       const threshold = reduction + jitter;
 
-      let wetL, wetR;
-
       // Sample and hold (sample rate reduction)
       if (this.sampleCounter >= threshold) {
         // Process left channel
-        wetL = this.processSample(inputL[i], levels, ditherAmount, hardness);
-        this.lastSample[0] = wetL;
+        outputL[i] = this.processSample(inputL[i], levels, ditherAmount, hardness);
+        this.lastSample[0] = outputL[i];
 
         // Process right channel
         if (outputR) {
-          wetR = this.processSample(inputR[i], levels, ditherAmount, hardness);
-          this.lastSample[1] = wetR;
-        } else {
-          wetR = wetL;
+          outputR[i] = this.processSample(inputR[i], levels, ditherAmount, hardness);
+          this.lastSample[1] = outputR[i];
         }
 
         this.sampleCounter = 0;
       } else {
         // Hold previous sample
-        wetL = this.lastSample[0];
-        wetR = this.lastSample[1];
-      }
-
-      // Mix dry/wet
-      outputL[i] = dryL * (1 - this.mix) + wetL * this.mix;
-      if (outputR) {
-        outputR[i] = dryR * (1 - this.mix) + wetR * this.mix;
+        outputL[i] = this.lastSample[0];
+        if (outputR) {
+          outputR[i] = this.lastSample[1];
+        }
       }
     }
 

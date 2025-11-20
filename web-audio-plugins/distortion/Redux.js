@@ -9,19 +9,25 @@
  * - Jitter for analog-style instability
  * - Hardness parameter for quantization curve
  *
- * UPDATED: Now uses AudioWorklet for high-performance processing
- *
  * @class Redux
  */
 class Redux {
   constructor(audioContext, options = {}) {
     this.context = audioContext;
-    this.workletNode = null;
-    this.isWorkletReady = false;
 
     // Create audio nodes
     this.input = audioContext.createGain();
     this.output = audioContext.createGain();
+
+    // ScriptProcessorNode for bit crushing (will be replaced by AudioWorklet in production)
+    this.processor = null;
+    this.bufferSize = 4096;
+
+    // Dry/wet mix
+    this.dryGain = audioContext.createGain();
+    this.wetGain = audioContext.createGain();
+    this.dryGain.gain.value = 0; // 100% wet by default
+    this.wetGain.gain.value = 1;
 
     // Parameters
     this.params = {
@@ -33,59 +39,105 @@ class Redux {
       mix: 100            // 0-100%
     };
 
-    // Initialize the plugin
+    // Processing state
+    this.sampleCounter = 0;
+    this.lastSample = [0, 0]; // For stereo
+
+    this.setupProcessor();
     this.initialize(options);
   }
 
   /**
-   * Initialize with options and setup AudioWorklet
+   * Setup ScriptProcessorNode for bit crushing
+   * Note: In production, use AudioWorklet for better performance
    */
-  async initialize(options) {
-    // Update parameters from options
-    if (options.bitDepth !== undefined) this.params.bitDepth = options.bitDepth;
-    if (options.sampleRate !== undefined) this.params.sampleRate = options.sampleRate;
-    if (options.hardness !== undefined) this.params.hardness = options.hardness;
-    if (options.dither !== undefined) this.params.dither = options.dither;
-    if (options.jitter !== undefined) this.params.jitter = options.jitter;
-    if (options.mix !== undefined) this.params.mix = options.mix;
+  setupProcessor() {
+    // Use ScriptProcessorNode (deprecated but widely supported)
+    // For modern browsers, use the AudioWorklet version
+    this.processor = this.context.createScriptProcessor(this.bufferSize, 2, 2);
 
-    // Setup AudioWorklet
-    try {
-      // Get the worklet path relative to this file
-      const workletPath = new URL('./worklets/redux-processor.js', import.meta.url || window.location.href);
+    this.processor.onaudioprocess = (e) => {
+      const inputL = e.inputBuffer.getChannelData(0);
+      const inputR = e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : inputL;
+      const outputL = e.outputBuffer.getChannelData(0);
+      const outputR = e.outputBuffer.getChannelData(1);
 
-      await this.context.audioWorklet.addModule(workletPath);
+      const reduction = this.context.sampleRate / this.params.sampleRate;
+      const levels = Math.pow(2, this.params.bitDepth);
+      const ditherAmount = this.params.dither / 100;
+      const jitterAmount = this.params.jitter / 100;
+      const hardness = this.params.hardness / 100;
 
-      // Create the worklet node
-      this.workletNode = new AudioWorkletNode(this.context, 'redux-processor');
+      for (let i = 0; i < inputL.length; i++) {
+        this.sampleCounter++;
 
-      // Connect audio routing
-      this.input.connect(this.workletNode);
-      this.workletNode.connect(this.output);
+        // Calculate jitter (random timing variation)
+        const jitter = (Math.random() * 2 - 1) * jitterAmount * reduction;
+        const threshold = reduction + jitter;
 
-      // Send initial parameters
-      this.sendParamsToWorklet();
+        // Sample and hold (sample rate reduction)
+        if (this.sampleCounter >= threshold) {
+          // Process left channel
+          outputL[i] = this.processSample(inputL[i], levels, ditherAmount, hardness);
+          this.lastSample[0] = outputL[i];
 
-      this.isWorkletReady = true;
+          // Process right channel
+          outputR[i] = this.processSample(inputR[i], levels, ditherAmount, hardness);
+          this.lastSample[1] = outputR[i];
 
-    } catch (error) {
-      console.error('Failed to initialize AudioWorklet for Redux:', error);
-      console.warn('Redux plugin will not function without AudioWorklet support');
-    }
+          this.sampleCounter = 0;
+        } else {
+          // Hold previous sample
+          outputL[i] = this.lastSample[0];
+          outputR[i] = this.lastSample[1];
+        }
+      }
+    };
 
-    return this;
+    // Setup routing
+    this.input.connect(this.dryGain);
+    this.dryGain.connect(this.output);
+
+    this.input.connect(this.processor);
+    this.processor.connect(this.wetGain);
+    this.wetGain.connect(this.output);
   }
 
   /**
-   * Send current parameters to the worklet processor
+   * Process a single sample with bit crushing
    */
-  sendParamsToWorklet() {
-    if (!this.workletNode) return;
+  processSample(sample, levels, ditherAmount, hardness) {
+    // Add dither (TPDF - Triangular Probability Density Function)
+    const dither1 = Math.random();
+    const dither2 = Math.random();
+    const tpdf = (dither1 + dither2 - 1) * ditherAmount / levels;
+    const ditheredSample = sample + tpdf;
 
-    this.workletNode.port.postMessage({
-      type: 'setParams',
-      params: { ...this.params }
-    });
+    // Quantization with hardness curve
+    let quantized;
+    if (hardness === 1) {
+      // Hard quantization (standard)
+      quantized = Math.round(ditheredSample * levels) / levels;
+    } else {
+      // Soft quantization (blend between original and quantized)
+      const hard = Math.round(ditheredSample * levels) / levels;
+      quantized = sample + (hard - sample) * hardness;
+    }
+
+    // Clamp to -1 to 1
+    return Math.max(-1, Math.min(1, quantized));
+  }
+
+  /**
+   * Initialize with options
+   */
+  initialize(options) {
+    if (options.bitDepth !== undefined) this.setBitDepth(options.bitDepth);
+    if (options.sampleRate !== undefined) this.setSampleRate(options.sampleRate);
+    if (options.hardness !== undefined) this.setHardness(options.hardness);
+    if (options.dither !== undefined) this.setDither(options.dither);
+    if (options.jitter !== undefined) this.setJitter(options.jitter);
+    if (options.mix !== undefined) this.setMix(options.mix);
   }
 
   /**
@@ -93,7 +145,6 @@ class Redux {
    */
   setBitDepth(bits) {
     this.params.bitDepth = Math.max(1, Math.min(16, Math.round(bits)));
-    this.sendParamsToWorklet();
   }
 
   /**
@@ -101,7 +152,6 @@ class Redux {
    */
   setSampleRate(rate) {
     this.params.sampleRate = Math.max(50, Math.min(this.context.sampleRate, rate));
-    this.sendParamsToWorklet();
   }
 
   /**
@@ -110,7 +160,6 @@ class Redux {
    */
   setHardness(percent) {
     this.params.hardness = Math.max(0, Math.min(100, percent));
-    this.sendParamsToWorklet();
   }
 
   /**
@@ -119,7 +168,6 @@ class Redux {
    */
   setDither(percent) {
     this.params.dither = Math.max(0, Math.min(100, percent));
-    this.sendParamsToWorklet();
   }
 
   /**
@@ -128,7 +176,6 @@ class Redux {
    */
   setJitter(percent) {
     this.params.jitter = Math.max(0, Math.min(100, percent));
-    this.sendParamsToWorklet();
   }
 
   /**
@@ -136,7 +183,11 @@ class Redux {
    */
   setMix(percent) {
     this.params.mix = Math.max(0, Math.min(100, percent));
-    this.sendParamsToWorklet();
+    const wet = this.params.mix / 100;
+    const dry = 1 - wet;
+
+    this.wetGain.gain.value = wet;
+    this.dryGain.gain.value = dry;
   }
 
   /**
@@ -150,14 +201,12 @@ class Redux {
    * Set all parameters at once
    */
   setParams(params) {
-    if (params.bitDepth !== undefined) this.params.bitDepth = Math.max(1, Math.min(16, Math.round(params.bitDepth)));
-    if (params.sampleRate !== undefined) this.params.sampleRate = Math.max(50, Math.min(this.context.sampleRate, params.sampleRate));
-    if (params.hardness !== undefined) this.params.hardness = Math.max(0, Math.min(100, params.hardness));
-    if (params.dither !== undefined) this.params.dither = Math.max(0, Math.min(100, params.dither));
-    if (params.jitter !== undefined) this.params.jitter = Math.max(0, Math.min(100, params.jitter));
-    if (params.mix !== undefined) this.params.mix = Math.max(0, Math.min(100, params.mix));
-
-    this.sendParamsToWorklet();
+    if (params.bitDepth !== undefined) this.setBitDepth(params.bitDepth);
+    if (params.sampleRate !== undefined) this.setSampleRate(params.sampleRate);
+    if (params.hardness !== undefined) this.setHardness(params.hardness);
+    if (params.dither !== undefined) this.setDither(params.dither);
+    if (params.jitter !== undefined) this.setJitter(params.jitter);
+    if (params.mix !== undefined) this.setMix(params.mix);
   }
 
   /**
@@ -179,23 +228,18 @@ class Redux {
    * Dispose and clean up resources
    */
   dispose() {
+    if (this.processor) {
+      this.processor.disconnect();
+      this.processor.onaudioprocess = null;
+    }
     this.disconnect();
     this.input.disconnect();
-
-    if (this.workletNode) {
-      this.workletNode.disconnect();
-      this.workletNode.port.close();
-      this.workletNode = null;
-    }
-
-    this.isWorkletReady = false;
+    this.dryGain.disconnect();
+    this.wetGain.disconnect();
   }
 }
 
 // Export for use in modules
-export default Redux;
-
-// Also support CommonJS
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = Redux;
 }
