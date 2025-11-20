@@ -51,7 +51,7 @@ License: MIT
 
 import random
 import math
-from typing import List, Dict, Tuple, Optional, Union
+from typing import List, Dict, Tuple, Optional, Union, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -64,6 +64,10 @@ from core.modal_harmony import (
     Mode, HarmonicMinorMode, MelodicMinorMode, SymmetricalScale,
     ModalScale, ModalScaleLibrary, ModalProgressionGenerator
 )
+
+# Use TYPE_CHECKING to avoid numpy dependency at runtime
+if TYPE_CHECKING:
+    from algorithms.rhythm_engine import GrooveTemplate, TimingStyle
 
 
 # ============================================================================
@@ -540,30 +544,58 @@ class PianoComping:
 
 class SwingTiming:
     """
-    Swing timing and microtiming engine.
+    Enhanced swing timing and microtiming engine.
 
     Implements:
     - Roger Linn swing algorithm (MPC)
     - Triplet-based swing ratios
     - Jazz bebop timing profiles
+    - 16th-note swing (modern jazz)
+    - Microtiming variation (human feel)
+    - Laid-back vs rushing feel
+    - Groove template integration
+    - Tempo-adaptive swing ratios
+
+    Research References:
+    - Roger Linn MPC swing algorithm
+    - "Swing Ratio in Jazz Performance" - Friberg & Sundström (2002)
+    - "Microtiming Deviations in Music Performance" - Repp (1998)
+    - Brad Mehldau, Robert Glasper recordings (16th-note swing)
+    - Miles Davis (laid-back feel) vs Buddy Rich (rushing feel)
     """
 
     @staticmethod
     def apply_swing(
         notes: List[JazzNote],
         swing_ratio: float = 0.62,
-        intensity: float = 1.0
+        intensity: float = 1.0,
+        subdivision: str = "8th",
+        microtiming_variance: float = 0.02,
+        feel: str = "neutral"
     ) -> List[JazzNote]:
         """
-        Apply swing feel to notes.
+        Apply swing feel to notes with enhanced controls.
 
         Args:
             notes: List of JazzNote objects
             swing_ratio: Swing ratio (0.5=straight, 0.67=triplet, 0.62=standard)
             intensity: Swing intensity (0.0-1.0)
+            subdivision: "8th" (classic), "16th" (modern), or "mixed"
+            microtiming_variance: Timing variation in beats (0.0=perfect, 0.02=subtle, 0.05=noticeable)
+            feel: "neutral", "laid_back", or "rushing"
 
         Returns:
             Notes with adjusted timing
+
+        Examples:
+            # Classic swing
+            >>> notes = SwingTiming.apply_swing(notes, swing_ratio=0.62)
+
+            # Modern jazz with 16th-note swing
+            >>> notes = SwingTiming.apply_swing(notes, swing_ratio=0.58, subdivision="16th")
+
+            # Laid-back Miles Davis feel
+            >>> notes = SwingTiming.apply_swing(notes, feel="laid_back", microtiming_variance=0.03)
         """
         swung_notes = []
 
@@ -578,17 +610,178 @@ class SwingTiming:
                 channel=note.channel
             )
 
-            # Apply swing to off-beats (every other 8th note)
-            beat_position = note.start_time % 1.0
-            if 0.45 < beat_position < 0.55:  # Off-beat 8th note
-                # Delay by swing amount
-                delay = (swing_ratio - 0.5) * intensity
-                new_note.start_time += delay
-                new_note.swing_offset = delay
+            # Apply swing based on subdivision
+            if subdivision in ["8th", "mixed"]:
+                new_note = SwingTiming._apply_8th_swing(
+                    new_note, swing_ratio, intensity
+                )
+
+            if subdivision in ["16th", "mixed"]:
+                new_note = SwingTiming._apply_16th_swing(
+                    new_note, swing_ratio * 0.95, intensity  # Lighter swing for 16ths
+                )
+
+            # Apply microtiming variation (human feel)
+            if microtiming_variance > 0.0:
+                timing_offset = random.gauss(0, microtiming_variance)
+                new_note.start_time += timing_offset
+                new_note.swing_offset += timing_offset
+
+            # Apply feel (laid-back or rushing)
+            if feel == "laid_back":
+                # Notes slightly late (cool, relaxed feel)
+                feel_offset = random.uniform(0.01, 0.03)
+                new_note.start_time += feel_offset
+                new_note.swing_offset += feel_offset
+            elif feel == "rushing":
+                # Notes slightly early (energetic, intense feel)
+                feel_offset = random.uniform(-0.03, -0.01)
+                new_note.start_time += feel_offset
+                new_note.swing_offset += feel_offset
 
             swung_notes.append(new_note)
 
         return swung_notes
+
+    @staticmethod
+    def _apply_8th_swing(
+        note: JazzNote,
+        swing_ratio: float,
+        intensity: float
+    ) -> JazzNote:
+        """
+        Apply swing to 8th notes (classic swing).
+
+        Internal method - detects off-beat 8th notes and delays them.
+        """
+        beat_position = note.start_time % 1.0
+
+        # Off-beat 8th note (position ~0.5 in beat)
+        if 0.45 < beat_position < 0.55:
+            delay = (swing_ratio - 0.5) * intensity
+            note.start_time += delay
+            note.swing_offset += delay
+
+        return note
+
+    @staticmethod
+    def _apply_16th_swing(
+        note: JazzNote,
+        swing_ratio: float,
+        intensity: float
+    ) -> JazzNote:
+        """
+        Apply swing to 16th notes (modern jazz).
+
+        Used in contemporary jazz (Brad Mehldau, Robert Glasper).
+        Detects 2nd and 4th 16th notes (positions 0.25, 0.75) and delays them.
+        """
+        beat_position = note.start_time % 1.0
+
+        # 2nd or 4th 16th note (positions 0.25, 0.75 in beat)
+        if (0.20 < beat_position < 0.30) or (0.70 < beat_position < 0.80):
+            delay = (swing_ratio - 0.5) * intensity * 0.5  # Lighter swing for 16ths
+            note.start_time += delay
+            note.swing_offset += delay
+
+        return note
+
+    @staticmethod
+    def apply_groove_template(
+        notes: List[JazzNote],
+        template: 'GrooveTemplate'
+    ) -> List[JazzNote]:
+        """
+        Apply authentic groove timing from template.
+
+        Integrates with groove_library.py GrooveTemplate system.
+        Uses timing offsets and velocity curves from real recordings.
+
+        Args:
+            notes: List of JazzNote objects
+            template: GrooveTemplate with timing/velocity patterns
+
+        Returns:
+            Notes with groove-adjusted timing and velocity
+
+        Example:
+            >>> from algorithms.groove_library import FamousGrooves
+            >>> swing_groove = extract_swing_groove()  # From Count Basie recording
+            >>> notes = SwingTiming.apply_groove_template(notes, swing_groove)
+        """
+        grooved_notes = []
+
+        for note in notes:
+            new_note = JazzNote(
+                pitch=note.pitch,
+                velocity=note.velocity,
+                start_time=note.start_time,
+                duration=note.duration,
+                articulation=note.articulation,
+                swing_offset=note.swing_offset,
+                channel=note.channel
+            )
+
+            # Calculate position in groove grid
+            # For a grid_division of 16 (16th notes), one beat = 4 grid positions
+            # Map note position to grid index in the pattern
+            grid_positions_per_beat = template.grid_division / 4.0
+            total_grid_positions = len(template.timing_offsets)
+            beats_per_pattern = total_grid_positions / grid_positions_per_beat
+
+            # Find position within the repeating pattern
+            beat_in_pattern = note.start_time % beats_per_pattern if beats_per_pattern > 0 else 0
+            grid_index = int(beat_in_pattern * grid_positions_per_beat) % total_grid_positions
+
+            # Apply timing offset from template (convert to beats)
+            timing_offset = template.timing_offsets[grid_index]
+            new_note.start_time += timing_offset
+            new_note.swing_offset += timing_offset
+
+            # Apply velocity curve from template
+            velocity_multiplier = template.velocity_curve[grid_index]
+            new_note.velocity = int(note.velocity * velocity_multiplier)
+            new_note.velocity = max(1, min(127, new_note.velocity))  # Clamp to MIDI range
+
+            grooved_notes.append(new_note)
+
+        return grooved_notes
+
+    @staticmethod
+    def calculate_adaptive_swing_ratio(tempo: int) -> float:
+        """
+        Calculate swing ratio based on tempo.
+
+        Research shows swing ratio varies with tempo:
+        - Slow tempos (60-100 BPM): Heavier swing (0.65-0.67)
+        - Medium tempos (100-160 BPM): Standard swing (0.62-0.64)
+        - Fast tempos (160-300 BPM): Lighter swing (0.56-0.60)
+
+        Rationale: At fast tempos, heavy swing sounds sluggish and impedes flow.
+
+        Args:
+            tempo: BPM (beats per minute)
+
+        Returns:
+            Optimal swing ratio for the tempo
+
+        Example:
+            >>> ratio = SwingTiming.calculate_adaptive_swing_ratio(180)
+            >>> print(ratio)  # ~0.58 (lighter for fast tempo)
+        """
+        if tempo < 100:
+            # Slow tempo - heavier swing (ballads)
+            # Range: 60 BPM → 0.67, 100 BPM → 0.65
+            return 0.67 - (tempo - 60) * 0.0005
+        elif tempo < 160:
+            # Medium tempo - standard swing
+            # Range: 100 BPM → 0.64, 160 BPM → 0.62
+            return 0.64 - (tempo - 100) * 0.00033
+        else:
+            # Fast tempo - lighter swing (bebop)
+            # Range: 160 BPM → 0.60, 250 BPM → 0.56
+            ratio = 0.60 - (tempo - 160) * 0.00044
+            return max(0.56, ratio)  # Floor at 0.56
 
 
 # ============================================================================
