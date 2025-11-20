@@ -1,0 +1,10 @@
+# Multi-Genre Data Specialist Module Requirements
+# Agent 07 - Dø MIDI Generator v2.0
+
+# Core dependencies
+numpy>=1.20.0
+scikit-learn>=1.0.0  # For domain adaptation utilities
+
+# Optional dependencies for testing
+# matplotlib>=3.4.0  # For visualization (optional)
+# pytest>=7.0.0  # For unit testing (optional)
