@@ -63,27 +63,27 @@ logger = logging.getLogger(__name__)
 
 # Import core components (with graceful fallbacks for development)
 try:
-    from ..generators.style_fusion import GenreFeatures, GENRE_PROFILES
+    from generators.style_fusion import GenreFeatures, GENRE_PROFILES
 except ImportError:
     logger.warning("style_fusion not available, using placeholder")
     GenreFeatures = None
     GENRE_PROFILES = {}
 
 try:
-    from ..analysis.midi_analyzer import MIDIAnalyzer
+    from analysis.midi_analyzer import MIDIAnalyzer
 except ImportError:
     logger.warning("midi_analyzer not available")
     MIDIAnalyzer = None
 
 # Try to import Agent modules (with graceful degradation)
 try:
-    from ..analysis.genre_detector import GenreDetector
+    from analysis.genre_detector import GenreDetector
 except ImportError:
     GenreDetector = None
     logger.debug("GenreDetector (Agent 1) not yet implemented")
 
 try:
-    from ..core.component_system import (
+    from core.component_system import (
         CompositionBuilder, ComponentType, ComponentFactory,
         global_factory, GenerationContext
     )
@@ -96,7 +96,7 @@ except ImportError:
     logger.debug("Component System (Agent 2) not yet implemented")
 
 try:
-    from ..generators.context_aware_generator import (
+    from generators.context_aware_generator import (
         ContextAwareGenerator, TrackInpainter, SmartOrchestrator
     )
 except ImportError:
@@ -106,7 +106,7 @@ except ImportError:
     logger.debug("Context-Aware Generator (Agent 3) not yet implemented")
 
 try:
-    from ..transformation.inpainting_engine import (
+    from transformation.inpainting_engine import (
         InpaintingEngine, ChordSubstitutionEngine, StyleTransitionBlender
     )
 except ImportError:
@@ -116,7 +116,7 @@ except ImportError:
     logger.debug("Inpainting Engine (Agent 4) not yet implemented")
 
 try:
-    from ..generators.style_fusion import (
+    from generators.style_fusion import (
         ModularFusion, ComponentReplacer, GenreCompatibilityAnalyzer,
         TrackLevelFusion, ProgressiveFusion
     )
@@ -129,21 +129,21 @@ except ImportError:
     logger.debug("Modular Fusion extensions (Agent 5) not fully implemented")
 
 try:
-    from ..transformation.tempo_converter import TempoConverter, StyleTempoAdjuster
+    from transformation.tempo_converter import TempoConverter, StyleTempoAdjuster
 except ImportError:
     TempoConverter = None
     StyleTempoAdjuster = None
     logger.debug("Tempo Converter (Agent 6) not yet implemented")
 
 try:
-    from ..transformation.meter_converter import MeterConverter, MetricModulator
+    from transformation.meter_converter import MeterConverter, MetricModulator
 except ImportError:
     MeterConverter = None
     MetricModulator = None
     logger.debug("Meter Converter (Agent 7) not yet implemented")
 
 try:
-    from ..generators.granular_control import (
+    from generators.granular_control import (
         GranularController, IdiomaticWriter, PatternApplicator
     )
 except ImportError:
@@ -153,7 +153,7 @@ except ImportError:
     logger.debug("Granular Control (Agent 8) not yet implemented")
 
 try:
-    from ..core.multi_genre_arranger import (
+    from core.multi_genre_arranger import (
         MultiGenreArranger, TrackGenreManager
     )
 except ImportError:
