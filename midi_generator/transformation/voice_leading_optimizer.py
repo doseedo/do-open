@@ -673,11 +673,20 @@ class VoiceLeadingOptimizer:
         # Generate all possible voicings for each chord
         all_voicings = []
         for chord in chords:
+            # Handle both dict and object (ChordEvent) formats
+            if isinstance(chord, dict):
+                root = chord['root']
+                quality = chord['quality']
+            else:
+                # Assume it's an object with .root and .quality attributes
+                root = chord.root
+                quality = chord.quality
+
             chord_voicings = []
             for v_type in voicing_types:
                 voicings = VoicingGenerator.generate_all_voicings(
-                    root=chord['root'],
-                    quality=chord['quality'],
+                    root=root,
+                    quality=quality,
                     num_voices=num_voices,
                     voice_ranges=voice_ranges,
                     voicing_type=v_type,
