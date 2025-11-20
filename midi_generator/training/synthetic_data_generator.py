@@ -1,7 +1,4 @@
 """
-<<<<<<< HEAD
-Synthetic Training Data Generator - Agent 14
-==============================================
 
 Generates high-quality synthetic training data for new parameters in the
 Musical Program Synthesis system.
@@ -39,52 +36,12 @@ Strategy:
 - Genre-balanced generation
 
 Author: Agent 14 - Training Data Specialist
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
 License: MIT
 """
 
 import json
 import random
 import time
-<<<<<<< HEAD
-import logging
-from collections import Counter
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-from dataclasses import dataclass, field, asdict
-
-import numpy as np
-import mido
-from tqdm import tqdm
-
-# Import scipy for Latin hypercube sampling
-try:
-    from scipy.stats import qmc
-    SCIPY_AVAILABLE = True
-except ImportError:
-    SCIPY_AVAILABLE = False
-    print("WARNING: scipy not available. Install with 'pip install scipy' for better sampling.")
-
-# Import system components
-from midi_generator.parameters.universal_registry import (
-    UniversalParameterRegistry,
-    ParameterDefinition,
-    ParameterType,
-    ParameterCategory,
-    MusicalImpact
-)
-
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-
-# ============================================================================
 # DATA STRUCTURES
 # ============================================================================
 
@@ -111,7 +68,6 @@ except ImportError:
         return iterable
 
 
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
 @dataclass
 class TrainingExample:
     """Single training example for a parameter"""
@@ -122,55 +78,6 @@ class TrainingExample:
     generation_time: float
     coherence_score: float
     genre: Optional[str] = None
-<<<<<<< HEAD
-    validation_passed: bool = True
-    error_message: Optional[str] = None
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary for JSON serialization"""
-        return {
-            'features': self.features.tolist() if isinstance(self.features, np.ndarray) else self.features,
-            'parameter_value': self._serialize_value(self.parameter_value),
-            'midi_file': str(self.midi_file.name),
-            'generation_time': self.generation_time,
-            'coherence_score': self.coherence_score,
-            'genre': self.genre,
-            'validation_passed': self.validation_passed,
-            'error_message': self.error_message
-        }
-
-    def _serialize_value(self, value):
-        """Serialize parameter value for JSON"""
-        if isinstance(value, (int, float, str, bool)):
-            return value
-        elif isinstance(value, np.number):
-            return float(value)
-        elif isinstance(value, (list, tuple)):
-            return [self._serialize_value(v) for v in value]
-        elif isinstance(value, np.ndarray):
-            return value.tolist()
-        else:
-            return str(value)
-
-
-@dataclass
-class DatasetStatistics:
-    """Statistics about generated dataset"""
-    total_examples: int
-    successful_examples: int
-    failed_examples: int
-    avg_coherence_score: float
-    avg_generation_time: float
-    parameter_value_distribution: Dict[str, Any]
-    genre_distribution: Optional[Dict[str, int]] = None
-    quality_metrics: Dict[str, float] = field(default_factory=dict)
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary"""
-        return asdict(self)
-
-
-# ============================================================================
 # MUSICAL COHERENCE VALIDATOR
 # ============================================================================
 
@@ -269,87 +176,16 @@ class MusicalCoherenceValidator:
         else:
             midi = midi_data
 
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
         checks = {
             'has_notes': self._check_has_notes(midi),
             'reasonable_length': self._check_reasonable_length(midi),
             'pitch_range_ok': self._check_pitch_range(midi),
-<<<<<<< HEAD
-            'no_extreme_velocities': self._check_velocities(midi),
-            'rhythmic_coherence': self._check_rhythm(midi),
-=======
             'velocities_ok': self._check_velocities(midi),
             'rhythmic_variation': self._check_rhythm(midi),
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
             'harmonic_coherence': self._check_harmony(midi)
         }
 
         # Weighted average
-<<<<<<< HEAD
-        score = sum(
-            checks[key] * self.validation_weights[key]
-            for key in checks
-        )
-
-        return score
-
-    def validate_with_details(self, midi: mido.MidiFile) -> Tuple[float, Dict[str, float]]:
-        """
-        Validate with detailed breakdown
-
-        Returns:
-            (overall_score, individual_scores_dict)
-        """
-        checks = {
-            'has_notes': self._check_has_notes(midi),
-            'reasonable_length': self._check_reasonable_length(midi),
-            'pitch_range_ok': self._check_pitch_range(midi),
-            'no_extreme_velocities': self._check_velocities(midi),
-            'rhythmic_coherence': self._check_rhythm(midi),
-            'harmonic_coherence': self._check_harmony(midi)
-        }
-
-        score = sum(
-            checks[key] * self.validation_weights[key]
-            for key in checks
-        )
-
-        return score, checks
-
-    def _check_has_notes(self, midi: mido.MidiFile) -> float:
-        """Check MIDI has actual notes"""
-        note_count = 0
-        for track in midi.tracks:
-            for msg in track:
-                if msg.type == 'note_on' and hasattr(msg, 'velocity') and msg.velocity > 0:
-                    note_count += 1
-
-        if note_count == 0:
-            return 0.0
-        elif note_count < 5:
-            return 0.5  # Very few notes
-        else:
-            return 1.0
-
-    def _check_reasonable_length(self, midi: mido.MidiFile) -> float:
-        """Check MIDI length is reasonable"""
-        try:
-            length = midi.length  # seconds
-        except:
-            # Fallback: calculate from ticks
-            total_ticks = sum(track[-1].time if track else 0 for track in midi.tracks)
-            length = mido.tick2second(total_ticks, midi.ticks_per_beat, 500000)
-
-        if self.strict_mode:
-            if 10 <= length <= 90:
-                return 1.0
-            elif 5 <= length <= 120:
-                return 0.7
-            else:
-                return 0.3
-        else:
-            if 5 <= length <= 120:
-=======
         score = sum(checks.values()) / len(checks)
 
         return score
@@ -371,147 +207,11 @@ class MusicalCoherenceValidator:
         try:
             length = midi.length if hasattr(midi, 'length') else 30  # seconds
             if 5 <= length <= 120:  # 5 seconds to 2 minutes
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
                 return 1.0
             elif 2 <= length <= 180:
                 return 0.7
             else:
                 return 0.3
-<<<<<<< HEAD
-
-    def _check_pitch_range(self, midi: mido.MidiFile) -> float:
-        """Check pitches are in reasonable range"""
-        pitches = []
-        for track in midi.tracks:
-            for msg in track:
-                if msg.type == 'note_on' and hasattr(msg, 'note'):
-                    if hasattr(msg, 'velocity') and msg.velocity > 0:
-                        pitches.append(msg.note)
-
-        if not pitches:
-            return 0.0
-
-        # Check range
-        min_pitch = min(pitches)
-        max_pitch = max(pitches)
-
-        # Standard MIDI piano range: 21 (A0) to 108 (C8)
-        if 21 <= min_pitch and max_pitch <= 108:
-            return 1.0
-        # Extended range but still valid MIDI
-        elif 0 <= min_pitch and max_pitch <= 127:
-            return 0.8
-        else:
-            return 0.0
-
-    def _check_velocities(self, midi: mido.MidiFile) -> float:
-        """Check velocities are reasonable"""
-        velocities = []
-        for track in midi.tracks:
-            for msg in track:
-                if msg.type == 'note_on' and hasattr(msg, 'velocity'):
-                    if msg.velocity > 0:  # Ignore note-offs
-                        velocities.append(msg.velocity)
-
-        if not velocities:
-            return 0.0
-
-        vel_array = np.array(velocities)
-        mean_vel = np.mean(vel_array)
-        std_vel = np.std(vel_array)
-
-        # Check for reasonable range (not all silent or all max)
-        if 30 <= mean_vel <= 100:
-            score = 1.0
-        elif 20 <= mean_vel <= 110:
-            score = 0.8
-        else:
-            score = 0.5
-
-        # Penalize if all velocities are identical (no dynamics)
-        if std_vel < 1.0:
-            score *= 0.5
-
-        return score
-
-    def _check_rhythm(self, midi: mido.MidiFile) -> float:
-        """Check rhythmic coherence"""
-        note_times = []
-
-        for track in midi.tracks:
-            current_time = 0
-            for msg in track:
-                current_time += msg.time
-                if msg.type == 'note_on' and hasattr(msg, 'velocity') and msg.velocity > 0:
-                    note_times.append(current_time)
-
-        if len(note_times) < 2:
-            return 0.0
-
-        # Check for rhythmic variation
-        time_diffs = np.diff(note_times)
-
-        if len(time_diffs) == 0:
-            return 0.0
-
-        # Good rhythm has some variation but not total chaos
-        unique_timings = len(set(time_diffs))
-
-        if unique_timings == 1:
-            # All same timing - mechanical but valid
-            return 0.6
-        elif 2 <= unique_timings <= len(time_diffs) * 0.8:
-            # Good variation
-            return 1.0
-        else:
-            # Too much variation might indicate randomness
-            return 0.8
-
-    def _check_harmony(self, midi: mido.MidiFile) -> float:
-        """Check harmonic coherence"""
-        # For now, basic check: if multiple simultaneous notes,
-        # they should form reasonable intervals
-
-        # Extract simultaneous notes (simplified)
-        active_notes = set()
-        intervals = []
-
-        for track in midi.tracks:
-            current_time = 0
-            for msg in track:
-                current_time += msg.time
-
-                if msg.type == 'note_on' and hasattr(msg, 'velocity'):
-                    if msg.velocity > 0:
-                        active_notes.add(msg.note)
-                    else:
-                        active_notes.discard(msg.note)
-
-                # Check intervals when we have multiple notes
-                if len(active_notes) >= 2:
-                    notes = sorted(list(active_notes))
-                    for i in range(len(notes) - 1):
-                        interval = notes[i + 1] - notes[i]
-                        intervals.append(interval)
-
-        if not intervals:
-            # No simultaneous notes - melodic only, that's fine
-            return 1.0
-
-        # Check for dissonant intervals (seconds, sevenths, tritones)
-        # Allow them but penalize if they're dominant
-        dissonant = sum(1 for i in intervals if i in [1, 2, 6, 10, 11])
-        dissonance_ratio = dissonant / len(intervals) if intervals else 0
-
-        if dissonance_ratio < 0.3:
-            return 1.0
-        elif dissonance_ratio < 0.5:
-            return 0.8
-        else:
-            return 0.6
-
-
-# ============================================================================
 # PARAMETER SPACE SAMPLER
 # ============================================================================
 
@@ -927,7 +627,6 @@ class SyntheticTrainingDataGenerator:
         Generate training dataset for new parameter
 
         Strategy:
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
         1. Sample parameter values using Latin hypercube (even coverage)
         2. For each value, vary other parameters (prevent overfitting)
         3. Generate MIDI
@@ -936,44 +635,6 @@ class SyntheticTrainingDataGenerator:
         6. Store: (features, parameter_value, MIDI_file)
 
         Args:
-<<<<<<< HEAD
-            param_name: Name of parameter to train
-            param_def: Parameter definition
-            n_examples: Number of training examples to generate
-            output_dir: Output directory (default: training_data/{param_name})
-            min_coherence: Minimum coherence score to accept (0.0-1.0)
-            max_failures_ratio: Maximum ratio of failures before aborting
-
-        Returns:
-            List of TrainingExample objects
-        """
-        logger.info(f"Generating {n_examples} training examples for {param_name}...")
-
-        # Create output directory
-        if output_dir is None:
-            param_dir = self.output_root / param_name.replace('.', '_')
-        else:
-            param_dir = Path(output_dir)
-
-        param_dir.mkdir(parents=True, exist_ok=True)
-
-        # 1. Sample parameter space intelligently
-        parameter_values = self.sampler.sample_parameter_space(param_def, n_examples)
-
-        # 2. Generate examples
-        training_data = []
-        failed = 0
-
-        with tqdm(total=n_examples, desc=f"Generating {param_name}") as pbar:
-            attempts = 0
-            max_attempts = int(n_examples * (1 + max_failures_ratio * 2))
-
-            while len(training_data) < n_examples and attempts < max_attempts:
-                attempts += 1
-
-                # Get parameter value for this example
-                param_value = parameter_values[len(training_data) % len(parameter_values)]
-=======
             param_name: Full parameter name (e.g., 'harmony.voicing.quartal_prob')
             param_def: Parameter definition dict
             n_examples: Number of examples to generate
@@ -1014,7 +675,6 @@ class SyntheticTrainingDataGenerator:
 
                 # Get parameter value for this example
                 param_value = parameter_values[len(examples) % len(parameter_values)]
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
 
                 try:
                     # Generate training example
@@ -1023,73 +683,19 @@ class SyntheticTrainingDataGenerator:
                         param_value,
                         param_def,
                         param_dir,
-<<<<<<< HEAD
-                        len(training_data)
-=======
                         len(examples)
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
                     )
 
                     # Validate musical coherence
                     if example.coherence_score < min_coherence:
                         failed += 1
-<<<<<<< HEAD
-                        logger.debug(f"Example {len(training_data)} failed coherence: {example.coherence_score:.2f}")
-
-                        # Check failure rate
-                        failure_rate = failed / attempts if attempts > 0 else 0
-                        if failure_rate > max_failures_ratio and attempts > 100:
-                            logger.error(f"Failure rate too high ({failure_rate:.1%}), aborting")
-                            raise RuntimeError(
-                                f"Too many generation failures ({failed}/{attempts}). "
-                                "Check generator configuration."
-                            )
-                        continue
-
-                    training_data.append(example)
-=======
                         continue
 
                     examples.append(example)
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
                     pbar.update(1)
 
                 except Exception as e:
                     failed += 1
-<<<<<<< HEAD
-                    logger.debug(f"Generation error: {e}")
-
-                    # Check failure rate
-                    failure_rate = failed / attempts if attempts > 0 else 0
-                    if failure_rate > max_failures_ratio and attempts > 100:
-                        logger.error(f"Failure rate too high ({failure_rate:.1%}), aborting")
-                        raise RuntimeError(
-                            f"Too many generation failures ({failed}/{attempts}): {e}"
-                        )
-                    continue
-
-        logger.info(f"✅ Generated {len(training_data)} examples ({failed} failed)")
-
-        # Update statistics
-        self.stats['total_generated'] += len(training_data)
-        self.stats['total_failed'] += failed
-        self.stats['generation_times'].extend([ex.generation_time for ex in training_data])
-        self.stats['coherence_scores'].extend([ex.coherence_score for ex in training_data])
-
-        # Save metadata
-        self._save_metadata(training_data, param_name, param_def, param_dir)
-
-        return training_data
-
-    def _generate_single_example(
-        self,
-        param_name: str,
-        param_value: Any,
-        param_def: ParameterDefinition,
-        output_dir: Path,
-        example_idx: int
-    ) -> TrainingExample:
-=======
                     if failed > n_examples * 0.3:  # >30% failure rate
                         print(f"\n⚠️ High failure rate ({failed}/{attempts})")
                         print(f"   Last error: {e}")
@@ -1207,100 +813,11 @@ class SyntheticTrainingDataGenerator:
                                  param_def: dict,
                                  output_dir: Path,
                                  example_idx: int) -> TrainingExample:
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
         """
         Generate one training example
 
         Args:
             param_name: Parameter name
-<<<<<<< HEAD
-            param_value: Value for this parameter
-            param_def: Parameter definition
-            output_dir: Output directory
-            example_idx: Example index
-
-        Returns:
-            TrainingExample object
-        """
-        start_time = time.time()
-
-        try:
-            # 1. Create parameter set with NEW param + varied others
-            params = self.param_generator.sample_default_parameters(exclude_param=param_name)
-            params[param_name] = param_value
-
-            # 2. Generate MIDI
-            if self.generator is None:
-                # Mock generation for testing
-                midi = self._create_mock_midi()
-            else:
-                midi = self.generator.generate(params)
-
-            # 3. Save MIDI
-            midi_filename = f"{param_name.replace('.', '_')}_{example_idx:04d}.mid"
-            midi_path = output_dir / midi_filename
-            midi.save(str(midi_path))
-
-            # 4. Extract features
-            if self.feature_extractor is None:
-                # Mock features for testing
-                features = np.random.randn(1000)
-            else:
-                features = self.feature_extractor.extract(midi_path)
-
-            # 5. Validate coherence
-            coherence_score = self.validator.validate_coherence(midi)
-
-            generation_time = time.time() - start_time
-
-            return TrainingExample(
-                features=features,
-                parameter_value=param_value,
-                midi_file=midi_path,
-                other_params=params.copy(),
-                generation_time=generation_time,
-                coherence_score=coherence_score,
-                validation_passed=True
-            )
-
-        except Exception as e:
-            generation_time = time.time() - start_time
-            logger.error(f"Error generating example {example_idx}: {e}")
-
-            # Return failed example
-            return TrainingExample(
-                features=np.array([]),
-                parameter_value=param_value,
-                midi_file=output_dir / f"failed_{example_idx}.mid",
-                other_params={},
-                generation_time=generation_time,
-                coherence_score=0.0,
-                validation_passed=False,
-                error_message=str(e)
-            )
-
-    def _create_mock_midi(self) -> mido.MidiFile:
-        """Create mock MIDI for testing (when no generator available)"""
-        mid = mido.MidiFile()
-        track = mido.MidiTrack()
-        mid.tracks.append(track)
-
-        # Add some notes
-        track.append(mido.Message('program_change', program=0, time=0))
-        for i, note in enumerate([60, 64, 67, 72]):
-            track.append(mido.Message('note_on', note=note, velocity=64, time=i * 480))
-            track.append(mido.Message('note_off', note=note, velocity=64, time=480))
-
-        return mid
-
-    def generate_balanced_dataset(
-        self,
-        param_name: str,
-        param_def: ParameterDefinition,
-        n_per_genre: int = 100,
-        genres: Optional[List[str]] = None
-    ) -> List[TrainingExample]:
-=======
             param_value: Value for this example
             param_def: Parameter definition
             output_dir: Directory to save MIDI
@@ -1489,20 +1006,10 @@ class SyntheticTrainingDataGenerator:
                                   param_def: dict,
                                   n_per_genre: int = 100,
                                   genres: Optional[List[str]] = None) -> TrainingDataset:
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
         """
         Generate training data balanced across genres
 
         Args:
-<<<<<<< HEAD
-            param_name: Parameter to train
-            param_def: Parameter definition
-            n_per_genre: Examples per genre
-            genres: List of genres (uses defaults if None)
-
-        Returns:
-            List of training examples
-=======
             param_name: Parameter name
             param_def: Parameter definition
             n_per_genre: Examples per genre
@@ -1510,7 +1017,6 @@ class SyntheticTrainingDataGenerator:
 
         Returns:
             TrainingDataset with genre-balanced examples
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
         """
         if genres is None:
             genres = [
@@ -1518,265 +1024,6 @@ class SyntheticTrainingDataGenerator:
                 'fusion', 'cool_jazz', 'free_jazz', 'ballad'
             ]
 
-<<<<<<< HEAD
-        all_training_data = []
-
-        for genre in genres:
-            logger.info(f"Generating {n_per_genre} examples for {param_name} in {genre} style...")
-
-            genre_dir = self.output_root / genre / param_name.replace('.', '_')
-            genre_dir.mkdir(parents=True, exist_ok=True)
-
-            # Get genre-specific parameters
-            genre_params_base = self._get_genre_params(genre)
-
-            # Sample parameter values
-            parameter_values = self.sampler.sample_parameter_space(param_def, n_per_genre)
-
-            for i in range(n_per_genre):
-                param_value = parameter_values[i]
-
-                # Combine with genre params
-                params = genre_params_base.copy()
-                params[param_name] = param_value
-
-                # Generate
-                try:
-                    example = self._generate_single_example(
-                        param_name,
-                        param_value,
-                        param_def,
-                        genre_dir,
-                        i
-                    )
-                    example.genre = genre
-                    all_training_data.append(example)
-                except Exception as e:
-                    logger.error(f"Failed to generate {genre} example {i}: {e}")
-                    continue
-
-        logger.info(f"✅ Generated {len(all_training_data)} genre-balanced examples")
-
-        # Save combined metadata
-        self._save_metadata(
-            all_training_data,
-            param_name,
-            param_def,
-            self.output_root / f"{param_name.replace('.', '_')}_balanced"
-        )
-
-        return all_training_data
-
-    def _get_genre_params(self, genre: str) -> Dict[str, Any]:
-        """
-        Get default parameters for genre
-
-        Args:
-            genre: Genre name
-
-        Returns:
-            Dictionary of parameter values for this genre
-        """
-        # Try to load from style database
-        try:
-            from midi_generator.styles.style_registry import StyleRegistry
-            registry = StyleRegistry()
-            genre_style = registry.get_style(genre)
-            if genre_style:
-                return genre_style.get('parameters', {})
-        except ImportError:
-            logger.warning("StyleRegistry not available, using defaults")
-
-        # Fallback: use random parameters
-        return self.param_generator.sample_default_parameters()
-
-    def _save_metadata(
-        self,
-        training_data: List[TrainingExample],
-        param_name: str,
-        param_def: ParameterDefinition,
-        output_dir: Path
-    ):
-        """
-        Save training dataset metadata
-
-        Args:
-            training_data: List of training examples
-            param_name: Parameter name
-            param_def: Parameter definition
-            output_dir: Output directory
-        """
-        successful = [ex for ex in training_data if ex.validation_passed]
-        failed = [ex for ex in training_data if not ex.validation_passed]
-
-        # Calculate statistics
-        stats = DatasetStatistics(
-            total_examples=len(training_data),
-            successful_examples=len(successful),
-            failed_examples=len(failed),
-            avg_coherence_score=np.mean([ex.coherence_score for ex in successful]) if successful else 0.0,
-            avg_generation_time=np.mean([ex.generation_time for ex in successful]) if successful else 0.0,
-            parameter_value_distribution=self._analyze_distribution(successful, param_def)
-        )
-
-        # Add genre distribution if applicable
-        if any(ex.genre for ex in training_data):
-            genre_counts = Counter([ex.genre for ex in training_data if ex.genre])
-            stats.genre_distribution = dict(genre_counts)
-
-        # Quality metrics
-        if successful:
-            coherence_scores = [ex.coherence_score for ex in successful]
-            stats.quality_metrics = {
-                'coherence_min': float(np.min(coherence_scores)),
-                'coherence_max': float(np.max(coherence_scores)),
-                'coherence_std': float(np.std(coherence_scores)),
-                'coherence_median': float(np.median(coherence_scores))
-            }
-
-        # Build metadata dictionary
-        metadata = {
-            'parameter_name': param_name,
-            'parameter_type': param_def.param_type.value,
-            'parameter_category': param_def.category.value if param_def.category else None,
-            'generation_date': datetime.now().isoformat(),
-            'statistics': stats.to_dict(),
-            'examples': [ex.to_dict() for ex in successful[:100]],  # First 100 for size
-            'failed_examples': [ex.to_dict() for ex in failed[:50]] if failed else []
-        }
-
-        # Save metadata
-        output_dir.mkdir(parents=True, exist_ok=True)
-        metadata_path = output_dir / 'metadata.json'
-
-        with open(metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=2)
-
-        logger.info(f"Saved metadata to {metadata_path}")
-
-        # Also save CSV for easy analysis
-        self._save_csv_summary(successful, output_dir / 'summary.csv')
-
-    def _analyze_distribution(
-        self,
-        training_data: List[TrainingExample],
-        param_def: ParameterDefinition
-    ) -> Dict[str, Any]:
-        """
-        Analyze parameter value distribution
-
-        Args:
-            training_data: Training examples
-            param_def: Parameter definition
-
-        Returns:
-            Distribution statistics
-        """
-        if not training_data:
-            return {}
-
-        values = [ex.parameter_value for ex in training_data]
-
-        # Numeric distribution
-        if param_def.param_type in [
-            ParameterType.CONTINUOUS,
-            ParameterType.PROBABILITY,
-            ParameterType.INTEGER,
-            ParameterType.MIDI_NOTE,
-            ParameterType.VELOCITY
-        ]:
-            numeric_values = [float(v) for v in values]
-            return {
-                'mean': float(np.mean(numeric_values)),
-                'std': float(np.std(numeric_values)),
-                'min': float(np.min(numeric_values)),
-                'max': float(np.max(numeric_values)),
-                'median': float(np.median(numeric_values)),
-                'quartiles': {
-                    'q25': float(np.percentile(numeric_values, 25)),
-                    'q50': float(np.percentile(numeric_values, 50)),
-                    'q75': float(np.percentile(numeric_values, 75))
-                }
-            }
-
-        # Categorical distribution
-        elif param_def.param_type == ParameterType.CATEGORICAL:
-            counts = Counter([str(v) for v in values])
-            return {
-                'distribution': dict(counts),
-                'unique_values': len(counts),
-                'most_common': counts.most_common(5)
-            }
-
-        # Boolean distribution
-        elif param_def.param_type == ParameterType.BOOLEAN:
-            counts = Counter(values)
-            total = sum(counts.values())
-            return {
-                'true_count': counts.get(True, 0),
-                'false_count': counts.get(False, 0),
-                'true_ratio': counts.get(True, 0) / total if total > 0 else 0
-            }
-
-        # Array types
-        else:
-            return {
-                'sample_count': len(values),
-                'sample_values': [str(v) for v in values[:5]]
-            }
-
-    def _save_csv_summary(self, training_data: List[TrainingExample], csv_path: Path):
-        """Save CSV summary of training data"""
-        import csv
-
-        with open(csv_path, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                'index',
-                'parameter_value',
-                'coherence_score',
-                'generation_time',
-                'midi_file',
-                'genre'
-            ])
-
-            for i, ex in enumerate(training_data):
-                writer.writerow([
-                    i,
-                    ex.parameter_value,
-                    f"{ex.coherence_score:.3f}",
-                    f"{ex.generation_time:.3f}",
-                    ex.midi_file.name,
-                    ex.genre or 'N/A'
-                ])
-
-        logger.info(f"Saved CSV summary to {csv_path}")
-
-    def get_global_statistics(self) -> Dict[str, Any]:
-        """Get global statistics across all generations"""
-        return {
-            'total_generated': self.stats['total_generated'],
-            'total_failed': self.stats['total_failed'],
-            'success_rate': (
-                self.stats['total_generated'] /
-                (self.stats['total_generated'] + self.stats['total_failed'])
-                if self.stats['total_generated'] + self.stats['total_failed'] > 0
-                else 0
-            ),
-            'avg_generation_time': (
-                np.mean(self.stats['generation_times'])
-                if self.stats['generation_times']
-                else 0
-            ),
-            'avg_coherence_score': (
-                np.mean(self.stats['coherence_scores'])
-                if self.stats['coherence_scores']
-                else 0
-            )
-        }
-
-
-# ============================================================================
 # BATCH GENERATION UTILITIES
 # ============================================================================
 
@@ -3234,4 +2481,3 @@ if __name__ == '__main__':
     print(f"Examples: {dataset.n_examples}")
     print(f"Avg coherence: {dataset.statistics.get('avg_coherence', 0):.3f}")
     print(f"Saved to: {dataset.output_directory}")
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS

@@ -208,11 +208,7 @@ class UniversalParameterRegistry:
         # DYNAMICS PARAMETERS
         self._register_dynamics_parameters()
 
-<<<<<<< HEAD
-        # INSTRUMENTATION PARAMETERS (Agent 1 Expansion)
-=======
-        # INSTRUMENTATION PARAMETERS (Agent 21)
->>>>>>> origin/claude/music-generation-agents-01EsFce4eHajdUU8WCTZymgV
+        # INSTRUMENTATION PARAMETERS (Agents 1 & 21)
         self._register_instrumentation_parameters()
 
     def register(self, param_def: ParameterDefinition):
@@ -637,33 +633,14 @@ class UniversalParameterRegistry:
         ))
 
     def _register_instrumentation_parameters(self):
-<<<<<<< HEAD
         """
-        Register instrumentation parameters (Agent 1 expansion)
+        Register instrumentation parameters (Agents 1 & 21)
 
-        Imports and registers all 80 instrumentation parameters from
-        the instrumentation_expansion module.
+        Agent 21: 25 core instrumentation parameters (inline)
+        Agent 1: 80 additional instrumentation parameters (via expansion module)
         """
-        try:
-            from .instrumentation_expansion import (
-                register_piano_parameters,
-                register_bass_parameters,
-                register_drums_parameters,
-                register_brass_parameters,
-                register_strings_parameters
-            )
 
-            # Register all instrumentation parameter groups
-            register_piano_parameters()
-            register_bass_parameters()
-            register_drums_parameters()
-            register_brass_parameters()
-            register_strings_parameters()
-        except ImportError:
-            # If module not available, skip (for backward compatibility)
-            pass
-=======
-        """Register instrumentation parameters - Agent 21"""
+        # AGENT 21: CORE INSTRUMENTATION PARAMETERS (25 inline)
 
         # ENSEMBLE SELECTION
         self.register(ParameterDefinition(
@@ -996,7 +973,26 @@ class UniversalParameterRegistry:
             musical_impact=MusicalImpact.HIGH,
             genre_relevance=["jazz", "classical", "all"]
         ))
->>>>>>> origin/claude/music-generation-agents-01EsFce4eHajdUU8WCTZymgV
+
+        # AGENT 1: ADDITIONAL INSTRUMENTATION PARAMETERS (80 via expansion module)
+        try:
+            from .instrumentation_expansion import (
+                register_piano_parameters,
+                register_bass_parameters,
+                register_drums_parameters,
+                register_brass_parameters,
+                register_strings_parameters
+            )
+
+            # Register all instrumentation parameter groups
+            register_piano_parameters(self)
+            register_bass_parameters(self)
+            register_drums_parameters(self)
+            register_brass_parameters(self)
+            register_strings_parameters(self)
+        except ImportError:
+            # If module not available, skip (for backward compatibility)
+            pass
 
     # ========================================================================
     # Utility Methods

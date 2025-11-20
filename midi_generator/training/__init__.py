@@ -1,208 +1,108 @@
 """
-<<<<<<< HEAD
-<<<<<<< HEAD
-Training Data Generation Module - Agent 14
-===========================================
+Training Module - Agents 14 & 15
+=================================
 
-Synthetic training data generation for the Musical Program Synthesis system.
+This module contains comprehensive training infrastructure for the Musical Program Synthesis system.
 
-This module provides comprehensive tools for generating high-quality training
-data for new parameters through:
+Agents:
+- Agent 14: Synthetic Training Data Generator
+- Agent 15: Model Training Specialist
 
-1. **SyntheticTrainingDataGenerator**: Main class for generating training datasets
-2. **MusicalCoherenceValidator**: Validates generated MIDI for musical quality
-3. **ParameterSpaceSampler**: Intelligent sampling using Latin hypercube
-4. **BatchTrainingDataGenerator**: Batch generation for multiple parameters
+Features:
+---------
+1. **Synthetic Data Generation** (Agent 14):
+   - Latin hypercube sampling for even parameter space coverage
+   - Genre-balanced dataset generation
+   - Musical coherence validation
+   - Data augmentation and quality analysis
 
-Key Features:
--------------
-- Latin hypercube sampling for even parameter space coverage
-- Genre-balanced dataset generation
-- Musical coherence validation (pitch, rhythm, harmony, dynamics)
-- Diverse parameter variation to prevent overfitting
-- Comprehensive metadata and statistics tracking
-- Robust error handling and retry logic
-- Real-time progress monitoring
-- Support for all parameter types
+2. **Model Training** (Agent 15):
+   - XGBoost model training per parameter
+   - Hyperparameter tuning
+   - Cross-validation and evaluation
+   - Batch training for multiple parameters
 
 Example Usage:
 --------------
 ```python
-from midi_generator.training import SyntheticTrainingDataGenerator
+from midi_generator.training import SyntheticTrainingDataGenerator, ModelTrainingSpecialist
 from midi_generator.parameters.universal_registry import UniversalParameterRegistry
 
-# Initialize
+# 1. Generate training data
 registry = UniversalParameterRegistry()
 generator = SyntheticTrainingDataGenerator()
-
-# Get parameter definition
-param_name = "harmony.jazz.voicing_density"
-param_def = registry.parameters[param_name]
-
-# Generate 1000 training examples
 training_data = generator.generate_training_data(
-    param_name=param_name,
-    param_def=param_def,
+    param_name="harmony.jazz.voicing_density",
+    param_def=registry.parameters["harmony.jazz.voicing_density"],
     n_examples=1000
 )
 
-# Or generate genre-balanced dataset
-balanced_data = generator.generate_balanced_dataset(
-    param_name=param_name,
-    param_def=param_def,
-    n_per_genre=100
+# 2. Train model
+trainer = ModelTrainingSpecialist()
+model, metrics = trainer.train_parameter_model(
+    param_name='harmony.jazz.voicing_density',
+    param_def=registry.parameters["harmony.jazz.voicing_density"],
+    training_data=training_data
 )
 ```
 
-Author: Agent 14 - Synthetic Training Data Generator
-=======
-Training Module
-===============
-
-This module contains agents for training data generation and model training.
-
-Modules:
-- synthetic_data_generator: Agent 14 - Synthetic Training Data Generator
-- model_trainer: Agent 15 - Model Training Specialist
-
-Author: Musical Program Synthesis Team
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
+Authors: Agent 14 (Data Generation) & Agent 15 (Model Training)
 License: MIT
 """
 
+# Agent 14: Synthetic Data Generation
 from .synthetic_data_generator import (
-<<<<<<< HEAD
-    # Main generator class
     SyntheticTrainingDataGenerator,
-
-    # Validator
     MusicalCoherenceValidator,
-
-    # Sampling utilities
     ParameterSpaceSampler,
     DefaultParameterGenerator,
-
-    # Batch generation
     BatchTrainingDataGenerator,
-
-    # Data structures
     TrainingExample,
     DatasetStatistics,
-
-    # Data augmentation
     MIDIDataAugmenter,
-
-    # Cross-validation
     CrossValidationSplitter,
-
-    # Export utilities
     DatasetExporter,
-
-    # Quality analysis
     DatasetQualityAnalyzer,
-
-    # Active learning
     ActiveLearningSelector,
+    TrainingDataset,
 )
 
-__all__ = [
-    # Main classes
-    'SyntheticTrainingDataGenerator',
-    'MusicalCoherenceValidator',
-    'ParameterSpaceSampler',
-    'DefaultParameterGenerator',
-    'BatchTrainingDataGenerator',
-
-    # Data structures
-    'TrainingExample',
-    'DatasetStatistics',
-
-    # Advanced features
-    'MIDIDataAugmenter',
-    'CrossValidationSplitter',
-    'DatasetExporter',
-    'DatasetQualityAnalyzer',
-    'ActiveLearningSelector',
-]
-
-__version__ = '1.0.0'
-__author__ = 'Agent 14'
-=======
-Training Module - Agent 15
-===========================
-
-Model training and evaluation for parameter prediction.
-
-This module provides:
-- ModelTrainingSpecialist: Main training class
-- TrainingConfig: Configuration management
-- TrainingMetrics: Comprehensive metrics tracking
-- BatchTrainingResults: Batch training management
-- Utility functions for common training tasks
-
-Quick Start:
-    from training.model_trainer import ModelTrainingSpecialist, TrainingConfig
-
-    config = TrainingConfig(
-        n_estimators=200,
-        max_depth=8,
-        enable_tuning=True
-    )
-
-    trainer = ModelTrainingSpecialist(config)
-    model, metrics = trainer.train_parameter_model(
-        param_name='harmony.voicing.spread',
-        param_def=param_definition,
-        training_data=data
-    )
-
-Author: Agent 15 - Model Training Specialist
-"""
-
+# Agent 15: Model Training
 from .model_trainer import (
     ModelTrainingSpecialist,
     TrainingConfig,
     TrainingMetrics,
     BatchTrainingResults,
     train_single_parameter,
-    train_all_parameters
+    train_all_parameters,
+    ModelTrainingResult
 )
 
 __all__ = [
+    # Agent 14: Data generation classes
+    'SyntheticTrainingDataGenerator',
+    'MusicalCoherenceValidator',
+    'ParameterSpaceSampler',
+    'DefaultParameterGenerator',
+    'BatchTrainingDataGenerator',
+    'TrainingExample',
+    'DatasetStatistics',
+    'MIDIDataAugmenter',
+    'CrossValidationSplitter',
+    'DatasetExporter',
+    'DatasetQualityAnalyzer',
+    'ActiveLearningSelector',
+    'TrainingDataset',
+
+    # Agent 15: Model training classes
     'ModelTrainingSpecialist',
     'TrainingConfig',
     'TrainingMetrics',
     'BatchTrainingResults',
     'train_single_parameter',
-    'train_all_parameters'
+    'train_all_parameters',
+    'ModelTrainingResult'
 ]
 
 __version__ = '1.0.0'
-__author__ = 'Agent 15 - Model Training Specialist'
->>>>>>> origin/claude/music-generation-agents-01Gi7dHdzZMrKvdMYFvonT1n
-=======
-    SyntheticTrainingDataGenerator,
-    TrainingExample,
-    TrainingDataset,
-    MusicalCoherenceValidator
-)
-
-from .model_trainer import (
-    ModelTrainingSpecialist,
-    TrainingMetrics,
-    ModelTrainingResult
-)
-
-__all__ = [
-    # Data generation
-    'SyntheticTrainingDataGenerator',
-    'TrainingExample',
-    'TrainingDataset',
-    'MusicalCoherenceValidator',
-
-    # Model training
-    'ModelTrainingSpecialist',
-    'TrainingMetrics',
-    'ModelTrainingResult'
-]
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
+__authors__ = 'Agent 14 & Agent 15'

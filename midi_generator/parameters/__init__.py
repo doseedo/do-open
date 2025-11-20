@@ -17,34 +17,43 @@ from .universal_registry import (
     get_default
 )
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-# Import structure expansion module
-from .structure_expansion import (
-    register_all_structure_parameters,
-    get_structure_defaults,
-    GENRE_PRESETS
-)
-=======
-# Import and auto-register expansion modules
-from . import registry_expansion
-from . import harmony_deep_expansion
-
-# Auto-register all expansion parameters
-registry_expansion.register_all_expansions()
-harmony_deep_expansion.register_all_harmony_deep_expansion()
->>>>>>> origin/claude/music-generation-agents-01KHsxYd7UXSFQAsHutaMgBi
-=======
-# Import expansion modules to auto-register parameters
+# Import and auto-register expansion modules from multiple agents
 from . import registry_expansion  # Agent 1: Core parameters
-from . import melody_rhythm_expansion  # Agent 4: Melody & Rhythm expansion (120 params)
->>>>>>> origin/claude/music-generation-agents-01Hg1HTEAMZ318B1Ad5Zy6mm
-=======
-# Import expansion modules to register parameters
-from . import registry_expansion
-from . import dynamics_articulation_expansion
->>>>>>> origin/claude/music-generation-agents-017y2cya6dkgoQQJhEDyjRtP
+
+# Agent 2: Structure expansion
+try:
+    from .structure_expansion import (
+        register_all_structure_parameters,
+        get_structure_defaults,
+        GENRE_PRESETS
+    )
+except ImportError:
+    pass
+
+# Agent 3: Harmony deep expansion
+try:
+    from . import harmony_deep_expansion
+    harmony_deep_expansion.register_all_harmony_deep_expansion()
+except (ImportError, AttributeError):
+    pass
+
+# Agent 4: Melody & Rhythm expansion
+try:
+    from . import melody_rhythm_expansion
+except ImportError:
+    pass
+
+# Agent 5: Dynamics & Articulation expansion
+try:
+    from . import dynamics_articulation_expansion
+except ImportError:
+    pass
+
+# Register all core expansions
+try:
+    registry_expansion.register_all_expansions()
+except (AttributeError, NameError):
+    pass
 
 # Global registry instance (for convenience)
 registry = REGISTRY
@@ -60,7 +69,10 @@ __all__ = [
     'get_parameter',
     'validate',
     'get_default',
-    'register_all_structure_parameters',
-    'get_structure_defaults',
-    'GENRE_PRESETS'
 ]
+
+# Add structure expansion exports if available
+try:
+    __all__.extend(['register_all_structure_parameters', 'get_structure_defaults', 'GENRE_PRESETS'])
+except NameError:
+    pass

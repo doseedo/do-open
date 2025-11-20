@@ -1,19 +1,32 @@
 """
-<<<<<<< HEAD
-<<<<<<< HEAD
-LLM-Powered Music Generation Components
-========================================
+LLM-Powered Music Generation Module - Agents 11 & 12
+====================================================
 
-This module contains LLM-based agents for self-expanding music generation:
-- Parameter proposal using Claude API
-- Gap analysis interpretation
-- Musical knowledge integration
-- Code generation suggestions
+This module contains LLM-powered agents for self-expanding music generation.
 
-Author: Agent 11 - Parameter Proposal Agent
+Agents:
+- Agent 11: Parameter Proposal Agent (using Claude API)
+- Agent 12: Code Generation Agent (automatic implementation)
+
+Features:
+---------
+1. **Parameter Proposal** (Agent 11):
+   - Analyzes musical gaps and proposes new parameters
+   - Musical knowledge integration
+   - Validates proposals against existing parameters
+   - Tracks proposal history
+
+2. **Code Generation** (Agent 12):
+   - Generates implementation code for new parameters
+   - Indexes and searches codebase
+   - Pattern-based code generation
+   - Code validation and integration
+
+Authors: Agent 11 (Parameter Proposal) & Agent 12 (Code Generation)
 License: MIT
 """
 
+# Agent 11: Parameter Proposal
 from .parameter_proposer import (
     LLMParameterProposalAgent,
     ParameterProposal,
@@ -21,44 +34,7 @@ from .parameter_proposer import (
     ProposalHistory
 )
 
-__all__ = [
-    'LLMParameterProposalAgent',
-    'ParameterProposal',
-    'ProposalValidator',
-    'ProposalHistory'
-]
-=======
-LLM Module - Agent 12
-=====================
-
-LLM-powered code generation for automatic parameter expansion.
-
-This module contains:
-- LLMCodeGenerationAgent: Generates implementation code for new parameters
-- CodebaseIndex: Indexes and searches the codebase
-- CodeValidator: Validates generated code
-
-Author: Agent 12 - Code Generation Agent
-License: MIT
-"""
-
-from .code_generator import LLMCodeGenerationAgent
-
-__all__ = ['LLMCodeGenerationAgent']
->>>>>>> origin/claude/music-generation-agents-016iuqojwjedj9QM4JT8NZWY
-=======
-LLM-Powered Code Generation Module
-===================================
-
-This module contains LLM-powered agents for code generation and parameter proposals.
-
-Modules:
-- code_generator: Agent 12 - LLM Code Generation Agent
-
-Author: Musical Program Synthesis Team
-License: MIT
-"""
-
+# Agent 12: Code Generation
 from .code_generator import (
     LLMCodeGenerationAgent,
     CodebaseIndex,
@@ -68,10 +44,19 @@ from .code_generator import (
 )
 
 __all__ = [
+    # Agent 11: Parameter proposal
+    'LLMParameterProposalAgent',
+    'ParameterProposal',
+    'ProposalValidator',
+    'ProposalHistory',
+
+    # Agent 12: Code generation
     'LLMCodeGenerationAgent',
     'CodebaseIndex',
     'CodePatternLibrary',
     'GeneratedImplementation',
     'CodeSection'
 ]
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
+
+__version__ = '1.0.0'
+__authors__ = 'Agent 11 & Agent 12'

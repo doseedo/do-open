@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-#!/usr/bin/env python3
-"""
-Model Training Specialist - Agent 15
-====================================
 
 Comprehensive XGBoost model training system for parameter prediction.
 
@@ -49,92 +44,11 @@ This agent:
 8. Validates model quality
 
 Target: R² > 0.5 for all models (preferably > 0.7)
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
 
 Author: Agent 15 - Model Training Specialist
 License: MIT
 """
 
-<<<<<<< HEAD
-import os
-import sys
-import time
-import json
-import pickle
-import warnings
-from pathlib import Path
-from typing import Dict, List, Tuple, Any, Optional, Union, Callable
-from dataclasses import dataclass, field, asdict
-from collections import defaultdict
-from datetime import datetime
-import numpy as np
-import pandas as pd
-
-# XGBoost
-try:
-    import xgboost as xgb
-    from xgboost import XGBRegressor, XGBClassifier
-    XGBOOST_AVAILABLE = True
-except ImportError:
-    XGBOOST_AVAILABLE = False
-    print("❌ XGBoost not available. Install with: pip install xgboost")
-
-# Scikit-learn
-try:
-    from sklearn.model_selection import (
-        train_test_split, GridSearchCV, RandomizedSearchCV,
-        cross_val_score, learning_curve, KFold, StratifiedKFold
-    )
-    from sklearn.metrics import (
-        mean_squared_error, mean_absolute_error, r2_score,
-        accuracy_score, f1_score, precision_score, recall_score,
-        classification_report, confusion_matrix, roc_auc_score,
-        log_loss, mean_absolute_percentage_error
-    )
-    from sklearn.preprocessing import LabelEncoder, StandardScaler
-    from sklearn.utils.class_weight import compute_class_weight
-    SKLEARN_AVAILABLE = True
-except ImportError:
-    SKLEARN_AVAILABLE = False
-    print("❌ Scikit-learn not available. Install with: pip install scikit-learn")
-
-# Joblib for model persistence
-try:
-    import joblib
-    JOBLIB_AVAILABLE = True
-except ImportError:
-    JOBLIB_AVAILABLE = False
-    print("❌ Joblib not available. Install with: pip install joblib")
-
-# Plotting (optional)
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib
-    matplotlib.use('Agg')  # Non-interactive backend
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
-    print("⚠️ Matplotlib not available. Visualization disabled.")
-
-# Suppress warnings
-warnings.filterwarnings('ignore', category=FutureWarning)
-warnings.filterwarnings('ignore', category=UserWarning)
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-# Import parameter registry
-try:
-    from parameters.universal_registry import (
-        UniversalParameterRegistry, ParameterDefinition,
-        ParameterType, REGISTRY
-    )
-except ImportError:
-    print("⚠️ Could not import parameter registry")
-    REGISTRY = None
-
-
-# ============================================================================
 # Data Classes
 # ============================================================================
 
@@ -241,30 +155,12 @@ try:
 except ImportError:
     HAS_JOBLIB = False
     print("WARNING: joblib not installed, model saving will use pickle")
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
 
 
 @dataclass
 class TrainingMetrics:
-<<<<<<< HEAD
-    """Comprehensive training metrics"""
-
-    # Model identity
-    param_name: str
-    param_type: str
-    model_path: str
-
-    # Dataset info
-    n_train: int
-    n_val: int
-    n_test: int
-    n_features: int
-
-    # Regression metrics
-=======
     """Metrics from model training"""
     # Performance metrics
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
     train_r2: Optional[float] = None
     val_r2: Optional[float] = None
     test_r2: Optional[float] = None
@@ -272,144 +168,13 @@ class TrainingMetrics:
     val_mae: Optional[float] = None
     test_mae: Optional[float] = None
     train_rmse: Optional[float] = None
-<<<<<<< HEAD
-    val_rmse: Optional[float] = None
     test_rmse: Optional[float] = None
-    train_mape: Optional[float] = None
-    test_mape: Optional[float] = None
-=======
-    test_rmse: Optional[float] = None
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
 
     # Classification metrics
     train_accuracy: Optional[float] = None
     val_accuracy: Optional[float] = None
     test_accuracy: Optional[float] = None
     train_f1: Optional[float] = None
-<<<<<<< HEAD
-    val_f1: Optional[float] = None
-    test_f1: Optional[float] = None
-    test_precision: Optional[float] = None
-    test_recall: Optional[float] = None
-    test_auc: Optional[float] = None
-
-    # Training info
-    training_time: float = 0.0
-    best_iteration: Optional[int] = None
-    feature_importance: Dict[str, float] = field(default_factory=dict)
-    top_features: List[Tuple[str, float]] = field(default_factory=list)
-
-    # Cross-validation
-    cv_scores: Optional[List[float]] = None
-    cv_mean: Optional[float] = None
-    cv_std: Optional[float] = None
-
-    # Hyperparameter tuning
-    best_params: Optional[Dict[str, Any]] = None
-    tuning_time: Optional[float] = None
-
-    # Quality checks
-    passed_quality_check: bool = False
-    quality_message: str = ""
-
-    # Timestamp
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
-        return asdict(self)
-
-    def summary(self) -> str:
-        """Generate human-readable summary"""
-        lines = []
-        lines.append(f"Parameter: {self.param_name}")
-        lines.append(f"Type: {self.param_type}")
-        lines.append(f"Dataset: train={self.n_train}, val={self.n_val}, test={self.n_test}")
-        lines.append(f"Features: {self.n_features}")
-
-        if self.test_r2 is not None:
-            lines.append(f"\nRegression Metrics:")
-            lines.append(f"  R²:   train={self.train_r2:.4f}, val={self.val_r2:.4f}, test={self.test_r2:.4f}")
-            lines.append(f"  MAE:  train={self.train_mae:.4f}, val={self.val_mae:.4f}, test={self.test_mae:.4f}")
-            lines.append(f"  RMSE: train={self.train_rmse:.4f}, val={self.val_rmse:.4f}, test={self.test_rmse:.4f}")
-
-        if self.test_accuracy is not None:
-            lines.append(f"\nClassification Metrics:")
-            lines.append(f"  Accuracy: train={self.train_accuracy:.4f}, val={self.val_accuracy:.4f}, test={self.test_accuracy:.4f}")
-            lines.append(f"  F1 Score: train={self.train_f1:.4f}, val={self.val_f1:.4f}, test={self.test_f1:.4f}")
-            if self.test_precision is not None:
-                lines.append(f"  Precision: {self.test_precision:.4f}")
-                lines.append(f"  Recall: {self.test_recall:.4f}")
-
-        lines.append(f"\nTraining Time: {self.training_time:.2f}s")
-
-        if self.best_iteration is not None:
-            lines.append(f"Best Iteration: {self.best_iteration}")
-
-        if self.cv_mean is not None:
-            lines.append(f"CV Score: {self.cv_mean:.4f} ± {self.cv_std:.4f}")
-
-        lines.append(f"\nQuality Check: {'✅ PASSED' if self.passed_quality_check else '❌ FAILED'}")
-        if self.quality_message:
-            lines.append(f"  {self.quality_message}")
-
-        lines.append(f"\nModel saved to: {self.model_path}")
-
-        return '\n'.join(lines)
-
-
-@dataclass
-class BatchTrainingResults:
-    """Results from batch training multiple parameters"""
-
-    total_parameters: int = 0
-    successful: int = 0
-    failed: int = 0
-    total_time: float = 0.0
-
-    results: Dict[str, TrainingMetrics] = field(default_factory=dict)
-    errors: Dict[str, str] = field(default_factory=dict)
-
-    def add_success(self, param_name: str, metrics: TrainingMetrics):
-        """Add successful training result"""
-        self.successful += 1
-        self.results[param_name] = metrics
-
-    def add_failure(self, param_name: str, error: str):
-        """Add failed training result"""
-        self.failed += 1
-        self.errors[param_name] = error
-
-    def summary(self) -> str:
-        """Generate summary report"""
-        lines = []
-        lines.append("=" * 80)
-        lines.append("BATCH TRAINING SUMMARY")
-        lines.append("=" * 80)
-        lines.append(f"Total Parameters: {self.total_parameters}")
-        lines.append(f"Successful: {self.successful} ({100*self.successful/self.total_parameters:.1f}%)")
-        lines.append(f"Failed: {self.failed} ({100*self.failed/self.total_parameters:.1f}%)")
-        lines.append(f"Total Time: {self.total_time:.2f}s ({self.total_time/60:.2f}m)")
-
-        if self.successful > 0:
-            lines.append(f"\n✅ Successful Models:")
-            for param_name, metrics in self.results.items():
-                quality = "✅" if metrics.passed_quality_check else "⚠️"
-                if metrics.test_r2 is not None:
-                    lines.append(f"  {quality} {param_name}: R²={metrics.test_r2:.3f}")
-                else:
-                    lines.append(f"  {quality} {param_name}: Acc={metrics.test_accuracy:.3f}")
-
-        if self.failed > 0:
-            lines.append(f"\n❌ Failed Models:")
-            for param_name, error in self.errors.items():
-                lines.append(f"  {param_name}: {error}")
-
-        lines.append("=" * 80)
-        return '\n'.join(lines)
-
-
-# ============================================================================
 # Model Training Specialist
 # ============================================================================
 
@@ -1809,73 +1574,10 @@ class ModelTrainingSpecialist:
             model: Trained model
             param_name: Parameter name
             label_encoder: Label encoder for categorical params
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
 
         Returns:
             Path to saved model
         """
-<<<<<<< HEAD
-        # Create safe filename
-        safe_name = param_name.replace('.', '_')
-        model_path = models_dir / f"{safe_name}.pkl"
-
-        # Save model
-        if JOBLIB_AVAILABLE:
-            joblib.dump(model, model_path, compress=3)
-        else:
-            with open(model_path, 'wb') as f:
-                pickle.dump(model, f)
-
-        # Save metadata
-        metadata = {
-            'param_name': param_name,
-            'param_type': param_def.param_type.value,
-            'param_description': param_def.description,
-            'timestamp': metrics.timestamp,
-            'metrics': {
-                'test_r2': metrics.test_r2,
-                'test_mae': metrics.test_mae,
-                'test_accuracy': metrics.test_accuracy,
-                'test_f1': metrics.test_f1,
-                'passed_quality': metrics.passed_quality_check
-            },
-            'training_config': {
-                'n_estimators': self.config.n_estimators,
-                'max_depth': self.config.max_depth,
-                'learning_rate': self.config.learning_rate
-            }
-        }
-
-        # Save label encoder if categorical
-        if param_name in self.label_encoders:
-            encoder_path = models_dir / f"{safe_name}_encoder.pkl"
-            if JOBLIB_AVAILABLE:
-                joblib.dump(self.label_encoders[param_name], encoder_path)
-            else:
-                with open(encoder_path, 'wb') as f:
-                    pickle.dump(self.label_encoders[param_name], f)
-            metadata['encoder_path'] = str(encoder_path)
-
-        metadata_path = models_dir / f"{safe_name}_metadata.json"
-        with open(metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=2)
-
-        return model_path
-
-    def _save_metrics(
-        self,
-        metrics: TrainingMetrics,
-        output_dir: Path,
-        param_name: str
-    ):
-        """Save metrics to JSON"""
-        safe_name = param_name.replace('.', '_')
-        metrics_path = output_dir / f"{safe_name}_metrics.json"
-
-        with open(metrics_path, 'w') as f:
-            json.dump(metrics.to_dict(), f, indent=2)
-
-    # ========================================================================
     # Visualization
     # ========================================================================
 
@@ -2497,4 +2199,3 @@ if __name__ == '__main__':
         print(f"Test R²: {result.metrics.test_r2:.3f}")
     else:
         print(f"\n❌ Model training failed: {result.error}")
->>>>>>> origin/claude/music-generation-agents-01YDx3Cus9i72savb8rGvQGS
