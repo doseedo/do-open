@@ -9,6 +9,7 @@ Modules:
 - genre_detector: Genre detection and style classification
 - dataset_analyzer: Dataset analysis and statistics
 - intelligent_gap_detector: Gap detection and parameter suggestion (Agent 10)
+- feature_correlation_analyzer: Feature correlation analysis (Agent 25)
 """
 
 # Core analysis tools
@@ -37,6 +38,18 @@ from .intelligent_gap_detector import (
     create_full_pipeline,
 )
 
+# Agent 25: Feature Correlation Analyzer
+from .feature_correlation_analyzer import (
+    FeatureCorrelationAnalyzer,
+    CorrelationResult,
+    RedundantFeaturePair,
+    FeatureSubset,
+    FeatureInteraction,
+    CorrelationAnalysisReport,
+    quick_correlation_analysis,
+    find_best_features_for_parameter,
+)
+
 __all__ = [
     # Core analysis
     'MidiAnalyzer',
@@ -61,4 +74,14 @@ __all__ = [
     'detect_gaps_from_errors',
     'analyze_systematic_gaps',
     'create_full_pipeline',
+
+    # Agent 25: Feature correlation
+    'FeatureCorrelationAnalyzer',
+    'CorrelationResult',
+    'RedundantFeaturePair',
+    'FeatureSubset',
+    'FeatureInteraction',
+    'CorrelationAnalysisReport',
+    'quick_correlation_analysis',
+    'find_best_features_for_parameter',
 ]
