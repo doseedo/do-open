@@ -62,6 +62,10 @@ try:
     # Humanization
     from algorithms.rhythm_engine import HumanizationEngine, TimingStyle
 
+    # Style profiles (Agent 13)
+    from styles.ellington_arranger import EllingtonArranger
+    from styles.ellington_profile import ELLINGTON_STYLE
+
 except ImportError as e:
     print(f"ERROR: {e}")
     print("\nMake sure you're running from the midi_generator directory:")
@@ -83,6 +87,7 @@ class ProfessionalBigBandConfig:
     use_stride_piano: bool = True  # Future enhancement
     chorus_variation: bool = True  # Future enhancement
     ticks_per_beat: int = 480
+    style: str = "default"  # "default", "ellington", "basie" (future)
 
 
 class ProfessionalBigBandGenerator:
@@ -148,10 +153,15 @@ class ProfessionalBigBandGenerator:
         melody_events = self._jazz_to_note_events(swung_melody)
         chord_events = self._jazz_to_chord_events(full_progression)
 
-        # Step 7: Professional arrangement via BigBandArranger
+        # Step 7: Professional arrangement via BigBandArranger or style-specific arranger
         print("✓ Creating professional big band arrangement...")
-        print("  Using Duke Ellington / Count Basie principles")
-        arrangement = BigBandArranger.arrange(melody_events, chord_events)
+        if self.config.style == "ellington":
+            print("  Using Duke Ellington style (Agent 13)")
+            ellington_arranger = EllingtonArranger(ELLINGTON_STYLE)
+            arrangement = ellington_arranger.arrange(melody_events, chord_events)
+        else:
+            print("  Using Duke Ellington / Count Basie principles")
+            arrangement = BigBandArranger.arrange(melody_events, chord_events)
         print(f"  Lead: {len(arrangement.get('lead', []))} notes")
         print(f"  Saxes: {len(arrangement.get('saxes', []))} notes (5-part voicing)")
         print(f"  Brass: {len(arrangement.get('brass', []))} notes (background figures)")
@@ -442,7 +452,18 @@ class ProfessionalBigBandGenerator:
         mid.save(output_file)
         print(f"\n✅ Saved: {output_file}")
         print("\nProfessional features applied:")
-        print("  ✅ Duke Ellington / Count Basie arranging principles")
+
+        if self.config.style == "ellington":
+            print("  ✅ DUKE ELLINGTON STYLE (Agent 13):")
+            print("      - Exotic harmonies (whole tone, diminished, bitonal)")
+            print("      - Plunger mutes and growls (60% brass)")
+            print("      - Unusual instrumental doublings")
+            print("      - Rich voicings with 9ths, 11ths, 13ths")
+            print("      - Wide dynamic range (ppp to fff)")
+            print("      - Sophisticated orchestration")
+        else:
+            print("  ✅ Duke Ellington / Count Basie arranging principles")
+
         print("  ✅ Proper form structure (AABA or 12-bar blues)")
         print("  ✅ Advanced harmony (31+ progression types)")
         print("  ✅ 5-part sax soli with close voicing")
@@ -458,7 +479,7 @@ def main():
     print("\n" + "=" * 80)
     print("PROFESSIONAL BIG BAND GENERATOR")
     print("=" * 80)
-    print("\nUsage: python generate_professional.py [name] [tempo] [key] [form] [progression]")
+    print("\nUsage: python generate_professional.py [name] [tempo] [key] [form] [progression] [style]")
     print("\nForms: aaba (32-bar), blues (12-bar)")
     print("\nProgression types:")
     print("  Basic Jazz: jazz_blues, rhythm_changes, ii_V_I, minor_ii_V_i")
@@ -466,6 +487,10 @@ def main():
     print("  Modal: dorian_vamp, mixolydian_rock, lydian_dream")
     print("  Film: plr_film, hexatonic_northern, chromatic_mediant")
     print("  Advanced: modal_interchange, reharmonized_blues, quartal_harmony")
+    print("\nStyles (Agent 13):")
+    print("  default - Standard big band (Ellington/Basie principles)")
+    print("  ellington - Duke Ellington style (exotic harmony, plunger mutes, rich orchestration)")
+    print("  basie - Count Basie style (coming soon)")
     print("=" * 80)
     print()
 
@@ -475,6 +500,7 @@ def main():
     key = int(sys.argv[3]) if len(sys.argv) > 3 else 0
     form = sys.argv[4] if len(sys.argv) > 4 else "aaba"
     progression = sys.argv[5] if len(sys.argv) > 5 else "jazz_blues"
+    style = sys.argv[6] if len(sys.argv) > 6 else "default"
 
     # Create configuration
     config = ProfessionalBigBandConfig(
@@ -482,7 +508,8 @@ def main():
         key=key,
         form_type=form,
         progression_type=progression,
-        output_name=name
+        output_name=name,
+        style=style
     )
 
     # Generate
