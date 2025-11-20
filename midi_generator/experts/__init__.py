@@ -12,7 +12,9 @@ Each expert focuses on a specific musical domain and provides:
 4. Training data generation for XGBoost models
 
 Experts:
+- Agent 22: Dynamics Specialist (ADSR, curves, humanization, voice balancing)
 - Agent 23: Structure Specialist (form, transitions, climax, motifs)
+- Agent 24: Texture Specialist (polyphony, layering, voice independence)
 
 Author: Musical Program Synthesis Team
 License: MIT
@@ -21,5 +23,7 @@ License: MIT
 __version__ = "1.0.0"
 
 __all__ = [
+    "dynamics_specialist",
     "structure_specialist",
+    "texture_specialist",
 ]
