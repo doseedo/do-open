@@ -22,11 +22,11 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 
 # Import from existing modules
-from ..midi.midi_constants import GM_DRUM_MAP, PPQN_HIGH_RES
-from ..algorithms.rhythm_engine import RhythmNote, GrooveTemplate
-from ..algorithms.groove_library import GrooveLibrary, GenreTimingProfiles
-from ..generators.form_generator import MusicalForm
-from .bigband_drums import BigBandDrumPatterns
+from midi.midi_constants import GM_DRUM_MAP, PPQN_HIGH_RES
+from algorithms.rhythm_engine import RhythmNote, GrooveTemplate
+from algorithms.groove_library import GrooveLibrary, GenreTimingProfiles
+from generators.form_generator import MusicalForm
+from transformation.bigband_drums import BigBandDrumPatterns
 
 
 # ============================================================================
@@ -444,7 +444,7 @@ class DrumArranger:
             List of NoteEvent objects
         """
         # Import here to avoid circular dependency
-        from ..midi.midi_types import NoteEvent
+        from midi.midi_types import NoteEvent
 
         note_events = []
 

@@ -59,8 +59,8 @@ except ImportError:
     print("Warning: BrassArranger not available, using legacy brass implementation")
 
 # Import new drum system (Agent 7)
-from .drum_arranger import DrumArranger
-from ..algorithms.rhythm_engine import RhythmNote
+from transformation.drum_arranger import DrumArranger
+from algorithms.rhythm_engine import RhythmNote
 
 
 # ==============================================================================
