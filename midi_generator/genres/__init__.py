@@ -1,31 +1,36 @@
 """
-Genre Modules for MIDI Generator
-
-This package contains genre-specific music generators.
+Genre-specific music generators
 
 Available genres:
-- Blues (blues.py)
-- Classic Rock (classic_rock.py)
-- Country (country.py)
-- Electronic (electronic.py)
-- Gospel (gospel.py)
-- Reggae (reggae.py)
-- World Music (world/)
+- Blues (Delta, Chicago, Texas)
+- Country (Traditional, Outlaw, Bluegrass)
+- Electronic (House, Techno, Trance, etc.)
+- Gospel (Traditional, Contemporary)
+- Reggae (Roots, Dancehall, Dub)
+- Metal (Thrash, Death, Black, Progressive, Djent, etc.)
+- World Music (see world/ subdirectory)
 """
 
-# Import genre modules for easy access
-from . import blues
-from . import classic_rock
-from . import country
-from . import electronic
-from . import gospel
-from . import reggae
+# Import only the metal module for now to avoid breaking existing imports
+from .metal import (
+    MetalGenerator,
+    MetalSubgenre,
+    DropTuning,
+    BlastBeatType,
+    RiffTechnique,
+    MetalScales,
+    MetalRiff,
+    DrumPattern
+)
 
 __all__ = [
-    'blues',
-    'classic_rock',
-    'country',
-    'electronic',
-    'gospel',
-    'reggae',
+    # Metal
+    'MetalGenerator',
+    'MetalSubgenre',
+    'DropTuning',
+    'BlastBeatType',
+    'RiffTechnique',
+    'MetalScales',
+    'MetalRiff',
+    'DrumPattern',
 ]

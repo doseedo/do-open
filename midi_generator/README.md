@@ -1,256 +1,185 @@
-# MIDI Generator Library
+# MIDI Generator - Unified Music Generation Library
 
-**The Ultimate MIDI Generation and Manipulation Framework**
-
-A comprehensive, professional-grade Python library for algorithmic MIDI composition, analysis, and transformation. Built by the Dø (Doseedo) AI Music Platform.
+A comprehensive, production-ready music generation framework combining advanced music theory, algorithmic composition, and genre-specific implementations.
 
 ## Features
 
-### 🎵 Core Capabilities
-- **Complete Music Theory** - Scales, chords, voice leading, Neo-Riemannian transformations
-- **Advanced Algorithms** - Markov chains, genetic algorithms, L-systems, cellular automata
-- **Genre Templates** - Jazz, Classical, Rock, EDM, World Music, and more
-- **Professional Tools** - Orchestration, arrangement, harmonic analysis
+### Core Capabilities
+- **35+ Music Genres**: Jazz, blues, funk, electronic, rock, world music, and more
+- **Advanced Harmony**: Modal systems, neo-Riemannian theory, microtonal scales
+- **Algorithmic Composition**: L-systems, cellular automata, constraint solving
+- **Professional Orchestration**: Intelligent instrument selection and voice leading
+- **Style Fusion**: Blend any components from any genre
+- **Context-Aware Generation**: Add tracks to existing MIDI files
+- **Genre Detection**: Automatic MIDI genre classification
+- **Pattern Learning**: Extract patterns from MIDI corpus
 
-### 🛠️ Utilities
-- **MIDI I/O** - Robust reading/writing with multi-library support
-- **Visualization** - Piano rolls, histograms, rhythm grids, ASCII art
-- **Export** - JSON, MusicXML, ABC notation, batch processing
-- **Analysis** - Comprehensive musical feature extraction
+### Music Theory
+- **Modal Harmony**: 21 modal scales with progression generators
+- **Neo-Riemannian**: PLR transformations, hexatonic cycles, voice leading
+- **Microtonality**: 24-TET, 53-TET, just intonation, world music scales
+- **Form Generation**: Sonata, rondo, fugue, AABA, blues, verse-chorus
+- **Voice Leading**: Optimization and smooth transitions
 
-### 🎹 Integration
-- Seamlessly integrates with existing `harmonymodule` code
-- Compatible with DAWs, notation software, and music applications
-- Extensible architecture for custom generators and algorithms
+### Genre Implementations
+Western: blues, jazz, pop, rock, country, reggae, gospel, electronic, funk, hip-hop, metal, R&B, singer-songwriter
 
-## Quick Start
+World: African, Arabic (maqam), Indian (raga), Turkish (makam), Persian (dastgah)
 
-### Installation
+## Installation
 
 ```bash
-# Clone repository
-git clone https://github.com/doseedo/Do.git
-cd Do/midi_generator
-
 # Install dependencies
-pip install mido matplotlib
+pip install mido numpy
 
-# Optional dependencies
-pip install music21  # For advanced analysis
+# Add to Python path
+export PYTHONPATH="/path/to/Do:$PYTHONPATH"
 ```
+
+## Quick Start
 
 ### Basic Usage
 
 ```python
-from midi_generator.utils.midi_io import MIDINote, save_midi
+from midi_generator.generators import AdvancedHarmonyGenerator
+from midi_generator.core import Mode
 
-# Create a simple melody
-notes = [
-    MIDINote(start=0.0, duration=1.0, pitch=60, velocity=80),  # C
-    MIDINote(start=1.0, duration=1.0, pitch=64, velocity=80),  # E
-    MIDINote(start=2.0, duration=1.0, pitch=67, velocity=80),  # G
-]
-
-# Save to MIDI file
-save_midi(notes, 'melody.mid', tempo=120)
+# Generate modal progression
+gen = AdvancedHarmonyGenerator(root=0, octave=4)
+progression = gen.generate_modal_progression(
+    mode=Mode.DORIAN,
+    progression_type="vamp",
+    length=8
+)
 ```
 
-### Command Line Interface
+### Big Band Generator
 
 ```bash
-# Get info about a MIDI file
-python -m midi_generator.cli info song.mid
+# Production-ready big band arrangement
+python tools/big_band/generate_final.py swing 140 0 jazz_blues
 
-# Visualize as piano roll
-python -m midi_generator.cli visualize song.mid --type piano-roll
-
-# Analyze MIDI file
-python -m midi_generator.cli analyze song.mid --visualize
-
-# Export to MusicXML
-python -m midi_generator.cli export song.mid --format musicxml
-
-# Generate simple melody
-python -m midi_generator.cli generate --output melody.mid --tempo 140
+# With advanced harmony (31+ progression types)
+python tools/big_band/generate_comprehensive.py modal 140 0 dorian_vamp
+python tools/big_band/generate_comprehensive.py coltrane 180 0 coltrane_changes
 ```
 
-## Architecture
+### High-Level API
+
+```python
+from midi_generator.api import UnifiedMusicGenerator
+
+# Context-aware generation
+generator = UnifiedMusicGenerator()
+new_track = generator.add_contextual_track(
+    existing_midi="input.mid",
+    genre="jazz",
+    role="bass"
+)
+```
+
+### Style Fusion
+
+```python
+from midi_generator.generators import StyleFusion
+
+# Blend jazz harmony + funk rhythm + electronic instrumentation
+fusion = StyleFusion()
+result = fusion.blend_genres({
+    'jazz': 0.5,      # 50% jazz characteristics
+    'funk': 0.3,      # 30% funk
+    'electronic': 0.2 # 20% electronic
+})
+```
+
+## Directory Structure
 
 ```
 midi_generator/
-├── core/              # Music theory (scales, chords, voice leading)
-├── algorithms/        # Composition algorithms (Markov, genetic, L-systems)
-├── generators/        # Content generators (melody, harmony, bass, drums)
-├── genres/            # Genre-specific implementations
-├── midi/              # MIDI utilities (CC automation, articulation, MPE)
-├── learning/          # Pattern extraction and ML
-├── transformation/    # Style transfer and variation
-├── analysis/          # MIDI analysis tools
-├── utils/             # I/O, visualization, export
-├── tests/             # Comprehensive test suite
-├── examples/          # 25+ working examples
-├── gui/               # Optional GUI interface
-├── docs/              # Complete documentation
-└── cli.py             # Command-line interface
+├── core/                   # Music theory foundations
+├── algorithms/             # Composition algorithms
+├── generators/             # Content generators
+├── genres/                 # Genre implementations
+├── analysis/               # MIDI analysis
+├── transformation/         # Style transfer
+├── tools/                  # Production tools
+│   ├── big_band/          # Big band generators
+│   └── examples/          # Working examples
+├── docs/                   # Documentation
+└── tests/                  # Test suite
+```
+
+## Documentation
+
+- [Harmony System Guide](docs/HARMONY_ANALYSIS.md) - 31+ progression types
+- [Big Band Generator Guide](tools/big_band/README.md) - Big band tools
+- [Form Integration](docs/FORM_MODULE_INTEGRATION.md) - Musical forms
+- [API Reference](docs/) - Complete API documentation
+
+## Advanced Features
+
+### Neo-Riemannian Transformations
+
+```python
+from midi_generator.core import Triad, TriadQuality
+from midi_generator.generators import AdvancedHarmonyGenerator
+
+gen = AdvancedHarmonyGenerator(root=0)
+# PLR transformation progression (film scoring)
+progression = gen.generate_neo_riemannian("P L R P", voice_lead=True)
+```
+
+### Microtonal Systems
+
+```python
+# Arabic maqam with quarter tones
+maqam = gen.generate_arabic_maqam(ArabicMaqam.RAST)
+
+# Indian raga
+raga = gen.generate_indian_raga("Bhairav", ascending=True)
+```
+
+### Pattern Learning
+
+```python
+from midi_generator.learning import CorpusLearner
+
+learner = CorpusLearner()
+learner.learn_from_directory("midi_corpus/")
+new_melody = learner.generate_similar_melody()
+```
+
+## Testing
+
+```bash
+# Run all tests
+python -m pytest tests/
+
+# Test specific module
+python -m pytest tests/test_core/
 ```
 
 ## Examples
 
-The library includes 25+ comprehensive examples:
-
-### Beginner (5 examples)
-- Simple melody generation
-- Chord progressions
-- Rhythm patterns
-- Visualization demos
-- Export formats
-
-### Genre-Specific (10 examples)
-- Jazz progressions
-- Blues patterns
-- Rock arrangements
-- Classical counterpoint
-- EDM productions
+See `tools/examples/` for comprehensive demonstrations:
+- Context-aware generation
+- Style fusion
+- Genre detection
+- Modal jazz composition
+- Film scoring
 - And more...
 
-### Advanced (10 examples)
-- Algorithmic composition
-- Style transfer
-- MIDI analysis
-- Multi-track arrangements
-- Microtonal music
+## Version History
 
-See `examples/README.md` for the complete list.
-
-## Documentation
-
-- **[Tutorial](docs/TUTORIAL.md)** - Step-by-step learning guide
-- **[API Reference](docs/API_REFERENCE.md)** - Complete API documentation
-- **[Music Theory Guide](docs/MUSIC_THEORY.md)** - Music theory concepts
-- **[Examples Guide](examples/README.md)** - All example files
-
-## Testing
-
-Run the comprehensive test suite:
-
-```bash
-# Run all tests
-python midi_generator/tests/test_all.py
-
-# Or with pytest
-pip install pytest
-pytest midi_generator/tests/test_all.py -v
-```
-
-Test coverage includes:
-- ✅ MIDI I/O operations
-- ✅ Visualization functions
-- ✅ Export to all formats
-- ✅ Integration workflows
-- ✅ Edge cases and error handling
-
-## Integration with Harmony Module
-
-The library seamlessly integrates with the existing `harmonymodule`:
-
-```python
-# Use existing chord progression generator
-from harmonymodule.chord_progression_generator import (
-    generate_chord_progression_midi, ScaleContext
-)
-
-# Generate jazz progression
-chord_map = {0: 'Dm9', 4: 'G9', 8: 'Cmaj9'}
-midi_path = generate_chord_progression_midi(
-    chord_beat_map=chord_map,
-    bpm=140,
-    voicing='drop2',
-    output_path='jazz.mid'
-)
-```
-
-## Key Components
-
-### MIDI I/O
-```python
-from midi_generator.utils.midi_io import load_midi, save_midi, MIDINote
-
-# Load MIDI
-midi = load_midi('song.mid')
-print(f"Found {len(midi.notes)} notes at {midi.tempo} BPM")
-
-# Create and save
-notes = [MIDINote(start=0, duration=1, pitch=60, velocity=80)]
-save_midi(notes, 'output.mid', tempo=120)
-```
-
-### Visualization
-```python
-from midi_generator.utils.visualization import visualize_piano_roll
-
-# Create piano roll
-visualize_piano_roll('song.mid', 'piano_roll.png')
-```
-
-### Export
-```python
-from midi_generator.utils.export import batch_export
-
-# Export to all formats
-batch_export('song.mid', 'exports/', formats=['json', 'musicxml', 'abc'])
-```
-
-## Requirements
-
-### Core Dependencies
-- Python 3.7+
-- mido - MIDI file I/O
-- matplotlib - Visualization
-
-### Optional Dependencies
-- music21 - Advanced music analysis
-- numpy - Numerical operations
-- pytest - Testing
-
-## Performance
-
-- **Fast I/O**: Efficient MIDI reading/writing with minimal overhead
-- **Optimized**: Smart caching and batch processing
-- **Scalable**: Handles files with thousands of notes
-- **Memory-efficient**: Stream processing for large files
-
-## Contributing
-
-This library is part of the Dø AI Music Platform. Contributions welcome!
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
+- **2.0.0** - Unified library (merged harmonymodule + standalone)
+  - Combined all features into one comprehensive system
+  - Added big band generators
+  - Unified API and documentation
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License - See LICENSE file for details
 
-## Credits
+## Contributing
 
-**Developer**: Dø (Doseedo) AI Music Platform
-**Agent 10**: Integration, Testing & Examples
-**Built on**: Existing harmonymodule foundation
-
-## Links
-
-- **Repository**: https://github.com/doseedo/Do
-- **Documentation**: docs/
-- **Examples**: examples/
-- **Issues**: https://github.com/doseedo/Do/issues
-
-## Version
-
-**v1.0.0** - Initial release with comprehensive features
-
----
-
-**Make Beautiful Music with Code** 🎵
-
+See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for development guidelines.
