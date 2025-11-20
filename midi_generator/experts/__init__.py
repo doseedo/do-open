@@ -12,6 +12,7 @@ Each expert focuses on a specific musical domain and provides:
 4. Training data generation for XGBoost models
 
 Experts:
+- Agent 18: Harmony Specialist (jazz voicings, modal harmony, voice leading)
 - Agent 23: Structure Specialist (form, transitions, climax, motifs)
 
 Author: Musical Program Synthesis Team
@@ -20,6 +21,46 @@ License: MIT
 
 __version__ = "1.0.0"
 
+# Import key classes and functions
+from .harmony_specialist import (
+    HarmonySpecialist,
+    Chord,
+    ChordProgression,
+    Note,
+    VoicingType,
+    ChordQuality,
+    Mode,
+    HarmonicFunction,
+    ReharmonizationTechnique,
+    VoiceLeadingRule,
+    HarmonyFeatures,
+    VoicingAnalysis,
+    VoiceLeadingAnalysis,
+    analyze_harmony,
+    generate_jazz_voicing,
+)
+
 __all__ = [
+    # Modules
     "structure_specialist",
+    "harmony_specialist",
+
+    # Harmony Specialist Classes
+    "HarmonySpecialist",
+    "Chord",
+    "ChordProgression",
+    "Note",
+    "VoicingType",
+    "ChordQuality",
+    "Mode",
+    "HarmonicFunction",
+    "ReharmonizationTechnique",
+    "VoiceLeadingRule",
+    "HarmonyFeatures",
+    "VoicingAnalysis",
+    "VoiceLeadingAnalysis",
+
+    # Harmony Specialist Functions
+    "analyze_harmony",
+    "generate_jazz_voicing",
 ]
