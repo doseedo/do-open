@@ -40,7 +40,7 @@ import copy
 sys.path.append(str(Path(__file__).parent.parent))
 from analysis.midi_analyzer import ChordEvent, NoteEvent
 from transformation.voice_leading_optimizer import (
-    VoiceLeadingOptimizer, VoicingType, Voicing
+    VoiceLeadingOptimizer, VoicingType, Voicing, VoicingGenerator
 )
 
 
@@ -195,14 +195,22 @@ class SaxSoliVoicing:
                 voicing_sequence = [v.pitches for v in optimization_result.voicings]
             else:
                 # No optimization: generate voicing for each note independently
+                # Handle both dict and ChordEvent formats
+                if isinstance(chord, dict):
+                    root = chord['root']
+                    quality = chord['quality']
+                else:
+                    root = chord.root
+                    quality = chord.quality
+
                 voicing_sequence = []
                 for melody_pitch in melody_pitches:
-                    voicings = VoiceLeadingOptimizer.generate_all_voicings(
-                        chord=chord,
+                    voicings = VoicingGenerator.generate_all_voicings(
+                        root=root,
+                        quality=quality,
                         num_voices=num_voices,
                         voice_ranges=voice_ranges,
-                        voicing_type=voicing_type,
-                        melody_pitch=melody_pitch
+                        voicing_type=voicing_type
                     )
                     if voicings:
                         voicing_sequence.append(voicings[0].pitches)
