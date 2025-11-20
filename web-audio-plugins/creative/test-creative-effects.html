@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creative Effects Test Suite</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Courier New', monospace;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        h1 {
+            text-align: center;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+        }
+        .plugin-test {
+            border: 2px solid #00ff00;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            background: #0a0a0a;
+        }
+        .plugin-test h2 {
+            margin-top: 0;
+            color: #00ff00;
+        }
+        .controls {
+            margin: 15px 0;
+        }
+        .control {
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        label {
+            min-width: 150px;
+            color: #00ff00;
+        }
+        input[type="range"] {
+            flex: 1;
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #00ff00;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px #00ff00;
+        }
+        .value {
+            min-width: 80px;
+            text-align: right;
+            color: #00ff00;
+            font-weight: bold;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: #00cc00;
+            box-shadow: 0 0 15px #00ff00;
+        }
+        button:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.success {
+            background: #002200;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+        }
+        .status.error {
+            background: #220000;
+            color: #ff0000;
+            border: 1px solid #ff0000;
+        }
+        .status.info {
+            background: #002244;
+            color: #00aaff;
+            border: 1px solid #00aaff;
+        }
+        select {
+            background: #000;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 5px 10px;
+            font-family: inherit;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎛️ Creative Effects Test Suite 🎛️</h1>
+    <div id="status" class="status info">Initializing...</div>
+
+    <!-- Ring Modulator -->
+    <div class="plugin-test">
+        <h2>1. Ring Modulator</h2>
+        <div class="controls">
+            <div class="control">
+                <label>Frequency:</label>
+                <input type="range" id="ring-freq" min="0.1" max="5000" value="440" step="0.1">
+                <span class="value" id="ring-freq-val">440 Hz</span>
+            </div>
+            <div class="control">
+                <label>Waveform:</label>
+                <select id="ring-wave">
+                    <option value="sine">Sine</option>
+                    <option value="triangle">Triangle</option>
+                    <option value="square">Square</option>
+                    <option value="saw">Sawtooth</option>
+                </select>
+            </div>
+            <div class="control">
+                <label>Mix:</label>
+                <input type="range" id="ring-mix" min="0" max="1" value="1" step="0.01">
+                <span class="value" id="ring-mix-val">100%</span>
+            </div>
+        </div>
+        <button onclick="testRingModulator()">Test Ring Modulator</button>
+    </div>
+
+    <!-- Frequency Shifter -->
+    <div class="plugin-test">
+        <h2>2. Frequency Shifter</h2>
+        <div class="controls">
+            <div class="control">
+                <label>Shift:</label>
+                <input type="range" id="freq-shift" min="-1000" max="1000" value="100" step="1">
+                <span class="value" id="freq-shift-val">100 Hz</span>
+            </div>
+            <div class="control">
+                <label>Mix:</label>
+                <input type="range" id="freq-mix" min="0" max="1" value="0.5" step="0.01">
+                <span class="value" id="freq-mix-val">50%</span>
+            </div>
+        </div>
+        <button onclick="testFrequencyShifter()">Test Frequency Shifter</button>
+    </div>
+
+    <!-- Pitch Shifter -->
+    <div class="plugin-test">
+        <h2>3. Pitch Shifter</h2>
+        <div class="controls">
+            <div class="control">
+                <label>Pitch Shift:</label>
+                <input type="range" id="pitch-shift" min="-12" max="12" value="7" step="1">
+                <span class="value" id="pitch-shift-val">+7 semitones</span>
+            </div>
+            <div class="control">
+                <label>Window Size:</label>
+                <input type="range" id="pitch-window" min="0.05" max="0.2" value="0.1" step="0.01">
+                <span class="value" id="pitch-window-val">0.1 s</span>
+            </div>
+            <div class="control">
+                <label>Mix:</label>
+                <input type="range" id="pitch-mix" min="0" max="1" value="1" step="0.01">
+                <span class="value" id="pitch-mix-val">100%</span>
+            </div>
+        </div>
+        <button onclick="testPitchShifter()">Test Pitch Shifter</button>
+    </div>
+
+    <!-- Granular -->
+    <div class="plugin-test">
+        <h2>4. Granular Synthesizer</h2>
+        <div class="controls">
+            <div class="control">
+                <label>Grain Size:</label>
+                <input type="range" id="grain-size" min="0.01" max="0.2" value="0.05" step="0.01">
+                <span class="value" id="grain-size-val">0.05 s</span>
+            </div>
+            <div class="control">
+                <label>Density:</label>
+                <input type="range" id="grain-density" min="1" max="50" value="20" step="1">
+                <span class="value" id="grain-density-val">20 /s</span>
+            </div>
+            <div class="control">
+                <label>Randomness:</label>
+                <input type="range" id="grain-random" min="0" max="1" value="0.7" step="0.01">
+                <span class="value" id="grain-random-val">70%</span>
+            </div>
+            <div class="control">
+                <label>Pitch:</label>
+                <input type="range" id="grain-pitch" min="0.25" max="2" value="1" step="0.01">
+                <span class="value" id="grain-pitch-val">1.00x</span>
+            </div>
+            <div class="control">
+                <label>Mix:</label>
+                <input type="range" id="grain-mix" min="0" max="1" value="1" step="0.01">
+                <span class="value" id="grain-mix-val">100%</span>
+            </div>
+        </div>
+        <button onclick="testGranular()">Test Granular</button>
+    </div>
+
+    <div style="text-align: center; margin-top: 40px;">
+        <button onclick="stopAll()" style="background: #ff0000; color: #fff;">Stop All</button>
+        <button onclick="runAllTests()">Run All Tests</button>
+    </div>
+
+    <script type="module">
+        import RingModulator from './RingModulator.js';
+        import FrequencyShifter from './FrequencyShifter.js';
+        import PitchShifter from './PitchShifter.js';
+        import Granular from './Granular.js';
+
+        let audioContext;
+        let oscillator;
+        let currentEffect;
+
+        // Status helpers
+        function showStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+
+        // Initialize audio context
+        async function initAudio() {
+            if (!audioContext) {
+                audioContext = new AudioContext();
+                showStatus('Audio context initialized', 'success');
+            }
+
+            // Create test oscillator
+            if (oscillator) {
+                oscillator.stop();
+            }
+            oscillator = audioContext.createOscillator();
+            oscillator.frequency.value = 220; // A3
+            oscillator.type = 'sawtooth';
+
+            return audioContext;
+        }
+
+        // Stop all audio
+        window.stopAll = function() {
+            if (oscillator) {
+                try {
+                    oscillator.stop();
+                } catch (e) {}
+                oscillator = null;
+            }
+            if (currentEffect) {
+                currentEffect.disconnect();
+                currentEffect.dispose();
+                currentEffect = null;
+            }
+            showStatus('All audio stopped', 'info');
+        };
+
+        // Test Ring Modulator
+        window.testRingModulator = async function() {
+            try {
+                stopAll();
+                await initAudio();
+
+                showStatus('Loading Ring Modulator...', 'info');
+                currentEffect = new RingModulator(audioContext);
+                await currentEffect.ready();
+
+                // Apply parameters
+                const freq = parseFloat(document.getElementById('ring-freq').value);
+                const wave = document.getElementById('ring-wave').value;
+                const mix = parseFloat(document.getElementById('ring-mix').value);
+
+                currentEffect.setFrequency(freq);
+                currentEffect.setWaveform(wave);
+                currentEffect.setMix(mix);
+
+                // Connect and play
+                oscillator.connect(currentEffect.input);
+                currentEffect.connect(audioContext.destination);
+                oscillator.start();
+
+                showStatus('Ring Modulator active! Adjust parameters.', 'success');
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+                console.error(error);
+            }
+        };
+
+        // Test Frequency Shifter
+        window.testFrequencyShifter = async function() {
+            try {
+                stopAll();
+                await initAudio();
+
+                showStatus('Loading Frequency Shifter...', 'info');
+                currentEffect = new FrequencyShifter(audioContext);
+                await currentEffect.ready();
+
+                const shift = parseFloat(document.getElementById('freq-shift').value);
+                const mix = parseFloat(document.getElementById('freq-mix').value);
+
+                currentEffect.setShift(shift);
+                currentEffect.setMix(mix);
+
+                oscillator.connect(currentEffect.input);
+                currentEffect.connect(audioContext.destination);
+                oscillator.start();
+
+                showStatus('Frequency Shifter active!', 'success');
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+                console.error(error);
+            }
+        };
+
+        // Test Pitch Shifter
+        window.testPitchShifter = async function() {
+            try {
+                stopAll();
+                await initAudio();
+
+                showStatus('Loading Pitch Shifter...', 'info');
+                currentEffect = new PitchShifter(audioContext);
+                await currentEffect.ready();
+
+                const pitch = parseFloat(document.getElementById('pitch-shift').value);
+                const windowSize = parseFloat(document.getElementById('pitch-window').value);
+                const mix = parseFloat(document.getElementById('pitch-mix').value);
+
+                currentEffect.setPitchShift(pitch);
+                currentEffect.setWindowSize(windowSize);
+                currentEffect.setMix(mix);
+
+                oscillator.connect(currentEffect.input);
+                currentEffect.connect(audioContext.destination);
+                oscillator.start();
+
+                showStatus('Pitch Shifter active!', 'success');
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+                console.error(error);
+            }
+        };
+
+        // Test Granular
+        window.testGranular = async function() {
+            try {
+                stopAll();
+                await initAudio();
+
+                showStatus('Loading Granular...', 'info');
+                currentEffect = new Granular(audioContext);
+                await currentEffect.ready();
+
+                const grainSize = parseFloat(document.getElementById('grain-size').value);
+                const density = parseFloat(document.getElementById('grain-density').value);
+                const randomness = parseFloat(document.getElementById('grain-random').value);
+                const pitch = parseFloat(document.getElementById('grain-pitch').value);
+                const mix = parseFloat(document.getElementById('grain-mix').value);
+
+                currentEffect.setGrainSize(grainSize);
+                currentEffect.setDensity(density);
+                currentEffect.setRandomness(randomness);
+                currentEffect.setPitch(pitch);
+                currentEffect.setMix(mix);
+
+                oscillator.connect(currentEffect.input);
+                currentEffect.connect(audioContext.destination);
+                oscillator.start();
+
+                showStatus('Granular active!', 'success');
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+                console.error(error);
+            }
+        };
+
+        // Update value displays
+        const controls = [
+            { slider: 'ring-freq', display: 'ring-freq-val', suffix: ' Hz' },
+            { slider: 'ring-mix', display: 'ring-mix-val', suffix: '%', multiplier: 100 },
+            { slider: 'freq-shift', display: 'freq-shift-val', suffix: ' Hz' },
+            { slider: 'freq-mix', display: 'freq-mix-val', suffix: '%', multiplier: 100 },
+            { slider: 'pitch-shift', display: 'pitch-shift-val', prefix: '+', suffix: ' semitones' },
+            { slider: 'pitch-window', display: 'pitch-window-val', suffix: ' s' },
+            { slider: 'pitch-mix', display: 'pitch-mix-val', suffix: '%', multiplier: 100 },
+            { slider: 'grain-size', display: 'grain-size-val', suffix: ' s' },
+            { slider: 'grain-density', display: 'grain-density-val', suffix: ' /s' },
+            { slider: 'grain-random', display: 'grain-random-val', suffix: '%', multiplier: 100 },
+            { slider: 'grain-pitch', display: 'grain-pitch-val', suffix: 'x' },
+            { slider: 'grain-mix', display: 'grain-mix-val', suffix: '%', multiplier: 100 }
+        ];
+
+        controls.forEach(ctrl => {
+            const slider = document.getElementById(ctrl.slider);
+            const display = document.getElementById(ctrl.display);
+
+            slider.addEventListener('input', (e) => {
+                let value = parseFloat(e.target.value);
+                if (ctrl.multiplier) value *= ctrl.multiplier;
+
+                let text = (ctrl.prefix || '') + value.toFixed(ctrl.multiplier ? 0 : 2) + (ctrl.suffix || '');
+                display.textContent = text;
+            });
+        });
+
+        // Run all tests sequentially
+        window.runAllTests = async function() {
+            const tests = [
+                { name: 'Ring Modulator', fn: testRingModulator },
+                { name: 'Frequency Shifter', fn: testFrequencyShifter },
+                { name: 'Pitch Shifter', fn: testPitchShifter },
+                { name: 'Granular', fn: testGranular }
+            ];
+
+            for (const test of tests) {
+                showStatus(`Testing ${test.name}...`, 'info');
+                await test.fn();
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                stopAll();
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            showStatus('All tests completed!', 'success');
+        };
+
+        showStatus('Ready to test creative effects. Click a test button to begin.', 'success');
+    </script>
+</body>
+</html>

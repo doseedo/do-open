@@ -57,6 +57,10 @@ import EnvelopeGenerator from './modulation-matrix/EnvelopeGenerator.js';
 import MacroControls from './modulation-matrix/MacroControls.js';
 import ModulationMatrix from './modulation-matrix/ModulationMatrix.js';
 
+import RingModulator from './creative/RingModulator.js';
+import PitchShifter from './creative/PitchShifter.js';
+import Granular from './creative/Granular.js';
+
 /**
  * Register all plugins with PluginFactory
  * @returns {Object} Registration statistics
@@ -369,6 +373,34 @@ export function registerAllPlugins() {
     author: 'Agent 17'
   });
   registrations.push('ModulationMatrix');
+
+  // Creative Effects
+  PluginFactory.register('RingModulator', RingModulator, {
+    category: 'Creative',
+    description: 'Ring modulation for inharmonic sidebands',
+    tags: ['creative', 'ring-mod', 'modulation', 'experimental'],
+    version: '1.0.0',
+    author: 'Agent 9'
+  });
+  registrations.push('RingModulator');
+
+  PluginFactory.register('PitchShifter', PitchShifter, {
+    category: 'Creative',
+    description: 'Time-domain pitch shifting effect',
+    tags: ['creative', 'pitch-shift', 'transpose', 'harmony'],
+    version: '1.0.0',
+    author: 'Agent 9'
+  });
+  registrations.push('PitchShifter');
+
+  PluginFactory.register('Granular', Granular, {
+    category: 'Creative',
+    description: 'Granular synthesis for evolving textures',
+    tags: ['creative', 'granular', 'texture', 'experimental'],
+    version: '1.0.0',
+    author: 'Agent 9'
+  });
+  registrations.push('Granular');
 
   const stats = {
     totalRegistered: registrations.length,
