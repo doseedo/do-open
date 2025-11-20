@@ -223,38 +223,27 @@ class BigBandArranger:
 
     @staticmethod
     def _create_walking_bass(chords: List[ChordEvent]) -> List[NoteEvent]:
-        """Create walking bass line (quarter notes)."""
-        bass = []
+        """
+        Create professional walking bass line.
 
-        for chord in chords:
-            # Walk through chord tones and approach notes
-            num_beats = int(chord.duration)
-            beat_duration = chord.duration / num_beats if num_beats > 0 else 1.0
+        Uses the new WalkingBassGenerator for authentic jazz bass patterns with:
+        - Chord tone emphasis on strong beats (root on beat 1: ~95%)
+        - Chromatic and diatonic approach notes
+        - Smooth voice leading between chords
+        - Proper bass range (E1-C3)
+        """
+        from .walking_bass_generator import WalkingBassGenerator
 
-            for beat in range(num_beats):
-                time = chord.start_time + beat * beat_duration
+        # Generate professional walking bass line
+        bass_line = WalkingBassGenerator.generate_walking_line(
+            chords=chords,
+            swing_feel=True,
+            approach_style="mixed",  # Mix of chromatic and diatonic
+            voice_leading=True,
+            start_octave=2  # E1-C3 range
+        )
 
-                # Alternate between root, 5th, and approach notes
-                if beat == 0:
-                    pitch = chord.root + 36  # Root
-                elif beat == 1:
-                    pitch = chord.root + 36 + 7  # 5th
-                else:
-                    pitch = chord.root + 36 + 3  # 3rd or approach
-
-                bass_note = NoteEvent(
-                    start_time=time,
-                    duration=beat_duration * 0.9,
-                    start_tick=int(time * 480),
-                    duration_ticks=int(beat_duration * 0.9 * 480),
-                    pitch=pitch,
-                    velocity=90,
-                    channel=1,
-                    track_idx=25
-                )
-                bass.append(bass_note)
-
-        return bass
+        return bass_line
 
     @staticmethod
     def _create_swing_drums(melody: List[NoteEvent]) -> List[NoteEvent]:
