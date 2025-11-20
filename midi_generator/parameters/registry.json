@@ -412,6 +412,7 @@
     "category": "dynamics",
     "impact": "medium",
     "genres": []
+<<<<<<< HEAD
   },
   "instrumentation.piano.voicing_density": {
     "name": "piano_voicing_density",
@@ -1795,5 +1796,7 @@
       "film_score",
       "expressive"
     ]
+=======
+>>>>>>> origin/claude/music-generation-agents-01Gdbm7ZPnSUT25SKLbzQdUX
   }
 }

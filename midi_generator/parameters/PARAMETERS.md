@@ -1,6 +1,10 @@
 # Universal Parameter Registry
 
+<<<<<<< HEAD
 Total Parameters: 108
+=======
+Total Parameters: 28
+>>>>>>> origin/claude/music-generation-agents-01Gdbm7ZPnSUT25SKLbzQdUX
 
 ## Harmony Parameters
 
