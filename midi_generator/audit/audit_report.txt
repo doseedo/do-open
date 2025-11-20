@@ -1,0 +1,115 @@
+================================================================================
+PARAMETER AUDIT REPORT
+================================================================================
+
+📊 SUMMARY
+   Total Files Scanned: 119
+   Total Lines Scanned: 83,973
+   Total Findings: 13432
+
+🎯 BY SEVERITY
+   High:   3533 findings
+   Medium: 5555 findings
+   Low:    4344 findings
+
+📁 BY CATEGORY
+   magic_number        : 10273
+   string_choice       : 1948
+   conditional_branch  :  548
+   fixed_pattern       :  504
+   random_threshold    :  159
+
+🎵 BY MODULE TYPE
+   genre          : 6302
+   other          : 5501
+   rhythm         :  962
+   harmony        :  478
+   voice          :  105
+   bass           :   84
+
+
+================================================================================
+🚨 HIGH SEVERITY FINDINGS (3533 total)
+================================================================================
+
+📄 /home/user/Do/midi_generator/genres/classic_rock.py
+   51 high-severity findings
+   Line  283 [magic_number]: note = root + interval + (octave * 12)
+   Line  360 [fixed_pattern]: 'punk_three_chord': [  # Ramones style (3 chords)
+   Line  361 [magic_number]: (0, '5', 4.0),      # I (power chord)
+   Line  361 [magic_number]: (0, '5', 4.0),      # I (power chord)
+   Line  434 [random_threshold]: if random.random() < 0.3:  # 30% chance of bend
+
+📄 /home/user/Do/midi_generator/genres/singer_songwriter.py
+   32 high-severity findings
+   Line  327 [magic_number]: chord = FolkChord(root, quality, 4.0)
+   Line  352 [magic_number]: (1, 0.5, 80),   # Melody note
+   Line  352 [magic_number]: (1, 0.5, 80),   # Melody note
+   Line  352 [magic_number]: (1, 0.5, 80),   # Melody note
+   Line  421 [string_choice]: def generate_folk_melody(root: int, scale_type: str = 'pentatonic_majo
+
+📄 /home/user/Do/midi_generator/learning/corpus_learner.py
+   7 high-severity findings
+   Line  337 [magic_number]: 'stepwise_ratio': sum(1 for i in all_intervals if abs(i) <= 2) / len(a
+   Line  337 [magic_number]: 'stepwise_ratio': sum(1 for i in all_intervals if abs(i) <= 2) / len(a
+   Line  337 [magic_number]: 'stepwise_ratio': sum(1 for i in all_intervals if abs(i) <= 2) / len(a
+   Line  696 [random_threshold]: elif classifier_type == 'random_forest':
+   Line  697 [magic_number]: self.classifier = RandomForestClassifier(n_estimators=100, random_stat
+
+📄 /home/user/Do/midi_generator/learning/motif_library.py
+   23 high-severity findings
+   Line  106 [magic_number]: avg_interval: float = 0.0
+   Line  121 [magic_number]: if self.avg_interval == 0 and self.intervals:
+   Line  124 [magic_number]: if self.max_leap == 0 and self.intervals:
+   Line  139 [magic_number]: ups = sum(1 for c in self.contour if c > 0)
+   Line  139 [magic_number]: ups = sum(1 for c in self.contour if c > 0)
+
+📄 /home/user/Do/midi_generator/learning/pattern_extractor.py
+   31 high-severity findings
+   Line  129 [magic_number]: contour.append(-1)
+   Line  131 [magic_number]: contour.append(1)
+   Line  133 [magic_number]: contour.append(0)
+   Line  312 [magic_number]: weights = {'interval': 0.5, 'contour': 0.3, 'rhythm': 0.2}
+   Line  312 [magic_number]: weights = {'interval': 0.5, 'contour': 0.3, 'rhythm': 0.2}
+
+📄 /home/user/Do/midi_generator/learning/pattern_recognition.py
+   26 high-severity findings
+   Line  156 [magic_number]: avg_position: float = 0.0  # Average position in phrase (0-1)
+   Line  799 [magic_number]: float(np.mean(intervals)) if len(intervals) > 0 else 0,
+   Line  799 [magic_number]: float(np.mean(intervals)) if len(intervals) > 0 else 0,
+   Line  800 [magic_number]: float(np.std(intervals)) if len(intervals) > 0 else 0,
+   Line  800 [magic_number]: float(np.std(intervals)) if len(intervals) > 0 else 0,
+
+📄 /home/user/Do/midi_generator/midi/articulation_engine.py
+   4 high-severity findings
+   Line  731 [conditional_branch]: if phrase_type == "crescendo":
+   Line  737 [conditional_branch]: elif phrase_type == "diminuendo":
+   Line  743 [conditional_branch]: elif phrase_type == "arch":
+   Line  749 [conditional_branch]: elif phrase_type == "valley":
+
+📄 /home/user/Do/midi_generator/midi/cc_automation.py
+   10 high-severity findings
+   Line  244 [random_threshold]: elif p1.curve == CurveType.RANDOM_WALK:
+   Line  247 [magic_number]: noise = random.uniform(-5, 5)
+   Line  247 [magic_number]: noise = random.uniform(-5, 5)
+   Line  754 [magic_number]: swell = PhraseShaper.create_swell(0, 1920, 40, 100)
+   Line  754 [magic_number]: swell = PhraseShaper.create_swell(0, 1920, 40, 100)
+
+📄 /home/user/Do/midi_generator/midi/midi_constants.py
+   1 high-severity findings
+   Line  264 [magic_number]: 'harpsichord': 6,
+
+📄 /home/user/Do/midi_generator/midi/mpe_support.py
+   4 high-severity findings
+   Line  271 [magic_number]: vibrato_wave += random.uniform(-0.1, 0.1)  # Humanize
+   Line  271 [magic_number]: vibrato_wave += random.uniform(-0.1, 0.1)  # Humanize
+   Line  398 [magic_number]: pressure_value += random.randint(-3, 3)
+   Line  398 [magic_number]: pressure_value += random.randint(-3, 3)
+
+📄 /home/user/Do/midi_generator/optimization/fitness_learning.py
+   11 high-severity findings
+   Line  191 [magic_number]: phrase_boundaries = 0
+   Line  194 [magic_number]: phrase_boundaries += 1
+   Line  277 [random_threshold]: if self.model_type == 'random_forest':
+   Line  279 [magic_number]: n_estimators=100, random_state=42, max_depth=10
+   Line  282 [magic_number]: self.model = SVC(kernel='rbf', probability=True, random_state=42)
