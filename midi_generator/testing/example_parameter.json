@@ -1,0 +1,24 @@
+{
+  "name": "harmony.jazz_tritone_substitution_frequency",
+  "description": "Frequency of tritone substitutions in jazz harmony (0.0=never, 1.0=always)",
+  "type": "probability",
+  "default": 0.3,
+  "min": 0.0,
+  "max": 1.0,
+  "options": null,
+  "category": "harmony",
+  "impact": "high",
+  "genres": ["jazz", "bebop", "fusion"],
+  "affected_features": [
+    "harmonic_complexity",
+    "chord_progression_entropy",
+    "dominant_resolution_patterns",
+    "chromatic_movement"
+  ],
+  "musical_properties": [
+    "Creates characteristic jazz sound",
+    "Increases harmonic tension",
+    "Enables smoother voice leading",
+    "Common in bebop and modern jazz"
+  ]
+}
