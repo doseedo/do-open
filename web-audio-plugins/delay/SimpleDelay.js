@@ -1,166 +1,136 @@
 /**
- * Simple Delay
+ * Simple Delay - AudioWorklet Version
  * Basic echo effect with feedback and filtering
  *
  * Features:
  * - Tempo synchronization with BPM
- * - Feedback loop with filtering
+ * - Feedback loop with damping filter
  * - Stereo or mono operation
  * - Smooth parameter changes (no clicks)
+ * - High-performance AudioWorklet processing
+ *
+ * @author Agent 3: Delay/Echo Plugins
+ * @version 2.0.0 (AudioWorklet)
  */
 
 class SimpleDelay {
   constructor(audioContext, options = {}) {
     this.context = audioContext;
+    this.isWorkletLoaded = false;
+    this.workletNode = null;
 
-    // Audio nodes
+    // Audio nodes (for fallback or routing)
     this.input = audioContext.createGain();
     this.output = audioContext.createGain();
-
-    this.delay = audioContext.createDelay(5.0); // Max 5 seconds
-    this.feedback = audioContext.createGain();
-    this.filter = audioContext.createBiquadFilter();
-
-    this.wetGain = audioContext.createGain();
-    this.dryGain = audioContext.createGain();
-
-    // Ping pong nodes (stereo bounce)
-    this.splitter = audioContext.createChannelSplitter(2);
-    this.merger = audioContext.createChannelMerger(2);
-    this.delayL = audioContext.createDelay(5.0);
-    this.delayR = audioContext.createDelay(5.0);
-    this.feedbackL = audioContext.createGain();
-    this.feedbackR = audioContext.createGain();
 
     // State
     this.bpm = 120;
     this.syncEnabled = false;
     this.currentDivision = '1/4';
-    this.pingPongEnabled = false;
+    this.currentDelayTime = 250; // milliseconds
 
-    // Setup routing
-    this.setupRouting();
+    // Parameters
+    this.params = {
+      delayTime: 0.25,  // seconds
+      feedback: 0,      // 0-1
+      mix: 0.5,         // 0-1
+      damping: 0.5      // 0-1
+    };
+
+    // Initialize (async)
     this.initialize(options);
   }
 
-  setupRouting() {
-    // Dry path
-    this.input.connect(this.dryGain);
-    this.dryGain.connect(this.output);
+  /**
+   * Initialize the plugin (async to load AudioWorklet)
+   * @param {Object} options - Initial parameters
+   * @returns {Promise} Resolves when worklet is loaded
+   */
+  async initialize(options) {
+    try {
+      // Load AudioWorklet processor
+      await this.loadWorklet();
 
-    // Wet path with feedback (mono mode)
-    this.input.connect(this.delay);
-    this.delay.connect(this.filter);
-    this.filter.connect(this.feedback);
+      // Set initial parameters
+      this.setDelayTime(options.delayTime || 250);
+      this.setFeedback(options.feedback || 0);
+      this.setMix(options.mix || 50);
+      this.setDamping(options.damping || 0.5);
 
-    // Feedback loop
-    this.feedback.connect(this.delay);
+      if (options.sync !== undefined) {
+        this.setSync(options.sync, options.division || '1/4');
+      }
 
-    // Output
-    this.feedback.connect(this.wetGain);
-    this.wetGain.connect(this.output);
+      if (options.bpm !== undefined) {
+        this.setBPM(options.bpm);
+      }
 
-    // Initially disconnect ping pong routing
-    // It will be connected when pingPong is enabled
-  }
-
-  setupPingPongRouting() {
-    // Disconnect mono routing
-    this.input.disconnect();
-    this.delay.disconnect();
-    this.filter.disconnect();
-    this.feedback.disconnect();
-    this.wetGain.disconnect();
-
-    // Split input into L/R
-    this.input.connect(this.splitter);
-
-    // Left channel
-    this.splitter.connect(this.delayL, 0);
-    this.delayL.connect(this.feedbackL);
-
-    // Right channel
-    this.splitter.connect(this.delayR, 1);
-    this.delayR.connect(this.feedbackR);
-
-    // Cross-feedback: L feeds R, R feeds L (ping pong effect)
-    this.feedbackL.connect(this.delayR);
-    this.feedbackR.connect(this.delayL);
-
-    // Output to merger
-    this.feedbackL.connect(this.merger, 0, 0);
-    this.feedbackR.connect(this.merger, 0, 1);
-
-    // Merger to wet gain
-    this.merger.connect(this.wetGain);
-    this.wetGain.connect(this.output);
-
-    // Keep dry path connected
-    this.input.connect(this.dryGain);
-  }
-
-  restoreMonoRouting() {
-    // Disconnect ping pong routing
-    this.input.disconnect();
-    this.splitter.disconnect();
-    this.delayL.disconnect();
-    this.delayR.disconnect();
-    this.feedbackL.disconnect();
-    this.feedbackR.disconnect();
-    this.merger.disconnect();
-    this.wetGain.disconnect();
-    this.dryGain.disconnect();
-
-    // Restore mono routing
-    this.setupRouting();
-  }
-
-  initialize(options) {
-    // Set default values
-    this.setDelayTime(options.delayTime || 250);
-    this.setFeedback(options.feedback || 0);
-    this.setMix(options.mix || 50);
-    this.setFilter(options.filterType || 'off', options.filterFreq || 5000);
-
-    if (options.sync !== undefined) {
-      this.setSync(options.sync, options.division || '1/4');
+    } catch (error) {
+      console.error('SimpleDelay: Failed to initialize AudioWorklet:', error);
+      // Could fall back to native Web Audio nodes here
     }
+  }
 
-    if (options.pingPong !== undefined) {
-      this.setPingPong(options.pingPong);
+  /**
+   * Load the AudioWorklet processor module
+   * @returns {Promise} Resolves when worklet is loaded
+   */
+  async loadWorklet() {
+    if (this.isWorkletLoaded) return;
+
+    try {
+      // Load the processor script
+      const workletPath = '/web-audio-plugins/delay/worklets/simple-delay-processor.js';
+      await this.context.audioWorklet.addModule(workletPath);
+
+      // Create the AudioWorkletNode
+      this.workletNode = new AudioWorkletNode(this.context, 'simple-delay-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2]
+      });
+
+      // Connect the routing
+      this.input.connect(this.workletNode);
+      this.workletNode.connect(this.output);
+
+      this.isWorkletLoaded = true;
+
+    } catch (error) {
+      console.error('SimpleDelay: Failed to load AudioWorklet module:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update a parameter in the AudioWorklet processor
+   * @param {Object} params - Parameters to update
+   */
+  updateWorkletParams(params) {
+    if (this.workletNode && this.workletNode.port) {
+      this.workletNode.port.postMessage({
+        type: 'updateParams',
+        params: params
+      });
     }
   }
 
   /**
    * Set delay time in milliseconds
    * @param {number} ms - Delay time (0-5000ms)
-   * @param {number} rampTime - Smooth transition time (default 0.05s)
+   * @param {number} rampTime - Smooth transition time (ignored in worklet, kept for API compatibility)
    */
   setDelayTime(ms, rampTime = 0.05) {
     // Clamp to valid range
     ms = Math.max(0, Math.min(5000, ms));
-
-    // Smooth delay time changes to prevent artifacts
-    const now = this.context.currentTime;
-    const delaySeconds = ms / 1000;
-
-    if (this.pingPongEnabled) {
-      // Set both L and R delays
-      this.delayL.delayTime.cancelScheduledValues(now);
-      this.delayL.delayTime.setValueAtTime(this.delayL.delayTime.value, now);
-      this.delayL.delayTime.linearRampToValueAtTime(delaySeconds, now + rampTime);
-
-      this.delayR.delayTime.cancelScheduledValues(now);
-      this.delayR.delayTime.setValueAtTime(this.delayR.delayTime.value, now);
-      this.delayR.delayTime.linearRampToValueAtTime(delaySeconds, now + rampTime);
-    } else {
-      // Mono delay
-      this.delay.delayTime.cancelScheduledValues(now);
-      this.delay.delayTime.setValueAtTime(this.delay.delayTime.value, now);
-      this.delay.delayTime.linearRampToValueAtTime(delaySeconds, now + rampTime);
-    }
-
     this.currentDelayTime = ms;
+
+    // Convert to seconds
+    const seconds = ms / 1000;
+    this.params.delayTime = seconds;
+
+    // Update worklet
+    this.updateWorkletParams({ delayTime: seconds });
   }
 
   /**
@@ -171,17 +141,12 @@ class SimpleDelay {
     // Clamp to valid range
     amount = Math.max(0, Math.min(100, amount));
 
-    // Convert to gain (0-1)
-    // Use slight curve for more natural feel
+    // Convert to gain (0-1) with slight curve
     const gain = Math.pow(amount / 100, 0.8);
+    this.params.feedback = gain;
 
-    if (this.pingPongEnabled) {
-      // Apply to both channels
-      this.feedbackL.gain.value = gain * 0.5; // Reduce slightly for ping pong
-      this.feedbackR.gain.value = gain * 0.5;
-    } else {
-      this.feedback.gain.value = gain;
-    }
+    // Update worklet
+    this.updateWorkletParams({ feedback: gain });
   }
 
   /**
@@ -192,31 +157,25 @@ class SimpleDelay {
     // Clamp to valid range
     percent = Math.max(0, Math.min(100, percent));
 
-    // Use equal power crossfade for smooth mixing
-    const wetAngle = (percent / 100) * (Math.PI / 2);
-    const wet = Math.sin(wetAngle);
-    const dry = Math.cos(wetAngle);
+    // Convert to 0-1 range
+    const mix = percent / 100;
+    this.params.mix = mix;
 
-    this.wetGain.gain.value = wet;
-    this.dryGain.gain.value = dry;
+    // Update worklet
+    this.updateWorkletParams({ mix: mix });
   }
 
   /**
-   * Set filter in feedback path
-   * @param {string} type - Filter type ('off', 'lowpass', 'highpass')
-   * @param {number} frequency - Filter frequency (20-20000 Hz)
+   * Set damping (feedback filter)
+   * @param {number} amount - Damping amount (0-1)
    */
-  setFilter(type, frequency) {
-    frequency = Math.max(20, Math.min(20000, frequency));
+  setDamping(amount) {
+    // Clamp to valid range
+    amount = Math.max(0, Math.min(1, amount));
+    this.params.damping = amount;
 
-    if (type === 'off') {
-      // Use allpass filter (passes everything)
-      this.filter.type = 'allpass';
-    } else {
-      this.filter.type = type; // 'lowpass' or 'highpass'
-      this.filter.frequency.value = frequency;
-      this.filter.Q.value = 0.7071; // Butterworth response
-    }
+    // Update worklet
+    this.updateWorkletParams({ damping: amount });
   }
 
   /**
@@ -245,30 +204,6 @@ class SimpleDelay {
     if (this.syncEnabled) {
       const ms = this.syncTimeToMS(this.currentDivision, this.bpm);
       this.setDelayTime(ms);
-    }
-  }
-
-  /**
-   * Enable/disable ping pong stereo mode
-   * @param {boolean} enabled - Ping pong enabled
-   */
-  setPingPong(enabled) {
-    if (enabled === this.pingPongEnabled) return;
-
-    this.pingPongEnabled = enabled;
-
-    if (enabled) {
-      this.setupPingPongRouting();
-      // Restore current delay time to both channels
-      if (this.currentDelayTime) {
-        this.setDelayTime(this.currentDelayTime);
-      }
-    } else {
-      this.restoreMonoRouting();
-      // Restore current delay time to mono delay
-      if (this.currentDelayTime) {
-        this.setDelayTime(this.currentDelayTime);
-      }
     }
   }
 
@@ -305,29 +240,94 @@ class SimpleDelay {
 
   /**
    * Get current delay time in milliseconds
+   * @returns {number} Current delay time in ms
    */
   getDelayTime() {
     return this.currentDelayTime;
   }
 
   /**
+   * Connect this delay to an audio node
+   * @param {AudioNode} destination - Destination node
+   * @returns {SimpleDelay} This instance (for chaining)
+   */
+  connect(destination) {
+    this.output.connect(destination);
+    return this;
+  }
+
+  /**
+   * Disconnect this delay from all outputs
+   * @returns {SimpleDelay} This instance (for chaining)
+   */
+  disconnect() {
+    this.output.disconnect();
+    return this;
+  }
+
+  /**
    * Clean up and disconnect all nodes
    */
   dispose() {
-    // Disconnect all nodes
+    this.disconnect();
     this.input.disconnect();
-    this.output.disconnect();
-    this.delay.disconnect();
-    this.feedback.disconnect();
-    this.filter.disconnect();
-    this.wetGain.disconnect();
-    this.dryGain.disconnect();
-    this.splitter.disconnect();
-    this.merger.disconnect();
-    this.delayL.disconnect();
-    this.delayR.disconnect();
-    this.feedbackL.disconnect();
-    this.feedbackR.disconnect();
+
+    if (this.workletNode) {
+      this.workletNode.disconnect();
+      this.workletNode = null;
+    }
+  }
+
+  /**
+   * Check if using AudioWorklet
+   * @returns {boolean} True if AudioWorklet is loaded
+   */
+  usesAudioWorklet() {
+    return this.isWorkletLoaded;
+  }
+
+  /**
+   * Process audio offline (for rendering)
+   * @param {AudioBuffer} inputBuffer - Input audio buffer
+   * @returns {Promise<AudioBuffer>} Processed audio buffer
+   */
+  async processOffline(inputBuffer) {
+    // Create offline context with same sample rate
+    const offlineContext = new OfflineAudioContext(
+      inputBuffer.numberOfChannels,
+      inputBuffer.length,
+      inputBuffer.sampleRate
+    );
+
+    // Load worklet in offline context
+    const workletPath = '/web-audio-plugins/delay/worklets/simple-delay-processor.js';
+    await offlineContext.audioWorklet.addModule(workletPath);
+
+    // Create source and worklet node
+    const source = offlineContext.createBufferSource();
+    source.buffer = inputBuffer;
+
+    const workletNode = new AudioWorkletNode(offlineContext, 'simple-delay-processor', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [inputBuffer.numberOfChannels]
+    });
+
+    // Apply current parameters
+    workletNode.port.postMessage({
+      type: 'updateParams',
+      params: this.params
+    });
+
+    // Connect: source -> worklet -> destination
+    source.connect(workletNode);
+    workletNode.connect(offlineContext.destination);
+
+    // Render
+    source.start();
+    const renderedBuffer = await offlineContext.startRendering();
+
+    return renderedBuffer;
   }
 }
 
