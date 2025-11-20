@@ -65,6 +65,20 @@ from core.modal_harmony import (
     ModalScale, ModalScaleLibrary, ModalProgressionGenerator
 )
 
+# Import bebop vocabulary library (Agent 1 enhancement)
+try:
+    from genres.jazz_vocabulary import BebopVocabulary, Difficulty, StyleEra
+except ImportError:
+    # Fallback if vocabulary module not available
+    BebopVocabulary = None
+    Difficulty = None
+    StyleEra = None
+
+# Use TYPE_CHECKING to avoid numpy dependency at runtime  
+if TYPE_CHECKING:
+    from algorithms.rhythm_engine import GrooveTemplate, TimingStyle
+
+
 
 # ============================================================================
 # JAZZ STYLES AND ENUMS
@@ -392,74 +406,327 @@ class JazzWalkingBass:
 
 class BebopMelodyGenerator:
     """
-    Bebop melody generator with chromatic approach notes.
+    Enhanced bebop melody generator with authentic vocabulary and phrase shaping.
+
+    ENHANCEMENTS (Agent 1):
+    ----------------------
+    - Authentic bebop vocabulary integration (II-V-I licks, enclosures, turnarounds)
+    - Phrase shaping with configurable contour (arch, ascending, descending, peak_early)
+    - Rhythmic variation patterns (not just uniform subdivision)
+    - Register adaptation based on harmonic context
+    - Rest patterns for natural phrasing
+    - Dynamic contour (velocity variation across phrase)
 
     Based on bebop language principles:
     - Chromatic enclosures
     - Approach notes (chromatic and diatonic)
     - Chord tone targeting
     - Scalar runs and arpeggios
+    - Charlie Parker vocabulary patterns
     """
 
     def __init__(self):
         self.register_low = 60   # C4
         self.register_high = 84  # C6
 
+        # Initialize vocabulary library (Agent 1 enhancement)
+        if BebopVocabulary is not None:
+            self.vocabulary = BebopVocabulary()
+        else:
+            self.vocabulary = None
+
     def generate_phrase(
         self,
         chord: JazzChord,
         length_beats: int = 4,
-        density: float = 0.8
+        density: float = 0.8,
+        use_vocabulary: bool = True,
+        phrase_shape: str = "arch",
+        rhythmic_density_curve: Optional[List[float]] = None,
+        target_register: Optional[Tuple[int, int]] = None,
+        include_rests: bool = True,
+        vocabulary_probability: float = 0.4
     ) -> List[JazzNote]:
         """
-        Generate bebop phrase over single chord.
+        Generate bebop phrase over single chord with enhanced features.
 
         Args:
             chord: JazzChord to improvise over
             length_beats: Length of phrase in beats
             density: Note density (0.0-1.0, higher = more notes)
+            use_vocabulary: Whether to use authentic bebop licks
+            phrase_shape: Melodic contour shape
+                - "arch": Start low/mid, peak in middle, end mid/low (natural)
+                - "ascending": Generally upward motion
+                - "descending": Generally downward motion
+                - "peak_early": Peak in first half, descend
+                - "random": No specific shape
+            rhythmic_density_curve: Custom rhythm density per beat (if None, uses density)
+            target_register: Target register range (low, high) in MIDI notes
+            include_rests: Whether to include rest patterns
+            vocabulary_probability: Probability of using vocabulary licks (0.0-1.0)
 
         Returns:
             List of JazzNote objects
         """
+        # Use vocabulary lick if enabled and available
+        if (use_vocabulary and
+            self.vocabulary is not None and
+            random.random() < vocabulary_probability and
+            length_beats >= 2):
+            return self._generate_vocabulary_phrase(chord, length_beats, phrase_shape)
+
+        # Generate phrase using algorithmic approach
         phrase = []
-        scale = BebopScale.dominant_bebop(chord.root)
+        scale = self._get_appropriate_scale(chord)
         scale_notes = scale.get_notes(octave=5)
+
+        # Determine register
+        if target_register:
+            register_low, register_high = target_register
+        else:
+            register_low, register_high = self._adapt_register_to_harmony(chord)
 
         # Generate note sequence
         current_beat = 0.0
-        subdivision = 0.5 if density > 0.6 else 1.0  # 8ths or quarters
+        subdivision_options = [0.25, 0.5, 0.75, 1.0]  # 16ths, 8ths, dotted 8ths, quarters
 
+        # Create rhythmic variation
+        if rhythmic_density_curve is None:
+            rhythmic_density_curve = [density] * int(length_beats)
+
+        phrase_notes = []
         while current_beat < length_beats:
+            # Determine subdivision based on density curve
+            beat_idx = min(int(current_beat), len(rhythmic_density_curve) - 1)
+            current_density = rhythmic_density_curve[beat_idx]
+
+            if current_density > 0.8:
+                subdivision = random.choice([0.25, 0.5])  # Fast notes
+            elif current_density > 0.5:
+                subdivision = 0.5  # 8th notes
+            else:
+                subdivision = random.choice([0.5, 1.0])  # 8ths or quarters
+
+            # Add rest occasionally for phrasing
+            if include_rests and random.random() < (1.0 - current_density) * 0.3:
+                current_beat += subdivision
+                continue
+
             # Target chord tone on strong beats
             if current_beat % 1.0 == 0:
                 note = random.choice(self._get_chord_tones(chord, octave=5))
             else:
                 note = random.choice(scale_notes)
 
+            # Constrain to register
+            while note < register_low:
+                note += 12
+            while note > register_high:
+                note -= 12
+
             # Add chromatic approach note occasionally
             if random.random() < 0.3 and current_beat < length_beats - 0.5:
-                # Chromatic enclosure
-                phrase.append(JazzNote(
-                    pitch=note + 1,
-                    velocity=random.randint(70, 90),
-                    start_time=current_beat,
-                    duration=subdivision * 0.4,
-                    articulation="staccato"
-                ))
-                current_beat += subdivision * 0.5
+                # Use authentic enclosure from vocabulary
+                if self.vocabulary:
+                    enclosure = self.vocabulary.get_chromatic_enclosure(
+                        note,
+                        approach_style=random.choice(["single_below", "double"])
+                    )
+                    for enc_note, enc_beat, enc_dur in enclosure[:-1]:  # All but target
+                        phrase_notes.append({
+                            'pitch': enc_note,
+                            'start': current_beat + enc_beat,
+                            'duration': enc_dur,
+                            'articulation': 'staccato'
+                        })
+                    current_beat += 0.25
+                else:
+                    # Fallback: simple chromatic approach
+                    phrase_notes.append({
+                        'pitch': note + 1,
+                        'start': current_beat,
+                        'duration': subdivision * 0.4,
+                        'articulation': 'staccato'
+                    })
+                    current_beat += subdivision * 0.5
 
-            phrase.append(JazzNote(
-                pitch=note,
-                velocity=random.randint(80, 110),
-                start_time=current_beat,
-                duration=subdivision * 0.9,
-                articulation="normal"
-            ))
+            phrase_notes.append({
+                'pitch': note,
+                'start': current_beat,
+                'duration': subdivision * 0.9,
+                'articulation': 'normal'
+            })
 
             current_beat += subdivision
 
+        # Apply phrase shape and dynamic contour
+        phrase = self._apply_phrase_shaping(phrase_notes, phrase_shape, length_beats)
+
         return phrase
+
+    def _generate_vocabulary_phrase(
+        self,
+        chord: JazzChord,
+        length_beats: int,
+        phrase_shape: str
+    ) -> List[JazzNote]:
+        """
+        Generate phrase using authentic bebop vocabulary.
+
+        Args:
+            chord: Chord to play over
+            length_beats: Phrase length
+            phrase_shape: Desired contour
+
+        Returns:
+            List of JazzNote with vocabulary lick
+        """
+        # Get appropriate lick based on chord context
+        if "dom7" in chord.quality.lower():
+            lick = self.vocabulary.get_ii_V_I_lick(
+                key=chord.root,
+                difficulty=Difficulty.INTERMEDIATE,
+                style=StyleEra.BEBOP
+            )
+        else:
+            lick = self.vocabulary.get_random_lick(difficulty=Difficulty.INTERMEDIATE)
+
+        # Convert vocabulary pattern to JazzNote objects
+        phrase = []
+        base_octave = 5
+        base_note = 12 * base_octave + chord.root
+
+        for i, (interval, beat, duration) in enumerate(zip(
+            lick.intervals,
+            lick.rhythm,
+            lick.duration
+        )):
+            if beat >= length_beats:
+                break
+
+            pitch = base_note + interval
+
+            # Constrain to register
+            while pitch < self.register_low:
+                pitch += 12
+            while pitch > self.register_high:
+                pitch -= 12
+
+            phrase.append({
+                'pitch': pitch,
+                'start': beat,
+                'duration': duration,
+                'articulation': 'normal'
+            })
+
+        # Apply phrase shaping
+        phrase = self._apply_phrase_shaping(phrase, phrase_shape, length_beats)
+
+        return phrase
+
+    def _apply_phrase_shaping(
+        self,
+        phrase_notes: List[Dict],
+        phrase_shape: str,
+        length_beats: int
+    ) -> List[JazzNote]:
+        """
+        Apply melodic contour and dynamic shaping to phrase.
+
+        Args:
+            phrase_notes: List of note dicts with pitch, start, duration, articulation
+            phrase_shape: Contour type (arch, ascending, descending, peak_early, random)
+            length_beats: Total phrase length
+
+        Returns:
+            List of JazzNote with shaped velocity contour
+        """
+        if not phrase_notes:
+            return []
+
+        # Calculate velocity curve based on phrase shape
+        shaped_phrase = []
+        num_notes = len(phrase_notes)
+
+        for i, note_dict in enumerate(phrase_notes):
+            # Position in phrase (0.0 to 1.0)
+            position = i / max(num_notes - 1, 1)
+
+            # Calculate velocity based on shape
+            if phrase_shape == "arch":
+                # Arch shape: start medium, peak at middle, end medium
+                # Parabola: -(x - 0.5)^2 + 0.25, normalized
+                curve_value = -(position - 0.5) ** 2 + 0.25
+                velocity = int(70 + (curve_value * 4) * 50)  # 70-120 range
+            elif phrase_shape == "ascending":
+                # Crescendo throughout
+                velocity = int(70 + position * 50)
+            elif phrase_shape == "descending":
+                # Diminuendo throughout
+                velocity = int(120 - position * 50)
+            elif phrase_shape == "peak_early":
+                # Peak at 1/3, then descend
+                if position < 0.33:
+                    velocity = int(70 + (position / 0.33) * 50)
+                else:
+                    velocity = int(120 - ((position - 0.33) / 0.67) * 40)
+            else:  # random
+                velocity = random.randint(80, 110)
+
+            # Clamp velocity to valid MIDI range
+            velocity = max(20, min(127, velocity))
+
+            # Add slight random variation for humanization
+            velocity = max(20, min(127, velocity + random.randint(-5, 5)))
+
+            shaped_phrase.append(JazzNote(
+                pitch=note_dict['pitch'],
+                velocity=velocity,
+                start_time=note_dict['start'],
+                duration=note_dict['duration'],
+                articulation=note_dict['articulation']
+            ))
+
+        return shaped_phrase
+
+    def _adapt_register_to_harmony(self, chord: JazzChord) -> Tuple[int, int]:
+        """
+        Adapt melodic register based on chord quality and harmonic context.
+
+        Args:
+            chord: JazzChord to analyze
+
+        Returns:
+            (register_low, register_high) tuple in MIDI note numbers
+        """
+        # Darker chords (minor, dim) tend lower, brighter (major, dom) tend higher
+        if "min" in chord.quality.lower() or "dim" in chord.quality.lower():
+            # Minor/diminished: slightly lower register
+            return (self.register_low - 5, self.register_high - 5)
+        elif "maj" in chord.quality.lower():
+            # Major: slightly higher register
+            return (self.register_low + 3, self.register_high + 3)
+        else:
+            # Dominant and others: standard register
+            return (self.register_low, self.register_high)
+
+    def _get_appropriate_scale(self, chord: JazzChord) -> BebopScale:
+        """
+        Get appropriate bebop scale for chord quality.
+
+        Args:
+            chord: JazzChord
+
+        Returns:
+            Appropriate BebopScale
+        """
+        if "dom7" in chord.quality.lower() or "7" in chord.quality:
+            return BebopScale.dominant_bebop(chord.root)
+        elif "min" in chord.quality.lower():
+            return BebopScale.minor_bebop(chord.root)
+        else:  # maj7, etc.
+            return BebopScale.major_bebop(chord.root)
 
     def _get_chord_tones(self, chord: JazzChord, octave: int = 5) -> List[int]:
         """Get chord tones for targeting"""
@@ -476,26 +743,37 @@ class BebopMelodyGenerator:
 
 class PianoComping:
     """
-    Jazz piano comping pattern generator.
+    Enhanced Jazz piano comping pattern generator.
 
     Styles:
     - Shell voicings (root, 3rd, 7th)
-    - Rootless voicings (Bill Evans style)
+    - Rootless Type A (3-5-7-9) - Bill Evans
+    - Rootless Type B (7-9-3-5) - Bill Evans
     - Quartal voicings (McCoy Tyner)
     - Block chords (Red Garland)
-    - Stride piano
+    - Upper structures (modern jazz)
+    - Stride piano (James P. Johnson)
+
+    NEW FEATURES (Agent 3):
+    - Separate Type A and Type B rootless voicings
+    - Rhythm pattern integration
+    - Voice leading optimization
+    - Upper structure support
+    - Two-handed voicings
     """
 
     def __init__(self, style: CompingStyle = CompingStyle.ROOTLESS):
         self.style = style
+        self.last_voicing: Optional[List[int]] = None  # For voice leading
 
-    def voice_chord(self, chord: JazzChord, octave: int = 4) -> List[int]:
+    def voice_chord(self, chord: JazzChord, octave: int = 4, voicing_type: str = "auto") -> List[int]:
         """
         Voice chord according to comping style.
 
         Args:
             chord: JazzChord to voice
             octave: Base octave
+            voicing_type: "auto", "A", or "B" (for rootless voicings)
 
         Returns:
             List of MIDI note numbers
@@ -509,12 +787,13 @@ class PianoComping:
             return [root, third, seventh]
 
         elif self.style == CompingStyle.ROOTLESS:
-            # Bill Evans style: 3rd, 5th/6th, 7th, 9th
-            third = root + (3 if "min" in chord.quality else 4)
-            fifth_or_sixth = root + (7 if "maj7" in chord.quality else 9)
-            seventh = root + (10 if ("dom" in chord.quality or "min" in chord.quality) else 11)
-            ninth = root + 14
-            return [third, fifth_or_sixth, seventh, ninth]
+            # Enhanced Bill Evans style with Type A and Type B
+            if voicing_type == "A" or (voicing_type == "auto" and self._should_use_type_a(chord)):
+                # Type A: 3-5-7-9 (or 3-6-7-9 for maj7)
+                return self._rootless_type_a(chord, octave)
+            else:
+                # Type B: 7-9-3-5 (or 7-9-3-6 for maj7)
+                return self._rootless_type_b(chord, octave)
 
         elif self.style == CompingStyle.QUARTAL:
             # McCoy Tyner quartal voicing (stacked fourths)
@@ -532,6 +811,287 @@ class PianoComping:
             third = root + (3 if "min" in chord.quality else 4)
             seventh = root + (10 if ("dom" in chord.quality or "min" in chord.quality) else 11)
             return [root, third, seventh]
+
+    def _rootless_type_a(self, chord: JazzChord, octave: int) -> List[int]:
+        """
+        Rootless Type A voicing: 3-5-7-9 (or 3-6-7-9 for maj7).
+
+        Args:
+            chord: JazzChord to voice
+            octave: Base octave
+
+        Returns:
+            List of MIDI pitches
+        """
+        root = 12 * octave + chord.root
+
+        if "maj7" in chord.quality or "maj" in chord.quality:
+            # Major 7: 3-6-7-9
+            third = root + 4
+            sixth = root + 9
+            seventh = root + 11
+            ninth = root + 14
+            return [third, sixth, seventh, ninth]
+
+        elif "min7" in chord.quality or "min" in chord.quality:
+            # Minor 7: b3-5-b7-9
+            third = root + 3
+            fifth = root + 7
+            seventh = root + 10
+            ninth = root + 14
+            return [third, fifth, seventh, ninth]
+
+        elif "dom7" in chord.quality or chord.quality == "7":
+            # Dominant 7: 3-13-b7-9 (13 instead of 5 for color)
+            third = root + 4
+            thirteenth = root + 9  # Or fifth (root + 7)
+            seventh = root + 10
+            ninth = root + 14
+            return [third, thirteenth, seventh, ninth]
+
+        elif "min7b5" in chord.quality or "ø" in chord.quality:
+            # Half-diminished: b3-b5-b7-b9
+            third = root + 3
+            fifth = root + 6
+            seventh = root + 10
+            ninth = root + 13
+            return [third, fifth, seventh, ninth]
+
+        else:
+            # Default: shell voicing
+            third = root + 4
+            seventh = root + 11
+            return [third, seventh]
+
+    def _rootless_type_b(self, chord: JazzChord, octave: int) -> List[int]:
+        """
+        Rootless Type B voicing: 7-9-3-5 (or 7-9-3-6 for maj7).
+
+        Args:
+            chord: JazzChord to voice
+            octave: Base octave
+
+        Returns:
+            List of MIDI pitches
+        """
+        root = 12 * octave + chord.root
+
+        if "maj7" in chord.quality or "maj" in chord.quality:
+            # Major 7: 7-9-3-6
+            seventh = root + 11
+            ninth = root + 14
+            third = root + 16  # Octave up
+            sixth = root + 21  # Octave up
+            return [seventh, ninth, third, sixth]
+
+        elif "min7" in chord.quality or "min" in chord.quality:
+            # Minor 7: b7-9-b3-5
+            seventh = root + 10
+            ninth = root + 14
+            third = root + 15  # Octave up
+            fifth = root + 19  # Octave up
+            return [seventh, ninth, third, fifth]
+
+        elif "dom7" in chord.quality or chord.quality == "7":
+            # Dominant 7: b7-9-3-13
+            seventh = root + 10
+            ninth = root + 14
+            third = root + 16  # Octave up
+            thirteenth = root + 21  # Octave up (or fifth: root + 19)
+            return [seventh, ninth, third, thirteenth]
+
+        elif "min7b5" in chord.quality or "ø" in chord.quality:
+            # Half-diminished: b7-b9-b3-b5
+            seventh = root + 10
+            ninth = root + 13
+            third = root + 15  # Octave up
+            fifth = root + 18  # Octave up
+            return [seventh, ninth, third, fifth]
+
+        else:
+            # Default: Type A
+            return self._rootless_type_a(chord, octave)
+
+    def _should_use_type_a(self, chord: JazzChord) -> bool:
+        """
+        Determine whether to use Type A voicing (for voice leading).
+
+        Rule: Alternate between A and B, or choose based on last voicing.
+        For now, use simple logic based on chord root.
+        """
+        # If we have a previous voicing, choose based on voice leading
+        if self.last_voicing is not None:
+            # Try both and pick the one with better voice leading
+            # For simplicity, use chord root parity
+            return chord.root % 2 == 0
+        else:
+            # Default to Type A
+            return True
+
+    def comp_pattern(
+        self,
+        chords: List[JazzChord],
+        rhythm_pattern: str = "charleston",
+        bars_per_chord: int = 1,
+        use_voice_leading: bool = True,
+        base_velocity: int = 70,
+        octave: int = 4
+    ) -> List[JazzNote]:
+        """
+        Generate comping pattern with RHYTHM + VOICING.
+
+        This is the main enhancement from Agent 3!
+
+        Args:
+            chords: List of JazzChord objects
+            rhythm_pattern: "charleston", "sparse", "dense", "montuno", "on_beat", etc.
+            bars_per_chord: How many bars to spend on each chord
+            use_voice_leading: Optimize voice leading between chords
+            base_velocity: Base MIDI velocity
+            octave: Base octave for voicings
+
+        Returns:
+            List of JazzNote objects with proper timing and voicing
+
+        Example:
+            >>> from genres.jazz import JazzChord, CompingStyle
+            >>> comper = PianoComping(style=CompingStyle.ROOTLESS)
+            >>> progression = [
+            ...     JazzChord(root=2, quality="min7"),   # Dmin7
+            ...     JazzChord(root=7, quality="dom7"),   # G7
+            ...     JazzChord(root=0, quality="maj7"),   # Cmaj7
+            ... ]
+            >>> notes = comper.comp_pattern(progression, rhythm_pattern="charleston")
+        """
+        # Import rhythm library (lazy import to avoid circular dependency)
+        try:
+            from genres.comping_rhythms import (
+                CompingRhythmLibrary, CompingRhythmStyle,
+                pattern_to_velocities
+            )
+        except ImportError:
+            # Fallback: simple on-beat pattern
+            return self._fallback_comp_pattern(chords, bars_per_chord, octave, base_velocity)
+
+        all_notes = []
+        current_time = 0.0
+
+        # Map rhythm pattern string to enum
+        rhythm_map = {
+            "charleston": CompingRhythmStyle.CHARLESTON,
+            "sparse": CompingRhythmStyle.SPARSE,
+            "dense": CompingRhythmStyle.DENSE,
+            "montuno": CompingRhythmStyle.MONTUNO,
+            "on_beat": CompingRhythmStyle.ON_BEAT,
+            "freddie_green": CompingRhythmStyle.FREDDIE_GREEN,
+            "bossa_nova": CompingRhythmStyle.BOSSA_NOVA,
+            "samba": CompingRhythmStyle.SAMBA,
+        }
+
+        rhythm_style = rhythm_map.get(rhythm_pattern, CompingRhythmStyle.CHARLESTON)
+
+        for chord in chords:
+            # Get rhythm pattern for this chord
+            beat_pattern = CompingRhythmLibrary.generate_multi_bar_pattern(
+                style=rhythm_style,
+                num_bars=bars_per_chord,
+                vary_pattern=True
+            )
+
+            # Get velocities with accents
+            beat_velocities = pattern_to_velocities(
+                beat_pattern,
+                base_velocity=base_velocity,
+                accent_beats=[0, 2]  # Accent beats 1 and 3
+            )
+
+            # Voice the chord
+            voicing = self.voice_chord(chord, octave)
+
+            if use_voice_leading and self.last_voicing is not None:
+                # Optimize voice leading
+                voicing = self._optimize_voice_leading(voicing, self.last_voicing)
+
+            self.last_voicing = voicing
+
+            # Create notes at each rhythm point
+            for beat, velocity in beat_velocities:
+                for pitch in voicing:
+                    note = JazzNote(
+                        pitch=pitch,
+                        velocity=velocity,
+                        start_time=current_time + beat,
+                        duration=0.4,  # Short comping duration
+                        articulation="normal"
+                    )
+                    all_notes.append(note)
+
+            current_time += bars_per_chord * 4.0  # 4 beats per bar
+
+        return all_notes
+
+    def _optimize_voice_leading(self, current_voicing: List[int], last_voicing: List[int]) -> List[int]:
+        """
+        Optimize voice leading by choosing best inversion.
+
+        Simple optimization: Try to keep voices close to previous voicing.
+        """
+        # If voicings are different sizes, can't optimize
+        if len(current_voicing) != len(last_voicing):
+            return current_voicing
+
+        # Generate alternative inversions (octave shifts)
+        alternatives = [current_voicing]
+
+        # Try shifting each voice up or down an octave
+        for i in range(len(current_voicing)):
+            alt_up = current_voicing.copy()
+            alt_up[i] += 12
+            if alt_up[i] <= 96:  # Keep in reasonable range
+                alternatives.append(alt_up)
+
+            alt_down = current_voicing.copy()
+            alt_down[i] -= 12
+            if alt_down[i] >= 48:
+                alternatives.append(alt_down)
+
+        # Choose alternative with minimum total voice movement
+        best_voicing = current_voicing
+        min_distance = float('inf')
+
+        for alt in alternatives:
+            distance = sum(abs(alt[i] - last_voicing[i]) for i in range(len(alt)))
+            if distance < min_distance:
+                min_distance = distance
+                best_voicing = alt
+
+        return best_voicing
+
+    def _fallback_comp_pattern(
+        self, chords: List[JazzChord], bars_per_chord: int, octave: int, velocity: int
+    ) -> List[JazzNote]:
+        """Fallback comping pattern if rhythm library not available."""
+        all_notes = []
+        current_time = 0.0
+
+        for chord in chords:
+            voicing = self.voice_chord(chord, octave)
+
+            # Simple on-beat pattern
+            for beat in range(bars_per_chord * 4):
+                for pitch in voicing:
+                    note = JazzNote(
+                        pitch=pitch,
+                        velocity=velocity,
+                        start_time=current_time + beat,
+                        duration=0.4,
+                        articulation="normal"
+                    )
+                    all_notes.append(note)
+
+            current_time += bars_per_chord * 4.0
+
+        return all_notes
 
 
 # ============================================================================

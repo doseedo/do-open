@@ -605,6 +605,106 @@ class BrassVoicingEngine:
                 result.append((inst, pitch))
             return result
 
+    @classmethod
+    def spread_voicing(cls, chord: str, ensemble: str = 'big_band') -> List[Tuple[str, int]]:
+        """
+        Create wide spacing for powerful sound (modern big band style).
+
+        Args:
+            chord: Chord symbol
+            ensemble: 'big_band', 'brass_quartet', etc.
+
+        Returns:
+            [(instrument, midi_pitch), ...] with wide spread voicing
+
+        Research:
+        - Thad Jones used spread voicings for modern sound
+        - Wide spacing creates powerful, open sound
+        - Wider intervals throughout (not just drop voicing)
+        """
+        instruments = cls.INSTRUMENTS.get(ensemble, cls.INSTRUMENTS['big_band'])
+        chord_info = ChordToPitchMapper.parse_chord(chord)
+
+        chord_tones = chord_info['chord_tones']
+        root = chord_info['root']
+
+        # Create spread voicing with wide intervals
+        # Bass register: Root down octave
+        # Middle: 3rd and 5th
+        # Top: 7th and extensions up high
+
+        base_pitch = 60 + root
+        result = []
+
+        if len(instruments) >= 8:  # Big band (8-piece brass)
+            # Trombones (bottom 4): Root and 5th spread across octave
+            result.append((instruments[4], base_pitch - 12))  # Root down octave
+            result.append((instruments[5], base_pitch - 7))   # 5th below root
+            result.append((instruments[6], base_pitch))       # Root at pitch
+            result.append((instruments[7], base_pitch + 7))   # 5th at pitch
+
+            # Trumpets (top 4): 3rd, 7th, 9th spread high
+            result.append((instruments[0], base_pitch + 16 if len(chord_tones) > 1 else base_pitch + 12))  # 3rd up octave
+            result.append((instruments[1], base_pitch + 22 if len(chord_tones) > 2 else base_pitch + 19))  # 7th up octave
+            result.append((instruments[2], base_pitch + 26 if len(chord_tones) > 3 else base_pitch + 24))  # 9th up
+            result.append((instruments[3], base_pitch + 31 if len(chord_tones) > 3 else base_pitch + 28))  # High extension
+        else:  # Smaller ensemble
+            for i, inst in enumerate(instruments):
+                octave_offset = (i // 2) * 12
+                chord_tone = chord_tones[i % len(chord_tones)]
+                pitch = base_pitch + chord_tone + octave_offset
+                result.append((inst, pitch))
+
+        return result
+
+    @classmethod
+    def section_blend(cls,
+                     trumpets: List[Tuple[str, int]],
+                     trombones: List[Tuple[str, int]],
+                     blend_ratio: float = 0.5) -> Dict[str, List[Tuple[str, int]]]:
+        """
+        Balance trumpets (bright) vs trombones (dark) for section blend.
+
+        Args:
+            trumpets: List of (instrument, pitch) for trumpets
+            trombones: List of (instrument, pitch) for trombones
+            blend_ratio: 0.0 (all trombones) to 1.0 (all trumpets), 0.5 = balanced
+
+        Returns:
+            Dict with 'trumpets' and 'trombones' keys containing adjusted voicings
+
+        Research:
+        - Brass section balance is crucial for big band sound
+        - Trumpets are brighter, trombones darker
+        - Blend ratio controls which section dominates
+        - Typical balance: 0.5 (equal), 0.7 (trumpet dominant), 0.3 (trombone dominant)
+        """
+        # In MIDI, we can simulate blend by adjusting velocity or doubling
+        # For now, we return the voicings with metadata about blend
+
+        result = {
+            'trumpets': trumpets,
+            'trombones': trombones,
+            'blend_ratio': blend_ratio,
+            'trumpet_weight': blend_ratio,
+            'trombone_weight': 1.0 - blend_ratio
+        }
+
+        # Could adjust octaves or doublings based on blend ratio
+        # For bright sound (high blend_ratio): add trumpet doublings
+        # For dark sound (low blend_ratio): add trombone doublings
+
+        if blend_ratio > 0.7:  # Trumpet-dominant
+            # Could add trumpet octave doublings here
+            result['character'] = 'bright'
+        elif blend_ratio < 0.3:  # Trombone-dominant
+            # Could add trombone doublings here
+            result['character'] = 'dark'
+        else:
+            result['character'] = 'balanced'
+
+        return result
+
 
 class StringVoicingEngine:
     """String section voicing with bowing and articulation"""
