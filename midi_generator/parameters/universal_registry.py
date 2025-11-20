@@ -208,6 +208,9 @@ class UniversalParameterRegistry:
         # DYNAMICS PARAMETERS
         self._register_dynamics_parameters()
 
+        # INSTRUMENTATION PARAMETERS (Agent 21)
+        self._register_instrumentation_parameters()
+
     def register(self, param_def: ParameterDefinition):
         """Register a parameter"""
         self.parameters[param_def.full_path] = param_def
@@ -627,6 +630,341 @@ class UniversalParameterRegistry:
             max_value=63,
             category=ParameterCategory.DYNAMICS,
             musical_impact=MusicalImpact.MEDIUM
+        ))
+
+    def _register_instrumentation_parameters(self):
+        """Register instrumentation parameters - Agent 21"""
+
+        # ENSEMBLE SELECTION
+        self.register(ParameterDefinition(
+            name="ensemble_type",
+            full_path="instrumentation.ensemble.type",
+            description="Type of musical ensemble",
+            param_type=ParameterType.CATEGORICAL,
+            options=["solo", "duo", "trio", "quartet", "quintet", "jazz_combo",
+                    "big_band", "string_quartet", "brass_quintet", "woodwind_quintet",
+                    "chamber_orchestra", "symphony_orchestra", "rock_band", "pop_band"],
+            default_value="jazz_combo",
+            category=ParameterCategory.TIMBRE,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.CRITICAL,
+            genre_relevance=["jazz", "classical", "rock", "pop", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="ensemble_size",
+            full_path="instrumentation.ensemble.size",
+            description="Number of instruments in ensemble",
+            param_type=ParameterType.INTEGER,
+            default_value=5,
+            min_value=1,
+            max_value=100,
+            category=ParameterCategory.TIMBRE,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.HIGH,
+            genre_relevance=["jazz", "classical", "rock", "pop", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="texture_density",
+            full_path="instrumentation.texture.density",
+            description="Orchestration density (0.0=sparse, 1.0=dense)",
+            param_type=ParameterType.PROBABILITY,
+            default_value=0.7,
+            category=ParameterCategory.TIMBRE,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.HIGH,
+            genre_relevance=["jazz", "classical", "rock", "pop", "all"]
+        ))
+
+        # PIANO VOICING
+        self.register(ParameterDefinition(
+            name="piano_voicing_type",
+            full_path="instrumentation.piano.voicing_type",
+            description="Type of piano voicing",
+            param_type=ParameterType.CATEGORICAL,
+            options=["drop_2", "drop_3", "drop_2_4", "rootless_a", "rootless_b",
+                    "quartal", "cluster", "shell", "close_position", "spread_position"],
+            default_value="drop_2",
+            category=ParameterCategory.HARMONY,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.HIGH,
+            genre_relevance=["jazz", "classical", "pop", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="piano_voicing_spread",
+            full_path="instrumentation.piano.voicing_spread",
+            description="Octave spread for piano voicing (0=close, 1+=wider)",
+            param_type=ParameterType.INTEGER,
+            default_value=1,
+            min_value=0,
+            max_value=3,
+            category=ParameterCategory.HARMONY,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "classical", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="piano_use_extensions",
+            full_path="instrumentation.piano.use_extensions",
+            description="Whether to include chord extensions (9th, 11th, 13th)",
+            param_type=ParameterType.BOOLEAN,
+            default_value=True,
+            category=ParameterCategory.HARMONY,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "classical", "all"]
+        ))
+
+        # BRASS SECTION
+        self.register(ParameterDefinition(
+            name="brass_voicing_type",
+            full_path="instrumentation.brass.voicing_type",
+            description="Type of brass section voicing",
+            param_type=ParameterType.CATEGORICAL,
+            options=["four_way_close", "four_way_open", "five_way_close",
+                    "double_lead", "soli", "background"],
+            default_value="four_way_close",
+            category=ParameterCategory.HARMONY,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.HIGH,
+            genre_relevance=["jazz", "big_band", "classical"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="brass_lead_doubling",
+            full_path="instrumentation.brass.lead_doubling",
+            description="Whether to double the lead brass part",
+            param_type=ParameterType.BOOLEAN,
+            default_value=False,
+            category=ParameterCategory.HARMONY,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "big_band"]
+        ))
+
+        # BASS PATTERNS
+        self.register(ParameterDefinition(
+            name="bass_pattern_type",
+            full_path="instrumentation.bass.pattern_type",
+            description="Type of bass line pattern",
+            param_type=ParameterType.CATEGORICAL,
+            options=["walking", "pedal", "ostinato", "scalar", "arpeggio",
+                    "contrary", "roots", "chromatic", "two_feel", "latin", "funk"],
+            default_value="walking",
+            category=ParameterCategory.BASS,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.HIGH,
+            genre_relevance=["jazz", "rock", "funk", "latin", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="bass_chromatic_approach",
+            full_path="instrumentation.bass.chromatic_approach",
+            description="Use chromatic approach tones in bass line",
+            param_type=ParameterType.BOOLEAN,
+            default_value=True,
+            category=ParameterCategory.BASS,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "bebop"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="bass_note_density",
+            full_path="instrumentation.bass.note_density",
+            description="Bass note density (0.0=sparse, 1.0=dense)",
+            param_type=ParameterType.PROBABILITY,
+            default_value=0.5,
+            category=ParameterCategory.BASS,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "rock", "funk", "all"]
+        ))
+
+        # DRUM PATTERNS
+        self.register(ParameterDefinition(
+            name="drum_pattern_type",
+            full_path="instrumentation.drums.pattern_type",
+            description="Type of drum pattern",
+            param_type=ParameterType.CATEGORICAL,
+            options=["swing", "bebop", "latin_jazz", "bossa_nova", "samba", "afro_cuban",
+                    "rock_basic", "rock_shuffle", "pop_basic", "ballad", "funk",
+                    "second_line", "hip_hop", "waltz", "march", "brushes"],
+            default_value="swing",
+            category=ParameterCategory.DRUMS,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.HIGH,
+            genre_relevance=["jazz", "rock", "pop", "funk", "latin", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="drum_feel",
+            full_path="instrumentation.drums.feel",
+            description="Drum feel/tempo interpretation",
+            param_type=ParameterType.CATEGORICAL,
+            options=["slow", "medium", "fast", "uptempo", "double_time", "half_time"],
+            default_value="medium",
+            category=ParameterCategory.DRUMS,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "rock", "pop", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="drum_dynamic_range",
+            full_path="instrumentation.drums.dynamic_range",
+            description="Dynamic range for drums (0.0=even, 1.0=wide dynamics)",
+            param_type=ParameterType.PROBABILITY,
+            default_value=0.6,
+            category=ParameterCategory.DYNAMICS,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "rock", "pop", "all"]
+        ))
+
+        # BLEND AND BALANCE
+        self.register(ParameterDefinition(
+            name="blend_optimization",
+            full_path="instrumentation.blend.optimization",
+            description="Whether to optimize instrument blend compatibility",
+            param_type=ParameterType.BOOLEAN,
+            default_value=True,
+            category=ParameterCategory.TIMBRE,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "classical", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="blend_minimum_score",
+            full_path="instrumentation.blend.minimum_score",
+            description="Minimum acceptable blend score (0.0-1.0)",
+            param_type=ParameterType.PROBABILITY,
+            default_value=0.6,
+            category=ParameterCategory.TIMBRE,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.LOW,
+            genre_relevance=["jazz", "classical", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="dynamic_balance_auto",
+            full_path="instrumentation.balance.auto_balance",
+            description="Automatically balance instrument dynamics",
+            param_type=ParameterType.BOOLEAN,
+            default_value=True,
+            category=ParameterCategory.DYNAMICS,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "classical", "all"]
+        ))
+
+        # DOUBLING
+        self.register(ParameterDefinition(
+            name="doubling_enable",
+            full_path="instrumentation.doubling.enable",
+            description="Enable automatic instrument doubling",
+            param_type=ParameterType.BOOLEAN,
+            default_value=False,
+            category=ParameterCategory.TIMBRE,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "classical", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="doubling_type",
+            full_path="instrumentation.doubling.type",
+            description="Type of doubling (unison, octave, thirds)",
+            param_type=ParameterType.CATEGORICAL,
+            options=["unison", "octave", "two_octaves", "thirds", "sixths"],
+            default_value="unison",
+            category=ParameterCategory.TIMBRE,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "classical", "all"]
+        ))
+
+        # ARTICULATION
+        self.register(ParameterDefinition(
+            name="articulation_context",
+            full_path="instrumentation.articulation.context",
+            description="Musical context for articulation assignment",
+            param_type=ParameterType.CATEGORICAL,
+            options=["legato", "staccato", "marcato", "tenuto", "swing", "mixed"],
+            default_value="legato",
+            category=ParameterCategory.ARTICULATION,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.HIGH,
+            genre_relevance=["jazz", "classical", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="articulation_family_specific",
+            full_path="instrumentation.articulation.family_specific",
+            description="Use instrument-family-specific articulations",
+            param_type=ParameterType.BOOLEAN,
+            default_value=True,
+            category=ParameterCategory.ARTICULATION,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "classical", "all"]
+        ))
+
+        # RANGE VALIDATION
+        self.register(ParameterDefinition(
+            name="range_check_strict",
+            full_path="instrumentation.range.strict_checking",
+            description="Enforce strict instrument range checking",
+            param_type=ParameterType.BOOLEAN,
+            default_value=True,
+            category=ParameterCategory.TIMBRE,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.HIGH,
+            genre_relevance=["jazz", "classical", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="range_prefer_optimal",
+            full_path="instrumentation.range.prefer_optimal",
+            description="Prefer optimal/comfortable register over full range",
+            param_type=ParameterType.BOOLEAN,
+            default_value=True,
+            category=ParameterCategory.TIMBRE,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.MEDIUM,
+            genre_relevance=["jazz", "classical", "all"]
+        ))
+
+        # ORCHESTRATION STYLE
+        self.register(ParameterDefinition(
+            name="orchestration_style",
+            full_path="instrumentation.orchestration.style",
+            description="Overall orchestration style",
+            param_type=ParameterType.CATEGORICAL,
+            options=["classical", "romantic", "impressionist", "modern",
+                    "jazz_traditional", "jazz_modern", "big_band", "chamber",
+                    "pop", "rock", "minimalist"],
+            default_value="jazz_modern",
+            category=ParameterCategory.STYLE,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.CRITICAL,
+            genre_relevance=["jazz", "classical", "pop", "rock", "all"]
+        ))
+
+        self.register(ParameterDefinition(
+            name="orchestration_complexity",
+            full_path="instrumentation.orchestration.complexity",
+            description="Orchestration complexity level (0.0=simple, 1.0=complex)",
+            param_type=ParameterType.PROBABILITY,
+            default_value=0.5,
+            category=ParameterCategory.STYLE,
+            module_file="core/instrumentation_specialist.py",
+            musical_impact=MusicalImpact.HIGH,
+            genre_relevance=["jazz", "classical", "all"]
         ))
 
     # ========================================================================
