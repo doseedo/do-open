@@ -17,6 +17,10 @@ from .universal_registry import (
     get_default
 )
 
+# Import expansion modules to register parameters
+from . import registry_expansion
+from . import dynamics_articulation_expansion
+
 # Global registry instance (for convenience)
 registry = REGISTRY
 
