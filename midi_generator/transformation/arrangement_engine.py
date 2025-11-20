@@ -37,10 +37,11 @@ from pathlib import Path
 import numpy as np
 import copy
 
-# Import our analyzer
+# Import our analyzer and voicing engines
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 from analysis.midi_analyzer import MidiAnalyzer, NoteEvent, ChordEvent
+from transformation.sax_voicing import SaxSoliVoicing, voice_sax_soli
 
 
 # ==============================================================================
@@ -141,24 +142,46 @@ class BigBandArranger:
 
     @staticmethod
     def _harmonize_saxes(melody: List[NoteEvent],
-                        chords: List[ChordEvent]) -> List[NoteEvent]:
-        """Create 5-part sax soli (close voicing)."""
+                        chords: List[ChordEvent],
+                        voicing_style: str = "drop_2") -> List[NoteEvent]:
+        """
+        Create professional 5-part sax soli with drop voicings and voice leading optimization.
+
+        NOW USES PROFESSIONAL SAX VOICING ENGINE (Agent 2)
+        - Drop-2, drop-3, drop-2-4, spread voicings (not just close!)
+        - Voice leading optimization (minimizes voice movement)
+        - Register-specific spacing (wider in bass, closer in treble)
+
+        Args:
+            melody: Lead melody notes
+            chords: Chord progression
+            voicing_style: "drop_2" (default), "drop_3", "close", "spread", "drop_2_4"
+
+        Returns:
+            List of NoteEvent objects for all 5 sax voices
+        """
+        # Use the professional sax voicing engine
+        sax_parts = voice_sax_soli(
+            melody=melody,
+            chords=chords,
+            style=voicing_style
+        )
+
+        # Convert dictionary of parts to flat list of NoteEvents
         sax_notes = []
+        track_mapping = {
+            'bari': 1,
+            'tenor2': 2,
+            'tenor1': 3,
+            'alto2': 4,
+            'alto1': 5
+        }
 
-        for note in melody:
-            # Find current chord
-            chord = BigBandArranger._find_chord_at_time(note.start_time, chords)
-
-            if chord:
-                # Create 5-part close voicing below melody
-                voicing = BigBandArranger._create_close_voicing(note.pitch, chord, 5)
-
-                for i, pitch in enumerate(voicing):
-                    sax_note = copy.copy(note)
-                    sax_note.pitch = pitch
-                    sax_note.velocity = int(note.velocity * 0.85)
-                    sax_note.track_idx = i + 1  # Different tracks for each sax
-                    sax_notes.append(sax_note)
+        for voice_name, notes in sax_parts.items():
+            track_idx = track_mapping.get(voice_name, 0)
+            for note in notes:
+                note.track_idx = track_idx
+            sax_notes.extend(notes)
 
         return sax_notes
 
