@@ -435,6 +435,75 @@ class ModelTrainingSpecialist:
 
         return results
 
+    def train_batch_with_causal_order(
+        self,
+        parameters: List[Tuple[str, ParameterDefinition]],
+        training_data_dir: Path,
+        models_dir: Path = Path('midi_generator/models/pretrained'),
+        output_dir: Optional[Path] = None,
+        continue_on_error: bool = True
+    ) -> BatchTrainingResults:
+        """
+        Train models for multiple parameters in causal order.
+
+        This method respects causal dependencies between parameters,
+        training parent parameters before their children. This enables
+        more accurate training when parameters have causal relationships.
+
+        Args:
+            parameters: List of (param_name, param_def) tuples
+            training_data_dir: Directory containing training data
+            models_dir: Directory to save models
+            output_dir: Directory for plots and metrics
+            continue_on_error: If True, continue training even if some fail
+
+        Returns:
+            BatchTrainingResults with summary of all training
+        """
+        print(f"\n{'='*80}")
+        print(f"CAUSAL-ORDER BATCH TRAINING: {len(parameters)} PARAMETERS")
+        print(f"{'='*80}")
+
+        # Try to get causal ordering
+        try:
+            from parameters.causal_structure import CausalParameterGraph
+
+            causal_graph = CausalParameterGraph()
+            causal_order = causal_graph.get_causal_order()
+
+            # Sort parameters by causal order
+            param_dict = {name: (name, pdef) for name, pdef in parameters}
+            ordered_params = []
+
+            # Add parameters in causal order if they exist in the list
+            for param_name in causal_order:
+                if param_name in param_dict:
+                    ordered_params.append(param_dict[param_name])
+
+            # Add any remaining parameters not in causal graph
+            for param_name, param_def in parameters:
+                if param_name not in [p[0] for p in ordered_params]:
+                    ordered_params.append((param_name, param_def))
+
+            print(f"\n✓ Using causal ordering for training")
+            print(f"  First 5 parameters: {[p[0] for p in ordered_params[:5]]}")
+
+            parameters = ordered_params
+
+        except ImportError:
+            print(f"\n⚠ Warning: Causal structure not available. Using original order.")
+        except Exception as e:
+            print(f"\n⚠ Warning: Failed to get causal order: {e}. Using original order.")
+
+        # Use standard batch training with ordered parameters
+        return self.train_batch(
+            parameters,
+            training_data_dir,
+            models_dir,
+            output_dir,
+            continue_on_error
+        )
+
     # ========================================================================
     # Data Preparation
     # ========================================================================

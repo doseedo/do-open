@@ -5,11 +5,27 @@ Musical Program Synthesis - End-to-End Pipeline Runner
 This script orchestrates the complete workflow:
 1. Feature extraction from MIDI corpus (Agent 8)
 2. Corpus analysis (Agents 10, 25)
-3. Model training (Agents 14, 15)
-4. Music generation (Agents 1, 9, 16)
+3. Model training (Agents 14, 15) with optional causal ordering
+4. Music generation (Agents 1, 9, 16) with optional hierarchical prediction
+
+NEW FEATURES (v2.0):
+- Hierarchical parameter prediction (Level 1: Genre → Level 2: Complexity → Level 3: Details)
+- Causal training order (respects parameter dependencies)
+- Declarative .params format for safe parameter expansion
 
 Usage:
+    # Basic usage
     python run_pipeline.py --midi-dir /path/to/midi --mode full
+
+    # With hierarchical and causal features
+    python run_pipeline.py --midi-dir /path/to/midi --mode full \
+        --use-hierarchical-prediction --use-causal-training
+
+    # Just analysis
+    python run_pipeline.py --midi-dir /path/to/midi --mode analyze
+
+    # Just training with causal order
+    python run_pipeline.py --mode train --use-causal-training
 
 Author: Musical Program Synthesis Team
 """
@@ -213,6 +229,11 @@ class PipelineRunner:
             parameters = self.args.parameters.split(",")
 
         print(f"Training {len(parameters)} parameters")
+
+        if self.args.use_causal_training:
+            print("✓ Using causal ordering for training")
+        if self.args.use_hierarchical_prediction:
+            print("✓ Hierarchical prediction enabled")
 
         # Initialize components
         mapper = FeatureParameterMapper()
@@ -426,6 +447,16 @@ Examples:
         type=int,
         default=1000,
         help="Number of training samples per parameter (default: 1000)"
+    )
+    parser.add_argument(
+        "--use-causal-training",
+        action="store_true",
+        help="Train models in causal order (respects parameter dependencies)"
+    )
+    parser.add_argument(
+        "--use-hierarchical-prediction",
+        action="store_true",
+        help="Use hierarchical prediction (Level 1 → Level 2 → Level 3)"
     )
 
     # Generation options

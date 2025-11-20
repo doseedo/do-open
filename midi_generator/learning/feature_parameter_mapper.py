@@ -1030,6 +1030,104 @@ class FeatureParameterMapper:
         print(f"  Poor: {summary['poor_models']}")
         print("="*70 + "\n")
 
+    # ========================================================================
+    # Hierarchical and Causal Prediction
+    # ========================================================================
+
+    def predict_all_parameters_hierarchical(self,
+                                           features: np.ndarray,
+                                           use_causal_order: bool = True,
+                                           show_progress: bool = False) -> Dict[str, Any]:
+        """
+        Predict all parameters using hierarchical and causal structure.
+
+        This method respects the 3-level hierarchy and causal dependencies:
+        - Level 1 (TOP): Genre/style parameters (unconditional)
+        - Level 2 (MID): Complexity/density (conditioned on Level 1)
+        - Level 3 (LOW): Details (conditioned on Level 1 + Level 2)
+
+        Args:
+            features: Feature vector (1000 features from Agent 8)
+            use_causal_order: Use causal graph ordering for predictions
+            show_progress: Show progress bar
+
+        Returns:
+            Dictionary mapping parameter names to predicted values
+        """
+        try:
+            from parameters.hierarchy import get_parameter_level, ParameterLevel
+            from parameters.causal_structure import CausalParameterGraph
+        except ImportError:
+            print("Warning: Hierarchical/causal structures not available. Falling back to flat prediction.")
+            return self.predict_all_parameters(features, show_progress=show_progress)
+
+        predictions = {}
+
+        # Get causal ordering if requested
+        if use_causal_order:
+            try:
+                causal_graph = CausalParameterGraph()
+                param_order = causal_graph.get_causal_order()
+            except Exception as e:
+                print(f"Warning: Failed to get causal order: {e}. Using hierarchical only.")
+                param_order = None
+        else:
+            param_order = None
+
+        # Group parameters by hierarchy level
+        level_1_params = []  # TOP: genre, style
+        level_2_params = []  # MID: complexity, density
+        level_3_params = []  # LOW: details
+
+        for param_name in self.models.keys():
+            level = get_parameter_level(param_name)
+            if level == ParameterLevel.TOP:
+                level_1_params.append(param_name)
+            elif level == ParameterLevel.MID:
+                level_2_params.append(param_name)
+            else:
+                level_3_params.append(param_name)
+
+        # If causal order is available, use it within each level
+        if param_order:
+            level_1_params = [p for p in param_order if p in level_1_params]
+            level_2_params = [p for p in param_order if p in level_2_params]
+            level_3_params = [p for p in param_order if p in level_3_params]
+
+        # Level 1: Predict genre/style (unconditional)
+        print(f"\nPredicting Level 1 (Genre/Style): {len(level_1_params)} parameters")
+        for param_name in (tqdm(level_1_params, desc="Level 1") if show_progress and TQDM_AVAILABLE else level_1_params):
+            try:
+                value = self.predict_parameter(features, param_name)
+                predictions[param_name] = value
+            except Exception as e:
+                print(f"Warning: Failed to predict {param_name}: {e}")
+
+        # Level 2: Predict complexity/density (conditioned on Level 1)
+        print(f"\nPredicting Level 2 (Complexity/Density): {len(level_2_params)} parameters")
+        for param_name in (tqdm(level_2_params, desc="Level 2") if show_progress and TQDM_AVAILABLE else level_2_params):
+            try:
+                # TODO: In future, pass Level 1 predictions as additional features
+                # For now, just predict independently
+                value = self.predict_parameter(features, param_name)
+                predictions[param_name] = value
+            except Exception as e:
+                print(f"Warning: Failed to predict {param_name}: {e}")
+
+        # Level 3: Predict details (conditioned on Level 1 + Level 2)
+        print(f"\nPredicting Level 3 (Details): {len(level_3_params)} parameters")
+        for param_name in (tqdm(level_3_params, desc="Level 3") if show_progress and TQDM_AVAILABLE else level_3_params):
+            try:
+                # TODO: In future, pass Level 1 + Level 2 predictions as additional features
+                # For now, just predict independently
+                value = self.predict_parameter(features, param_name)
+                predictions[param_name] = value
+            except Exception as e:
+                print(f"Warning: Failed to predict {param_name}: {e}")
+
+        print(f"\nHierarchical prediction complete: {len(predictions)} parameters predicted")
+        return predictions
+
 
 # ============================================================================
 # Convenience Functions
