@@ -12,6 +12,10 @@ Each expert focuses on a specific musical domain and provides:
 4. Training data generation for XGBoost models
 
 Experts:
+- Agent 18: Harmony Specialist (jazz voicings, modal harmony, voice leading)
+- Agent 19: Melody Specialist (motif development, sequences, ornamentation)
+- Agent 20: Rhythm Specialist (polyrhythm, swing, syncopation, world rhythms)
+- Agent 22: Dynamics Specialist (ADSR, curves, humanization, voice balancing)
 - Agent 23: Structure Specialist (form, transitions, climax, motifs)
 
 Author: Musical Program Synthesis Team
@@ -20,6 +24,101 @@ License: MIT
 
 __version__ = "1.0.0"
 
+# Import key classes and functions
+from .harmony_specialist import (
+    HarmonySpecialist,
+    Chord,
+    ChordProgression,
+    Note,
+    VoicingType,
+    ChordQuality,
+    Mode,
+    HarmonicFunction,
+    ReharmonizationTechnique,
+    VoiceLeadingRule,
+    HarmonyFeatures,
+    VoicingAnalysis,
+    VoiceLeadingAnalysis,
+    analyze_harmony,
+    generate_jazz_voicing,
+)
+
+from .melody_specialist import (
+    MelodySpecialist,
+    MotifTransformation,
+    SequenceType,
+    OrnamentType,
+    ContourShape,
+    Motif,
+    Phrase,
+    MelodicAnalysis,
+    create_example_melody,
+)
+
+from .rhythm_specialist import RhythmSpecialist, get_rhythm_specialist
+
+from .dynamics_specialist import (
+    DynamicsSpecialist,
+    ADSREnvelope,
+    DynamicCurve,
+    DynamicsProfile,
+    DynamicCurveType,
+    DynamicDirection,
+    ArticulationType,
+    DynamicsAnalysisResult,
+)
+
 __all__ = [
+    # Modules
+    "melody_specialist",
+    "rhythm_specialist",
+    "dynamics_specialist",
     "structure_specialist",
+    "harmony_specialist",
+
+    # Harmony Specialist Classes
+    "HarmonySpecialist",
+    "Chord",
+    "ChordProgression",
+    "Note",
+    "VoicingType",
+    "ChordQuality",
+    "Mode",
+    "HarmonicFunction",
+    "ReharmonizationTechnique",
+    "VoiceLeadingRule",
+    "HarmonyFeatures",
+    "VoicingAnalysis",
+    "VoiceLeadingAnalysis",
+
+    # Harmony Specialist Functions
+    "analyze_harmony",
+    "generate_jazz_voicing",
+
+    # Melody Specialist Classes
+    "MelodySpecialist",
+    "MotifTransformation",
+    "SequenceType",
+    "OrnamentType",
+    "ContourShape",
+    "Motif",
+    "Phrase",
+    "MelodicAnalysis",
+
+    # Melody Specialist Functions
+    "create_example_melody",
+
+    # Rhythm Specialist
+    "RhythmSpecialist",
+    "get_rhythm_specialist",
+
+    # Dynamics Specialist
+    "DynamicsSpecialist",
+    "ADSREnvelope",
+    "DynamicCurve",
+    "DynamicsProfile",
+    "DynamicCurveType",
+    "DynamicDirection",
+    "ArticulationType",
+    "DynamicsAnalysisResult",
 ]
