@@ -13,6 +13,7 @@ Each expert focuses on a specific musical domain and provides:
 
 Experts:
 - Agent 18: Harmony Specialist (jazz voicings, modal harmony, voice leading)
+- Agent 19: Melody Specialist (motif development, sequences, ornamentation)
 - Agent 23: Structure Specialist (form, transitions, climax, motifs)
 
 Author: Musical Program Synthesis Team
@@ -40,8 +41,21 @@ from .harmony_specialist import (
     generate_jazz_voicing,
 )
 
+from .melody_specialist import (
+    MelodySpecialist,
+    MotifTransformation,
+    SequenceType,
+    OrnamentType,
+    ContourShape,
+    Motif,
+    Phrase,
+    MelodicAnalysis,
+    create_example_melody,
+)
+
 __all__ = [
     # Modules
+    "melody_specialist",
     "structure_specialist",
     "harmony_specialist",
 
@@ -63,4 +77,17 @@ __all__ = [
     # Harmony Specialist Functions
     "analyze_harmony",
     "generate_jazz_voicing",
+
+    # Melody Specialist Classes
+    "MelodySpecialist",
+    "MotifTransformation",
+    "SequenceType",
+    "OrnamentType",
+    "ContourShape",
+    "Motif",
+    "Phrase",
+    "MelodicAnalysis",
+
+    # Melody Specialist Functions
+    "create_example_melody",
 ]
