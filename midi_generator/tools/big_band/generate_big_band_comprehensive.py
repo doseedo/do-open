@@ -169,6 +169,29 @@ class ComprehensiveHarmonyGenerator:
             return self._generate_quartal_harmony(), "Quartal harmony (4ths stacking)"
 
         # ==============================================================
+        # CATEGORY 6: STYLE-SPECIFIC WITH REHARMONIZATION
+        # (Added by Agent 4)
+        # ==============================================================
+        elif ptype == "bebop_simple":
+            return self.generate_bebop_progression("ii_V_I", reharmonization_level=0.3)
+        elif ptype == "bebop_medium":
+            return self.generate_bebop_progression("blues", reharmonization_level=0.6)
+        elif ptype == "bebop_complex":
+            return self.generate_bebop_progression("rhythm_changes", reharmonization_level=0.9)
+        elif ptype == "postbop_coltrane":
+            return self.generate_postbop_progression("coltrane")
+        elif ptype == "postbop_shorter":
+            return self.generate_postbop_progression("shorter")
+        elif ptype == "postbop_hancock":
+            return self.generate_postbop_progression("hancock")
+        elif ptype == "modal_dorian":
+            return self.generate_modal_progression("dorian", pedal_point=True)
+        elif ptype == "modal_mixolydian":
+            return self.generate_modal_progression("mixolydian", pedal_point=False)
+        elif ptype == "modal_lydian":
+            return self.generate_modal_progression("lydian", pedal_point=True)
+
+        # ==============================================================
         # DEFAULT: RANDOM FROM ALL CATEGORIES
         # ==============================================================
         else:
@@ -176,7 +199,8 @@ class ComprehensiveHarmonyGenerator:
                 "jazz_blues", "rhythm_changes", "coltrane_changes", "autumn_leaves",
                 "dorian_vamp", "mixolydian_rock", "lydian_dream",
                 "plr_film", "hexatonic_northern", "chromatic_mediant",
-                "modal_interchange", "turnaround", "tritone_sub"
+                "modal_interchange", "turnaround", "tritone_sub",
+                "bebop_medium", "postbop_coltrane", "modal_dorian"
             ]
             chosen = random.choice(all_types)
             return self.generate_progression(chosen)
@@ -438,6 +462,183 @@ class ComprehensiveHarmonyGenerator:
             JazzChord(root=(self.key + 10) % 12, quality="sus4"),
             JazzChord(root=self.key, quality="sus4"),
         ] * 2
+
+    # ========================================================================
+    # STYLE-SPECIFIC GENERATORS WITH REHARMONIZATION
+    # (Added by Agent 4 - Harmonic Progression Designer)
+    # ========================================================================
+
+    def generate_bebop_progression(
+        self,
+        form: str = "rhythm_changes",
+        reharmonization_level: float = 0.5
+    ) -> Tuple[List[JazzChord], str]:
+        """
+        Generate bebop progression with reharmonization.
+
+        Bebop characteristics:
+        - Heavy ii-V usage
+        - Chromatic approaches
+        - Tritone substitutions
+        - Fast harmonic rhythm
+
+        Args:
+            form: Base form ("rhythm_changes", "blues", "ii_V_I")
+            reharmonization_level: 0.0 (basic) to 1.0 (Bird-level complexity)
+
+        Returns:
+            (progression, description)
+        """
+        # Import reharmonization engine
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        from generators.reharmonization_engine import (
+            ReharmonizationEngine, ReharmonizationOptions
+        )
+
+        # Generate base progression
+        if form == "rhythm_changes":
+            base_prog = JazzProgressions.rhythm_changes_A(self.key)
+        elif form == "blues":
+            base_prog = JazzProgressions.jazz_blues(self.key)
+        else:
+            base_prog = JazzProgressions.ii_V_I(self.key) * 4
+
+        # Configure reharmonization based on complexity level
+        options = ReharmonizationOptions(
+            tritone_sub_probability=0.3 * reharmonization_level,
+            approach_chord_probability=0.5 * reharmonization_level,
+            modal_interchange_probability=0.2 * reharmonization_level,
+            complexity_level=reharmonization_level
+        )
+
+        engine = ReharmonizationEngine(options)
+
+        # Apply bebop-style reharmonization
+        reharmonized = engine.reharmonize_progression(base_prog, style="bebop")
+
+        description = f"Bebop {form} (reharmonization level: {reharmonization_level:.1f})"
+        return reharmonized, description
+
+    def generate_postbop_progression(
+        self,
+        style: str = "coltrane"
+    ) -> Tuple[List[JazzChord], str]:
+        """
+        Generate post-bop progression.
+
+        Post-bop characteristics:
+        - Coltrane changes (Giant Steps patterns)
+        - Wayne Shorter ambiguity
+        - Modal sections
+        - Complex reharmonization
+
+        Args:
+            style: "coltrane", "shorter", "hancock"
+
+        Returns:
+            (progression, description)
+        """
+        from generators.reharmonization_engine import (
+            ReharmonizationEngine, ReharmonizationOptions
+        )
+
+        if style == "coltrane":
+            # Giant Steps-style descending major 3rds
+            base_prog = self._generate_coltrane_changes()
+
+            options = ReharmonizationOptions(
+                coltrane_sub_probability=0.8,
+                complexity_level=0.9
+            )
+            engine = ReharmonizationEngine(options)
+            result = engine.reharmonize_progression(base_prog, style="post_bop")
+
+            return result, "Post-bop: Coltrane Changes (Giant Steps style)"
+
+        elif style == "shorter":
+            # Wayne Shorter: Ambiguous tonality, modal mixture
+            base_prog = [
+                JazzChord(root=self.key, quality="min7"),
+                JazzChord(root=(self.key + 5) % 12, quality="min7"),
+                JazzChord(root=(self.key + 3) % 12, quality="maj7"),
+                JazzChord(root=(self.key + 10) % 12, quality="dom7"),
+            ] * 2
+
+            options = ReharmonizationOptions(
+                modal_interchange_probability=0.6,
+                complexity_level=0.7
+            )
+            engine = ReharmonizationEngine(options)
+            result = engine.apply_modal_interchange(base_prog, "aeolian")
+
+            return result, "Post-bop: Wayne Shorter (ambiguous tonality)"
+
+        elif style == "hancock":
+            # Herbie Hancock: Modal/tonal mixture
+            base_prog = [
+                JazzChord(root=self.key, quality="min7"),       # Dorian
+                JazzChord(root=(self.key + 7) % 12, quality="maj7"),
+                JazzChord(root=(self.key + 2) % 12, quality="min7"),
+                JazzChord(root=(self.key + 5) % 12, quality="dom7"),
+            ] * 2
+
+            return base_prog, "Post-bop: Herbie Hancock (modal-tonal mixture)"
+
+        else:
+            # Default: Coltrane
+            return self.generate_postbop_progression("coltrane")
+
+    def generate_modal_progression(
+        self,
+        mode: str = "dorian",
+        pedal_point: bool = True,
+        bars: int = 8
+    ) -> Tuple[List[JazzChord], str]:
+        """
+        Generate modal progression.
+
+        Modal jazz characteristics:
+        - Static or slow-moving harmony
+        - Pedal tones
+        - Modal scales
+        - Minimal chord changes
+
+        Args:
+            mode: "dorian", "mixolydian", "lydian", "phrygian"
+            pedal_point: Use pedal tones
+            bars: Number of bars
+
+        Returns:
+            (progression, description)
+        """
+        # Map mode names to Mode enum
+        from core.modal_harmony import Mode
+
+        mode_map = {
+            "dorian": Mode.DORIAN,
+            "mixolydian": Mode.MIXOLYDIAN,
+            "lydian": Mode.LYDIAN,
+            "phrygian": Mode.PHRYGIAN,
+            "aeolian": Mode.AEOLIAN,
+            "ionian": Mode.IONIAN,
+            "locrian": Mode.LOCRIAN
+        }
+
+        selected_mode = mode_map.get(mode.lower(), Mode.DORIAN)
+
+        if pedal_point:
+            # Single chord vamp (typical modal jazz)
+            prog = [JazzChord(root=self.key, quality="min7")] * bars
+            description = f"Modal {mode} (pedal point vamp, {bars} bars)"
+        else:
+            # Two-chord vamp
+            prog = [
+                JazzChord(root=self.key, quality="min7"),
+                JazzChord(root=(self.key + 5) % 12, quality="min7"),
+            ] * (bars // 2)
+            description = f"Modal {mode} (two-chord vamp, {bars} bars)"
+
+        return prog, description
 
 
 class ComprehensiveBigBandGenerator:
