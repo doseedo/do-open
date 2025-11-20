@@ -37,6 +37,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from genres.jazz import JazzChord
+from parameters import registry, param, ParameterType, MusicalDomain
 
 
 @dataclass
@@ -75,21 +76,174 @@ class HarmonicRhythmEngine:
     with varied rhythmic patterns.
     """
 
-    def __init__(self):
-        """Initialize harmonic rhythm engine."""
-        pass
+    # Register parameters on module load
+    _params_registered = False
+
+    def __init__(self, **params):
+        """
+        Initialize harmonic rhythm engine.
+
+        Args:
+            **params: Parameter overrides
+        """
+        self.params = params
+        self._register_parameters()
+
+    @classmethod
+    def _register_parameters(cls):
+        """Register all harmonic rhythm parameters in global registry"""
+        if cls._params_registered:
+            return
+
+        # Timing parameters
+        registry.register_parameter(
+            name="rhythm.timing.beats_per_bar",
+            type=ParameterType.INTEGER,
+            default=4,
+            description="Beats per bar (time signature numerator)",
+            range=(2, 12),
+            domain=MusicalDomain.RHYTHM,
+            module="harmonic_rhythm",
+            musical_impact="high",
+            genre_relevance=["jazz", "all"]
+        )
+
+        registry.register_parameter(
+            name="rhythm.anticipation.eighth_note",
+            type=ParameterType.CONTINUOUS,
+            default=0.125,
+            description="Eighth note anticipation amount in beats",
+            range=(0.0, 0.5),
+            domain=MusicalDomain.RHYTHM,
+            module="harmonic_rhythm",
+            musical_impact="medium",
+            genre_relevance=["jazz", "bebop", "swing"]
+        )
+
+        # Duration multipliers for different styles
+        registry.register_parameter(
+            name="rhythm.ballad.duration_multiplier",
+            type=ParameterType.CONTINUOUS,
+            default=2.0,
+            description="Duration multiplier for ballad style (chords held longer)",
+            range=(1.5, 4.0),
+            domain=MusicalDomain.RHYTHM,
+            module="harmonic_rhythm",
+            musical_impact="high",
+            genre_relevance=["jazz", "ballad"]
+        )
+
+        registry.register_parameter(
+            name="rhythm.modal.duration_multiplier",
+            type=ParameterType.CONTINUOUS,
+            default=4.0,
+            description="Duration multiplier for modal jazz (very slow changes)",
+            range=(2.0, 8.0),
+            domain=MusicalDomain.RHYTHM,
+            module="harmonic_rhythm",
+            musical_impact="high",
+            genre_relevance=["jazz", "modal", "fusion"]
+        )
+
+        # Bebop rhythm patterns
+        registry.register_parameter(
+            name="rhythm.bebop.patterns",
+            type=ParameterType.ARRAY,
+            default=[4.0, 4.0, 2.0, 4.0, 8.0, 4.0, 2.0, 2.0],
+            description="Bebop duration patterns in beats",
+            domain=MusicalDomain.RHYTHM,
+            module="harmonic_rhythm",
+            musical_impact="high",
+            genre_relevance=["jazz", "bebop"]
+        )
+
+        # Default rhythm patterns for form sections
+        registry.register_parameter(
+            name="rhythm.form.intro_pattern",
+            type=ParameterType.CATEGORICAL,
+            default="slow",
+            options=["slow", "standard", "fast", "mixed", "bebop", "latin", "modal"],
+            description="Default rhythm pattern for intro sections",
+            domain=MusicalDomain.FORM,
+            module="harmonic_rhythm",
+            musical_impact="medium",
+            genre_relevance=["jazz", "all"]
+        )
+
+        registry.register_parameter(
+            name="rhythm.form.verse_pattern",
+            type=ParameterType.CATEGORICAL,
+            default="standard",
+            options=["slow", "standard", "fast", "mixed", "bebop", "latin", "modal"],
+            description="Default rhythm pattern for verse sections",
+            domain=MusicalDomain.FORM,
+            module="harmonic_rhythm",
+            musical_impact="medium",
+            genre_relevance=["jazz", "all"]
+        )
+
+        registry.register_parameter(
+            name="rhythm.form.chorus_pattern",
+            type=ParameterType.CATEGORICAL,
+            default="fast",
+            options=["slow", "standard", "fast", "mixed", "bebop", "latin", "modal"],
+            description="Default rhythm pattern for chorus sections",
+            domain=MusicalDomain.FORM,
+            module="harmonic_rhythm",
+            musical_impact="medium",
+            genre_relevance=["jazz", "all"]
+        )
+
+        registry.register_parameter(
+            name="rhythm.form.bridge_pattern",
+            type=ParameterType.CATEGORICAL,
+            default="mixed",
+            options=["slow", "standard", "fast", "mixed", "bebop", "latin", "modal"],
+            description="Default rhythm pattern for bridge sections",
+            domain=MusicalDomain.FORM,
+            module="harmonic_rhythm",
+            musical_impact="medium",
+            genre_relevance=["jazz", "all"]
+        )
+
+        registry.register_parameter(
+            name="rhythm.form.outro_pattern",
+            type=ParameterType.CATEGORICAL,
+            default="slow",
+            options=["slow", "standard", "fast", "mixed", "bebop", "latin", "modal"],
+            description="Default rhythm pattern for outro sections",
+            domain=MusicalDomain.FORM,
+            module="harmonic_rhythm",
+            musical_impact="medium",
+            genre_relevance=["jazz", "all"]
+        )
+
+        registry.register_parameter(
+            name="rhythm.form.solo_pattern",
+            type=ParameterType.CATEGORICAL,
+            default="bebop",
+            options=["slow", "standard", "fast", "mixed", "bebop", "latin", "modal"],
+            description="Default rhythm pattern for solo sections",
+            domain=MusicalDomain.FORM,
+            module="harmonic_rhythm",
+            musical_impact="medium",
+            genre_relevance=["jazz", "all"]
+        )
+
+        cls._params_registered = True
 
     # ========================================================================
     # MAIN EXPANSION FUNCTION
     # ========================================================================
 
-    @staticmethod
     def expand_progression(
+        self,
         base_progression: List[JazzChord],
         bars: int,
         chords_per_bar: float = 1.0,
         rhythm_pattern: str = "standard",
-        use_anticipation: bool = False
+        use_anticipation: bool = False,
+        **kwargs
     ) -> List[ChordEvent]:
         """
         Create chord events with specific timing from a base progression.
@@ -100,24 +254,33 @@ class HarmonicRhythmEngine:
             chords_per_bar: Average chords per bar (0.5, 1, 2, 4)
             rhythm_pattern: Rhythm pattern to apply
             use_anticipation: Add chord anticipations (jazz style)
+            **kwargs: Parameter overrides
 
         Returns:
             List of ChordEvent objects with specific timing
         """
+        # Merge instance params with method params
+        params = {**self.params, **kwargs}
+
         chord_events = []
         current_beat = 0.0
-        beats_per_bar = 4.0  # Assume 4/4 time
+        beats_per_bar = param("rhythm.timing.beats_per_bar", params, 4.0)
 
         # Calculate how to distribute chords
         total_beats = bars * beats_per_bar
         num_chords = len(base_progression)
+
+        # Get parameter values
+        anticipation_amount = param("rhythm.anticipation.eighth_note", params, 0.125)
+        ballad_multiplier = param("rhythm.ballad.duration_multiplier", params, 2.0)
+        modal_multiplier = param("rhythm.modal.duration_multiplier", params, 4.0)
 
         if rhythm_pattern == "standard":
             # One chord per bar
             beats_per_chord = beats_per_bar
             for chord in base_progression:
                 duration = beats_per_chord
-                anticipation = 0.125 if use_anticipation else 0.0
+                anticipation = anticipation_amount if use_anticipation else 0.0
 
                 event = ChordEvent(
                     chord=chord,
@@ -133,7 +296,7 @@ class HarmonicRhythmEngine:
             beats_per_chord = beats_per_bar / 2.0
             for i, chord in enumerate(base_progression):
                 duration = beats_per_chord
-                anticipation = 0.125 if use_anticipation and i % 2 == 1 else 0.0
+                anticipation = anticipation_amount if use_anticipation and i % 2 == 1 else 0.0
 
                 event = ChordEvent(
                     chord=chord,
@@ -146,7 +309,7 @@ class HarmonicRhythmEngine:
 
         elif rhythm_pattern == "slow":
             # One chord every 2 bars (ballad style)
-            beats_per_chord = beats_per_bar * 2.0
+            beats_per_chord = beats_per_bar * ballad_multiplier
             for chord in base_progression:
                 duration = beats_per_chord
                 event = ChordEvent(
@@ -160,9 +323,10 @@ class HarmonicRhythmEngine:
 
         elif rhythm_pattern == "mixed" or rhythm_pattern == "bebop":
             # Varying chord durations (bebop style)
-            durations = HarmonicRhythmEngine._generate_bebop_durations(
+            durations = self._generate_bebop_durations(
                 num_chords,
-                total_beats
+                total_beats,
+                params
             )
 
             for i, chord in enumerate(base_progression):
@@ -170,7 +334,7 @@ class HarmonicRhythmEngine:
                 # Anticipate dominant chords in bebop
                 anticipation = 0.0
                 if use_anticipation and chord.quality == "dom7":
-                    anticipation = 0.125  # Eighth note anticipation
+                    anticipation = anticipation_amount
 
                 event = ChordEvent(
                     chord=chord,
@@ -200,7 +364,7 @@ class HarmonicRhythmEngine:
 
         elif rhythm_pattern == "modal":
             # Very slow harmonic rhythm (modal jazz)
-            beats_per_chord = beats_per_bar * 4.0  # 4 bars per chord
+            beats_per_chord = beats_per_bar * modal_multiplier
             for chord in base_progression:
                 duration = beats_per_chord
                 event = ChordEvent(
@@ -231,10 +395,11 @@ class HarmonicRhythmEngine:
     # BEBOP DURATION GENERATOR
     # ========================================================================
 
-    @staticmethod
     def _generate_bebop_durations(
+        self,
         num_chords: int,
-        total_beats: float
+        total_beats: float,
+        params: Dict[str, Any]
     ) -> List[float]:
         """
         Generate bebop-style varied chord durations.
@@ -244,6 +409,7 @@ class HarmonicRhythmEngine:
         Args:
             num_chords: Number of chords to distribute
             total_beats: Total beats available
+            params: Parameter overrides
 
         Returns:
             List of durations in beats
@@ -252,17 +418,8 @@ class HarmonicRhythmEngine:
         remaining_beats = total_beats
         chords_left = num_chords
 
-        # Common bebop duration patterns
-        patterns = [
-            4.0,   # 1 bar
-            4.0,   # 1 bar
-            2.0,   # Half bar
-            4.0,   # 1 bar
-            8.0,   # 2 bars
-            4.0,   # 1 bar
-            2.0,   # Half bar
-            2.0,   # Half bar
-        ]
+        # Common bebop duration patterns (parameterized)
+        patterns = param("rhythm.bebop.patterns", params, [4.0, 4.0, 2.0, 4.0, 8.0, 4.0, 2.0, 2.0])
 
         for i in range(num_chords):
             if chords_left == 1:
@@ -288,11 +445,12 @@ class HarmonicRhythmEngine:
     # FORM-BASED HARMONIC RHYTHM
     # ========================================================================
 
-    @staticmethod
     def create_form_based_rhythm(
+        self,
         progressions: Dict[str, List[JazzChord]],
         form_structure: Dict[str, int],
-        rhythm_map: Optional[Dict[str, str]] = None
+        rhythm_map: Optional[Dict[str, str]] = None,
+        **kwargs
     ) -> Dict[str, List[ChordEvent]]:
         """
         Create harmonic rhythm based on musical form sections.
@@ -301,6 +459,7 @@ class HarmonicRhythmEngine:
             progressions: Dict of section name to chord progression
             form_structure: Dict of section name to bar count
             rhythm_map: Dict of section name to rhythm pattern (optional)
+            **kwargs: Parameter overrides
 
         Returns:
             Dict of section name to chord events
@@ -314,16 +473,18 @@ class HarmonicRhythmEngine:
             form_structure = {"intro": 4, "A": 8, "B": 8}
             rhythm_map = {"intro": "slow", "A": "standard", "B": "fast"}
         """
+        # Merge instance params with method params
+        params = {**self.params, **kwargs}
         result = {}
 
-        # Default rhythm patterns for sections
+        # Default rhythm patterns for sections (parameterized)
         default_rhythm_map = {
-            "intro": "slow",
-            "verse": "standard",
-            "chorus": "fast",
-            "bridge": "mixed",
-            "outro": "slow",
-            "solo": "bebop"
+            "intro": param("rhythm.form.intro_pattern", params, "slow"),
+            "verse": param("rhythm.form.verse_pattern", params, "standard"),
+            "chorus": param("rhythm.form.chorus_pattern", params, "fast"),
+            "bridge": param("rhythm.form.bridge_pattern", params, "mixed"),
+            "outro": param("rhythm.form.outro_pattern", params, "slow"),
+            "solo": param("rhythm.form.solo_pattern", params, "bebop")
         }
 
         for section_name, chord_progression in progressions.items():
@@ -338,11 +499,12 @@ class HarmonicRhythmEngine:
                 pattern = "standard"
 
             # Expand progression with rhythm
-            chord_events = HarmonicRhythmEngine.expand_progression(
+            chord_events = self.expand_progression(
                 chord_progression,
                 bars=bars,
                 rhythm_pattern=pattern,
-                use_anticipation=True
+                use_anticipation=True,
+                **params
             )
 
             result[section_name] = chord_events
@@ -353,11 +515,12 @@ class HarmonicRhythmEngine:
     # HARMONIC DENSITY CURVE
     # ========================================================================
 
-    @staticmethod
     def apply_density_curve(
+        self,
         base_progression: List[JazzChord],
         total_bars: int,
-        density_curve: List[float]
+        density_curve: List[float],
+        **kwargs
     ) -> List[ChordEvent]:
         """
         Apply a harmonic density curve over time.
@@ -366,6 +529,7 @@ class HarmonicRhythmEngine:
             base_progression: Base chord progression
             total_bars: Total number of bars
             density_curve: List of density values (0.5-4.0) per section
+            **kwargs: Parameter overrides
 
         Returns:
             Chord events with varying harmonic density
@@ -374,9 +538,12 @@ class HarmonicRhythmEngine:
             density_curve = [1.0, 2.0, 4.0, 2.0, 1.0]
             Creates gradual build-up and release of harmonic activity
         """
+        # Merge instance params with method params
+        params = {**self.params, **kwargs}
+
         chord_events = []
         current_beat = 0.0
-        beats_per_bar = 4.0
+        beats_per_bar = param("rhythm.timing.beats_per_bar", params, 4.0)
 
         # Divide progression into sections based on density curve
         num_sections = len(density_curve)
@@ -419,13 +586,17 @@ class HarmonicRhythmEngine:
     # UTILITY FUNCTIONS
     # ========================================================================
 
-    @staticmethod
-    def calculate_harmonic_rhythm_rate(chord_events: List[ChordEvent]) -> float:
+    def calculate_harmonic_rhythm_rate(
+        self,
+        chord_events: List[ChordEvent],
+        **kwargs
+    ) -> float:
         """
         Calculate average harmonic rhythm rate (chords per bar).
 
         Args:
             chord_events: List of chord events
+            **kwargs: Parameter overrides
 
         Returns:
             Average chords per bar
@@ -433,20 +604,27 @@ class HarmonicRhythmEngine:
         if not chord_events:
             return 0.0
 
+        # Merge instance params with method params
+        params = {**self.params, **kwargs}
+
         total_duration = sum(event.duration for event in chord_events)
         total_chords = len(chord_events)
-        beats_per_bar = 4.0
+        beats_per_bar = param("rhythm.timing.beats_per_bar", params, 4.0)
 
         total_bars = total_duration / beats_per_bar
         return total_chords / max(total_bars, 1.0)
 
-    @staticmethod
-    def analyze_harmonic_rhythm(chord_events: List[ChordEvent]) -> Dict:
+    def analyze_harmonic_rhythm(
+        self,
+        chord_events: List[ChordEvent],
+        **kwargs
+    ) -> Dict:
         """
         Analyze harmonic rhythm characteristics.
 
         Args:
             chord_events: List of chord events
+            **kwargs: Parameter overrides
 
         Returns:
             Dictionary with analysis metrics
@@ -465,7 +643,7 @@ class HarmonicRhythmEngine:
             "max_duration": max(durations),
             "anticipation_count": sum(1 for a in anticipations if a > 0),
             "anticipation_ratio": sum(1 for a in anticipations if a > 0) / len(anticipations),
-            "harmonic_rhythm_rate": HarmonicRhythmEngine.calculate_harmonic_rhythm_rate(chord_events)
+            "harmonic_rhythm_rate": self.calculate_harmonic_rhythm_rate(chord_events, **kwargs)
         }
 
 
