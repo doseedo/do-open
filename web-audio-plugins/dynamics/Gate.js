@@ -1,326 +1,200 @@
 /**
- * Professional Noise Gate Plugin
+ * GatePlugin - Noise Gate
  *
- * Features:
- * - Adjustable threshold and range
- * - Hold time to prevent chattering
- * - Sidechain support for ducking
- * - Hysteresis to prevent rapid on/off
- * - Smooth attack and release
+ * AudioWorklet-based noise gate with:
+ * - Threshold-based gating
+ * - Configurable attack/release
+ * - Range parameter for attenuation depth
+ * - Real-time gate state monitoring
  *
- * @class Gate
+ * @author Agent 1 - Dynamics Plugins
+ * @version 1.0.0
  */
-class Gate {
-  /**
-   * Create a gate instance
-   * @param {AudioContext} audioContext - The Web Audio context
-   * @param {Object} options - Configuration options
-   */
+
+import { BasePlugin } from '../core/BasePlugin.js';
+
+export class GatePlugin extends BasePlugin {
   constructor(audioContext, options = {}) {
-    this.context = audioContext;
+    super(audioContext, {
+      category: 'dynamics',
+      description: 'Noise gate for removing low-level signals and background noise',
+      name: 'Gate',
+      ...options
+    });
 
-    // Audio nodes
-    this.input = audioContext.createGain();
-    this.output = audioContext.createGain();
-    this.sidechainInput = audioContext.createGain();
-
-    // Gate gain node (this is what opens/closes)
-    this.gateGain = audioContext.createGain();
-
-    // Analyzer for level detection
-    this.analyzer = audioContext.createAnalyser();
-    this.analyzer.fftSize = 2048;
-    this.analyzer.smoothingTimeConstant = 0;
-
-    // State
-    this.bypassed = false;
-    this.sidechainEnabled = false;
-    this.gateOpen = false;
-    this.currentGain = 0;
-    this.holdCounter = 0;
-    this.hysteresisState = 'closed'; // 'open' or 'closed'
+    this.workletNode = null;
+    this.isGateOpen = false;
+    this.initialized = false;
 
     // Default parameter values
     this.defaults = {
-      threshold: -32,    // dB (-60 to 0)
-      range: -60,        // dB (0 to -60) - maximum attenuation
-      attack: 0.001,     // seconds (1ms)
-      hold: 0.010,       // seconds (10ms)
-      release: 0.100,    // seconds (100ms)
-      hysteresis: 6      // dB - threshold difference between open and close
+      threshold: -40, // -40 dB
+      attack: 0.010, // 10ms
+      release: 0.100, // 100ms
+      range: -60 // Attenuate by 60 dB when closed
     };
-
-    // Current parameters
-    this.params = {
-      threshold: options.threshold || this.defaults.threshold,
-      range: options.range || this.defaults.range,
-      attack: options.attack || this.defaults.attack,
-      hold: options.hold || this.defaults.hold,
-      release: options.release || this.defaults.release,
-      hysteresis: options.hysteresis || this.defaults.hysteresis
-    };
-
-    this.initialize();
   }
 
   /**
-   * Initialize the gate
+   * Initialize the plugin (loads AudioWorklet)
    */
-  initialize() {
-    // Set up audio graph
-    this.input.connect(this.analyzer);
-    this.input.connect(this.gateGain);
-    this.gateGain.connect(this.output);
+  async initialize() {
+    if (this.initialized) {
+      return;
+    }
 
-    // Start gate closed
-    this.gateGain.gain.setValueAtTime(this.dbToGain(this.params.range), this.context.currentTime);
+    try {
+      // Load the AudioWorklet module
+      await this.audioContext.audioWorklet.addModule(
+        new URL('../worklets/gate-processor.js', import.meta.url).href
+      );
 
-    // Start gate processing
-    this.startGateProcessing();
-  }
+      // Create the AudioWorkletNode
+      this.workletNode = new AudioWorkletNode(
+        this.audioContext,
+        'gate-processor',
+        {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [2],
+        }
+      );
 
-  /**
-   * Connect the gate to a destination
-   * @param {AudioNode} destination - The audio node to connect to
-   * @returns {AudioNode} The destination node
-   */
-  connect(destination) {
-    this.output.connect(destination);
-    return destination;
-  }
+      // Connect input -> worklet -> output
+      this.input.disconnect();
+      this.input.connect(this.workletNode);
+      this.workletNode.connect(this.output);
 
-  /**
-   * Disconnect the gate from all destinations
-   */
-  disconnect() {
-    this.output.disconnect();
-  }
+      // Listen for gate state messages
+      this.workletNode.port.onmessage = (event) => {
+        if (event.data.type === 'gateState') {
+          this.isGateOpen = event.data.value;
+        }
+      };
 
-  /**
-   * Set a gate parameter
-   * @param {string} name - Parameter name
-   * @param {number} value - Parameter value
-   */
-  setParameter(name, value) {
-    switch (name) {
-      case 'threshold':
-        this.params.threshold = Math.max(-60, Math.min(0, value));
-        break;
+      // Register parameters
+      this.registerParameter('threshold', this.workletNode.parameters.get('threshold'), {
+        min: -60,
+        max: 0,
+        default: this.defaults.threshold,
+        unit: 'dB',
+        label: 'Threshold',
+        type: 'continuous'
+      });
 
-      case 'range':
-        this.params.range = Math.max(-60, Math.min(0, value));
-        break;
+      this.registerParameter('attack', this.workletNode.parameters.get('attack'), {
+        min: 0.0001,
+        max: 0.100,
+        default: this.defaults.attack,
+        unit: 's',
+        label: 'Attack',
+        type: 'continuous'
+      });
 
-      case 'attack':
-        // 0.1ms to 50ms
-        this.params.attack = Math.max(0.0001, Math.min(0.050, value));
-        break;
+      this.registerParameter('release', this.workletNode.parameters.get('release'), {
+        min: 0.010,
+        max: 2.0,
+        default: this.defaults.release,
+        unit: 's',
+        label: 'Release',
+        type: 'continuous'
+      });
 
-      case 'hold':
-        // 0 to 500ms
-        this.params.hold = Math.max(0, Math.min(0.500, value));
-        break;
+      this.registerParameter('range', this.workletNode.parameters.get('range'), {
+        min: -80,
+        max: 0,
+        default: this.defaults.range,
+        unit: 'dB',
+        label: 'Range',
+        type: 'continuous'
+      });
 
-      case 'release':
-        // 10ms to 2000ms
-        this.params.release = Math.max(0.010, Math.min(2.000, value));
-        break;
+      // Set default values
+      this.setParameter('threshold', this.defaults.threshold);
+      this.setParameter('attack', this.defaults.attack);
+      this.setParameter('release', this.defaults.release);
+      this.setParameter('range', this.defaults.range);
 
-      case 'hysteresis':
-        // 0 to 12 dB
-        this.params.hysteresis = Math.max(0, Math.min(12, value));
-        break;
+      this.initialized = true;
 
-      default:
-        console.warn(`Unknown parameter: ${name}`);
+    } catch (error) {
+      console.error('Failed to initialize GatePlugin:', error);
+      throw error;
     }
   }
 
   /**
-   * Get a gate parameter value
-   * @param {string} name - Parameter name
-   * @returns {number} The parameter value
+   * Get current gate state
+   * @returns {boolean} True if gate is open, false if closed
    */
-  getParameter(name) {
-    return this.params[name] || 0;
+  getGateState() {
+    return this.isGateOpen;
   }
 
   /**
-   * Enable or disable sidechain gating
-   * @param {boolean} enabled - Whether to enable sidechain
+   * Process audio offline (for bouncing/rendering)
+   * @param {AudioBuffer} inputBuffer - Input audio buffer
+   * @returns {Promise<AudioBuffer>} Processed audio buffer
    */
-  enableSidechain(enabled) {
-    this.sidechainEnabled = enabled;
-    // In a full implementation, we would connect the sidechain input
-    // to a separate analyzer and use that for gate detection
-  }
-
-  /**
-   * Start gate processing loop
-   */
-  startGateProcessing() {
-    const bufferLength = this.analyzer.frequencyBinCount;
-    const dataArray = new Float32Array(bufferLength);
-
-    const process = () => {
-      if (this.bypassed || this.isDisposed) {
-        if (!this.isDisposed) {
-          requestAnimationFrame(process);
-        }
-        return;
-      }
-
-      // Get current input level
-      this.analyzer.getFloatTimeDomainData(dataArray);
-      const rms = this.calculateRMS(dataArray);
-      const levelDb = this.gainToDb(rms);
-
-      // Determine if gate should be open or closed using hysteresis
-      const openThreshold = this.params.threshold;
-      const closeThreshold = this.params.threshold - this.params.hysteresis;
-
-      let shouldBeOpen = false;
-
-      if (this.hysteresisState === 'closed') {
-        // Gate is closed, check if we should open
-        if (levelDb > openThreshold) {
-          shouldBeOpen = true;
-          this.hysteresisState = 'open';
-          this.holdCounter = 0;
-        }
-      } else {
-        // Gate is open, check if we should close
-        if (levelDb > closeThreshold) {
-          shouldBeOpen = true;
-          this.holdCounter = 0;
-        } else {
-          // Below close threshold, start hold timer
-          this.holdCounter += 1;
-          const holdSamples = this.params.hold * this.context.sampleRate / bufferLength;
-
-          if (this.holdCounter < holdSamples) {
-            // Still in hold period, keep gate open
-            shouldBeOpen = true;
-          } else {
-            // Hold period expired, close gate
-            shouldBeOpen = false;
-            this.hysteresisState = 'closed';
-          }
-        }
-      }
-
-      // Smooth gate opening/closing
-      const now = this.context.currentTime;
-      const targetGain = shouldBeOpen ? 1.0 : this.dbToGain(this.params.range);
-      const rampTime = shouldBeOpen ? this.params.attack : this.params.release;
-
-      // Cancel any scheduled changes
-      this.gateGain.gain.cancelScheduledValues(now);
-
-      // Ramp to target gain
-      this.gateGain.gain.setValueAtTime(this.gateGain.gain.value, now);
-      this.gateGain.gain.linearRampToValueAtTime(targetGain, now + rampTime);
-
-      this.gateOpen = shouldBeOpen;
-      this.currentGain = targetGain;
-
-      requestAnimationFrame(process);
-    };
-
-    process();
-  }
-
-  /**
-   * Calculate RMS of a buffer
-   * @param {Float32Array} buffer - Audio buffer
-   * @returns {number} RMS value
-   */
-  calculateRMS(buffer) {
-    let sum = 0;
-    for (let i = 0; i < buffer.length; i++) {
-      sum += buffer[i] * buffer[i];
+  async processOffline(inputBuffer) {
+    if (!this.initialized) {
+      await this.initialize();
     }
-    return Math.sqrt(sum / buffer.length);
+
+    const offlineContext = new OfflineAudioContext(
+      inputBuffer.numberOfChannels,
+      inputBuffer.length,
+      inputBuffer.sampleRate
+    );
+
+    // Load worklet in offline context
+    await offlineContext.audioWorklet.addModule(
+      new URL('../worklets/gate-processor.js', import.meta.url).href
+    );
+
+    // Create nodes
+    const source = offlineContext.createBufferSource();
+    source.buffer = inputBuffer;
+
+    const workletNode = new AudioWorkletNode(offlineContext, 'gate-processor');
+
+    // Copy current parameter values
+    workletNode.parameters.get('threshold').value = this.getParameter('threshold').param.value;
+    workletNode.parameters.get('attack').value = this.getParameter('attack').param.value;
+    workletNode.parameters.get('release').value = this.getParameter('release').param.value;
+    workletNode.parameters.get('range').value = this.getParameter('range').param.value;
+
+    // Connect graph
+    source.connect(workletNode);
+    workletNode.connect(offlineContext.destination);
+
+    // Render
+    source.start(0);
+    const renderedBuffer = await offlineContext.startRendering();
+
+    return renderedBuffer;
   }
 
   /**
-   * Check if gate is currently open
-   * @returns {boolean} True if gate is open
-   */
-  isGateOpen() {
-    return this.gateOpen;
-  }
-
-  /**
-   * Get current gate gain (for metering)
-   * @returns {number} Current gate gain (0 to 1)
-   */
-  getCurrentGain() {
-    return this.gateGain.gain.value;
-  }
-
-  /**
-   * Get current attenuation in dB
-   * @returns {number} Attenuation in dB
-   */
-  getAttenuation() {
-    return this.gainToDb(this.gateGain.gain.value);
-  }
-
-  /**
-   * Bypass the gate (true bypass)
-   * @param {boolean} enabled - Whether to bypass
-   */
-  bypass(enabled) {
-    this.bypassed = enabled;
-
-    const now = this.context.currentTime;
-    if (enabled) {
-      // Open gate fully
-      this.gateGain.gain.cancelScheduledValues(now);
-      this.gateGain.gain.setValueAtTime(1.0, now);
-    } else {
-      // Resume normal operation
-      this.hysteresisState = 'closed';
-      this.holdCounter = 0;
-    }
-  }
-
-  /**
-   * Convert dB to linear gain
-   * @param {number} db - Decibel value
-   * @returns {number} Linear gain value
-   */
-  dbToGain(db) {
-    return Math.pow(10, db / 20);
-  }
-
-  /**
-   * Convert linear gain to dB
-   * @param {number} gain - Linear gain value
-   * @returns {number} Decibel value
-   */
-  gainToDb(gain) {
-    if (gain <= 0) return -Infinity;
-    return 20 * Math.log10(gain);
-  }
-
-  /**
-   * Clean up resources
+   * Override dispose to clean up worklet
    */
   dispose() {
-    this.isDisposed = true;
+    if (this.workletNode) {
+      this.workletNode.disconnect();
+      this.workletNode.port.close();
+      this.workletNode = null;
+    }
 
-    // Disconnect all nodes
-    this.input.disconnect();
-    this.output.disconnect();
-    this.sidechainInput.disconnect();
-    this.gateGain.disconnect();
-    this.analyzer.disconnect();
+    super.dispose();
+  }
+
+  /**
+   * Check if plugin uses AudioWorklet
+   * @returns {boolean}
+   */
+  usesAudioWorklet() {
+    return true;
   }
 }
 
-// Export for use in modules
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = Gate;
-}
+export default GatePlugin;

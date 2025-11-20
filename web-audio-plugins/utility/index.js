@@ -1,10 +1,10 @@
 /**
- * Utility & Analysis - Index
+ * Utility Plugins - Index
  *
- * Exports all utility and analysis plugins
+ * Exports all utility plugins (AudioWorklet-based)
  */
 
-export { default as Utility } from './Utility.js';
-export { default as SpectrumAnalyzer } from './SpectrumAnalyzer.js';
-export { default as Tuner } from './Tuner.js';
-export { default as ChannelEQ } from './ChannelEQ.js';
+export { Gain } from './Gain.js';
+export { Pan } from './Pan.js';
+export { Polarity } from './Polarity.js';
+export { StereoWidth } from './StereoWidth.js';

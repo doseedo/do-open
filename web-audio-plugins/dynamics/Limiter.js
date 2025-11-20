@@ -1,234 +1,130 @@
 /**
- * Professional Brick Wall Limiter Plugin
+ * LimiterPlugin - Peak Limiter
  *
- * Features:
- * - True peak limiting with lookahead
- * - Ultra-fast attack time
- * - Adjustable release
- * - Gain reduction metering
- * - Prevents signal from exceeding ceiling
+ * AudioWorklet-based limiter with:
+ * - Hard limiting (infinite ratio)
+ * - Fast attack time
+ * - Transparent limiting
+ * - Automatic makeup gain option
  *
- * @class Limiter
+ * @author Agent 1 - Dynamics Plugins
+ * @version 1.0.0
  */
-class Limiter {
-  /**
-   * Create a limiter instance
-   * @param {AudioContext} audioContext - The Web Audio context
-   * @param {Object} options - Configuration options
-   */
+
+import { BasePlugin } from '../core/BasePlugin.js';
+
+export class LimiterPlugin extends BasePlugin {
   constructor(audioContext, options = {}) {
-    this.context = audioContext;
+    super(audioContext, {
+      category: 'dynamics',
+      description: 'Peak limiter for mastering and preventing clipping',
+      name: 'Limiter',
+      ...options
+    });
 
-    // Audio nodes
-    this.input = audioContext.createGain();
-    this.output = audioContext.createGain();
-
-    // Lookahead delay line
-    this.delayNode = audioContext.createDelay(0.1); // Max 100ms lookahead
-
-    // Gain node for limiting
-    this.limiterGain = audioContext.createGain();
-
-    // Analyzers for peak detection and metering
-    this.peakAnalyzer = audioContext.createAnalyser();
-    this.peakAnalyzer.fftSize = 2048;
-    this.peakAnalyzer.smoothingTimeConstant = 0;
-
-    this.outputAnalyzer = audioContext.createAnalyser();
-    this.outputAnalyzer.fftSize = 2048;
-
-    // State
-    this.bypassed = false;
+    this.workletNode = null;
     this.gainReduction = 0;
-    this.peakLevel = 0;
+    this.initialized = false;
 
     // Default parameter values
     this.defaults = {
-      ceiling: -0.3,     // dB (-20 to 0)
-      release: 0.050,    // seconds (50ms)
-      lookahead: 0.005   // seconds (5ms)
+      threshold: -1, // -1 dB for mastering
+      attack: 0.001, // 1ms - very fast
+      release: 0.100, // 100ms
+      makeupGain: 0
     };
-
-    // Current parameters
-    this.params = {
-      ceiling: options.ceiling || this.defaults.ceiling,
-      release: options.release || this.defaults.release,
-      lookahead: options.lookahead || this.defaults.lookahead
-    };
-
-    // Attack is fixed to very fast (essentially instantaneous)
-    this.attackTime = 0.001; // 1ms
-
-    // Envelope follower state
-    this.envelope = 0;
-
-    this.initialize();
   }
 
   /**
-   * Initialize the limiter
+   * Initialize the plugin (loads AudioWorklet)
    */
-  initialize() {
-    // Set up audio graph with lookahead
-    // Input splits: one path for analysis, one path for delayed audio
-    this.input.connect(this.peakAnalyzer);
-    this.input.connect(this.delayNode);
-
-    // Delayed audio goes through limiter gain
-    this.delayNode.connect(this.limiterGain);
-    this.limiterGain.connect(this.outputAnalyzer);
-    this.limiterGain.connect(this.output);
-
-    // Set initial delay time (lookahead)
-    this.delayNode.delayTime.setValueAtTime(this.params.lookahead, this.context.currentTime);
-
-    // Initialize limiter gain to unity
-    this.limiterGain.gain.setValueAtTime(1.0, this.context.currentTime);
-
-    // Start limiting process
-    this.startLimiting();
-  }
-
-  /**
-   * Connect the limiter to a destination
-   * @param {AudioNode} destination - The audio node to connect to
-   * @returns {AudioNode} The destination node
-   */
-  connect(destination) {
-    this.output.connect(destination);
-    return destination;
-  }
-
-  /**
-   * Disconnect the limiter from all destinations
-   */
-  disconnect() {
-    this.output.disconnect();
-  }
-
-  /**
-   * Set a limiter parameter
-   * @param {string} name - Parameter name
-   * @param {number} value - Parameter value
-   */
-  setParameter(name, value) {
-    const now = this.context.currentTime;
-
-    switch (name) {
-      case 'ceiling':
-        // -20 to 0 dB
-        this.params.ceiling = Math.max(-20, Math.min(0, value));
-        break;
-
-      case 'release':
-        // 10ms to 1000ms
-        this.params.release = Math.max(0.010, Math.min(1.000, value));
-        break;
-
-      case 'lookahead':
-        // 0 to 10ms
-        value = Math.max(0, Math.min(0.010, value));
-        this.params.lookahead = value;
-        // Update delay time smoothly
-        this.delayNode.delayTime.cancelScheduledValues(now);
-        this.delayNode.delayTime.setValueAtTime(this.delayNode.delayTime.value, now);
-        this.delayNode.delayTime.linearRampToValueAtTime(value, now + 0.1);
-        break;
-
-      default:
-        console.warn(`Unknown parameter: ${name}`);
+  async initialize() {
+    if (this.initialized) {
+      return;
     }
-  }
 
-  /**
-   * Get a limiter parameter value
-   * @param {string} name - Parameter name
-   * @returns {number} The parameter value
-   */
-  getParameter(name) {
-    return this.params[name] || 0;
-  }
+    try {
+      // Load the AudioWorklet module
+      await this.audioContext.audioWorklet.addModule(
+        new URL('../worklets/limiter-processor.js', import.meta.url).href
+      );
 
-  /**
-   * Start the limiting process
-   */
-  startLimiting() {
-    const bufferLength = this.peakAnalyzer.frequencyBinCount;
-    const dataArray = new Float32Array(bufferLength);
-
-    const process = () => {
-      if (this.bypassed || this.isDisposed) {
-        if (!this.isDisposed) {
-          requestAnimationFrame(process);
+      // Create the AudioWorkletNode
+      this.workletNode = new AudioWorkletNode(
+        this.audioContext,
+        'limiter-processor',
+        {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [2],
         }
-        return;
-      }
+      );
 
-      // Get peak level from lookahead buffer
-      this.peakAnalyzer.getFloatTimeDomainData(dataArray);
-      const peak = this.findPeak(dataArray);
-      const peakDb = this.gainToDb(peak);
+      // Connect input -> worklet -> output
+      this.input.disconnect();
+      this.input.connect(this.workletNode);
+      this.workletNode.connect(this.output);
 
-      this.peakLevel = peakDb;
+      // Listen for gain reduction messages
+      this.workletNode.port.onmessage = (event) => {
+        if (event.data.type === 'gainReduction') {
+          this.gainReduction = event.data.value;
+        }
+      };
 
-      // Calculate required gain reduction
-      const ceilingLinear = this.dbToGain(this.params.ceiling);
-      let targetGain = 1.0;
+      // Register parameters
+      this.registerParameter('threshold', this.workletNode.parameters.get('threshold'), {
+        min: -24,
+        max: 0,
+        default: this.defaults.threshold,
+        unit: 'dB',
+        label: 'Threshold',
+        type: 'continuous'
+      });
 
-      if (peak > ceilingLinear) {
-        // Signal exceeds ceiling, calculate gain reduction
-        targetGain = ceilingLinear / peak;
-      }
+      this.registerParameter('attack', this.workletNode.parameters.get('attack'), {
+        min: 0.0001,
+        max: 0.050,
+        default: this.defaults.attack,
+        unit: 's',
+        label: 'Attack',
+        type: 'continuous'
+      });
 
-      // Apply envelope follower for smooth gain changes
-      const now = this.context.currentTime;
-      const dt = 1 / 60; // Approximate frame time
+      this.registerParameter('release', this.workletNode.parameters.get('release'), {
+        min: 0.010,
+        max: 1.0,
+        default: this.defaults.release,
+        unit: 's',
+        label: 'Release',
+        type: 'continuous'
+      });
 
-      if (targetGain < this.envelope) {
-        // Attack: very fast response
-        const attackCoeff = Math.exp(-dt / this.attackTime);
-        this.envelope = targetGain + attackCoeff * (this.envelope - targetGain);
-      } else {
-        // Release: slower response
-        const releaseCoeff = Math.exp(-dt / this.params.release);
-        this.envelope = targetGain + releaseCoeff * (this.envelope - targetGain);
-      }
+      this.registerParameter('makeupGain', this.workletNode.parameters.get('makeupGain'), {
+        min: 0,
+        max: 24,
+        default: this.defaults.makeupGain,
+        unit: 'dB',
+        label: 'Makeup Gain',
+        type: 'continuous'
+      });
 
-      // Clamp envelope
-      this.envelope = Math.max(0, Math.min(1, this.envelope));
+      // Set default values
+      this.setParameter('threshold', this.defaults.threshold);
+      this.setParameter('attack', this.defaults.attack);
+      this.setParameter('release', this.defaults.release);
+      this.setParameter('makeupGain', this.defaults.makeupGain);
 
-      // Apply gain smoothly
-      this.limiterGain.gain.cancelScheduledValues(now);
-      this.limiterGain.gain.setValueAtTime(this.limiterGain.gain.value, now);
-      this.limiterGain.gain.linearRampToValueAtTime(this.envelope, now + 0.01);
+      this.initialized = true;
 
-      // Calculate gain reduction for metering
-      this.gainReduction = this.gainToDb(this.envelope);
-
-      requestAnimationFrame(process);
-    };
-
-    process();
-  }
-
-  /**
-   * Find the peak value in a buffer
-   * @param {Float32Array} buffer - Audio buffer
-   * @returns {number} Peak value
-   */
-  findPeak(buffer) {
-    let peak = 0;
-    for (let i = 0; i < buffer.length; i++) {
-      const abs = Math.abs(buffer[i]);
-      if (abs > peak) {
-        peak = abs;
-      }
+    } catch (error) {
+      console.error('Failed to initialize LimiterPlugin:', error);
+      throw error;
     }
-    return peak;
   }
 
   /**
-   * Get current gain reduction in dB
+   * Get current gain reduction for metering
    * @returns {number} Gain reduction in dB (negative value)
    */
   getGainReduction() {
@@ -236,103 +132,82 @@ class Limiter {
   }
 
   /**
-   * Get current peak level in dB
-   * @returns {number} Peak level in dB
+   * Enable auto makeup gain (brings level up to threshold)
+   * @param {boolean} enabled - Enable auto makeup gain
    */
-  getPeakLevel() {
-    return this.peakLevel;
-  }
-
-  /**
-   * Get output level for metering
-   * @returns {number} Output level in dB
-   */
-  getOutputLevel() {
-    const bufferLength = this.outputAnalyzer.frequencyBinCount;
-    const dataArray = new Float32Array(bufferLength);
-    this.outputAnalyzer.getFloatTimeDomainData(dataArray);
-
-    const rms = this.calculateRMS(dataArray);
-    return this.gainToDb(rms);
-  }
-
-  /**
-   * Calculate RMS of a buffer
-   * @param {Float32Array} buffer - Audio buffer
-   * @returns {number} RMS value
-   */
-  calculateRMS(buffer) {
-    let sum = 0;
-    for (let i = 0; i < buffer.length; i++) {
-      sum += buffer[i] * buffer[i];
-    }
-    return Math.sqrt(sum / buffer.length);
-  }
-
-  /**
-   * Bypass the limiter (true bypass)
-   * @param {boolean} enabled - Whether to bypass
-   */
-  bypass(enabled) {
-    this.bypassed = enabled;
-
-    const now = this.context.currentTime;
+  setAutoMakeup(enabled) {
     if (enabled) {
-      // Set gain to unity
-      this.limiterGain.gain.cancelScheduledValues(now);
-      this.limiterGain.gain.setValueAtTime(1.0, now);
-      this.envelope = 1.0;
-      this.gainReduction = 0;
-    } else {
-      // Resume normal operation
-      this.envelope = 1.0;
+      const threshold = this.getParameter('threshold').param.value;
+      // Auto makeup gain brings the limited signal close to 0 dBFS
+      const autoGain = Math.abs(threshold);
+      this.setParameter('makeupGain', autoGain);
     }
   }
 
   /**
-   * Convert dB to linear gain
-   * @param {number} db - Decibel value
-   * @returns {number} Linear gain value
+   * Process audio offline (for bouncing/rendering)
+   * @param {AudioBuffer} inputBuffer - Input audio buffer
+   * @returns {Promise<AudioBuffer>} Processed audio buffer
    */
-  dbToGain(db) {
-    return Math.pow(10, db / 20);
+  async processOffline(inputBuffer) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const offlineContext = new OfflineAudioContext(
+      inputBuffer.numberOfChannels,
+      inputBuffer.length,
+      inputBuffer.sampleRate
+    );
+
+    // Load worklet in offline context
+    await offlineContext.audioWorklet.addModule(
+      new URL('../worklets/limiter-processor.js', import.meta.url).href
+    );
+
+    // Create nodes
+    const source = offlineContext.createBufferSource();
+    source.buffer = inputBuffer;
+
+    const workletNode = new AudioWorkletNode(offlineContext, 'limiter-processor');
+
+    // Copy current parameter values
+    workletNode.parameters.get('threshold').value = this.getParameter('threshold').param.value;
+    workletNode.parameters.get('attack').value = this.getParameter('attack').param.value;
+    workletNode.parameters.get('release').value = this.getParameter('release').param.value;
+    workletNode.parameters.get('makeupGain').value = this.getParameter('makeupGain').param.value;
+
+    // Connect graph
+    source.connect(workletNode);
+    workletNode.connect(offlineContext.destination);
+
+    // Render
+    source.start(0);
+    const renderedBuffer = await offlineContext.startRendering();
+
+    return renderedBuffer;
   }
 
   /**
-   * Convert linear gain to dB
-   * @param {number} gain - Linear gain value
-   * @returns {number} Decibel value
-   */
-  gainToDb(gain) {
-    if (gain <= 0) return -Infinity;
-    return 20 * Math.log10(gain);
-  }
-
-  /**
-   * Get latency introduced by lookahead (in seconds)
-   * @returns {number} Latency in seconds
-   */
-  getLatency() {
-    return this.params.lookahead;
-  }
-
-  /**
-   * Clean up resources
+   * Override dispose to clean up worklet
    */
   dispose() {
-    this.isDisposed = true;
+    if (this.workletNode) {
+      this.workletNode.disconnect();
+      this.workletNode.port.close();
+      this.workletNode = null;
+    }
 
-    // Disconnect all nodes
-    this.input.disconnect();
-    this.output.disconnect();
-    this.delayNode.disconnect();
-    this.limiterGain.disconnect();
-    this.peakAnalyzer.disconnect();
-    this.outputAnalyzer.disconnect();
+    super.dispose();
+  }
+
+  /**
+   * Check if plugin uses AudioWorklet
+   * @returns {boolean}
+   */
+  usesAudioWorklet() {
+    return true;
   }
 }
 
-// Export for use in modules
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = Limiter;
-}
+export default LimiterPlugin;
