@@ -19,6 +19,7 @@ from .universal_registry import (
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 # Import structure expansion module
 from .structure_expansion import (
     register_all_structure_parameters,
@@ -39,6 +40,11 @@ harmony_deep_expansion.register_all_harmony_deep_expansion()
 from . import registry_expansion  # Agent 1: Core parameters
 from . import melody_rhythm_expansion  # Agent 4: Melody & Rhythm expansion (120 params)
 >>>>>>> origin/claude/music-generation-agents-01Hg1HTEAMZ318B1Ad5Zy6mm
+=======
+# Import expansion modules to register parameters
+from . import registry_expansion
+from . import dynamics_articulation_expansion
+>>>>>>> origin/claude/music-generation-agents-017y2cya6dkgoQQJhEDyjRtP
 
 # Global registry instance (for convenience)
 registry = REGISTRY
