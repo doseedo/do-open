@@ -574,9 +574,31 @@ class ModularSemanticDiscoveryPipeline:
         raise NotImplementedError("Generation from DNA requires decoder model")
 
     def _extract_features(self, midi_file: Path) -> np.ndarray:
-        """Extract 200D features from MIDI file (placeholder)"""
-        # In production, use OptimizedFeatureExtractor
-        return np.random.randn(200)  # Placeholder
+        """Extract 200D features from MIDI file using OptimizedFeatureExtractor"""
+        try:
+            from midi_generator.feature_selection.optimized_feature_extractor import OptimizedFeatureExtractor
+
+            # Initialize extractor with selected features from template
+            if not hasattr(self, '_feature_extractor'):
+                # Path to selected features JSON
+                selected_features_path = Path(__file__).parent.parent / "feature_selection" / "output" / "selected_features_200_template.json"
+
+                if selected_features_path.exists():
+                    self._feature_extractor = OptimizedFeatureExtractor.from_selection_file(
+                        selected_features_path,
+                        cache_full_extraction=True
+                    )
+                else:
+                    warnings.warn(f"Selected features file not found at {selected_features_path}. Using fallback.")
+                    return np.random.randn(200)
+
+            # Extract 200D features
+            features = self._feature_extractor.extract(midi_file, use_cache=True)
+            return features
+
+        except Exception as e:
+            warnings.warn(f"Feature extraction failed: {e}. Using random features as fallback.")
+            return np.random.randn(200)  # Fallback to random if extraction fails
 
     def _extract_params_with_encoder(
         self,
