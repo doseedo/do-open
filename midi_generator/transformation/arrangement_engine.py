@@ -44,11 +44,10 @@ from pathlib import Path
 import numpy as np
 import copy
 
-# Import our analyzer and voicing engines
+# Import our analyzer
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 from analysis.midi_analyzer import MidiAnalyzer, NoteEvent, ChordEvent
-from transformation.sax_voicing import SaxSoliVoicing, voice_sax_soli
 
 # Import Agent 5's brass arranger
 try:
@@ -57,10 +56,6 @@ try:
 except ImportError:
     BRASS_ARRANGER_AVAILABLE = False
     print("Warning: BrassArranger not available, using legacy brass implementation")
-
-# Import new drum system (Agent 7)
-from transformation.drum_arranger import DrumArranger
-from algorithms.rhythm_engine import RhythmNote
 
 
 # ==============================================================================
@@ -112,7 +107,6 @@ class BigBandArranger:
     Arrange for big band (4 trumpets, 4 trombones, 5 saxes, rhythm section).
 
     Follows Duke Ellington and Count Basie arranging principles.
-    Enhanced by Agent 10 with form-aware arranging capabilities.
     """
 
     @staticmethod
@@ -234,266 +228,6 @@ class BigBandArranger:
         return arrangement
 
     @staticmethod
-    def arrange_with_form(
-        melody: List[NoteEvent],
-        chords: List[ChordEvent],
-        form: 'MusicalForm',  # Type hint as string to avoid circular import
-        include_intro: bool = True,
-        include_outro: bool = True,
-        intro_style: str = "vamp",
-        outro_style: str = "tag"
-    ) -> Dict[str, List[NoteEvent]]:
-        """
-        Create form-aware big band arrangement with intro/outro.
-
-        This method integrates FormGenerator with arrangement engine to create
-        complete arrangements with proper structure.
-
-        Args:
-            melody: Melody notes
-            chords: Chord progression
-            form: MusicalForm object with sections
-            include_intro: Add introduction
-            include_outro: Add ending
-            intro_style: Style of intro ("vamp", "last_4", "button", "rubato")
-            outro_style: Style of outro ("tag", "fermata", "ritardando", "button")
-
-        Returns:
-            Dictionary with all instrument parts including intro/outro
-
-        Example:
-            >>> from generators.form_generator import FormGenerator, FormType
-            >>> form = FormGenerator.generate_form(FormType.AABA, tonic_key=60)
-            >>> arrangement = BigBandArranger.arrange_with_form(
-            ...     melody, chords, form,
-            ...     intro_style="button", outro_style="tag"
-            ... )
-        """
-        arrangement = {}
-
-        # Get section timeline from form
-        timeline = form.get_section_timeline()
-
-        # Generate intro if requested
-        intro_offset = 0.0
-        if include_intro:
-            try:
-                from generators.intro_outro_generator import (
-                    IntroOutroGenerator, IntroStyle
-                )
-                # Convert string to enum
-                intro_style_enum = IntroStyle[intro_style.upper()]
-                intro_data = IntroOutroGenerator.generate_intro(
-                    progression=[],  # Would need JazzChord conversion
-                    style=intro_style_enum,
-                    length_bars=4,
-                    tempo=form.tempo,
-                    key=form.tonic_key % 12
-                )
-                arrangement['intro'] = intro_data['intro_notes']
-                intro_offset = intro_data['duration_bars'] * 4.0  # Convert to beats
-            except Exception as e:
-                print(f"Warning: Could not generate intro: {e}")
-
-        # Arrange each section with form awareness
-        for start_bar, end_bar, section in timeline:
-            section_start = start_bar * 4.0 + intro_offset
-            section_end = end_bar * 4.0 + intro_offset
-
-            # Filter melody and chords for this section
-            section_melody = [
-                n for n in melody
-                if section_start <= n.start_time < section_end
-            ]
-            section_chords = [
-                c for c in chords
-                if section_start <= c.start_time < section_end
-            ]
-
-            # Apply section-specific arranging
-            if 'bridge' in section.name.lower() or section.name == 'B':
-                # Bridge gets special treatment
-                section_arr = BigBandArranger.arrange_bridge_section(
-                    section_melody, section_chords,
-                    contrast_style="brass_only"
-                )
-            elif section.dynamic_level > 0.8:
-                # High dynamic = shout chorus
-                section_arr = BigBandArranger.arrange_shout_chorus(
-                    section_melody, section_chords
-                )
-            else:
-                # Standard arrangement
-                section_arr = BigBandArranger.arrange(section_melody, section_chords)
-
-            # Merge section into full arrangement
-            for instrument, notes in section_arr.items():
-                if instrument not in arrangement:
-                    arrangement[instrument] = []
-                arrangement[instrument].extend(notes)
-
-        # Generate outro if requested
-        if include_outro:
-            try:
-                from generators.intro_outro_generator import (
-                    IntroOutroGenerator, OutroStyle
-                )
-                outro_style_enum = OutroStyle[outro_style.upper()]
-                outro_data = IntroOutroGenerator.generate_ending(
-                    progression=[],
-                    style=outro_style_enum,
-                    length_bars=4,
-                    tempo=form.tempo
-                )
-                # Offset outro to end of arrangement
-                total_duration = form.total_bars * 4.0 + intro_offset
-                for note in outro_data['outro_notes']:
-                    note.start_time += total_duration
-                    note.start_tick = int(note.start_time * 480)
-                arrangement['outro'] = outro_data['outro_notes']
-            except Exception as e:
-                print(f"Warning: Could not generate outro: {e}")
-
-        return arrangement
-
-    @staticmethod
-    def arrange_bridge_section(
-        melody: List[NoteEvent],
-        chords: List[ChordEvent],
-        contrast_style: str = "brass_only"
-    ) -> Dict[str, List[NoteEvent]]:
-        """
-        Arrange bridge section with contrast to A sections.
-
-        The bridge should sound different from A sections for musical contrast.
-
-        Args:
-            melody: Bridge melody notes
-            chords: Bridge chord progression
-            contrast_style: How to create contrast
-                - "brass_only": Brass plays melody, saxes rest
-                - "sax_only": Saxes play melody, brass rest
-                - "softer": Same arrangement but quieter (20% less velocity)
-                - "different_voicing": Use spread voicing instead of close
-
-        Returns:
-            Dictionary with instrument parts
-        """
-        arrangement = {}
-
-        if contrast_style == "brass_only":
-            # Brass takes the lead, saxes rest
-            arrangement['lead'] = BigBandArranger._create_lead(melody)
-            arrangement['brass'] = BigBandArranger._harmonize_saxes(melody, chords)
-            arrangement['saxes'] = []  # Saxes rest
-            arrangement['piano'] = BigBandArranger._create_piano_comping(chords)
-            arrangement['bass'] = BigBandArranger._create_walking_bass(chords)
-            arrangement['drums'] = BigBandArranger._create_swing_drums(melody)
-
-        elif contrast_style == "sax_only":
-            # Saxes play, brass rests
-            arrangement['lead'] = BigBandArranger._create_lead(melody)
-            arrangement['saxes'] = BigBandArranger._harmonize_saxes(melody, chords)
-            arrangement['brass'] = []  # Brass rests
-            arrangement['piano'] = BigBandArranger._create_piano_comping(chords)
-            arrangement['bass'] = BigBandArranger._create_walking_bass(chords)
-            arrangement['drums'] = BigBandArranger._create_swing_drums(melody)
-
-        elif contrast_style == "softer":
-            # Full arrangement but softer (reduce velocity)
-            arrangement = BigBandArranger.arrange(melody, chords)
-            for instrument, notes in arrangement.items():
-                for note in notes:
-                    note.velocity = int(note.velocity * 0.8)  # 20% softer
-
-        elif contrast_style == "different_voicing":
-            # Use wider voicing spacing
-            # (This would require implementing spread voicing - placeholder for now)
-            arrangement = BigBandArranger.arrange(melody, chords)
-
-        else:
-            # Default to standard arrangement
-            arrangement = BigBandArranger.arrange(melody, chords)
-
-        return arrangement
-
-    @staticmethod
-    def arrange_shout_chorus(
-        melody: List[NoteEvent],
-        chords: List[ChordEvent]
-    ) -> Dict[str, List[NoteEvent]]:
-        """
-        Arrange shout chorus - climactic final section.
-
-        Shout chorus characteristics:
-        - Full band in unison or block harmony
-        - Increased velocity (20% louder)
-        - Tighter, more powerful sound
-
-        Args:
-            melody: Shout chorus melody
-            chords: Chord progression
-
-        Returns:
-            Dictionary with instrument parts
-        """
-        arrangement = BigBandArranger.arrange(melody, chords)
-
-        # Increase velocity for all parts
-        for instrument, notes in arrangement.items():
-            for note in notes:
-                note.velocity = min(127, int(note.velocity * 1.2))  # 20% louder
-
-        return arrangement
-
-    @staticmethod
-    def apply_modulation(
-        progression: List[ChordEvent],
-        from_key: int,
-        to_key: int,
-        modulation_bar: int
-    ) -> List[ChordEvent]:
-        """
-        Apply modulation (key change) to chord progression.
-
-        Common modulation points:
-        - Before final chorus (up half-step or whole-step)
-        - At bridge (to IV, bVI, or relative minor)
-
-        Args:
-            progression: Original chord progression
-            from_key: Original key (0-11 pitch class)
-            to_key: Target key (0-11 pitch class)
-            modulation_bar: Bar number where modulation occurs
-
-        Returns:
-            Modified progression with modulation
-
-        Example:
-            >>> # Modulate up a half-step at bar 24 (final chorus)
-            >>> new_prog = BigBandArranger.apply_modulation(
-            ...     progression, from_key=0, to_key=1, modulation_bar=24
-            ... )
-        """
-        modulated = []
-        modulation_time = modulation_bar * 4.0  # Convert to beats
-
-        # Calculate transposition interval
-        transposition = (to_key - from_key) % 12
-
-        for chord in progression:
-            if chord.start_time >= modulation_time:
-                # Transpose this chord
-                new_chord = copy.copy(chord)
-                new_chord.root = (new_chord.root + transposition) % 12
-                modulated.append(new_chord)
-            else:
-                # Keep original
-                modulated.append(chord)
-
-        return modulated
-
-    @staticmethod
     def _create_lead(melody: List[NoteEvent]) -> List[NoteEvent]:
         """Create lead melody line."""
         lead = []
@@ -509,46 +243,24 @@ class BigBandArranger:
 
     @staticmethod
     def _harmonize_saxes(melody: List[NoteEvent],
-                        chords: List[ChordEvent],
-                        voicing_style: str = "drop_2") -> List[NoteEvent]:
-        """
-        Create professional 5-part sax soli with drop voicings and voice leading optimization.
-
-        NOW USES PROFESSIONAL SAX VOICING ENGINE (Agent 2)
-        - Drop-2, drop-3, drop-2-4, spread voicings (not just close!)
-        - Voice leading optimization (minimizes voice movement)
-        - Register-specific spacing (wider in bass, closer in treble)
-
-        Args:
-            melody: Lead melody notes
-            chords: Chord progression
-            voicing_style: "drop_2" (default), "drop_3", "close", "spread", "drop_2_4"
-
-        Returns:
-            List of NoteEvent objects for all 5 sax voices
-        """
-        # Use the professional sax voicing engine
-        sax_parts = voice_sax_soli(
-            melody=melody,
-            chords=chords,
-            style=voicing_style
-        )
-
-        # Convert dictionary of parts to flat list of NoteEvents
+                        chords: List[ChordEvent]) -> List[NoteEvent]:
+        """Create 5-part sax soli (close voicing)."""
         sax_notes = []
-        track_mapping = {
-            'bari': 1,
-            'tenor2': 2,
-            'tenor1': 3,
-            'alto2': 4,
-            'alto1': 5
-        }
 
-        for voice_name, notes in sax_parts.items():
-            track_idx = track_mapping.get(voice_name, 0)
-            for note in notes:
-                note.track_idx = track_idx
-            sax_notes.extend(notes)
+        for note in melody:
+            # Find current chord
+            chord = BigBandArranger._find_chord_at_time(note.start_time, chords)
+
+            if chord:
+                # Create 5-part close voicing below melody
+                voicing = BigBandArranger._create_close_voicing(note.pitch, chord, 5)
+
+                for i, pitch in enumerate(voicing):
+                    sax_note = copy.copy(note)
+                    sax_note.pitch = pitch
+                    sax_note.velocity = int(note.velocity * 0.85)
+                    sax_note.track_idx = i + 1  # Different tracks for each sax
+                    sax_notes.append(sax_note)
 
         return sax_notes
 
@@ -650,115 +362,48 @@ class BigBandArranger:
 
     @staticmethod
     def _create_walking_bass(chords: List[ChordEvent]) -> List[NoteEvent]:
-        """
-        Create professional walking bass line.
+        """Create walking bass line (quarter notes)."""
+        bass = []
 
-        Uses the new WalkingBassGenerator for authentic jazz bass patterns with:
-        - Chord tone emphasis on strong beats (root on beat 1: ~95%)
-        - Chromatic and diatonic approach notes
-        - Smooth voice leading between chords
-        - Proper bass range (E1-C3)
-        """
-        from .walking_bass_generator import WalkingBassGenerator
+        for chord in chords:
+            # Walk through chord tones and approach notes
+            num_beats = int(chord.duration)
+            beat_duration = chord.duration / num_beats if num_beats > 0 else 1.0
 
-        # Generate professional walking bass line
-        bass_line = WalkingBassGenerator.generate_walking_line(
-            chords=chords,
-            swing_feel=True,
-            approach_style="mixed",  # Mix of chromatic and diatonic
-            voice_leading=True,
-            start_octave=2  # E1-C3 range
-        )
+            for beat in range(num_beats):
+                time = chord.start_time + beat * beat_duration
 
-        return bass_line
+                # Alternate between root, 5th, and approach notes
+                if beat == 0:
+                    pitch = chord.root + 36  # Root
+                elif beat == 1:
+                    pitch = chord.root + 36 + 7  # 5th
+                else:
+                    pitch = chord.root + 36 + 3  # 3rd or approach
+
+                bass_note = NoteEvent(
+                    start_time=time,
+                    duration=beat_duration * 0.9,
+                    start_tick=int(time * 480),
+                    duration_ticks=int(beat_duration * 0.9 * 480),
+                    pitch=pitch,
+                    velocity=90,
+                    channel=1,
+                    track_idx=25
+                )
+                bass.append(bass_note)
+
+        return bass
 
     @staticmethod
-    def _create_swing_drums(melody: List[NoteEvent],
-                           style: str = "swing",
-                           add_fills: bool = True) -> List[NoteEvent]:
-        """
-        Create sophisticated big band drum pattern using new DrumArranger (Agent 7).
-
-        Args:
-            melody: Lead melody to determine duration
-            style: Drum style ("swing", "bebop", "latin_afro", "latin_bossa")
-            add_fills: Whether to add fills at phrase endings
-
-        Returns:
-            List of NoteEvent for complete drum arrangement
-        """
+    def _create_swing_drums(melody: List[NoteEvent]) -> List[NoteEvent]:
+        """Create swing drum pattern."""
         drums = []
 
         if not melody:
             return drums
 
-        # Calculate duration in bars (assuming 4 beats per bar)
-        duration = melody[-1].end_time
-        total_bars = int(duration / 4)  # Approximate bars
-
-        # Create dynamic map for form-aware dynamics
-        # Simple version: build intensity throughout
-        sections_per_8bars = total_bars // 8
-        dynamic_map = {}
-
-        # Add intro if long enough
-        if total_bars >= 32:
-            dynamic_map["intro"] = 0.3
-            remaining_bars = total_bars - 4
-        else:
-            remaining_bars = total_bars
-
-        # Create sections (every 8 bars)
-        section_names = ["A1", "A2", "B", "A3", "C", "D"]
-        intensity_curve = [0.5, 0.6, 0.7, 0.9, 0.8, 0.85]  # A3 is shout chorus
-
-        for i in range(min(sections_per_8bars, len(section_names))):
-            dynamic_map[section_names[i]] = intensity_curve[i]
-
-        # Generate drums with form-aware dynamics
-        try:
-            rhythm_notes = DrumArranger.arrange_drums_for_form(
-                form=None,  # TODO: Pass actual MusicalForm when available
-                style=style,
-                dynamic_map=dynamic_map,
-                ppqn=480  # MIDI standard ppqn
-            )
-
-            # Add fills at phrase endings if requested
-            if add_fills and total_bars >= 8:
-                rhythm_notes = DrumArranger.add_fills_at_phrase_endings(
-                    drums=rhythm_notes,
-                    phrase_length_bars=4,  # Fill every 4 bars
-                    fill_length_beats=2,   # 2-beat fills
-                    intensity=0.7,
-                    ppqn=480
-                )
-
-            # Apply groove template for authentic feel
-            rhythm_notes = DrumArranger.apply_groove_template(
-                drums=rhythm_notes,
-                genre="jazz_bebop" if style == "bebop" else "jazz_swing",
-                ppqn=480
-            )
-
-            # Convert RhythmNote to NoteEvent
-            drums = DrumArranger.convert_to_note_events(rhythm_notes, tempo=120)
-
-        except Exception as e:
-            # Fallback to simple pattern if new system fails
-            print(f"Warning: Advanced drum system failed ({e}), using simple pattern")
-            drums = BigBandArranger._create_simple_swing_pattern(melody)
-
-        return drums
-
-    @staticmethod
-    def _create_simple_swing_pattern(melody: List[NoteEvent]) -> List[NoteEvent]:
-        """
-        Simple fallback swing pattern (original implementation).
-
-        Used if advanced drum system encounters errors.
-        """
-        drums = []
+        # Simple swing pattern: ride cymbal, hi-hat on 2&4
         duration = melody[-1].end_time
         beats = int(duration)
 

@@ -43,6 +43,18 @@ from core.music_theory import (
     note_number_to_name, interval_between, MIDDLE_C
 )
 
+# Import semantic feature validation (Agent 8 - Semantic Feature Discovery)
+try:
+    from learning.semantic_constraints import (
+        SemanticFeatureValidator,
+        ValidationResult,
+        ValidationSeverity
+    )
+    SEMANTIC_VALIDATION_AVAILABLE = True
+except ImportError:
+    SEMANTIC_VALIDATION_AVAILABLE = False
+    warnings = []
+
 
 # =============================================================================
 # CSP CORE STRUCTURES
@@ -294,6 +306,67 @@ class ChordToneConstraint(Constraint):
 
     def __repr__(self):
         return f"ChordTone({self.variables[0]} in {self.chord_tones})"
+
+
+class SemanticFeatureConstraint(Constraint):
+    """
+    Constraint: Semantic feature must be musically valid.
+
+    Used during semantic feature discovery (Agents 1-6) to validate that
+    discovered features represent real musical concepts.
+
+    Integration with Agent 8's SemanticFeatureValidator.
+    """
+
+    def __init__(
+        self,
+        variable: str,
+        validator: Optional['SemanticFeatureValidator'] = None,
+        min_validity_score: float = 0.7
+    ):
+        super().__init__([variable], ConstraintType.HARD)
+        self.validator = validator
+        self.min_validity_score = min_validity_score
+
+    def is_satisfied(self, assignment: Dict[str, Any]) -> bool:
+        """
+        Check if semantic feature assignment is musically valid.
+
+        Args:
+            assignment: Dictionary with feature assignments
+
+        Returns:
+            True if feature passes validation
+        """
+        if self.variables[0] not in assignment:
+            return True
+
+        if not SEMANTIC_VALIDATION_AVAILABLE or self.validator is None:
+            # If validator not available, accept by default
+            return True
+
+        feature_data = assignment[self.variables[0]]
+
+        # Extract validation parameters from feature data
+        if isinstance(feature_data, dict):
+            feature_id = feature_data.get('id', 0)
+            interpretation = feature_data.get('interpretation')
+            activations = feature_data.get('activations')
+
+            # Run validation
+            result = self.validator.validate_feature(
+                feature_id=feature_id,
+                activations=activations,
+                interpretation=interpretation
+            )
+
+            # Check if valid
+            return result.is_valid and result.score >= self.min_validity_score
+
+        return True
+
+    def __repr__(self):
+        return f"SemanticFeatureValid({self.variables[0]}, min_score={self.min_validity_score})"
 
 
 # =============================================================================

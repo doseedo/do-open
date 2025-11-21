@@ -29,7 +29,7 @@ License: MIT
 """
 
 import random
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, field
 import sys
 from pathlib import Path
@@ -38,6 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from genres.jazz import JazzChord
+from parameters import registry, param, ParameterType, MusicalDomain
 
 
 @dataclass
