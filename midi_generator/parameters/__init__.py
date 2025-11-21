@@ -1,8 +1,26 @@
+#!/usr/bin/env python3
 """
 Parameter Management System for Musical Program Synthesis
 
+Unified parameter registry for the MIDI Generator library.
+Part of the Focused Parameter Refactoring project.
+
 This module provides the infrastructure for exposing and managing
 all musical parameters across the entire library.
+
+This module will eventually contain ~500-800 parameters across all domains:
+- harmony.* (150 params) - Agent 3
+- melody.* (100 params) - Agent 4
+- rhythm.* (100 params) - Agent 5
+- structure.* (50 params) - Agent 6
+- instrumentation.* (50 params) - Agent 7 ✅
+- dynamics.* (50 params) - Agent 8
+- transformation.* (remaining) - Agent 8
+
+Current Status:
+- Agent 7 (Instrumentation & Orchestration): ✅ Complete
+
+Author: Focused Parameter Refactoring - Agents 1-10
 """
 
 from .universal_registry import (
@@ -49,6 +67,21 @@ try:
 except ImportError:
     pass
 
+# Agent 7: Instrumentation parameters
+try:
+    from .instrumentation_params import (
+        INSTRUMENTATION_PARAMETERS,
+        get_instrumentation_parameter,
+        get_all_instrumentation_parameters
+    )
+    __all_instrumentation = [
+        'INSTRUMENTATION_PARAMETERS',
+        'get_instrumentation_parameter',
+        'get_all_instrumentation_parameters'
+    ]
+except ImportError:
+    __all_instrumentation = []
+
 # Register all core expansions
 try:
     registry_expansion.register_all_expansions()
@@ -76,3 +109,6 @@ try:
     __all__.extend(['register_all_structure_parameters', 'get_structure_defaults', 'GENRE_PRESETS'])
 except NameError:
     pass
+
+# Add instrumentation exports if available
+__all__.extend(__all_instrumentation)
