@@ -722,7 +722,7 @@ class GapDiscoveryTrainer:
                 reconstruction = self.decoder(semantic_features)
                 return {
                     'semantic_features': semantic_features,
-                    'reconstruction': reconstruction
+                    'reconstructed': reconstruction
                 }
 
             def encode(self, x):
@@ -781,7 +781,7 @@ class GapDiscoveryTrainer:
                w_ortho * L_orthogonality
 
         Args:
-            outputs: Model outputs dict with 'semantic_features' and 'reconstruction'
+            outputs: Model outputs dict with 'semantic_features' and 'reconstructed'
             features_original: Original input features
             compute_locality: Whether to compute locality loss
 
@@ -789,7 +789,7 @@ class GapDiscoveryTrainer:
             Total loss, dictionary of component losses
         """
         semantic_features = outputs['semantic_features']
-        reconstruction = outputs['reconstruction']
+        reconstruction = outputs['reconstructed']
 
         # 1. Reconstruction loss: MSE between reconstruction and original
         reconstruction_loss = torch.mean((reconstruction - features_original) ** 2)

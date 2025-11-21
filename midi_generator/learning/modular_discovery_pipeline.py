@@ -84,7 +84,7 @@ except ImportError:
 
 
 # =============================================================================
-# Dataset for Training
+# Datasets for Training
 # =============================================================================
 
 class FeatureDataset(Dataset):
@@ -129,6 +129,75 @@ class FeatureDataset(Dataset):
             # Return zero vector if extraction fails
             warnings.warn(f"Failed to extract features from {midi_file}: {e}")
             return torch.zeros(220, dtype=torch.float32)
+
+
+class CrossDimensionalDataset(Dataset):
+    """
+    Dataset that provides 110D concatenated domain parameters for cross-dimensional training.
+
+    This dataset:
+    - Extracts 220D raw features from MIDI files
+    - Passes through domain encoders to get domain parameters
+    - Concatenates: [harmony_30D, rhythm_20D, form_15D, orchestration_25D, texture_20D] = 110D
+    """
+
+    def __init__(self, midi_files: List[Path], feature_extractor, domain_encoders: Dict):
+        """
+        Args:
+            midi_files: List of MIDI file paths
+            feature_extractor: Feature extractor instance (EnhancedFeatureExtractor v2.0)
+            domain_encoders: Dict of trained domain encoders {dimension: encoder}
+        """
+        self.midi_files = midi_files
+        self.feature_extractor = feature_extractor
+        self.domain_encoders = domain_encoders
+
+        # Put encoders in eval mode
+        for encoder in domain_encoders.values():
+            encoder.eval()
+
+    def __len__(self):
+        return len(self.midi_files)
+
+    @torch.no_grad()
+    def __getitem__(self, idx):
+        """
+        Extract domain parameters from MIDI file.
+
+        Returns:
+            domain_params: torch.Tensor of shape (110,) - concatenated domain parameters
+        """
+        midi_file = self.midi_files[idx]
+
+        try:
+            # Extract 220D raw features
+            features_220d = self.feature_extractor.extract(midi_file, use_cache=True)
+            features_tensor = torch.from_numpy(features_220d).float().unsqueeze(0)  # [1, 220]
+
+            # Extract domain parameters from each encoder
+            domain_params_list = []
+
+            for dimension in [
+                MusicalDimension.HARMONY,
+                MusicalDimension.RHYTHM,
+                MusicalDimension.FORM,
+                MusicalDimension.ORCHESTRATION,
+                MusicalDimension.TEXTURE
+            ]:
+                encoder = self.domain_encoders[dimension]
+                # Get semantic features (parameters) from encoder
+                params = encoder.extract_semantic_features(features_tensor)  # [1, num_params]
+                domain_params_list.append(params.squeeze(0))  # [num_params]
+
+            # Concatenate all domain parameters: 30+20+15+25+20 = 110D
+            concatenated_params = torch.cat(domain_params_list, dim=0)  # [110]
+
+            return concatenated_params
+
+        except Exception as e:
+            # Return zero vector if extraction fails
+            warnings.warn(f"Failed to extract domain params from {midi_file}: {e}")
+            return torch.zeros(110, dtype=torch.float32)
 
 
 # =============================================================================
@@ -526,8 +595,26 @@ class ModularSemanticDiscoveryPipeline:
             print(f"    Val files: {len(val_files)}")
 
         # Create datasets
-        train_dataset = FeatureDataset(train_files, self._feature_extractor)
-        val_dataset = FeatureDataset(val_files, self._feature_extractor)
+        # For cross-dimensional encoder, use domain parameters (110D)
+        # For domain encoders, use raw features (220D)
+        if dimension == MusicalDimension.CROSS_DIMENSIONAL:
+            # Collect trained domain encoders
+            domain_encoders = {
+                dim: self.encoders[dim]
+                for dim in [
+                    MusicalDimension.HARMONY,
+                    MusicalDimension.RHYTHM,
+                    MusicalDimension.FORM,
+                    MusicalDimension.ORCHESTRATION,
+                    MusicalDimension.TEXTURE
+                ]
+            }
+            train_dataset = CrossDimensionalDataset(train_files, self._feature_extractor, domain_encoders)
+            val_dataset = CrossDimensionalDataset(val_files, self._feature_extractor, domain_encoders)
+        else:
+            # Domain encoders use raw 220D features
+            train_dataset = FeatureDataset(train_files, self._feature_extractor)
+            val_dataset = FeatureDataset(val_files, self._feature_extractor)
 
         # Create data loaders
         train_loader = DataLoader(
