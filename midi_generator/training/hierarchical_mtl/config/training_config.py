@@ -362,10 +362,37 @@ class HierarchicalMTLConfig:
 
     @classmethod
     def load(cls, path: Path) -> 'HierarchicalMTLConfig':
-        """Load config from JSON file."""
+        """Load config from JSON or YAML file."""
         import json
+        path = Path(path)
+
+        # Determine file type
+        if path.suffix in ['.yaml', '.yml']:
+            import yaml
+            with open(path, 'r') as f:
+                config_dict = yaml.safe_load(f)
+        else:
+            # Default to JSON
+            with open(path, 'r') as f:
+                config_dict = json.load(f)
+
+        return cls.from_dict(config_dict)
+
+    def save_yaml(self, path: Path):
+        """Save config to YAML file."""
+        import yaml
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(path, 'w') as f:
+            yaml.dump(self.to_dict(), f, default_flow_style=False, indent=2)
+
+    @classmethod
+    def load_yaml(cls, path: Path) -> 'HierarchicalMTLConfig':
+        """Load config from YAML file."""
+        import yaml
         with open(path, 'r') as f:
-            config_dict = json.load(f)
+            config_dict = yaml.safe_load(f)
         return cls.from_dict(config_dict)
 
 
