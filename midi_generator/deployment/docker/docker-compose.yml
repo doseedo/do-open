@@ -1,0 +1,65 @@
+# Docker Compose for MIDI DNA API Stack
+# Modular Semantic Discovery System
+# Agent 10: Documentation & Deployment Manager
+
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ../../..
+      dockerfile: midi_generator/deployment/docker/Dockerfile
+    container_name: midi-dna-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CUDA_VISIBLE_DEVICES=0
+      - MODEL_PATH=/app/models
+      - LOG_LEVEL=info
+    volumes:
+      - ../../models:/app/models
+      - ../../data:/app/data
+      - ../../output:/app/output
+      - ./logs:/app/logs
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  nginx:
+    image: nginx:alpine
+    container_name: midi-dna-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: midi-dna-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+volumes:
+  redis-data:
+
+networks:
+  default:
+    name: midi-dna-network
