@@ -21,7 +21,7 @@ Version: 1.0.0
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 from enum import Enum
 from pathlib import Path
 import json
@@ -48,6 +48,7 @@ try:
     INFRASTRUCTURE_AVAILABLE = True
 except ImportError:
     INFRASTRUCTURE_AVAILABLE = False
+    LocalityType = None  # Placeholder when not available
     print("WARNING: Existing infrastructure not fully available")
 
 # Try to import PyTorch
@@ -59,6 +60,10 @@ try:
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
+    # Create dummy module for type hints
+    class nn:
+        class Module:
+            pass
     print("WARNING: PyTorch not available")
 
 try:
@@ -92,7 +97,7 @@ class ModuleConfig:
     hidden_dim: int = 512  # Hidden layer dimension
 
     # Module-specific locality transformations
-    locality_functions: List[LocalityType] = field(default_factory=list)
+    locality_functions: List[Any] = field(default_factory=list)  # List of LocalityType when available
 
     # Module-specific feature emphasis
     feature_emphasis: Dict[str, float] = field(default_factory=dict)
@@ -105,16 +110,22 @@ class ModuleConfig:
 
 
 # Default module configurations
+# Build this conditionally based on infrastructure availability
+if INFRASTRUCTURE_AVAILABLE and LocalityType is not None:
+    _harmony_locality = [
+        LocalityType.TRANSPOSE,
+        LocalityType.INVERT,
+        LocalityType.OCTAVE_SHIFT,
+        LocalityType.VOICE_PERMUTATION
+    ]
+else:
+    _harmony_locality = ["transpose", "invert", "octave_shift", "voice_permutation"]
+
 DEFAULT_MODULE_CONFIGS = {
     ModuleType.HARMONY: ModuleConfig(
         module_type=ModuleType.HARMONY,
         num_features=30,
-        locality_functions=[
-            LocalityType.TRANSPOSE,
-            LocalityType.INVERT,
-            LocalityType.OCTAVE_SHIFT,
-            LocalityType.VOICE_PERMUTATION
-        ],
+        locality_functions=_harmony_locality,
         connect_to_agents=[
             "Agent 3 (Piano Comping)",
             "Agent 4 (Harmonic Progression)",
@@ -128,7 +139,7 @@ DEFAULT_MODULE_CONFIGS = {
     ModuleType.RHYTHM: ModuleConfig(
         module_type=ModuleType.RHYTHM,
         num_features=20,
-        locality_functions=[
+        locality_functions=["augment", "diminution", "time_shift", "rhythmic_quantize"] if not INFRASTRUCTURE_AVAILABLE else [
             LocalityType.AUGMENT,
             LocalityType.DIMINUTION,
             LocalityType.TIME_SHIFT,
@@ -145,7 +156,7 @@ DEFAULT_MODULE_CONFIGS = {
     ModuleType.FORM: ModuleConfig(
         module_type=ModuleType.FORM,
         num_features=15,
-        locality_functions=[
+        locality_functions=["retrograde", "time_shift"] if not INFRASTRUCTURE_AVAILABLE else [
             LocalityType.RETROGRADE,
             LocalityType.TIME_SHIFT
         ],
@@ -158,7 +169,7 @@ DEFAULT_MODULE_CONFIGS = {
     ModuleType.ORCHESTRATION: ModuleConfig(
         module_type=ModuleType.ORCHESTRATION,
         num_features=25,
-        locality_functions=[
+        locality_functions=["voice_permutation", "octave_shift", "register_shift"] if not INFRASTRUCTURE_AVAILABLE else [
             LocalityType.VOICE_PERMUTATION,
             LocalityType.OCTAVE_SHIFT,
             LocalityType.REGISTER_SHIFT
@@ -175,7 +186,7 @@ DEFAULT_MODULE_CONFIGS = {
     ModuleType.TEXTURE: ModuleConfig(
         module_type=ModuleType.TEXTURE,
         num_features=20,
-        locality_functions=[
+        locality_functions=["voice_permutation", "velocity_scale"] if not INFRASTRUCTURE_AVAILABLE else [
             LocalityType.VOICE_PERMUTATION,
             LocalityType.VELOCITY_SCALE
         ],
@@ -851,7 +862,9 @@ def print_architecture_summary():
         config = DEFAULT_MODULE_CONFIGS[ModuleType(module_type)]
         print(f"\n  {module_type.upper()}: {num_params} parameters")
         print(f"    {config.description}")
-        print(f"    Locality functions: {[lt.value for lt in config.locality_functions]}")
+        # Handle both LocalityType objects and strings
+        locality_str = [lt.value if hasattr(lt, 'value') else lt for lt in config.locality_functions]
+        print(f"    Locality functions: {locality_str}")
         print(f"    Connects to: {', '.join(config.connect_to_agents[:3])}")
 
     print("\n" + "="*80)
