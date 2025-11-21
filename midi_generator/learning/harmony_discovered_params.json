@@ -1,0 +1,558 @@
+{
+  "meta": {
+    "module": "harmony",
+    "agent": "Agent 2 - Harmony Module Builder",
+    "date": "2025-11-21",
+    "version": "1.0.0",
+    "description": "30 discovered harmony parameters from semantic learning",
+    "total_parameters": 30,
+    "architecture": "200D features → 512D hidden → 30D harmony parameters"
+  },
+
+  "parameters": {
+    "chord_types": {
+      "category": "chord_types",
+      "count": 5,
+      "description": "Frequencies and preferences for different chord types",
+      "parameters": [
+        {
+          "index": 0,
+          "name": "major_chord_frequency",
+          "description": "Frequency of major triads in the piece",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often major chords appear relative to all chords",
+          "musical_meaning": "High values indicate major tonality or bright harmonic character",
+          "example_values": {
+            "classical": 0.7,
+            "jazz": 0.4,
+            "blues": 0.5
+          }
+        },
+        {
+          "index": 1,
+          "name": "minor_chord_frequency",
+          "description": "Frequency of minor triads in the piece",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often minor chords appear relative to all chords",
+          "musical_meaning": "High values indicate minor tonality or darker harmonic character",
+          "example_values": {
+            "classical": 0.3,
+            "jazz": 0.3,
+            "blues": 0.4
+          }
+        },
+        {
+          "index": 2,
+          "name": "dominant_7th_frequency",
+          "description": "Frequency of dominant 7th chords",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "Presence of dominant function and tension-resolution",
+          "musical_meaning": "Common in jazz, blues, and functional harmony",
+          "example_values": {
+            "classical": 0.2,
+            "jazz": 0.5,
+            "blues": 0.6
+          }
+        },
+        {
+          "index": 3,
+          "name": "extended_chord_frequency",
+          "description": "Frequency of extended chords (9th, 11th, 13th)",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "Harmonic complexity and color beyond basic triads and 7ths",
+          "musical_meaning": "High in jazz, impressionist, and contemporary music",
+          "example_values": {
+            "classical": 0.1,
+            "jazz": 0.6,
+            "impressionist": 0.5
+          }
+        },
+        {
+          "index": 4,
+          "name": "altered_chord_frequency",
+          "description": "Frequency of altered dominant chords (b9, #9, #11, b13)",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "Use of chromatic alterations for color and tension",
+          "musical_meaning": "Characteristic of bebop, modern jazz, and chromatic harmony",
+          "example_values": {
+            "classical": 0.05,
+            "bebop": 0.4,
+            "modern_jazz": 0.3
+          }
+        }
+      ]
+    },
+
+    "voicings": {
+      "category": "voicings",
+      "count": 5,
+      "description": "Chord voicing preferences and spacing",
+      "parameters": [
+        {
+          "index": 5,
+          "name": "voicing_spread_preference",
+          "description": "Preference for wide vs. close voicings (normalized 0-1)",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "0 = very close (within octave), 1 = very wide (4+ octaves)",
+          "musical_meaning": "Wide voicings common in big band, close in piano comping",
+          "example_values": {
+            "piano_comping": 0.2,
+            "big_band": 0.7,
+            "string_quartet": 0.5
+          }
+        },
+        {
+          "index": 6,
+          "name": "close_position_ratio",
+          "description": "Ratio of chords voiced in close position (within an octave)",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "Proportion of chords with all notes within one octave",
+          "musical_meaning": "High in piano music, lower in orchestral settings",
+          "example_values": {
+            "piano": 0.8,
+            "orchestra": 0.3,
+            "guitar": 0.6
+          }
+        },
+        {
+          "index": 7,
+          "name": "drop_2_usage",
+          "description": "Frequency of drop-2 voicings",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "Use of drop-2 voicings (2nd voice from top dropped octave)",
+          "musical_meaning": "Common in jazz piano and guitar, characteristic big band sound",
+          "example_values": {
+            "jazz_piano": 0.6,
+            "big_band": 0.7,
+            "classical": 0.1
+          }
+        },
+        {
+          "index": 8,
+          "name": "drop_3_usage",
+          "description": "Frequency of drop-3 voicings",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "Use of drop-3 voicings (3rd voice from top dropped octave)",
+          "musical_meaning": "Less common than drop-2, creates specific bass motion",
+          "example_values": {
+            "jazz_guitar": 0.3,
+            "big_band": 0.4,
+            "classical": 0.05
+          }
+        },
+        {
+          "index": 9,
+          "name": "rootless_voicing_ratio",
+          "description": "Ratio of rootless voicings (root omitted)",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often chord root is omitted in voicing",
+          "musical_meaning": "Common in jazz comping when bassist plays root",
+          "example_values": {
+            "jazz_piano_with_bass": 0.7,
+            "solo_piano": 0.2,
+            "guitar": 0.3
+          }
+        }
+      ]
+    },
+
+    "progressions": {
+      "category": "progressions",
+      "count": 5,
+      "description": "Harmonic progression patterns and tendencies",
+      "parameters": [
+        {
+          "index": 10,
+          "name": "ii_V_I_frequency",
+          "description": "Frequency of ii-V-I progressions",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "Occurrence rate of the fundamental jazz progression",
+          "musical_meaning": "Cornerstone of tonal jazz and functional harmony",
+          "example_values": {
+            "jazz_standard": 0.6,
+            "bebop": 0.8,
+            "classical": 0.3,
+            "modal": 0.1
+          }
+        },
+        {
+          "index": 11,
+          "name": "circle_of_fifths_adherence",
+          "description": "Adherence to circle of fifths root motion",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often chord changes follow descending fifth patterns",
+          "musical_meaning": "Strong functional harmony vs. modal or chromatic",
+          "example_values": {
+            "baroque": 0.8,
+            "jazz": 0.6,
+            "modal": 0.2,
+            "impressionist": 0.3
+          }
+        },
+        {
+          "index": 12,
+          "name": "chromatic_movement",
+          "description": "Frequency of chromatic (semitone) root motion",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often chord roots move by half or whole step",
+          "musical_meaning": "Chromatic harmony, voice leading, or transitional passages",
+          "example_values": {
+            "wagner": 0.6,
+            "debussy": 0.5,
+            "bach": 0.3,
+            "modal_jazz": 0.4
+          }
+        },
+        {
+          "index": 13,
+          "name": "parallel_motion_ratio",
+          "description": "Ratio of parallel chord motion",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often chords move in parallel motion (planing)",
+          "musical_meaning": "Characteristic of impressionism, modal jazz, and modern music",
+          "example_values": {
+            "debussy": 0.6,
+            "modal_jazz": 0.5,
+            "baroque": 0.1,
+            "romantic": 0.3
+          }
+        },
+        {
+          "index": 14,
+          "name": "modal_interchange_usage",
+          "description": "Frequency of modal interchange (borrowed chords)",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "Borrowing chords from parallel major/minor or other modes",
+          "musical_meaning": "Harmonic color from mixing major/minor or modal scales",
+          "example_values": {
+            "beatles": 0.5,
+            "romantic": 0.4,
+            "baroque": 0.1,
+            "jazz": 0.3
+          }
+        }
+      ]
+    },
+
+    "voice_leading": {
+      "category": "voice_leading",
+      "count": 5,
+      "description": "Voice leading smoothness and techniques",
+      "parameters": [
+        {
+          "index": 15,
+          "name": "voice_leading_smoothness",
+          "description": "Overall smoothness of voice leading (minimal motion)",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How efficiently voices move between chords (0=jumpy, 1=smooth)",
+          "musical_meaning": "Central to good part-writing and baroque counterpoint",
+          "example_values": {
+            "bach": 0.9,
+            "chopin": 0.8,
+            "modern_jazz": 0.6,
+            "stride_piano": 0.4
+          }
+        },
+        {
+          "index": 16,
+          "name": "contrary_motion_preference",
+          "description": "Preference for contrary motion between voices",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often voices move in opposite directions",
+          "musical_meaning": "Hallmark of good counterpoint, creates independence",
+          "example_values": {
+            "bach_fugue": 0.8,
+            "classical_sonata": 0.7,
+            "impressionist": 0.3,
+            "block_chords": 0.1
+          }
+        },
+        {
+          "index": 17,
+          "name": "voice_crossing_frequency",
+          "description": "Frequency of voices crossing each other",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often lower voice temporarily moves above higher voice",
+          "musical_meaning": "More common in complex counterpoint, less in block chords",
+          "example_values": {
+            "bach_counterpoint": 0.4,
+            "string_quartet": 0.3,
+            "chorale": 0.1,
+            "big_band": 0.05
+          }
+        },
+        {
+          "index": 18,
+          "name": "half_step_resolution_ratio",
+          "description": "Ratio of leading tone and tendency tone resolutions",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often half-step tensions resolve properly",
+          "musical_meaning": "Adherence to tonal voice leading principles",
+          "example_values": {
+            "common_practice": 0.9,
+            "jazz": 0.6,
+            "impressionist": 0.4,
+            "atonal": 0.2
+          }
+        },
+        {
+          "index": 19,
+          "name": "tritone_resolution_adherence",
+          "description": "Adherence to traditional tritone resolution",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often tritones resolve by half-step contrary motion",
+          "musical_meaning": "Core of dominant-tonic relationship in functional harmony",
+          "example_values": {
+            "classical": 0.9,
+            "jazz": 0.6,
+            "whole_tone": 0.1,
+            "modal": 0.3
+          }
+        }
+      ]
+    },
+
+    "harmonic_rhythm": {
+      "category": "harmonic_rhythm",
+      "count": 5,
+      "description": "Timing and pacing of harmonic changes",
+      "parameters": [
+        {
+          "index": 20,
+          "name": "chord_change_rate",
+          "description": "Rate of harmonic changes (chords per second)",
+          "type": "continuous",
+          "range": [0.0, 10.0],
+          "interpretation": "How frequently harmony changes",
+          "musical_meaning": "Fast in bebop, slow in modal jazz and ballads",
+          "example_values": {
+            "bebop": 4.0,
+            "swing": 2.0,
+            "modal_ballad": 0.5,
+            "chorale": 1.0
+          }
+        },
+        {
+          "index": 21,
+          "name": "harmonic_anticipation",
+          "description": "Frequency of harmonic anticipations",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often melody anticipates the next chord",
+          "musical_meaning": "Creates forward motion and melodic interest",
+          "example_values": {
+            "jazz": 0.4,
+            "classical": 0.3,
+            "baroque": 0.2
+          }
+        },
+        {
+          "index": 22,
+          "name": "harmonic_suspension",
+          "description": "Frequency of suspensions and retardations",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often non-chord tones suspend from previous chord",
+          "musical_meaning": "Baroque and classical device for creating tension",
+          "example_values": {
+            "baroque": 0.6,
+            "classical": 0.5,
+            "jazz": 0.3,
+            "blues": 0.2
+          }
+        },
+        {
+          "index": 23,
+          "name": "pedal_tone_usage",
+          "description": "Frequency and duration of pedal points",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often a bass note sustains through changing harmony",
+          "musical_meaning": "Creates tension and release, common in organ and orchestral music",
+          "example_values": {
+            "organ_music": 0.7,
+            "orchestral": 0.5,
+            "jazz_waltz": 0.3,
+            "bebop": 0.1
+          }
+        },
+        {
+          "index": 24,
+          "name": "harmonic_density",
+          "description": "Overall harmonic complexity/density",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "Combination of chord complexity and change rate",
+          "musical_meaning": "High in complex jazz, low in simple folk or modal music",
+          "example_values": {
+            "bebop": 0.9,
+            "swing": 0.7,
+            "modal": 0.3,
+            "folk": 0.2
+          }
+        }
+      ]
+    },
+
+    "extensions_tension": {
+      "category": "extensions_tension",
+      "count": 5,
+      "description": "Use of chord extensions and tension notes",
+      "parameters": [
+        {
+          "index": 25,
+          "name": "ninth_usage",
+          "description": "Frequency of 9th extensions",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often chords include 9th (major or minor)",
+          "musical_meaning": "Adds color and complexity, ubiquitous in jazz",
+          "example_values": {
+            "jazz": 0.7,
+            "impressionist": 0.6,
+            "classical": 0.2,
+            "folk": 0.05
+          }
+        },
+        {
+          "index": 26,
+          "name": "eleventh_usage",
+          "description": "Frequency of 11th extensions",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often chords include 11th (natural or #11)",
+          "musical_meaning": "Creates color and sophistication, careful use to avoid clashes",
+          "example_values": {
+            "lydian_jazz": 0.5,
+            "modern_jazz": 0.4,
+            "classical": 0.1,
+            "blues": 0.05
+          }
+        },
+        {
+          "index": 27,
+          "name": "thirteenth_usage",
+          "description": "Frequency of 13th extensions",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often chords include 13th (major or minor)",
+          "musical_meaning": "Maximum extension before doubling octave, rich harmony",
+          "example_values": {
+            "jazz": 0.6,
+            "big_band": 0.7,
+            "classical": 0.1,
+            "rock": 0.05
+          }
+        },
+        {
+          "index": 28,
+          "name": "tension_resolution_ratio",
+          "description": "Ratio of tensions that resolve properly",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How often extensions resolve to chord tones",
+          "musical_meaning": "High in traditional harmony, lower in modern jazz",
+          "example_values": {
+            "classical": 0.9,
+            "swing": 0.7,
+            "modern_jazz": 0.4,
+            "free_jazz": 0.2
+          }
+        },
+        {
+          "index": 29,
+          "name": "avoid_note_handling",
+          "description": "Skill in avoiding or handling avoid notes",
+          "type": "continuous",
+          "range": [0.0, 1.0],
+          "interpretation": "How well avoid notes (e.g., 4 in major) are managed",
+          "musical_meaning": "Understanding of extension hierarchy and voice leading",
+          "example_values": {
+            "expert_jazz": 0.9,
+            "intermediate": 0.6,
+            "beginner": 0.3
+          }
+        }
+      ]
+    }
+  },
+
+  "locality_functions": {
+    "description": "Musical locality transformations used for harmony discovery",
+    "functions": [
+      {
+        "name": "TRANSPOSE",
+        "description": "Transpose all pitches by constant interval",
+        "preserves": "Chord types, voicings, progressions (relative)",
+        "varies": "Absolute pitch, key"
+      },
+      {
+        "name": "INVERT",
+        "description": "Invert intervals around pivot note",
+        "preserves": "Interval contours (inverted)",
+        "varies": "Chord qualities, melodic direction"
+      },
+      {
+        "name": "OCTAVE_SHIFT",
+        "description": "Move pitches by octaves",
+        "preserves": "Pitch classes, harmonic function",
+        "varies": "Register, voicing spread"
+      },
+      {
+        "name": "VOICE_PERMUTATION",
+        "description": "Swap voices/reorder chord tones",
+        "preserves": "Pitch content, chord type",
+        "varies": "Voicing, voice leading"
+      }
+    ]
+  },
+
+  "integration": {
+    "big_band_agents": [
+      {
+        "name": "BrassArranger",
+        "connection": "Uses harmony parameters for brass section voicing decisions"
+      },
+      {
+        "name": "VoiceLeadingOptimizer",
+        "connection": "Validates smooth voice leading using discovered parameters"
+      },
+      {
+        "name": "SaxVoicing",
+        "connection": "Applies voicing spread and drop voicing parameters"
+      }
+    ],
+    "tymoczko_geometry": {
+      "description": "Validates chord progressions using neo-Riemannian transformations",
+      "transformations": ["Parallel (P)", "Relative (R)", "Leading-tone (L)"],
+      "validates": "Voice leading efficiency and geometric optimization"
+    }
+  },
+
+  "usage_notes": {
+    "training": "Parameters discovered through semantic learning on jazz corpus",
+    "interpretation": "FeatureInterpreter matches learned features to musical concepts",
+    "extraction": "HarmonySemanticEncoder.extract_harmony_parameters(features)",
+    "validation": "Tymoczko geometric validation ensures musical correctness"
+  }
+}
