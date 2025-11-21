@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI DNA Editor - Modular Semantic Discovery</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .toolbar {
+            background: #f8f9fa;
+            padding: 20px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 0;
+            min-height: 600px;
+        }
+
+        .sidebar {
+            background: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+            padding: 20px;
+        }
+
+        .dimension-group {
+            margin-bottom: 20px;
+        }
+
+        .dimension-header {
+            background: #667eea;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.3s;
+        }
+
+        .dimension-header:hover {
+            background: #5568d3;
+        }
+
+        .dimension-header.active {
+            background: #764ba2;
+        }
+
+        .dimension-count {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.9em;
+        }
+
+        .parameter-panel {
+            padding: 30px;
+            overflow-y: auto;
+            max-height: 600px;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .panel-title {
+            font-size: 1.8em;
+            color: #333;
+        }
+
+        .search-box {
+            padding: 10px 15px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            width: 300px;
+            font-size: 14px;
+        }
+
+        .parameter-item {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+
+        .parameter-item:hover {
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            transform: translateX(5px);
+        }
+
+        .parameter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .parameter-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 1.1em;
+        }
+
+        .parameter-value {
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .parameter-description {
+            color: #6c757d;
+            font-size: 0.9em;
+            margin-bottom: 15px;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .slider {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 8px;
+            border-radius: 5px;
+            background: #dee2e6;
+            outline: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .slider::-webkit-slider-thumb:hover {
+            background: #764ba2;
+            transform: scale(1.2);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+            border: none;
+        }
+
+        .value-input {
+            width: 80px;
+            padding: 8px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .visual-bar {
+            height: 6px;
+            background: linear-gradient(90deg, #10b981 0%, #667eea 50%, #ef4444 100%);
+            border-radius: 3px;
+            margin-top: 10px;
+            position: relative;
+        }
+
+        .visual-bar::after {
+            content: '';
+            position: absolute;
+            left: var(--value);
+            top: -3px;
+            width: 12px;
+            height: 12px;
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 50%;
+        }
+
+        .info-panel {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+
+        .info-panel h3 {
+            color: #1976d2;
+            margin-bottom: 10px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .player {
+            background: #f8f9fa;
+            padding: 20px;
+            border-top: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .player-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .play-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #667eea;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .play-btn:hover {
+            background: #764ba2;
+            transform: scale(1.1);
+        }
+
+        .waveform {
+            flex: 1;
+            height: 50px;
+            background: white;
+            border-radius: 5px;
+            margin: 0 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .waveform-bars {
+            display: flex;
+            align-items: center;
+            height: 100%;
+            gap: 2px;
+            padding: 5px;
+        }
+
+        .waveform-bar {
+            flex: 1;
+            background: linear-gradient(to top, #667eea, #764ba2);
+            border-radius: 2px;
+            opacity: 0.6;
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scaleY(0.3); }
+            50% { transform: scaleY(1); }
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 MIDI DNA Editor</h1>
+            <p>Modular Semantic Discovery System - Real-time Parameter Editing</p>
+        </header>
+
+        <div class="toolbar">
+            <div class="file-input-wrapper">
+                <button class="btn btn-primary">
+                    📁 Load MIDI File
+                </button>
+                <input type="file" accept=".mid,.midi" id="fileInput">
+            </div>
+
+            <button class="btn btn-success" id="previewBtn">
+                ▶️ Preview
+            </button>
+
+            <button class="btn btn-primary" id="saveBtn">
+                💾 Save Edited MIDI
+            </button>
+
+            <button class="btn btn-secondary" id="resetBtn">
+                ↺ Reset All
+            </button>
+
+            <button class="btn btn-secondary" id="undoBtn">
+                ↶ Undo
+            </button>
+
+            <div style="margin-left: auto;">
+                <span id="fileName" style="font-weight: 600; color: #667eea;">No file loaded</span>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <h3>ℹ️ About This Tool</h3>
+            <p>
+                The MIDI DNA Editor allows you to extract and edit the 120 interpretable musical parameters
+                discovered by the Modular Semantic Discovery System. Adjust sliders to modify specific aspects
+                of your music and hear the results in real-time.
+            </p>
+        </div>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <h3 style="margin-bottom: 20px; color: #333;">Musical Dimensions</h3>
+
+                <div class="dimension-group">
+                    <div class="dimension-header active" data-dimension="harmony">
+                        <span>🎹 Harmony</span>
+                        <span class="dimension-count">30</span>
+                    </div>
+                </div>
+
+                <div class="dimension-group">
+                    <div class="dimension-header" data-dimension="rhythm">
+                        <span>🥁 Rhythm</span>
+                        <span class="dimension-count">20</span>
+                    </div>
+                </div>
+
+                <div class="dimension-group">
+                    <div class="dimension-header" data-dimension="form">
+                        <span>📐 Form</span>
+                        <span class="dimension-count">15</span>
+                    </div>
+                </div>
+
+                <div class="dimension-group">
+                    <div class="dimension-header" data-dimension="orchestration">
+                        <span>🎺 Orchestration</span>
+                        <span class="dimension-count">25</span>
+                    </div>
+                </div>
+
+                <div class="dimension-group">
+                    <div class="dimension-header" data-dimension="texture">
+                        <span>🎨 Texture</span>
+                        <span class="dimension-count">20</span>
+                    </div>
+                </div>
+
+                <div class="dimension-group">
+                    <div class="dimension-header" data-dimension="cross">
+                        <span>🔗 Cross-Dimensional</span>
+                        <span class="dimension-count">10</span>
+                    </div>
+                </div>
+
+                <div class="stats-grid" style="margin-top: 30px;">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Parameters</div>
+                        <div class="stat-value">120</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Modified</div>
+                        <div class="stat-value" id="modifiedCount">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="parameter-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">🎹 Harmony Parameters</h2>
+                    <input type="text" class="search-box" placeholder="Search parameters...">
+                </div>
+
+                <div id="parametersContainer">
+                    <!-- Harmony Parameters -->
+                    <div class="parameter-item">
+                        <div class="parameter-header">
+                            <span class="parameter-name">Chord Complexity</span>
+                            <span class="parameter-value">0.73</span>
+                        </div>
+                        <p class="parameter-description">
+                            Complexity of chord voicings - higher values indicate more sophisticated harmonies
+                        </p>
+                        <div class="slider-container">
+                            <input type="range" class="slider" min="0" max="100" value="73">
+                            <input type="number" class="value-input" min="0" max="1" step="0.01" value="0.73">
+                        </div>
+                        <div class="visual-bar" style="--value: 73%"></div>
+                    </div>
+
+                    <div class="parameter-item">
+                        <div class="parameter-header">
+                            <span class="parameter-name">Tension/Resolution Rate</span>
+                            <span class="parameter-value">0.61</span>
+                        </div>
+                        <p class="parameter-description">
+                            Frequency of harmonic tension and resolution - affects emotional dynamics
+                        </p>
+                        <div class="slider-container">
+                            <input type="range" class="slider" min="0" max="100" value="61">
+                            <input type="number" class="value-input" min="0" max="1" step="0.01" value="0.61">
+                        </div>
+                        <div class="visual-bar" style="--value: 61%"></div>
+                    </div>
+
+                    <div class="parameter-item">
+                        <div class="parameter-header">
+                            <span class="parameter-name">Voice Leading Smoothness</span>
+                            <span class="parameter-value">0.89</span>
+                        </div>
+                        <p class="parameter-description">
+                            Smoothness of voice transitions - higher values indicate more connected voice leading
+                        </p>
+                        <div class="slider-container">
+                            <input type="range" class="slider" min="0" max="100" value="89">
+                            <input type="number" class="value-input" min="0" max="1" step="0.01" value="0.89">
+                        </div>
+                        <div class="visual-bar" style="--value: 89%"></div>
+                    </div>
+
+                    <div class="parameter-item">
+                        <div class="parameter-header">
+                            <span class="parameter-name">Chromaticism</span>
+                            <span class="parameter-value">0.45</span>
+                        </div>
+                        <p class="parameter-description">
+                            Use of chromatic alterations and non-diatonic notes
+                        </p>
+                        <div class="slider-container">
+                            <input type="range" class="slider" min="0" max="100" value="45">
+                            <input type="number" class="value-input" min="0" max="1" step="0.01" value="0.45">
+                        </div>
+                        <div class="visual-bar" style="--value: 45%"></div>
+                    </div>
+
+                    <div class="parameter-item">
+                        <div class="parameter-header">
+                            <span class="parameter-name">Extended Harmonies</span>
+                            <span class="parameter-value">0.67</span>
+                        </div>
+                        <p class="parameter-description">
+                            Usage of 9ths, 11ths, 13ths, and other extended chord tones
+                        </p>
+                        <div class="slider-container">
+                            <input type="range" class="slider" min="0" max="100" value="67">
+                            <input type="number" class="value-input" min="0" max="1" step="0.01" value="0.67">
+                        </div>
+                        <div class="visual-bar" style="--value: 67%"></div>
+                    </div>
+
+                    <!-- More parameters would be added dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <div class="player">
+            <div class="player-controls">
+                <button class="play-btn">▶</button>
+                <div>
+                    <div style="font-weight: 600;">Preview Player</div>
+                    <div style="font-size: 0.9em; color: #6c757d;">00:00 / 02:45</div>
+                </div>
+            </div>
+
+            <div class="waveform">
+                <div class="waveform-bars">
+                    <div class="waveform-bar" style="height: 30%; animation-delay: 0s;"></div>
+                    <div class="waveform-bar" style="height: 50%; animation-delay: 0.1s;"></div>
+                    <div class="waveform-bar" style="height: 70%; animation-delay: 0.2s;"></div>
+                    <div class="waveform-bar" style="height: 45%; animation-delay: 0.3s;"></div>
+                    <div class="waveform-bar" style="height: 60%; animation-delay: 0.4s;"></div>
+                    <div class="waveform-bar" style="height: 80%; animation-delay: 0.5s;"></div>
+                    <div class="waveform-bar" style="height: 55%; animation-delay: 0.6s;"></div>
+                    <div class="waveform-bar" style="height: 40%; animation-delay: 0.7s;"></div>
+                    <div class="waveform-bar" style="height: 65%; animation-delay: 0.8s;"></div>
+                    <div class="waveform-bar" style="height: 75%; animation-delay: 0.9s;"></div>
+                </div>
+            </div>
+
+            <div>
+                <div style="font-weight: 600; text-align: right;">Modified Parameters</div>
+                <div style="font-size: 0.9em; color: #6c757d; text-align: right;" id="modifiedParamsText">
+                    0 parameters modified
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div>
+            <div class="spinner"></div>
+            <p style="color: white; margin-top: 20px; font-size: 1.2em;">Processing...</p>
+        </div>
+    </div>
+
+    <script>
+        // Basic interactivity demonstration
+
+        // Dimension switching
+        document.querySelectorAll('.dimension-header').forEach(header => {
+            header.addEventListener('click', function() {
+                document.querySelectorAll('.dimension-header').forEach(h => h.classList.remove('active'));
+                this.classList.add('active');
+
+                const dimension = this.dataset.dimension;
+                document.querySelector('.panel-title').textContent =
+                    `${this.querySelector('span').textContent} Parameters`;
+
+                // In production, would load parameters for this dimension
+                console.log(`Switching to ${dimension} parameters`);
+            });
+        });
+
+        // Slider interaction
+        document.querySelectorAll('.slider').forEach((slider, index) => {
+            const valueInput = slider.nextElementSibling;
+            const valueDisplay = slider.closest('.parameter-item').querySelector('.parameter-value');
+            const visualBar = slider.closest('.parameter-item').querySelector('.visual-bar');
+
+            slider.addEventListener('input', function() {
+                const value = (this.value / 100).toFixed(2);
+                valueInput.value = value;
+                valueDisplay.textContent = value;
+                visualBar.style.setProperty('--value', this.value + '%');
+
+                updateModifiedCount();
+            });
+
+            valueInput.addEventListener('input', function() {
+                const value = Math.max(0, Math.min(1, parseFloat(this.value)));
+                this.value = value.toFixed(2);
+                slider.value = value * 100;
+                valueDisplay.textContent = value.toFixed(2);
+                visualBar.style.setProperty('--value', (value * 100) + '%');
+
+                updateModifiedCount();
+            });
+        });
+
+        let modifiedCount = 0;
+
+        function updateModifiedCount() {
+            modifiedCount++;
+            document.getElementById('modifiedCount').textContent = modifiedCount;
+            document.getElementById('modifiedParamsText').textContent =
+                `${modifiedCount} parameter${modifiedCount !== 1 ? 's' : ''} modified`;
+        }
+
+        // Preview button
+        document.getElementById('previewBtn').addEventListener('click', function() {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.classList.add('active');
+
+            setTimeout(() => {
+                overlay.classList.remove('active');
+                alert('Preview generated! (In production, this would play the edited MIDI)');
+            }, 2000);
+        });
+
+        // Save button
+        document.getElementById('saveBtn').addEventListener('click', function() {
+            alert('Saving edited MIDI... (In production, this would download the file)');
+        });
+
+        // Reset button
+        document.getElementById('resetBtn').addEventListener('click', function() {
+            if (confirm('Reset all parameters to original values?')) {
+                location.reload();
+            }
+        });
+
+        // File input
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                document.getElementById('fileName').textContent = file.name;
+                const overlay = document.getElementById('loadingOverlay');
+                overlay.classList.add('active');
+
+                setTimeout(() => {
+                    overlay.classList.remove('active');
+                    alert(`Loaded ${file.name} and extracted DNA! (In production, this would extract 120 parameters)`);
+                }, 1500);
+            }
+        });
+
+        console.log('MIDI DNA Editor loaded successfully');
+        console.log('This is a mockup interface for the Modular Semantic Discovery System');
+    </script>
+</body>
+</html>

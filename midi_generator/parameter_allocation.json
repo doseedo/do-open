@@ -1,0 +1,625 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "author": "Agent 1 - Architecture Auditor & Blueprint Designer",
+    "date": "2025-11-21",
+    "description": "Parameter allocation for modular semantic discovery across 6 musical dimensions",
+    "total_parameters": 120,
+    "architecture": "Modular Encoder (200D → 5 modules → 110D → cross → 10D = 120D)"
+  },
+
+  "modules": {
+    "harmony": {
+      "num_parameters": 30,
+      "description": "Harmony parameters: chords, voicings, progressions, voice leading",
+      "input_dim": 200,
+      "hidden_dim": 512,
+      "locality_functions": [
+        "transpose",
+        "invert",
+        "octave_shift",
+        "voice_permutation"
+      ],
+      "connects_to_agents": [
+        "Agent 3 (Piano Comping)",
+        "Agent 4 (Harmonic Progression)",
+        "Agent 15 (Style Profiles)",
+        "BrassArranger",
+        "VoiceLeadingOptimizer",
+        "SaxVoicing"
+      ],
+      "expected_parameters": [
+        {
+          "category": "chord_types",
+          "count": 5,
+          "examples": [
+            "major_chord_frequency",
+            "minor_chord_frequency",
+            "dominant_7th_frequency",
+            "extended_chord_frequency",
+            "altered_chord_frequency"
+          ]
+        },
+        {
+          "category": "voicings",
+          "count": 5,
+          "examples": [
+            "voicing_spread_preference",
+            "close_position_ratio",
+            "drop_2_usage",
+            "drop_3_usage",
+            "rootless_voicing_ratio"
+          ]
+        },
+        {
+          "category": "progressions",
+          "count": 5,
+          "examples": [
+            "ii_V_I_frequency",
+            "circle_of_fifths_adherence",
+            "chromatic_movement",
+            "parallel_motion_ratio",
+            "modal_interchange_usage"
+          ]
+        },
+        {
+          "category": "voice_leading",
+          "count": 5,
+          "examples": [
+            "voice_leading_smoothness",
+            "contrary_motion_preference",
+            "voice_crossing_frequency",
+            "half_step_resolution_ratio",
+            "tritone_resolution_adherence"
+          ]
+        },
+        {
+          "category": "harmonic_rhythm",
+          "count": 5,
+          "examples": [
+            "chord_change_rate",
+            "harmonic_anticipation",
+            "harmonic_suspension",
+            "pedal_tone_usage",
+            "harmonic_density"
+          ]
+        },
+        {
+          "category": "extensions_tension",
+          "count": 5,
+          "examples": [
+            "9th_usage",
+            "11th_usage",
+            "13th_usage",
+            "tension_resolution_ratio",
+            "avoid_note_handling"
+          ]
+        }
+      ],
+      "training_priority": "HIGH",
+      "estimated_training_time_hours": 3,
+      "musical_impact": "CRITICAL"
+    },
+
+    "rhythm": {
+      "num_parameters": 20,
+      "description": "Rhythm parameters: syncopation, groove, swing, subdivision, density",
+      "input_dim": 200,
+      "hidden_dim": 512,
+      "locality_functions": [
+        "augment",
+        "diminution",
+        "time_shift",
+        "rhythmic_quantize"
+      ],
+      "connects_to_agents": [
+        "Agent 12 (SwingTiming)",
+        "DrumArranger",
+        "WalkingBassGenerator",
+        "BigBandArticulation"
+      ],
+      "expected_parameters": [
+        {
+          "category": "syncopation",
+          "count": 4,
+          "examples": [
+            "syncopation_intensity",
+            "off_beat_accent_ratio",
+            "anticipation_frequency",
+            "cross_rhythm_complexity"
+          ]
+        },
+        {
+          "category": "groove",
+          "count": 4,
+          "examples": [
+            "groove_pocket_tightness",
+            "micro_timing_variation",
+            "push_pull_tendency",
+            "groove_consistency"
+          ]
+        },
+        {
+          "category": "swing",
+          "count": 4,
+          "examples": [
+            "swing_ratio",
+            "swing_eighth_vs_straight",
+            "triplet_feel_strength",
+            "shuffle_intensity"
+          ]
+        },
+        {
+          "category": "subdivision",
+          "count": 4,
+          "examples": [
+            "subdivision_level",
+            "sixteenth_note_usage",
+            "thirty_second_note_presence",
+            "dotted_rhythm_frequency"
+          ]
+        },
+        {
+          "category": "density",
+          "count": 4,
+          "examples": [
+            "note_density_mean",
+            "note_density_variance",
+            "attack_rate",
+            "silence_ratio"
+          ]
+        }
+      ],
+      "training_priority": "HIGH",
+      "estimated_training_time_hours": 2.5,
+      "musical_impact": "CRITICAL"
+    },
+
+    "form": {
+      "num_parameters": 15,
+      "description": "Form/structure parameters: tension arc, repetition, contrast, sections",
+      "input_dim": 200,
+      "hidden_dim": 512,
+      "locality_functions": [
+        "retrograde",
+        "time_shift"
+      ],
+      "connects_to_agents": [
+        "Structure Analysis Agents",
+        "Agent 10 (Form Integration)"
+      ],
+      "expected_parameters": [
+        {
+          "category": "tension_arc",
+          "count": 3,
+          "examples": [
+            "tension_arc_shape",
+            "tension_buildup_rate",
+            "tension_release_rate"
+          ]
+        },
+        {
+          "category": "repetition",
+          "count": 3,
+          "examples": [
+            "motif_repetition_ratio",
+            "sequence_usage",
+            "variation_creativity"
+          ]
+        },
+        {
+          "category": "contrast",
+          "count": 3,
+          "examples": [
+            "section_contrast_degree",
+            "dynamic_contrast_range",
+            "textural_contrast"
+          ]
+        },
+        {
+          "category": "sections",
+          "count": 3,
+          "examples": [
+            "section_count",
+            "section_length_ratio",
+            "form_type_classification"
+          ]
+        },
+        {
+          "category": "climax",
+          "count": 3,
+          "examples": [
+            "climax_position_ratio",
+            "climax_intensity",
+            "golden_ratio_tendency"
+          ]
+        }
+      ],
+      "training_priority": "MEDIUM",
+      "estimated_training_time_hours": 2,
+      "musical_impact": "HIGH"
+    },
+
+    "orchestration": {
+      "num_parameters": 25,
+      "description": "Orchestration parameters: density, spacing, doubling, balance, register",
+      "input_dim": 200,
+      "hidden_dim": 512,
+      "locality_functions": [
+        "voice_permutation",
+        "octave_shift",
+        "register_shift"
+      ],
+      "connects_to_agents": [
+        "Agent 5 (BrassArranger)",
+        "Agent 7 (Instrumentation)",
+        "SaxVoicing",
+        "ArrangementEngine",
+        "BigBandArticulation"
+      ],
+      "expected_parameters": [
+        {
+          "category": "instrumentation_density",
+          "count": 5,
+          "examples": [
+            "instrumentation_density_mean",
+            "instrumentation_density_evolution",
+            "simultaneous_instrument_count",
+            "tutti_vs_solo_ratio",
+            "section_prominence"
+          ]
+        },
+        {
+          "category": "spacing",
+          "count": 5,
+          "examples": [
+            "vertical_spacing_preference",
+            "interval_spacing_mean",
+            "cluster_voicing_ratio",
+            "wide_spread_ratio",
+            "spacing_consistency"
+          ]
+        },
+        {
+          "category": "doubling",
+          "count": 5,
+          "examples": [
+            "doubling_frequency",
+            "octave_doubling_ratio",
+            "unison_doubling_ratio",
+            "doubling_strength_preference",
+            "section_doubling_strategy"
+          ]
+        },
+        {
+          "category": "balance",
+          "count": 5,
+          "examples": [
+            "timbral_balance_profile",
+            "high_mid_low_ratio",
+            "brass_woodwind_balance",
+            "rhythm_section_prominence",
+            "foreground_background_separation"
+          ]
+        },
+        {
+          "category": "register",
+          "count": 5,
+          "examples": [
+            "register_distribution",
+            "register_crossing_frequency",
+            "extreme_register_usage",
+            "register_shift_patterns",
+            "tessitura_preference"
+          ]
+        }
+      ],
+      "training_priority": "HIGH",
+      "estimated_training_time_hours": 3,
+      "musical_impact": "HIGH"
+    },
+
+    "texture": {
+      "num_parameters": 20,
+      "description": "Texture parameters: voice independence, density, layers, call-response",
+      "input_dim": 200,
+      "hidden_dim": 512,
+      "locality_functions": [
+        "voice_permutation",
+        "velocity_scale"
+      ],
+      "connects_to_agents": [
+        "Agent 9 (DynamicShaping)",
+        "VoiceLeadingOptimizer",
+        "BrassArranger"
+      ],
+      "expected_parameters": [
+        {
+          "category": "homophonic_polyphonic",
+          "count": 4,
+          "examples": [
+            "homophonic_vs_polyphonic_ratio",
+            "monophonic_sections_count",
+            "polyphonic_complexity",
+            "heterophonic_tendencies"
+          ]
+        },
+        {
+          "category": "voice_independence",
+          "count": 4,
+          "examples": [
+            "voice_independence_score",
+            "contrapuntal_motion",
+            "imitative_counterpoint",
+            "melodic_distinctiveness"
+          ]
+        },
+        {
+          "category": "textural_density",
+          "count": 4,
+          "examples": [
+            "textural_density_mean",
+            "textural_density_evolution",
+            "simultaneous_voice_count",
+            "density_variance"
+          ]
+        },
+        {
+          "category": "call_response",
+          "count": 4,
+          "examples": [
+            "call_response_pattern_frequency",
+            "antecedent_consequent_balance",
+            "question_answer_phrasing",
+            "dialogic_interaction"
+          ]
+        },
+        {
+          "category": "layer_interaction",
+          "count": 4,
+          "examples": [
+            "layer_interaction_complexity",
+            "layer_independence",
+            "layer_hierarchy_clarity",
+            "layer_blending_smoothness"
+          ]
+        }
+      ],
+      "training_priority": "MEDIUM",
+      "estimated_training_time_hours": 2.5,
+      "musical_impact": "HIGH"
+    },
+
+    "cross_dimensional": {
+      "num_parameters": 10,
+      "description": "Cross-dimensional interactions between modules",
+      "input_dim": 110,
+      "hidden_dim": 256,
+      "locality_functions": [],
+      "connects_to_agents": [
+        "All modules"
+      ],
+      "expected_parameters": [
+        {
+          "category": "harmony_rhythm_coupling",
+          "count": 2,
+          "examples": [
+            "harmonic_rhythm_correlation",
+            "chord_complexity_rhythmic_density_coupling"
+          ]
+        },
+        {
+          "category": "form_texture_interaction",
+          "count": 2,
+          "examples": [
+            "form_driven_texture_change",
+            "section_boundary_textural_shift"
+          ]
+        },
+        {
+          "category": "structure_harmony_anchoring",
+          "count": 2,
+          "examples": [
+            "structural_harmonic_anchoring",
+            "key_area_section_alignment"
+          ]
+        },
+        {
+          "category": "orchestration_intensity",
+          "count": 2,
+          "examples": [
+            "orchestral_intensity_gradient",
+            "instrumentation_dynamic_correlation"
+          ]
+        },
+        {
+          "category": "climax_convergence",
+          "count": 2,
+          "examples": [
+            "multi_dimensional_climax_alignment",
+            "climax_convergence_factor"
+          ]
+        }
+      ],
+      "training_priority": "MEDIUM",
+      "estimated_training_time_hours": 2,
+      "musical_impact": "MEDIUM",
+      "note": "Trains after all other modules are complete"
+    }
+  },
+
+  "training_schedule": {
+    "phase_1_parallel_modules": {
+      "modules": ["harmony", "rhythm", "form", "orchestration", "texture"],
+      "mode": "parallel",
+      "estimated_time_hours": 3,
+      "parallelization": "5 GPUs or sequential on 1 GPU",
+      "priority": "Train harmony and rhythm first if resource-constrained"
+    },
+    "phase_2_cross_dimensional": {
+      "modules": ["cross_dimensional"],
+      "mode": "sequential",
+      "estimated_time_hours": 2,
+      "dependency": "Requires trained outputs from phase 1 modules"
+    },
+    "phase_3_interpretation": {
+      "description": "Interpret all 120 parameters using FeatureInterpreter",
+      "estimated_time_hours": 1,
+      "parallel": true
+    },
+    "phase_4_validation": {
+      "description": "Validate using SemanticEvaluator (Agent 9)",
+      "estimated_time_hours": 1,
+      "metrics": [
+        "reconstruction_quality",
+        "interpretability_score",
+        "musical_validity",
+        "redundancy_analysis"
+      ]
+    },
+    "total_pipeline_time_hours": {
+      "parallel_execution": 7,
+      "sequential_execution": 16
+    }
+  },
+
+  "integration_map": {
+    "existing_infrastructure_reuse": {
+      "MusicalLocalityFunctions": {
+        "file": "midi_generator/learning/musical_locality.py",
+        "reuse": "100%",
+        "adaptation": "None - use as-is"
+      },
+      "SemanticFeatureEncoder": {
+        "file": "midi_generator/learning/semantic_encoder.py",
+        "reuse": "90%",
+        "adaptation": "Subclass for each module"
+      },
+      "GapDiscoveryTrainer": {
+        "file": "midi_generator/learning/gap_discovery_trainer.py",
+        "reuse": "85%",
+        "adaptation": "Add parallel training coordinator"
+      },
+      "FeatureInterpreter": {
+        "file": "midi_generator/learning/feature_interpreter.py",
+        "reuse": "100%",
+        "adaptation": "None - already modality-aware"
+      },
+      "SemanticDiscoveryPipeline": {
+        "file": "midi_generator/learning/semantic_discovery_pipeline.py",
+        "reuse": "75%",
+        "adaptation": "Extend for modular parallel execution"
+      },
+      "HierarchicalParameterExtractor": {
+        "file": "midi_generator/parameters/hierarchical_extractor.py",
+        "reuse": "100%",
+        "adaptation": "Use for baseline gap computation"
+      },
+      "UniversalParameterRegistry": {
+        "file": "midi_generator/parameters/universal_registry.py",
+        "reuse": "100%",
+        "adaptation": "Register new 120 parameters"
+      }
+    },
+    "new_components_required": {
+      "ModularEncoderFactory": {
+        "file": "midi_generator/modular_blueprint.py",
+        "status": "created",
+        "description": "Factory for creating module-specific encoders"
+      },
+      "HarmonySemanticEncoder": {
+        "file": "midi_generator/modular_blueprint.py",
+        "status": "created",
+        "description": "Harmony module encoder"
+      },
+      "RhythmSemanticEncoder": {
+        "file": "midi_generator/modular_blueprint.py",
+        "status": "created",
+        "description": "Rhythm module encoder"
+      },
+      "FormSemanticEncoder": {
+        "file": "midi_generator/modular_blueprint.py",
+        "status": "created",
+        "description": "Form module encoder"
+      },
+      "OrchestrationSemanticEncoder": {
+        "file": "midi_generator/modular_blueprint.py",
+        "status": "created",
+        "description": "Orchestration module encoder"
+      },
+      "TextureSemanticEncoder": {
+        "file": "midi_generator/modular_blueprint.py",
+        "status": "created",
+        "description": "Texture module encoder"
+      },
+      "CrossDimensionalEncoder": {
+        "file": "midi_generator/modular_blueprint.py",
+        "status": "created",
+        "description": "Cross-dimensional interaction encoder"
+      },
+      "ModularTrainingCoordinator": {
+        "file": "midi_generator/modular_blueprint.py",
+        "status": "created",
+        "description": "Coordinates parallel module training"
+      },
+      "SemanticEvaluator": {
+        "file": "midi_generator/evaluation/semantic_evaluation.py",
+        "status": "missing",
+        "description": "Agent 9 - comprehensive evaluation (needs implementation)"
+      }
+    }
+  },
+
+  "quality_metrics": {
+    "target_reconstruction_quality": {
+      "mse": "<0.01",
+      "r2_score": ">0.95",
+      "correlation": ">0.90"
+    },
+    "target_interpretability": {
+      "interpreted_ratio": ">0.60",
+      "high_confidence_ratio": ">0.50",
+      "musical_validity": ">0.85"
+    },
+    "target_redundancy": {
+      "max_correlation_with_existing": "<0.90",
+      "orthogonality_score": ">0.70"
+    }
+  },
+
+  "usage_example": {
+    "description": "How to use parameter allocation for modular discovery",
+    "code_snippet": [
+      "from midi_generator.modular_blueprint import ModularSemanticDiscoveryPipeline",
+      "from pathlib import Path",
+      "",
+      "# Initialize pipeline",
+      "pipeline = ModularSemanticDiscoveryPipeline(",
+      "    corpus_dir=Path('data/midi_corpus'),",
+      "    output_dir=Path('output/modular_discovery'),",
+      "    parallel=True  # Use parallel training",
+      ")",
+      "",
+      "# Run discovery",
+      "results = pipeline.run()",
+      "",
+      "# Access discovered parameters",
+      "print(f\"Discovered {results['total_parameters']} parameters\")",
+      "",
+      "# Parameter allocation matches this JSON:",
+      "# Harmony: 30, Rhythm: 20, Form: 15, ",
+      "# Orchestration: 25, Texture: 20, Cross: 10",
+      "# Total: 120 interpretable parameters"
+    ]
+  },
+
+  "next_steps": [
+    "1. Review and approve parameter allocation",
+    "2. Begin Phase 1: Train harmony and rhythm modules (highest priority)",
+    "3. Implement missing Agent 9 (SemanticEvaluator) for quality assurance",
+    "4. Test parallel training on small corpus subset",
+    "5. Scale to full corpus once validated",
+    "6. Interpret and register all 120 parameters in UniversalParameterRegistry",
+    "7. Integrate with existing big band agents for validation"
+  ]
+}

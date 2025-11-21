@@ -1,0 +1,512 @@
+{
+  "metadata": {
+    "title": "Orchestration Semantic Parameters",
+    "author": "Agent 5 - Orchestration Module Builder",
+    "date": "2025-11-21",
+    "version": "1.0.0",
+    "description": "25 interpretable orchestration parameters discovered by OrchestrationSemanticEncoder",
+    "total_parameters": 25
+  },
+
+  "parameters": [
+    {
+      "index": 0,
+      "name": "instrumentation.density.overall",
+      "category": "instrumentation_density",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.5,
+      "description": "Overall orchestration density (sparse to full)",
+      "musical_meaning": "Chamber (0.2) to Full Orchestra (0.9)",
+      "affects": ["texture", "dynamics", "timbral_balance"],
+      "examples": {
+        "0.2": "String quartet, chamber music",
+        "0.5": "Small orchestra, big band",
+        "0.9": "Full symphony orchestra, tutti sections"
+      }
+    },
+    {
+      "index": 1,
+      "name": "instrumentation.density.evolution",
+      "category": "instrumentation_density",
+      "type": "continuous",
+      "range": [-1.0, 1.0],
+      "default": 0.0,
+      "description": "How density changes over time",
+      "musical_meaning": "Thinning (-1) to Building (+1)",
+      "affects": ["form", "tension"],
+      "examples": {
+        "-1.0": "Gradual thinning to solo",
+        "0.0": "Stable density",
+        "1.0": "Building to climax"
+      }
+    },
+    {
+      "index": 2,
+      "name": "instrumentation.density.peaks",
+      "category": "instrumentation_density",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.4,
+      "description": "Frequency of density peaks/climaxes",
+      "musical_meaning": "Sustained (0.2) to Punctuated (0.8)",
+      "affects": ["form", "phrasing"],
+      "examples": {
+        "0.2": "Long sustained sections",
+        "0.5": "Balanced peaks and valleys",
+        "0.8": "Frequent textural changes"
+      }
+    },
+    {
+      "index": 3,
+      "name": "instrumentation.density.contrast",
+      "category": "instrumentation_density",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.5,
+      "description": "Contrast between thick and thin sections",
+      "musical_meaning": "Uniform (0.2) to High Contrast (0.9)",
+      "affects": ["dynamics", "form"],
+      "examples": {
+        "0.2": "Consistent texture throughout",
+        "0.5": "Moderate contrasts",
+        "0.9": "Dramatic tutti/soli contrasts"
+      }
+    },
+    {
+      "index": 4,
+      "name": "instrumentation.active_voices",
+      "category": "instrumentation_density",
+      "type": "continuous",
+      "range": [1.0, 20.0],
+      "default": 8.0,
+      "description": "Number of simultaneously active voices",
+      "musical_meaning": "Solo (1) to Full Ensemble (16+)",
+      "affects": ["texture", "complexity"],
+      "examples": {
+        "1.0": "Solo instrument",
+        "4.0": "Quartet",
+        "16.0": "Full orchestral texture"
+      }
+    },
+
+    {
+      "index": 5,
+      "name": "voicing.vertical_spacing.preference",
+      "category": "vertical_spacing",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.5,
+      "description": "Preferred interval spacing between voices",
+      "musical_meaning": "Close (0.2) to Wide/Spread (0.9)",
+      "affects": ["timbre", "clarity"],
+      "examples": {
+        "0.2": "Tight clusters, thick sound",
+        "0.5": "Balanced spacing",
+        "0.9": "Wide spread, clear separation"
+      }
+    },
+    {
+      "index": 6,
+      "name": "voicing.vertical_spacing.bass_tenor_gap",
+      "category": "vertical_spacing",
+      "type": "continuous",
+      "range": [12.0, 36.0],
+      "default": 19.0,
+      "description": "Distance between bass and tenor voices",
+      "musical_meaning": "Semitones between lowest and next voice",
+      "affects": ["clarity", "foundation"],
+      "examples": {
+        "12.0": "Close bass spacing (octave)",
+        "19.0": "Standard spacing (octave + 5th)",
+        "36.0": "Wide spacing (3 octaves)"
+      }
+    },
+    {
+      "index": 7,
+      "name": "voicing.vertical_spacing.upper_voices",
+      "category": "vertical_spacing",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.5,
+      "description": "Spacing tightness in upper voices",
+      "musical_meaning": "Tight clusters (0.2) to Open intervals (0.8)",
+      "affects": ["timbre", "blend"],
+      "examples": {
+        "0.2": "Cluster chords, modern sound",
+        "0.5": "Traditional spacing",
+        "0.8": "Wide intervals, clarity"
+      }
+    },
+    {
+      "index": 8,
+      "name": "voicing.vertical_spacing.register_balance",
+      "category": "vertical_spacing",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.5,
+      "description": "Balance across low/mid/high registers",
+      "musical_meaning": "Bottom heavy (0.2) to Top heavy (0.8)",
+      "affects": ["timbre", "brightness"],
+      "examples": {
+        "0.2": "Dark, bass-heavy sound",
+        "0.5": "Balanced across registers",
+        "0.8": "Bright, treble-heavy sound"
+      }
+    },
+
+    {
+      "index": 9,
+      "name": "doubling.octave_frequency",
+      "category": "doubling_strategies",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.4,
+      "description": "Frequency of octave doublings",
+      "musical_meaning": "Rare (0.1) to Constant (0.9)",
+      "affects": ["power", "brightness"],
+      "examples": {
+        "0.1": "Independent voices",
+        "0.4": "Selective reinforcement",
+        "0.9": "Constant octave doubling"
+      }
+    },
+    {
+      "index": 10,
+      "name": "doubling.unison_frequency",
+      "category": "doubling_strategies",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.3,
+      "description": "Frequency of unison doublings",
+      "musical_meaning": "Independent (0.1) to Reinforced (0.8)",
+      "affects": ["weight", "blend"],
+      "examples": {
+        "0.1": "Thin, transparent",
+        "0.3": "Moderate doubling",
+        "0.8": "Heavy unison doubling"
+      }
+    },
+    {
+      "index": 11,
+      "name": "doubling.family_preference",
+      "category": "doubling_strategies",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.6,
+      "description": "Preference for within-family vs cross-family doubling",
+      "musical_meaning": "Cross-family (0.2) to Within-family (0.8)",
+      "affects": ["blend", "color"],
+      "examples": {
+        "0.2": "Mixed colors, heterogeneous",
+        "0.5": "Balanced approach",
+        "0.8": "Homogeneous family blend"
+      }
+    },
+    {
+      "index": 12,
+      "name": "doubling.melody_reinforcement",
+      "category": "doubling_strategies",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.6,
+      "description": "Tendency to double the melody line",
+      "musical_meaning": "Solo melody (0.2) to Heavy doubling (0.9)",
+      "affects": ["melody_prominence", "clarity"],
+      "examples": {
+        "0.2": "Solo melody, chamber style",
+        "0.6": "Reinforced melody",
+        "0.9": "Heavily doubled tutti melody"
+      }
+    },
+
+    {
+      "index": 13,
+      "name": "timbre.balance.strings_prominence",
+      "category": "timbral_balance",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.5,
+      "description": "Prominence of string instruments",
+      "musical_meaning": "Background (0.2) to Dominant (0.9)",
+      "affects": ["timbre", "texture"],
+      "examples": {
+        "0.2": "Strings as background",
+        "0.5": "Balanced with other families",
+        "0.9": "String-dominated texture"
+      }
+    },
+    {
+      "index": 14,
+      "name": "timbre.balance.winds_prominence",
+      "category": "timbral_balance",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.4,
+      "description": "Prominence of wind instruments",
+      "musical_meaning": "Background (0.2) to Dominant (0.9)",
+      "affects": ["timbre", "color"],
+      "examples": {
+        "0.2": "Winds as subtle color",
+        "0.4": "Moderate wind presence",
+        "0.9": "Wind-dominated texture"
+      }
+    },
+    {
+      "index": 15,
+      "name": "timbre.balance.brass_prominence",
+      "category": "timbral_balance",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.3,
+      "description": "Prominence of brass instruments",
+      "musical_meaning": "Background (0.2) to Dominant (0.9)",
+      "affects": ["power", "brightness"],
+      "examples": {
+        "0.2": "Subtle brass accents",
+        "0.3": "Supporting role",
+        "0.9": "Brass-dominated, powerful"
+      }
+    },
+
+    {
+      "index": 16,
+      "name": "texture.voice_independence",
+      "category": "voice_independence",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.5,
+      "description": "Degree of independent melodic lines",
+      "musical_meaning": "Homophonic (0.2) to Polyphonic (0.9)",
+      "affects": ["complexity", "texture"],
+      "examples": {
+        "0.2": "Chordal, block harmony",
+        "0.5": "Mixed textures",
+        "0.9": "Fugal, independent voices"
+      }
+    },
+    {
+      "index": 17,
+      "name": "texture.voice_crossing_frequency",
+      "category": "voice_independence",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.2,
+      "description": "Frequency of voice crossing events",
+      "musical_meaning": "Strict order (0.1) to Free crossing (0.7)",
+      "affects": ["complexity", "clarity"],
+      "examples": {
+        "0.1": "Classical voice leading",
+        "0.2": "Occasional crossing",
+        "0.7": "Free, modern voice leading"
+      }
+    },
+    {
+      "index": 18,
+      "name": "texture.counterpoint_complexity",
+      "category": "voice_independence",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.4,
+      "description": "Complexity of contrapuntal writing",
+      "musical_meaning": "Simple (0.2) to Complex fugal (0.9)",
+      "affects": ["complexity", "interest"],
+      "examples": {
+        "0.2": "Simple accompaniment",
+        "0.4": "Moderate counterpoint",
+        "0.9": "Complex fugal writing"
+      }
+    },
+
+    {
+      "index": 19,
+      "name": "dynamics.melody_accompaniment_ratio",
+      "category": "dynamic_balance",
+      "type": "continuous",
+      "range": [1.0, 2.0],
+      "default": 1.3,
+      "description": "Dynamic ratio between melody and accompaniment",
+      "musical_meaning": "Multiplier for melody prominence",
+      "affects": ["clarity", "balance"],
+      "examples": {
+        "1.0": "Equal levels, blended",
+        "1.3": "Clear melody prominence",
+        "2.0": "Very prominent melody"
+      }
+    },
+    {
+      "index": 20,
+      "name": "dynamics.bass_prominence",
+      "category": "dynamic_balance",
+      "type": "continuous",
+      "range": [0.8, 1.5],
+      "default": 1.1,
+      "description": "Dynamic prominence of bass line",
+      "musical_meaning": "Receding (0.8) to Prominent (1.4)",
+      "affects": ["foundation", "clarity"],
+      "examples": {
+        "0.8": "Subtle bass foundation",
+        "1.1": "Standard bass prominence",
+        "1.4": "Walking bass, prominent"
+      }
+    },
+    {
+      "index": 21,
+      "name": "dynamics.family_balance_mode",
+      "category": "dynamic_balance",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.5,
+      "description": "How instrument families are balanced",
+      "musical_meaning": "Auto-balanced (0.3) to Custom weights (0.8)",
+      "affects": ["blend", "balance"],
+      "examples": {
+        "0.3": "Automatic balance",
+        "0.5": "Moderate weighting",
+        "0.8": "Heavy custom weighting"
+      }
+    },
+
+    {
+      "index": 22,
+      "name": "register.preferred_range",
+      "category": "register_distribution",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.5,
+      "description": "Preferred overall register",
+      "musical_meaning": "Low/Dark (0.2) to High/Bright (0.8)",
+      "affects": ["timbre", "brightness"],
+      "examples": {
+        "0.2": "Dark, low register",
+        "0.5": "Balanced register use",
+        "0.8": "Bright, high register"
+      }
+    },
+    {
+      "index": 23,
+      "name": "register.spread",
+      "category": "register_distribution",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.6,
+      "description": "How spread out across registers",
+      "musical_meaning": "Compact (0.2) to Wide span (0.9)",
+      "affects": ["power", "clarity"],
+      "examples": {
+        "0.2": "Narrow register range",
+        "0.6": "Full orchestral range",
+        "0.9": "Extreme high and low"
+      }
+    },
+    {
+      "index": 24,
+      "name": "register.extreme_frequency",
+      "category": "register_distribution",
+      "type": "continuous",
+      "range": [0.0, 1.0],
+      "default": 0.15,
+      "description": "Use of extreme high/low registers",
+      "musical_meaning": "Comfortable (0.2) to Extreme (0.8)",
+      "affects": ["drama", "color"],
+      "examples": {
+        "0.2": "Comfortable ranges only",
+        "0.4": "Occasional extremes",
+        "0.8": "Frequent extreme registers"
+      }
+    }
+  ],
+
+  "parameter_groups": {
+    "instrumentation_density": {
+      "parameters": [0, 1, 2, 3, 4],
+      "description": "Controls overall density and texture richness",
+      "primary_effect": "texture"
+    },
+    "vertical_spacing": {
+      "parameters": [5, 6, 7, 8],
+      "description": "Controls interval spacing between voices",
+      "primary_effect": "timbre_and_clarity"
+    },
+    "doubling_strategies": {
+      "parameters": [9, 10, 11, 12],
+      "description": "Controls voice doubling and reinforcement",
+      "primary_effect": "power_and_blend"
+    },
+    "timbral_balance": {
+      "parameters": [13, 14, 15],
+      "description": "Controls balance between instrument families",
+      "primary_effect": "color"
+    },
+    "voice_independence": {
+      "parameters": [16, 17, 18],
+      "description": "Controls voice independence and polyphony",
+      "primary_effect": "complexity"
+    },
+    "dynamic_balance": {
+      "parameters": [19, 20, 21],
+      "description": "Controls dynamic relationships between parts",
+      "primary_effect": "clarity_and_balance"
+    },
+    "register_distribution": {
+      "parameters": [22, 23, 24],
+      "description": "Controls register usage and spread",
+      "primary_effect": "brightness_and_power"
+    }
+  },
+
+  "usage_examples": {
+    "chamber_quartet": {
+      "description": "String quartet style",
+      "parameter_values": {
+        "instrumentation.density.overall": 0.2,
+        "voicing.vertical_spacing.preference": 0.4,
+        "texture.voice_independence": 0.7,
+        "timbre.balance.strings_prominence": 0.9
+      }
+    },
+    "full_orchestra_tutti": {
+      "description": "Full orchestral climax",
+      "parameter_values": {
+        "instrumentation.density.overall": 0.9,
+        "doubling.octave_frequency": 0.8,
+        "dynamics.melody_accompaniment_ratio": 1.5,
+        "register.spread": 0.9
+      }
+    },
+    "big_band_shout": {
+      "description": "Big band shout chorus",
+      "parameter_values": {
+        "instrumentation.density.overall": 0.7,
+        "timbre.balance.brass_prominence": 0.9,
+        "doubling.melody_reinforcement": 0.8,
+        "dynamics.melody_accompaniment_ratio": 1.6
+      }
+    },
+    "impressionistic_texture": {
+      "description": "Debussy-style orchestration",
+      "parameter_values": {
+        "voicing.vertical_spacing.preference": 0.7,
+        "texture.voice_independence": 0.4,
+        "timbre.balance.winds_prominence": 0.7,
+        "register.spread": 0.8
+      }
+    }
+  },
+
+  "integration": {
+    "brass_arranger": {
+      "file": "midi_generator/transformation/brass_arranger.py",
+      "parameters_used": [0, 5, 9, 12, 15, 19]
+    },
+    "instrumentation_params": {
+      "file": "midi_generator/parameters/instrumentation_params.py",
+      "total_params": 50,
+      "overlap": "25 orchestration params map to subset of 50"
+    },
+    "semantic_discovery_pipeline": {
+      "file": "midi_generator/learning/semantic_discovery_pipeline.py",
+      "integration": "OrchestrationSemanticEncoder can be added as a module"
+    }
+  }
+}
