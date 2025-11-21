@@ -102,6 +102,26 @@ except ImportError:
     PARAMETER_DESCRIPTIONS = None
     FORM_ENCODER_AVAILABLE = False
 
+# Agent 5: Orchestration Semantic Encoder (Modular Semantic Discovery)
+try:
+    from .orchestration_encoder import (
+        OrchestrationSemanticEncoder,
+        OrchestrationFeatureExtractor,
+        VoiceIndependenceAnalyzer,
+        create_orchestration_encoder,
+        analyze_orchestration_from_midi,
+        ORCHESTRATION_PARAMETERS
+    )
+    ORCHESTRATION_ENCODER_AVAILABLE = True
+except ImportError:
+    OrchestrationSemanticEncoder = None
+    OrchestrationFeatureExtractor = None
+    VoiceIndependenceAnalyzer = None
+    create_orchestration_encoder = None
+    analyze_orchestration_from_midi = None
+    ORCHESTRATION_PARAMETERS = None
+    ORCHESTRATION_ENCODER_AVAILABLE = False
+
 
 __all__ = [
     # Agent 3: Semantic Feature Discovery
@@ -124,6 +144,15 @@ __all__ = [
     'create_form_encoder',
     'PARAMETER_DESCRIPTIONS',
     'FORM_ENCODER_AVAILABLE',
+
+    # Agent 5: Orchestration Semantic Encoder
+    'OrchestrationSemanticEncoder',
+    'OrchestrationFeatureExtractor',
+    'VoiceIndependenceAnalyzer',
+    'create_orchestration_encoder',
+    'analyze_orchestration_from_midi',
+    'ORCHESTRATION_PARAMETERS',
+    'ORCHESTRATION_ENCODER_AVAILABLE',
 
     # Agent 9: Feature-Parameter Mapping
     'FeatureParameterMapper',
