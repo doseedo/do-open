@@ -1,0 +1,46 @@
+[
+  {
+    "file": "midi_corpus/big_band/Aviary_Action.mid",
+    "error": "data byte must be in range 0..127"
+  },
+  {
+    "file": "midi_corpus/big_band/Fukashigi_no_Carte_arr._for_Jazz_Band__Rascal_Does_Not_Dream_of_Bunny_Girl_Senpai_OST.mid",
+    "error": "data byte must be in range 0..127"
+  },
+  {
+    "file": "midi_corpus/big_band/02._Tears_Of_The_Star.mid",
+    "error": "data byte must be in range 0..127"
+  },
+  {
+    "file": "midi_corpus/big_band/Peg_-_Steely_Dan.mid",
+    "error": "data byte must be in range 0..127"
+  },
+  {
+    "file": "midi_corpus/big_band/score - 2025-08-07T213623.565.mid",
+    "error": "data byte must be in range 0..127"
+  },
+  {
+    "file": "midi_corpus/big_band/Fly_me_to_the_moon_Flex_Band.mid",
+    "error": "data byte must be in range 0..127"
+  },
+  {
+    "file": "midi_corpus/big_band/The_Credits_Roll_-_Super_Mario_3D_World__FORMATTED_FOR_PERFORMANCE.mid",
+    "error": "data byte must be in range 0..127"
+  },
+  {
+    "file": "midi_corpus/big_band/score - 2025-08-07T174859.729.mid",
+    "error": "data byte must be in range 0..127"
+  },
+  {
+    "file": "midi_corpus/big_band/MuseScore_Cafe.mid",
+    "error": "data byte must be in range 0..127"
+  },
+  {
+    "file": "midi_corpus/big_band/Messages_From_The_Stars.mid",
+    "error": "data byte must be in range 0..127"
+  },
+  {
+    "file": "midi_corpus/big_band/Baking_The_Wondertart.mid",
+    "error": "data byte must be in range 0..127"
+  }
+]

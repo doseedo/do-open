@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI Parameter Visualizer - Hierarchical Control</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🎵 MIDI Parameter Visualizer</h1>
+            <p class="subtitle">Real-time hierarchical parameter control and visualization</p>
+        </header>
+
+        <!-- Upload Section -->
+        <section class="upload-section">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-content">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <p class="upload-text">Drop MIDI file here or click to upload</p>
+                    <p class="upload-subtext">Supports .mid and .midi files</p>
+                </div>
+                <input type="file" id="fileInput" accept=".mid,.midi" hidden>
+            </div>
+            <div id="fileInfo" class="file-info hidden">
+                <span id="fileName"></span>
+                <button id="clearFile" class="btn-small">Clear</button>
+            </div>
+        </section>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Panel: Hierarchical Graph Visualization -->
+            <section class="visualization-panel">
+                <div class="panel-header">
+                    <h2>Parameter Hierarchy</h2>
+                    <div class="view-controls">
+                        <button class="view-btn active" data-view="tree">Tree</button>
+                        <button class="view-btn" data-view="graph">Graph</button>
+                        <button class="view-btn" data-view="compact">Compact</button>
+                    </div>
+                </div>
+                <div id="hierarchyViz" class="hierarchy-visualization">
+                    <!-- Level 1: Global Context -->
+                    <div class="level-container level-1" id="level1Container">
+                        <div class="level-header">
+                            <span class="level-badge">Level 1</span>
+                            <h3>Global Context</h3>
+                            <span class="param-count">8 parameters</span>
+                        </div>
+                        <div class="parameter-nodes" id="level1Nodes"></div>
+                    </div>
+
+                    <!-- Connector Lines -->
+                    <svg class="connection-lines" id="connectionLines"></svg>
+
+                    <!-- Level 2: Universal Dimensions -->
+                    <div class="level-container level-2" id="level2Container">
+                        <div class="level-header">
+                            <span class="level-badge">Level 2</span>
+                            <h3>Universal Dimensions</h3>
+                            <span class="param-count">20 parameters</span>
+                        </div>
+                        <div class="dimension-groups">
+                            <div class="dimension-group" data-category="harmony">
+                                <h4>🎹 Harmony</h4>
+                                <div class="parameter-nodes" id="harmonyNodes"></div>
+                            </div>
+                            <div class="dimension-group" data-category="melody">
+                                <h4>🎼 Melody</h4>
+                                <div class="parameter-nodes" id="melodyNodes"></div>
+                            </div>
+                            <div class="dimension-group" data-category="rhythm">
+                                <h4>🥁 Rhythm</h4>
+                                <div class="parameter-nodes" id="rhythmNodes"></div>
+                            </div>
+                            <div class="dimension-group" data-category="dynamics">
+                                <h4>📊 Dynamics</h4>
+                                <div class="parameter-nodes" id="dynamicsNodes"></div>
+                            </div>
+                            <div class="dimension-group" data-category="texture">
+                                <h4>🎨 Texture</h4>
+                                <div class="parameter-nodes" id="textureNodes"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Level 3: Genre-Specific -->
+                    <div class="level-container level-3" id="level3Container">
+                        <div class="level-header">
+                            <span class="level-badge">Level 3</span>
+                            <h3>Genre-Specific Details</h3>
+                            <span class="param-count" id="level3Count">22 parameters</span>
+                        </div>
+                        <div class="parameter-nodes" id="level3Nodes"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Parameter Controls -->
+            <section class="control-panel">
+                <div class="panel-header">
+                    <h2>Parameter Controls</h2>
+                    <div class="control-actions">
+                        <button id="resetBtn" class="btn-small">Reset All</button>
+                        <button id="exportBtn" class="btn-small btn-primary">Export</button>
+                    </div>
+                </div>
+
+                <!-- Search/Filter -->
+                <div class="search-container">
+                    <input type="text" id="paramSearch" placeholder="Search parameters..." class="search-input">
+                </div>
+
+                <!-- Parameter Controls Container -->
+                <div id="paramControls" class="param-controls-container">
+                    <!-- Level 1 Controls -->
+                    <div class="control-section" id="level1Controls">
+                        <h3 class="control-section-title">
+                            <span class="collapse-icon">▼</span>
+                            Level 1: Global Context
+                        </h3>
+                        <div class="controls-list"></div>
+                    </div>
+
+                    <!-- Level 2 Controls -->
+                    <div class="control-section" id="level2Controls">
+                        <h3 class="control-section-title">
+                            <span class="collapse-icon">▼</span>
+                            Level 2: Universal Dimensions
+                        </h3>
+
+                        <!-- Harmony -->
+                        <div class="control-subsection">
+                            <h4 class="subsection-title">🎹 Harmony</h4>
+                            <div class="controls-list" id="harmonyControls"></div>
+                        </div>
+
+                        <!-- Melody -->
+                        <div class="control-subsection">
+                            <h4 class="subsection-title">🎼 Melody</h4>
+                            <div class="controls-list" id="melodyControls"></div>
+                        </div>
+
+                        <!-- Rhythm -->
+                        <div class="control-subsection">
+                            <h4 class="subsection-title">🥁 Rhythm</h4>
+                            <div class="controls-list" id="rhythmControls"></div>
+                        </div>
+
+                        <!-- Dynamics -->
+                        <div class="control-subsection">
+                            <h4 class="subsection-title">📊 Dynamics</h4>
+                            <div class="controls-list" id="dynamicsControls"></div>
+                        </div>
+
+                        <!-- Texture -->
+                        <div class="control-subsection">
+                            <h4 class="subsection-title">🎨 Texture</h4>
+                            <div class="controls-list" id="textureControls"></div>
+                        </div>
+                    </div>
+
+                    <!-- Level 3 Controls -->
+                    <div class="control-section" id="level3Controls">
+                        <h3 class="control-section-title">
+                            <span class="collapse-icon">▼</span>
+                            Level 3: Genre-Specific
+                        </h3>
+                        <div class="controls-list"></div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Bottom Stats Bar -->
+        <footer class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-label">Total Parameters:</span>
+                <span class="stat-value" id="totalParams">50</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Modified:</span>
+                <span class="stat-value" id="modifiedParams">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">File:</span>
+                <span class="stat-value" id="currentFile">None</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Duration:</span>
+                <span class="stat-value" id="duration">--</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Notes:</span>
+                <span class="stat-value" id="noteCount">--</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p>Analyzing MIDI file...</p>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
