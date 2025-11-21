@@ -10,16 +10,18 @@ This module contains machine learning components for the system:
 - Natural language to parameter prediction
 - Feature-parameter mapping (Agent 9)
 - Semantic feature discovery (Agent 3)
+- Form/structure semantic encoding (Agent 4)
 
 Key Components:
 - SemanticFeatureEncoder: Neural architecture for discovering musical parameters (Agent 3)
+- FormSemanticEncoder: Specialized encoder for form/structure parameters (Agent 4)
 - FeatureParameterMapper: Maps 1000 features to 515+ parameters (Agent 9)
 - PatternExtractor: Extract musical patterns from MIDI
 - CorpusLearner: Learn from MIDI corpus
 - MotifLibrary: Manage and reuse motifs
 - NaturalLanguagePredictor: Natural language interface
 
-Author: Agents 2, 3, 9, and others
+Author: Agents 2, 3, 4, 9, and others
 License: MIT
 """
 
@@ -80,6 +82,26 @@ except ImportError:
     analyze_semantic_features = None
     SEMANTIC_ENCODER_AVAILABLE = False
 
+# Agent 4: Form/Structure Semantic Encoder
+try:
+    from .form_encoder import (
+        FormSemanticEncoder,
+        FormEncoderConfig,
+        FormParameter,
+        FormLocalityFunctions,
+        create_form_encoder,
+        PARAMETER_DESCRIPTIONS
+    )
+    FORM_ENCODER_AVAILABLE = True
+except ImportError:
+    FormSemanticEncoder = None
+    FormEncoderConfig = None
+    FormParameter = None
+    FormLocalityFunctions = None
+    create_form_encoder = None
+    PARAMETER_DESCRIPTIONS = None
+    FORM_ENCODER_AVAILABLE = False
+
 
 __all__ = [
     # Agent 3: Semantic Feature Discovery
@@ -93,6 +115,15 @@ __all__ = [
     'compute_reconstruction_quality',
     'analyze_semantic_features',
     'SEMANTIC_ENCODER_AVAILABLE',
+
+    # Agent 4: Form/Structure Semantic Encoder
+    'FormSemanticEncoder',
+    'FormEncoderConfig',
+    'FormParameter',
+    'FormLocalityFunctions',
+    'create_form_encoder',
+    'PARAMETER_DESCRIPTIONS',
+    'FORM_ENCODER_AVAILABLE',
 
     # Agent 9: Feature-Parameter Mapping
     'FeatureParameterMapper',
