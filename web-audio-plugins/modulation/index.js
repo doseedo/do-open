@@ -1,10 +1,17 @@
 /**
  * Modulation Effects - Index
  *
- * Exports all modulation effect plugins (AudioWorklet-based)
+ * Exports all modulation effects (legacy and AudioWorklet versions)
  */
 
-export { Chorus } from './Chorus.js';
-export { Flanger } from './Flanger.js';
-export { Phaser } from './Phaser.js';
-export { Tremolo } from './Tremolo.js';
+// Legacy implementations
+export { default as Chorus } from './Chorus.js';
+export { default as Flanger } from './Flanger.js';
+export { default as Phaser } from './Phaser.js';
+export { default as Tremolo } from './Tremolo.js';
+
+// AudioWorklet implementations
+export { ChorusPlugin } from './ChorusPlugin.js';
+export { FlangerPlugin } from './FlangerPlugin.js';
+export { PhaserPlugin } from './PhaserPlugin.js';
+export { TremoloPlugin } from './TremoloPlugin.js';
