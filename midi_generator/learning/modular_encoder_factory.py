@@ -82,7 +82,7 @@ class DimensionSpec:
 
     # Feature extraction (v2.0: 220D = 200 base + 20 velocity)
     input_dim: int = 220  # Input feature dimension
-    hidden_dim: int = 512  # Hidden layer dimension
+    hidden_dim: int = 1024  # Hidden layer dimension (increased from 512 for better capacity)
 
     # Locality transformations specific to this dimension
     locality_functions: List[str] = field(default_factory=list)

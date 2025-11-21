@@ -59,8 +59,8 @@ class EncoderConfig:
     """Configuration for SemanticFeatureEncoder"""
 
     # Architecture dimensions
-    input_dim: int = 200  # Input feature dimension
-    hidden_dim: int = 512  # Hidden layer dimension
+    input_dim: int = 220  # Input feature dimension (v2.0: 200 base + 20 velocity)
+    hidden_dim: int = 1024  # Hidden layer dimension (increased from 512 for better capacity)
     num_semantic_features: int = 30  # Number of semantic features to discover
     num_locality_types: int = 12  # Number of musical locality transformations
 
@@ -70,9 +70,9 @@ class EncoderConfig:
     sparsity_weight: float = 0.01  # Weight for L1 sparsity regularization
 
     # Training hyperparameters
-    learning_rate: float = 1e-4
+    learning_rate: float = 1e-2  # Increased from 1e-4 for faster convergence with normalized features
     batch_size: int = 32
-    dropout: float = 0.1
+    dropout: float = 0.2  # Increased from 0.1 to prevent overfitting with larger hidden_dim
 
     # Regularization
     weight_decay: float = 1e-5
@@ -260,21 +260,26 @@ if not TORCH_AVAILABLE:
 
 class EncoderNetwork(nn.Module):
     """
-    Encoder network: [200D] → [512D] → [num_features]
+    Encoder network: [220D] → [1024D] → [num_features]
 
     Compresses raw musical features into semantic feature space.
+
+    v2.0 Updates:
+    - Input: 220D (200 base + 20 velocity features)
+    - Hidden: 1024D (increased from 512D for better capacity)
+    - Dropout: 0.2 (increased from 0.1)
     """
 
     def __init__(self, config: EncoderConfig):
         super().__init__()
         self.config = config
 
-        # First layer: 200 → 512
+        # First layer: input_dim → hidden_dim (220 → 1024)
         self.fc1 = nn.Linear(config.input_dim, config.hidden_dim)
         self.bn1 = nn.BatchNorm1d(config.hidden_dim) if config.use_batch_norm else nn.Identity()
         self.dropout1 = nn.Dropout(config.dropout)
 
-        # Second layer: 512 → num_semantic_features
+        # Second layer: hidden_dim → num_semantic_features (1024 → num_features)
         self.fc2 = nn.Linear(config.hidden_dim, config.num_semantic_features)
         self.bn2 = nn.BatchNorm1d(config.num_semantic_features) if config.use_batch_norm else nn.Identity()
 
@@ -293,7 +298,7 @@ class EncoderNetwork(nn.Module):
         Forward pass through encoder.
 
         Args:
-            x: Input features [batch_size, 200]
+            x: Input features [batch_size, 220]
 
         Returns:
             Semantic features [batch_size, num_semantic_features]
@@ -318,21 +323,26 @@ class EncoderNetwork(nn.Module):
 
 class DecoderNetwork(nn.Module):
     """
-    Decoder network: [num_features] → [512D] → [200D]
+    Decoder network: [num_features] → [1024D] → [220D]
 
     Reconstructs original features from semantic features.
+
+    v2.0 Updates:
+    - Output: 220D (200 base + 20 velocity features)
+    - Hidden: 1024D (increased from 512D for better capacity)
+    - Dropout: 0.2 (increased from 0.1)
     """
 
     def __init__(self, config: EncoderConfig):
         super().__init__()
         self.config = config
 
-        # First layer: num_semantic_features → 512
+        # First layer: num_semantic_features → hidden_dim (num_features → 1024)
         self.fc1 = nn.Linear(config.num_semantic_features, config.hidden_dim)
         self.bn1 = nn.BatchNorm1d(config.hidden_dim) if config.use_batch_norm else nn.Identity()
         self.dropout1 = nn.Dropout(config.dropout)
 
-        # Second layer: 512 → 200
+        # Second layer: hidden_dim → input_dim (1024 → 220)
         self.fc2 = nn.Linear(config.hidden_dim, config.input_dim)
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
@@ -343,7 +353,7 @@ class DecoderNetwork(nn.Module):
             z: Semantic features [batch_size, num_semantic_features]
 
         Returns:
-            Reconstructed features [batch_size, 200]
+            Reconstructed features [batch_size, 220]
         """
         # Layer 1
         h = self.fc1(z)
@@ -359,13 +369,17 @@ class DecoderNetwork(nn.Module):
 
 class LocalityPredictor(nn.Module):
     """
-    Locality predictor: [num_features * 2] → [512] → [num_locality_types]
+    Locality predictor: [num_features * 2] → [1024] → [num_locality_types]
 
     Predicts which musical locality transformation was applied between two pieces.
     This enforces that semantic features capture musically meaningful dimensions.
 
     Input: Concatenation of two semantic feature vectors
     Output: Probability distribution over locality types
+
+    v2.0 Updates:
+    - Hidden: 1024D (increased from 512D for better capacity)
+    - Dropout: 0.2 (increased from 0.1)
     """
 
     def __init__(self, config: EncoderConfig):
