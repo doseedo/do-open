@@ -113,6 +113,12 @@ class TrainingConfig:
     optimizer_type: str = 'adam'  # 'adam', 'adamw', 'sgd'
     gradient_clip_value: Optional[float] = 1.0
 
+    # Weight sparsity for superposition reduction (OFF by default)
+    enable_weight_sparsity: bool = False  # Enable weight sparsity during training
+    sparsity_ratio: float = 0.001  # Target sparsity ratio (0.001 = 0.1% of weights kept)
+    initial_sparsity: float = 0.5  # Initial sparsity ratio at start of training
+    sparsity_warmup_epochs: int = 50  # Number of epochs to gradually increase sparsity
+
     # Checkpointing
     save_every_n_epochs: int = 5
     keep_n_checkpoints: int = 3
@@ -214,6 +220,7 @@ class TrainingMetrics:
     val_losses_per_param: Dict[str, float] = field(default_factory=dict)
     learning_rate: float = 0.0
     epoch_time: float = 0.0
+    weight_sparsity_ratio: float = 1.0  # Actual sparsity ratio achieved (1.0 = all weights non-zero)
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
@@ -254,6 +261,7 @@ class MetricsTracker:
             self.tb_writer.add_scalar('Loss/train', metrics.train_loss, metrics.epoch)
             self.tb_writer.add_scalar('Loss/val', metrics.val_loss, metrics.epoch)
             self.tb_writer.add_scalar('Learning_Rate', metrics.learning_rate, metrics.epoch)
+            self.tb_writer.add_scalar('Sparsity/weight_sparsity_ratio', metrics.weight_sparsity_ratio, metrics.epoch)
 
             # Per-parameter losses
             for param_name, loss in metrics.train_losses_per_param.items():
@@ -269,6 +277,7 @@ class MetricsTracker:
                 'val_loss': metrics.val_loss,
                 'learning_rate': metrics.learning_rate,
                 'epoch_time': metrics.epoch_time,
+                'weight_sparsity_ratio': metrics.weight_sparsity_ratio,
             }
             log_dict.update({f'train_{k}': v for k, v in metrics.train_losses_per_param.items()})
             log_dict.update({f'val_{k}': v for k, v in metrics.val_losses_per_param.items()})
@@ -380,6 +389,22 @@ class HierarchicalMTLTrainer:
         # Parameter definitions
         self.param_defs = {p.name: p for p in ALL_PARAMETERS}
 
+        # Weight sparsity for superposition reduction
+        self.sparsity_scheduler = None
+        if config.enable_weight_sparsity:
+            try:
+                from midi_generator.learning.semantic_encoder import SparsityScheduler
+                self.sparsity_scheduler = SparsityScheduler(
+                    initial_sparsity=config.initial_sparsity,
+                    target_sparsity=config.sparsity_ratio,
+                    warmup_epochs=config.sparsity_warmup_epochs,
+                    schedule_type='linear'
+                )
+                print(f"✅ Weight sparsity enabled: {config.sparsity_ratio*100:.2f}% of weights kept (target)")
+            except ImportError:
+                print("⚠️  Warning: SparsityScheduler not available, weight sparsity disabled")
+                config.enable_weight_sparsity = False
+
     def _create_optimizer(self) -> optim.Optimizer:
         """Create optimizer"""
         if self.config.optimizer_type == 'adam':
@@ -427,6 +452,56 @@ class HierarchicalMTLTrainer:
             )
         else:
             raise ValueError(f"Unknown scheduler type: {self.config.lr_scheduler_type}")
+
+    def _apply_weight_sparsity(self, sparsity_ratio: float):
+        """
+        Apply Top-K weight sparsity to all Linear layers in the model.
+
+        Args:
+            sparsity_ratio: Proportion of weights to keep (e.g., 0.001 = keep 0.1% of weights)
+        """
+        if not self.config.enable_weight_sparsity:
+            return
+
+        for name, module in self.model.named_modules():
+            if isinstance(module, nn.Linear):
+                with torch.no_grad():
+                    # Get weight magnitudes
+                    weight_abs = torch.abs(module.weight.data)
+
+                    # Calculate number of weights to keep
+                    total_params = weight_abs.numel()
+                    k = max(1, int(total_params * sparsity_ratio))  # Keep at least 1 weight
+
+                    # Find threshold (k-th largest magnitude)
+                    threshold = torch.topk(weight_abs.flatten(), k).values[-1]
+
+                    # Create and apply mask
+                    mask = weight_abs >= threshold
+                    module.weight.data *= mask.float()
+
+    def _compute_weight_sparsity_ratio(self) -> float:
+        """
+        Compute the actual sparsity ratio of model weights.
+
+        Returns:
+            Proportion of non-zero weights (0.0 = all zeros, 1.0 = all non-zero)
+        """
+        total_params = 0
+        nonzero_params = 0
+
+        for name, module in self.model.named_modules():
+            if isinstance(module, nn.Linear):
+                with torch.no_grad():
+                    weight_abs = torch.abs(module.weight.data)
+                    total_params += weight_abs.numel()
+                    # Count as non-zero if magnitude > 1e-8
+                    nonzero_params += (weight_abs > 1e-8).sum().item()
+
+        if total_params == 0:
+            return 1.0
+
+        return nonzero_params / total_params
 
     def train_epoch(self, train_loader: DataLoader) -> Tuple[float, Dict[str, float]]:
         """
@@ -562,6 +637,11 @@ class HierarchicalMTLTrainer:
             self.current_epoch = epoch
             epoch_start = time.time()
 
+            # Apply weight sparsity (if enabled)
+            if self.config.enable_weight_sparsity and self.sparsity_scheduler is not None:
+                current_sparsity = self.sparsity_scheduler.get_sparsity(epoch)
+                self._apply_weight_sparsity(current_sparsity)
+
             # Train
             train_loss, train_param_losses = self.train_epoch(train_loader)
 
@@ -573,6 +653,11 @@ class HierarchicalMTLTrainer:
             # Get current learning rate
             current_lr = self.optimizer.param_groups[0]['lr']
 
+            # Compute weight sparsity ratio (if enabled)
+            weight_sparsity_ratio = 1.0  # Default: all weights non-zero
+            if self.config.enable_weight_sparsity:
+                weight_sparsity_ratio = self._compute_weight_sparsity_ratio()
+
             # Create metrics
             metrics = TrainingMetrics(
                 epoch=epoch,
@@ -581,15 +666,17 @@ class HierarchicalMTLTrainer:
                 train_losses_per_param=train_param_losses,
                 val_losses_per_param=val_param_losses,
                 learning_rate=current_lr,
-                epoch_time=epoch_time
+                epoch_time=epoch_time,
+                weight_sparsity_ratio=weight_sparsity_ratio
             )
 
             # Log metrics
             self.metrics_tracker.log_metrics(metrics)
 
             # Print progress
+            sparsity_str = f" | Sparsity: {weight_sparsity_ratio*100:.2f}%" if self.config.enable_weight_sparsity else ""
             print(f"Epoch {epoch:3d} | Train Loss: {train_loss:.4f} | "
-                  f"Val Loss: {val_loss:.4f} | LR: {current_lr:.6f} | "
+                  f"Val Loss: {val_loss:.4f} | LR: {current_lr:.6f}{sparsity_str} | "
                   f"Time: {epoch_time:.2f}s")
 
             # Learning rate scheduling
