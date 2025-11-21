@@ -985,11 +985,11 @@ class UniversalParameterRegistry:
             )
 
             # Register all instrumentation parameter groups
-            register_piano_parameters(self)
-            register_bass_parameters(self)
-            register_drums_parameters(self)
-            register_brass_parameters(self)
-            register_strings_parameters(self)
+            register_piano_parameters()
+            register_bass_parameters()
+            register_drums_parameters()
+            register_brass_parameters()
+            register_strings_parameters()
         except ImportError:
             # If module not available, skip (for backward compatibility)
             pass
