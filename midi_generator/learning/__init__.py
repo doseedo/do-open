@@ -9,15 +9,17 @@ This module contains machine learning components for the system:
 - Motif library management
 - Natural language to parameter prediction
 - Feature-parameter mapping (Agent 9)
+- Semantic feature discovery (Agent 3)
 
 Key Components:
+- SemanticFeatureEncoder: Neural architecture for discovering musical parameters (Agent 3)
 - FeatureParameterMapper: Maps 1000 features to 515+ parameters (Agent 9)
 - PatternExtractor: Extract musical patterns from MIDI
 - CorpusLearner: Learn from MIDI corpus
 - MotifLibrary: Manage and reuse motifs
 - NaturalLanguagePredictor: Natural language interface
 
-Author: Agents 2, 9, and others
+Author: Agents 2, 3, 9, and others
 License: MIT
 """
 
@@ -52,8 +54,46 @@ try:
 except ImportError:
     NaturalLanguagePredictor = None
 
+# Agent 3: Semantic Feature Discovery
+try:
+    from .semantic_encoder import (
+        SemanticFeatureEncoder,
+        EncoderConfig,
+        TrainingMetrics,
+        EncoderNetwork,
+        DecoderNetwork,
+        LocalityPredictor,
+        create_default_encoder,
+        compute_reconstruction_quality,
+        analyze_semantic_features
+    )
+    SEMANTIC_ENCODER_AVAILABLE = True
+except ImportError:
+    SemanticFeatureEncoder = None
+    EncoderConfig = None
+    TrainingMetrics = None
+    EncoderNetwork = None
+    DecoderNetwork = None
+    LocalityPredictor = None
+    create_default_encoder = None
+    compute_reconstruction_quality = None
+    analyze_semantic_features = None
+    SEMANTIC_ENCODER_AVAILABLE = False
+
 
 __all__ = [
+    # Agent 3: Semantic Feature Discovery
+    'SemanticFeatureEncoder',
+    'EncoderConfig',
+    'TrainingMetrics',
+    'EncoderNetwork',
+    'DecoderNetwork',
+    'LocalityPredictor',
+    'create_default_encoder',
+    'compute_reconstruction_quality',
+    'analyze_semantic_features',
+    'SEMANTIC_ENCODER_AVAILABLE',
+
     # Agent 9: Feature-Parameter Mapping
     'FeatureParameterMapper',
     'FeatureImportance',
