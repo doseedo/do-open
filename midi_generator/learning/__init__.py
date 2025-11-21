@@ -10,16 +10,32 @@ This module contains machine learning components for the system:
 - Natural language to parameter prediction
 - Feature-parameter mapping (Agent 9)
 - Semantic feature discovery (Agent 3)
+- Cross-dimensional pattern discovery (Agent 7)
 
 Key Components:
-- SemanticFeatureEncoder: Neural architecture for discovering musical parameters (Agent 3)
-- FeatureParameterMapper: Maps 1000 features to 515+ parameters (Agent 9)
+
+**Agent 3: Semantic Feature Discovery**
+- SemanticFeatureEncoder: Neural architecture for discovering musical parameters
+- Discovers interpretable semantic features from reconstruction gaps
+
+**Agent 7: Cross-Dimensional Encoder (Modular Architecture)**
+- CrossDimensionalEncoder: Discovers interaction patterns between musical dimensions
+- Fuses 110 parameters from 5 dimension encoders (harmony, rhythm, form, orchestration, texture)
+- Discovers 10 cross-dimensional parameters capturing musical coherence
+- InteractionPatternDiscoverer: Finds statistical patterns between dimensions
+- ParameterCouplingValidator: Validates musical coherence constraints
+
+**Agent 9: Feature-Parameter Mapping**
+- FeatureParameterMapper: Maps 1000 features to 515+ parameters
+- Learns optimal feature-to-parameter relationships
+
+**Other Components:**
 - PatternExtractor: Extract musical patterns from MIDI
 - CorpusLearner: Learn from MIDI corpus
 - MotifLibrary: Manage and reuse motifs
 - NaturalLanguagePredictor: Natural language interface
 
-Author: Agents 2, 3, 9, and others
+Author: Agents 2, 3, 7, 9, and others
 License: MIT
 """
 
@@ -80,6 +96,56 @@ except ImportError:
     analyze_semantic_features = None
     SEMANTIC_ENCODER_AVAILABLE = False
 
+# Agent 7: Cross-Dimensional Encoder (Modular Architecture)
+try:
+    from .cross_dimensional_encoder import (
+        CrossDimensionalEncoder,
+        CrossDimensionalConfig,
+        CrossDimensionalParameters,
+        FusionNetwork,
+        CrossEncoderNetwork,
+        ReconstructionNetwork,
+        create_default_cross_encoder,
+        analyze_interaction_patterns
+    )
+    CROSS_DIMENSIONAL_ENCODER_AVAILABLE = True
+except ImportError:
+    CrossDimensionalEncoder = None
+    CrossDimensionalConfig = None
+    CrossDimensionalParameters = None
+    FusionNetwork = None
+    CrossEncoderNetwork = None
+    ReconstructionNetwork = None
+    create_default_cross_encoder = None
+    analyze_interaction_patterns = None
+    CROSS_DIMENSIONAL_ENCODER_AVAILABLE = False
+
+# Agent 7: Interaction Pattern Discovery
+try:
+    from .interaction_patterns import (
+        InteractionPatternDiscoverer,
+        InteractionPattern
+    )
+    INTERACTION_PATTERNS_AVAILABLE = True
+except ImportError:
+    InteractionPatternDiscoverer = None
+    InteractionPattern = None
+    INTERACTION_PATTERNS_AVAILABLE = False
+
+# Agent 7: Parameter Coupling Validation
+try:
+    from .parameter_coupling import (
+        ParameterCouplingValidator,
+        CouplingConstraint,
+        CouplingType
+    )
+    PARAMETER_COUPLING_AVAILABLE = True
+except ImportError:
+    ParameterCouplingValidator = None
+    CouplingConstraint = None
+    CouplingType = None
+    PARAMETER_COUPLING_AVAILABLE = False
+
 
 __all__ = [
     # Agent 3: Semantic Feature Discovery
@@ -93,6 +159,28 @@ __all__ = [
     'compute_reconstruction_quality',
     'analyze_semantic_features',
     'SEMANTIC_ENCODER_AVAILABLE',
+
+    # Agent 7: Cross-Dimensional Encoder (Modular Architecture)
+    'CrossDimensionalEncoder',
+    'CrossDimensionalConfig',
+    'CrossDimensionalParameters',
+    'FusionNetwork',
+    'CrossEncoderNetwork',
+    'ReconstructionNetwork',
+    'create_default_cross_encoder',
+    'analyze_interaction_patterns',
+    'CROSS_DIMENSIONAL_ENCODER_AVAILABLE',
+
+    # Agent 7: Interaction Pattern Discovery
+    'InteractionPatternDiscoverer',
+    'InteractionPattern',
+    'INTERACTION_PATTERNS_AVAILABLE',
+
+    # Agent 7: Parameter Coupling Validation
+    'ParameterCouplingValidator',
+    'CouplingConstraint',
+    'CouplingType',
+    'PARAMETER_COUPLING_AVAILABLE',
 
     # Agent 9: Feature-Parameter Mapping
     'FeatureParameterMapper',
