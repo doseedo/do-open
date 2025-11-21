@@ -739,8 +739,8 @@ class ModularSemanticDiscoveryPipeline:
         try:
             from midi_generator.feature_selection.enhanced_feature_extractor import EnhancedFeatureExtractor
 
-            # Path to selected features JSON
-            selected_features_path = Path(__file__).parent.parent / "feature_selection" / "output" / "selected_features_200_template.json"
+            # Use the corrected feature selection file
+            selected_features_path = Path(__file__).parent.parent / "feature_selection" / "output" / "selected_features_200_actual.json"
 
             if selected_features_path.exists():
                 self._feature_extractor = EnhancedFeatureExtractor.from_selection_file(
