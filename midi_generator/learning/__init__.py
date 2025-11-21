@@ -11,17 +11,23 @@ This module contains machine learning components for the system:
 - Feature-parameter mapping (Agent 9)
 - Semantic feature discovery (Agent 3)
 - Form/structure semantic encoding (Agent 4)
+- Orchestration semantic encoding (Agent 5)
+- Texture semantic encoding (Agent 6)
+- Texture analysis algorithms (Agent 6)
 
 Key Components:
 - SemanticFeatureEncoder: Neural architecture for discovering musical parameters (Agent 3)
 - FormSemanticEncoder: Specialized encoder for form/structure parameters (Agent 4)
+- OrchestrationSemanticEncoder: Orchestration and voice independence encoder (Agent 5)
+- TextureSemanticEncoder: Specialized encoder for texture parameters (Agent 6)
+- DetailedTextureAnalyzer: Comprehensive texture analysis (Agent 6)
 - FeatureParameterMapper: Maps 1000 features to 515+ parameters (Agent 9)
 - PatternExtractor: Extract musical patterns from MIDI
 - CorpusLearner: Learn from MIDI corpus
 - MotifLibrary: Manage and reuse motifs
 - NaturalLanguagePredictor: Natural language interface
 
-Author: Agents 2, 3, 4, 9, and others
+Author: Agents 2, 3, 4, 5, 6, 9, and others
 License: MIT
 """
 
@@ -122,6 +128,40 @@ except ImportError:
     ORCHESTRATION_PARAMETERS = None
     ORCHESTRATION_ENCODER_AVAILABLE = False
 
+# Agent 6: Texture Semantic Encoding
+try:
+    from .texture_encoder import (
+        TextureSemanticEncoder,
+        TextureEncoderConfig,
+        TextureAnalyzer,
+        TextureLocalityType,
+        create_default_texture_encoder,
+        extract_texture_from_midi
+    )
+    TEXTURE_ENCODER_AVAILABLE = True
+except ImportError:
+    TextureSemanticEncoder = None
+    TextureEncoderConfig = None
+    TextureAnalyzer = None
+    TextureLocalityType = None
+    create_default_texture_encoder = None
+    extract_texture_from_midi = None
+    TEXTURE_ENCODER_AVAILABLE = False
+
+# Agent 6: Detailed Texture Analysis
+try:
+    from .texture_analysis import (
+        DetailedTextureAnalyzer,
+        Note,
+        TextureProfile
+    )
+    TEXTURE_ANALYSIS_AVAILABLE = True
+except ImportError:
+    DetailedTextureAnalyzer = None
+    Note = None
+    TextureProfile = None
+    TEXTURE_ANALYSIS_AVAILABLE = False
+
 
 __all__ = [
     # Agent 3: Semantic Feature Discovery
@@ -153,6 +193,21 @@ __all__ = [
     'analyze_orchestration_from_midi',
     'ORCHESTRATION_PARAMETERS',
     'ORCHESTRATION_ENCODER_AVAILABLE',
+
+    # Agent 6: Texture Semantic Encoding
+    'TextureSemanticEncoder',
+    'TextureEncoderConfig',
+    'TextureAnalyzer',
+    'TextureLocalityType',
+    'create_default_texture_encoder',
+    'extract_texture_from_midi',
+    'TEXTURE_ENCODER_AVAILABLE',
+
+    # Agent 6: Detailed Texture Analysis
+    'DetailedTextureAnalyzer',
+    'Note',
+    'TextureProfile',
+    'TEXTURE_ANALYSIS_AVAILABLE',
 
     # Agent 9: Feature-Parameter Mapping
     'FeatureParameterMapper',
