@@ -110,6 +110,12 @@ class ModularPipelineConfig:
     max_epochs: int = 100
     early_stopping_patience: int = 10
 
+    # Weight sparsity settings (for superposition reduction) - OFF by default
+    enable_weight_sparsity: bool = False  # Enable weight sparsity during training
+    sparsity_ratio: float = 0.001  # Target sparsity ratio (0.001 = 0.1% of weights kept)
+    initial_sparsity: float = 0.5  # Initial sparsity ratio at start of training
+    sparsity_warmup_epochs: int = 50  # Number of epochs to gradually increase sparsity
+
     # Modular-specific settings
     train_encoders_parallel: bool = True  # Train domain encoders in parallel
     num_parallel_workers: int = 5  # Number of parallel training workers

@@ -85,6 +85,14 @@ class EncoderConfig:
     use_batch_norm: bool = True
     residual_connections: bool = False
 
+    # Weight sparsity for superposition reduction (OFF by default)
+    enable_weight_sparsity: bool = False  # Enable weight sparsity during training
+    sparsity_ratio: float = 0.001  # Target sparsity ratio (0.001 = 0.1% of weights kept)
+    initial_sparsity: float = 0.5  # Initial sparsity ratio at start of training
+    target_sparsity: float = 0.001  # Target sparsity ratio after warmup
+    sparsity_warmup_epochs: int = 50  # Number of epochs to gradually increase sparsity
+    sparsity_method: str = "topk"  # Sparsity method: 'topk' (magnitude-based) or 'threshold'
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         return {
@@ -102,7 +110,13 @@ class EncoderConfig:
             'feature_activation': self.feature_activation,
             'normalize_features': self.normalize_features,
             'use_batch_norm': self.use_batch_norm,
-            'residual_connections': self.residual_connections
+            'residual_connections': self.residual_connections,
+            'enable_weight_sparsity': self.enable_weight_sparsity,
+            'sparsity_ratio': self.sparsity_ratio,
+            'initial_sparsity': self.initial_sparsity,
+            'target_sparsity': self.target_sparsity,
+            'sparsity_warmup_epochs': self.sparsity_warmup_epochs,
+            'sparsity_method': self.sparsity_method
         }
 
     @classmethod
@@ -132,6 +146,7 @@ class TrainingMetrics:
     locality_loss: float
     sparsity_loss: float
     locality_accuracy: float = 0.0
+    weight_sparsity_ratio: float = 0.0  # Actual sparsity ratio achieved
 
     def to_dict(self) -> Dict[str, float]:
         """Convert to dictionary"""
@@ -141,8 +156,94 @@ class TrainingMetrics:
             'reconstruction_loss': self.reconstruction_loss,
             'locality_loss': self.locality_loss,
             'sparsity_loss': self.sparsity_loss,
-            'locality_accuracy': self.locality_accuracy
+            'locality_accuracy': self.locality_accuracy,
+            'weight_sparsity_ratio': self.weight_sparsity_ratio
         }
+
+
+class SparsityScheduler:
+    """
+    Gradual sparsity annealing scheduler for weight sparsity.
+
+    Gradually increases sparsity (reduces the ratio of kept weights) during training
+    to help the model learn monosemantic features and reduce superposition.
+
+    Args:
+        initial_sparsity: Starting sparsity ratio (e.g., 0.5 = keep 50% of weights)
+        target_sparsity: Target sparsity ratio (e.g., 0.001 = keep 0.1% of weights)
+        warmup_epochs: Number of epochs to gradually transition from initial to target
+        schedule_type: Type of annealing schedule ('linear', 'cosine', 'exponential')
+
+    Example:
+        scheduler = SparsityScheduler(initial_sparsity=0.5, target_sparsity=0.001, warmup_epochs=50)
+        for epoch in range(100):
+            current_sparsity = scheduler.get_sparsity(epoch)
+            # Apply sparsity to model...
+    """
+
+    def __init__(
+        self,
+        initial_sparsity: float = 0.5,
+        target_sparsity: float = 0.001,
+        warmup_epochs: int = 50,
+        schedule_type: str = 'linear'
+    ):
+        self.initial = initial_sparsity
+        self.target = target_sparsity
+        self.warmup_epochs = warmup_epochs
+        self.schedule_type = schedule_type
+
+        # Validate inputs
+        if not (0 < initial_sparsity <= 1.0):
+            raise ValueError(f"initial_sparsity must be in (0, 1], got {initial_sparsity}")
+        if not (0 < target_sparsity <= initial_sparsity):
+            raise ValueError(f"target_sparsity must be in (0, initial_sparsity], got {target_sparsity}")
+        if warmup_epochs < 0:
+            raise ValueError(f"warmup_epochs must be >= 0, got {warmup_epochs}")
+
+    def get_sparsity(self, epoch: int) -> float:
+        """
+        Get current sparsity ratio for the given epoch.
+
+        Args:
+            epoch: Current training epoch (0-indexed)
+
+        Returns:
+            Current sparsity ratio (proportion of weights to keep)
+        """
+        # After warmup, use target sparsity
+        if epoch >= self.warmup_epochs:
+            return self.target
+
+        # During warmup, interpolate based on schedule type
+        progress = epoch / self.warmup_epochs  # 0.0 to 1.0
+
+        if self.schedule_type == 'linear':
+            # Linear interpolation
+            current_sparsity = self.initial * (1 - progress) + self.target * progress
+
+        elif self.schedule_type == 'cosine':
+            # Cosine annealing (smooth transition)
+            import math
+            cosine_progress = (1 - math.cos(progress * math.pi)) / 2
+            current_sparsity = self.initial * (1 - cosine_progress) + self.target * cosine_progress
+
+        elif self.schedule_type == 'exponential':
+            # Exponential decay (faster at start, slower at end)
+            import math
+            # Solve for decay rate: initial * exp(-rate * warmup) = target
+            decay_rate = -math.log(self.target / self.initial) / self.warmup_epochs
+            current_sparsity = self.initial * math.exp(-decay_rate * epoch)
+
+        else:
+            raise ValueError(f"Unknown schedule_type: {self.schedule_type}")
+
+        # Ensure we don't go below target
+        return max(current_sparsity, self.target)
+
+    def __repr__(self) -> str:
+        return (f"SparsityScheduler(initial={self.initial}, target={self.target}, "
+                f"warmup_epochs={self.warmup_epochs}, schedule='{self.schedule_type}')")
 
 
 # ============================================================================
@@ -371,6 +472,17 @@ class SemanticFeatureEncoder(nn.Module):
         # Track training progress
         self.training_step = 0
 
+        # Weight sparsity for superposition reduction
+        self.sparsity_scheduler = None
+        self.weight_masks = {}  # Store masks for each layer
+        if config.enable_weight_sparsity:
+            self.sparsity_scheduler = SparsityScheduler(
+                initial_sparsity=config.initial_sparsity,
+                target_sparsity=config.target_sparsity,
+                warmup_epochs=config.sparsity_warmup_epochs,
+                schedule_type='linear'
+            )
+
     def forward(
         self,
         x: torch.Tensor,
@@ -531,6 +643,84 @@ class SemanticFeatureEncoder(nn.Module):
 
         return importance.cpu().numpy()
 
+    def apply_weight_sparsity(self, sparsity_ratio: float):
+        """
+        Apply Top-K weight sparsity to all Linear layers.
+
+        This zeroes out all but the top-k weights (by magnitude) in each layer,
+        encouraging monosemantic features and reducing superposition.
+
+        Args:
+            sparsity_ratio: Proportion of weights to keep (e.g., 0.001 = keep 0.1% of weights)
+
+        Note:
+            This modifies weights in-place. Call during training after gradient updates.
+        """
+        if not self.config.enable_weight_sparsity:
+            return
+
+        # Apply sparsity to all Linear layers in all sub-networks
+        for name, module in self.named_modules():
+            if isinstance(module, nn.Linear):
+                with torch.no_grad():
+                    # Get weight magnitudes
+                    weight_abs = torch.abs(module.weight.data)
+
+                    # Calculate number of weights to keep
+                    total_params = weight_abs.numel()
+                    k = max(1, int(total_params * sparsity_ratio))  # Keep at least 1 weight
+
+                    # Find threshold (k-th largest magnitude)
+                    threshold = torch.topk(weight_abs.flatten(), k).values[-1]
+
+                    # Create and apply mask
+                    mask = weight_abs >= threshold
+                    module.weight.data *= mask.float()
+
+                    # Store mask for analysis
+                    self.weight_masks[name] = mask
+
+    def compute_weight_sparsity_ratio(self) -> float:
+        """
+        Compute the actual sparsity ratio of model weights.
+
+        Returns:
+            Proportion of non-zero weights (0.0 = all zeros, 1.0 = all non-zero)
+        """
+        total_params = 0
+        nonzero_params = 0
+
+        for name, module in self.named_modules():
+            if isinstance(module, nn.Linear):
+                with torch.no_grad():
+                    weight_abs = torch.abs(module.weight.data)
+                    total_params += weight_abs.numel()
+                    # Count as non-zero if magnitude > 1e-8
+                    nonzero_params += (weight_abs > 1e-8).sum().item()
+
+        if total_params == 0:
+            return 1.0
+
+        return nonzero_params / total_params
+
+    def update_sparsity(self, epoch: int):
+        """
+        Update weight sparsity based on current epoch.
+
+        This should be called at the start or end of each training epoch.
+
+        Args:
+            epoch: Current training epoch (0-indexed)
+        """
+        if not self.config.enable_weight_sparsity or self.sparsity_scheduler is None:
+            return
+
+        # Get current sparsity ratio from scheduler
+        current_sparsity = self.sparsity_scheduler.get_sparsity(epoch)
+
+        # Apply sparsity
+        self.apply_weight_sparsity(current_sparsity)
+
     def save(self, path: Path, include_config: bool = True):
         """
         Save model checkpoint.
@@ -546,7 +736,8 @@ class SemanticFeatureEncoder(nn.Module):
         checkpoint = {
             'model_state_dict': self.state_dict(),
             'config': self.config.to_dict(),
-            'training_step': self.training_step
+            'training_step': self.training_step,
+            'weight_masks': self.weight_masks  # Save sparsity masks
         }
 
         torch.save(checkpoint, path)
@@ -579,6 +770,7 @@ class SemanticFeatureEncoder(nn.Module):
         model = cls(config)
         model.load_state_dict(checkpoint['model_state_dict'])
         model.training_step = checkpoint.get('training_step', 0)
+        model.weight_masks = checkpoint.get('weight_masks', {})
 
         model.to(device)
         model.eval()
@@ -586,6 +778,9 @@ class SemanticFeatureEncoder(nn.Module):
         print(f"✅ Model loaded from {path}")
         print(f"   Training step: {model.training_step}")
         print(f"   Semantic features: {config.num_semantic_features}")
+        if config.enable_weight_sparsity:
+            sparsity_ratio = model.compute_weight_sparsity_ratio()
+            print(f"   Weight sparsity: {sparsity_ratio:.4f} (enabled)")
 
         return model
 

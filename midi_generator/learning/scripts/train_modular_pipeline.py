@@ -141,6 +141,16 @@ def train_pipeline(config: ModularPipelineConfig, resume_from: Optional[Path] = 
     else:
         print(f"  Device: {config.device}")
 
+    # Print weight sparsity settings
+    print(f"\n🔬 Weight Sparsity (Superposition Reduction):")
+    if config.enable_weight_sparsity:
+        print(f"  Status: ENABLED")
+        print(f"  Target sparsity: {config.sparsity_ratio} ({config.sparsity_ratio*100:.2f}% of weights kept)")
+        print(f"  Initial sparsity: {config.initial_sparsity} ({config.initial_sparsity*100:.1f}% of weights kept)")
+        print(f"  Warmup epochs: {config.sparsity_warmup_epochs}")
+    else:
+        print(f"  Status: DISABLED (use --enable-weight-sparsity to enable)")
+
     # Create pipeline
     print("\n🏗️  Initializing pipeline...")
     pipeline = ModularSemanticDiscoveryPipeline(config)
@@ -326,6 +336,34 @@ Examples:
         help="Batch size (default: 64)"
     )
 
+    # Weight sparsity parameters (for superposition reduction)
+    parser.add_argument(
+        "--enable-weight-sparsity",
+        action="store_true",
+        help="Enable weight sparsity for superposition reduction (default: off)"
+    )
+
+    parser.add_argument(
+        "--sparsity-ratio",
+        type=float,
+        default=0.001,
+        help="Target sparsity ratio - proportion of weights to keep (default: 0.001 = 0.1%%)"
+    )
+
+    parser.add_argument(
+        "--initial-sparsity",
+        type=float,
+        default=0.5,
+        help="Initial sparsity ratio at start of training (default: 0.5 = 50%%)"
+    )
+
+    parser.add_argument(
+        "--sparsity-warmup-epochs",
+        type=int,
+        default=50,
+        help="Number of epochs to gradually increase sparsity (default: 50)"
+    )
+
     return parser.parse_args()
 
 
@@ -373,6 +411,13 @@ def main():
         config.max_epochs = args.epochs
     if args.batch_size:
         config.batch_size = args.batch_size
+
+    # Weight sparsity parameters (default: off)
+    if args.enable_weight_sparsity:
+        config.enable_weight_sparsity = True
+        config.sparsity_ratio = args.sparsity_ratio
+        config.initial_sparsity = args.initial_sparsity
+        config.sparsity_warmup_epochs = args.sparsity_warmup_epochs
 
     # Train pipeline
     train_pipeline(config, resume_from=args.resume)
