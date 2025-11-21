@@ -326,6 +326,212 @@ class EnhancedFeatureExtractor:
         return stats
 
 
+class NormalizedFeatureExtractor:
+    """
+    Wrapper around EnhancedFeatureExtractor that normalizes features.
+
+    CRITICAL FIX for training convergence: Features must be normalized to have
+    zero mean and unit variance to enable effective learning.
+
+    Usage:
+        # Create base extractor
+        base_extractor = EnhancedFeatureExtractor.from_selection_file('selected_features_200.json')
+
+        # Wrap with normalization
+        normalized_extractor = NormalizedFeatureExtractor(base_extractor)
+
+        # Fit on training data (computes mean/std)
+        normalized_extractor.fit(training_midi_files)
+
+        # Extract normalized features
+        features = normalized_extractor.extract('song.mid')  # Returns normalized 220D vector
+
+        # Save/load normalization parameters
+        normalized_extractor.save_normalization_params('normalization_params.json')
+        normalized_extractor.load_normalization_params('normalization_params.json')
+    """
+
+    def __init__(self, base_extractor: EnhancedFeatureExtractor):
+        """
+        Initialize normalized extractor.
+
+        Args:
+            base_extractor: Base EnhancedFeatureExtractor instance
+        """
+        self.base_extractor = base_extractor
+        self.mean = None
+        self.std = None
+        self.is_fitted = False
+
+    def fit(self, midi_files: List[Path], sample_size: int = 100, show_progress: bool = True):
+        """
+        Compute mean and std from training data.
+
+        Args:
+            midi_files: List of training MIDI files
+            sample_size: Number of files to sample for statistics (use all if len < sample_size)
+            show_progress: Show progress bar during extraction
+        """
+        import random
+
+        print(f"\n{'='*70}")
+        print("Computing feature normalization parameters...")
+        print(f"{'='*70}")
+
+        # Sample files if needed
+        if len(midi_files) > sample_size:
+            sampled_files = random.sample(midi_files, sample_size)
+            print(f"Sampling {sample_size} files from {len(midi_files)} total files")
+        else:
+            sampled_files = midi_files
+            print(f"Using all {len(sampled_files)} files")
+
+        # Extract features from sample
+        print(f"\nExtracting features from {len(sampled_files)} files...")
+        all_features = self.base_extractor.extract_batch(
+            sampled_files,
+            show_progress=show_progress
+        )
+
+        # Compute statistics
+        self.mean = all_features.mean(axis=0)
+        self.std = all_features.std(axis=0) + 1e-8  # Add epsilon to prevent division by zero
+        self.is_fitted = True
+
+        # Report statistics
+        print(f"\n✅ Normalization parameters computed:")
+        print(f"   Mean range: [{self.mean.min():.3f}, {self.mean.max():.3f}]")
+        print(f"   Std range: [{self.std.min():.3f}, {self.std.max():.3f}]")
+        print(f"   Features with near-zero std: {(self.std < 0.01).sum()}/{len(self.std)}")
+
+        print(f"{'='*70}\n")
+
+    def extract(self, midi_file: Path, use_cache: bool = True) -> np.ndarray:
+        """
+        Extract normalized features from MIDI file.
+
+        Args:
+            midi_file: Path to MIDI file
+            use_cache: Use cached extraction if available
+
+        Returns:
+            Normalized features [220D] with zero mean and unit variance
+        """
+        if not self.is_fitted:
+            raise RuntimeError(
+                "NormalizedFeatureExtractor must be fitted before extraction. "
+                "Call fit() with training data first."
+            )
+
+        # Extract raw features
+        features = self.base_extractor.extract(midi_file, use_cache=use_cache)
+
+        # Normalize: (x - mean) / std
+        normalized_features = (features - self.mean) / self.std
+
+        return normalized_features
+
+    def extract_batch(
+        self,
+        midi_files: List[Path],
+        show_progress: bool = True,
+        n_workers: int = 1
+    ) -> np.ndarray:
+        """
+        Extract normalized features from multiple MIDI files.
+
+        Args:
+            midi_files: List of MIDI file paths
+            show_progress: Show progress bar
+            n_workers: Number of parallel workers
+
+        Returns:
+            Normalized features [n_files, 220]
+        """
+        if not self.is_fitted:
+            raise RuntimeError(
+                "NormalizedFeatureExtractor must be fitted before extraction. "
+                "Call fit() with training data first."
+            )
+
+        # Extract raw features
+        features = self.base_extractor.extract_batch(
+            midi_files,
+            show_progress=show_progress,
+            n_workers=n_workers
+        )
+
+        # Normalize
+        normalized_features = (features - self.mean) / self.std
+
+        return normalized_features
+
+    def save_normalization_params(self, output_path: Path):
+        """
+        Save normalization parameters to JSON.
+
+        Args:
+            output_path: Path to save parameters
+        """
+        if not self.is_fitted:
+            raise RuntimeError("Cannot save parameters before fitting")
+
+        params = {
+            'mean': self.mean.tolist(),
+            'std': self.std.tolist(),
+            'n_features': len(self.mean),
+            'is_fitted': self.is_fitted
+        }
+
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output_path, 'w') as f:
+            json.dump(params, f, indent=2)
+
+        print(f"✅ Normalization parameters saved to {output_path}")
+
+    def load_normalization_params(self, params_path: Path):
+        """
+        Load normalization parameters from JSON.
+
+        Args:
+            params_path: Path to load parameters from
+        """
+        with open(params_path, 'r') as f:
+            params = json.load(f)
+
+        self.mean = np.array(params['mean'])
+        self.std = np.array(params['std'])
+        self.is_fitted = params['is_fitted']
+
+        print(f"✅ Normalization parameters loaded from {params_path}")
+        print(f"   Mean range: [{self.mean.min():.3f}, {self.mean.max():.3f}]")
+        print(f"   Std range: [{self.std.min():.3f}, {self.std.max():.3f}]")
+
+    @classmethod
+    def from_selection_file(
+        cls,
+        selection_file: Path,
+        cache_extraction: bool = False
+    ) -> 'NormalizedFeatureExtractor':
+        """
+        Create normalized extractor from feature selection JSON file.
+
+        Args:
+            selection_file: Path to selected_features_*.json file
+            cache_extraction: Whether to cache extractions
+
+        Returns:
+            NormalizedFeatureExtractor instance (not yet fitted)
+        """
+        base_extractor = EnhancedFeatureExtractor.from_selection_file(
+            selection_file,
+            cache_extraction=cache_extraction
+        )
+        return cls(base_extractor)
+
+
 # ============================================================================
 # Standalone Testing
 # ============================================================================
