@@ -269,45 +269,52 @@ class OrchestrationFeatureExtractor:
         Extract orchestration features from MIDI data.
 
         Args:
-            midi_data: MIDI data (mido.MidiFile, pretty_midi.PrettyMIDI, or dict)
+            midi_data: MIDI data (mido.MidiFile, Path to MIDI file, or pretty_midi.PrettyMIDI)
 
         Returns:
             Feature vector [200] for input to encoder
         """
-        features = []
-
-        # Try to extract features from different MIDI formats
         try:
+            # Load MIDI if path provided
+            if isinstance(midi_data, (str, Path)):
+                import mido
+                midi_data = mido.MidiFile(str(midi_data))
+
+            # Parse MIDI into structured data
+            parsed_data = self._parse_midi_data(midi_data)
+
+            features = []
+
             # Feature group 1: Density metrics (20 features)
-            density_features = self._extract_density_features(midi_data)
+            density_features = self._extract_density_features(parsed_data)
             features.extend(density_features)
 
             # Feature group 2: Vertical spacing (20 features)
-            spacing_features = self._extract_spacing_features(midi_data)
+            spacing_features = self._extract_spacing_features(parsed_data)
             features.extend(spacing_features)
 
             # Feature group 3: Doubling detection (20 features)
-            doubling_features = self._extract_doubling_features(midi_data)
+            doubling_features = self._extract_doubling_features(parsed_data)
             features.extend(doubling_features)
 
             # Feature group 4: Timbral balance (30 features)
-            timbral_features = self._extract_timbral_features(midi_data)
+            timbral_features = self._extract_timbral_features(parsed_data)
             features.extend(timbral_features)
 
             # Feature group 5: Voice independence (30 features)
-            independence_features = self._extract_voice_independence_features(midi_data)
+            independence_features = self._extract_voice_independence_features(parsed_data)
             features.extend(independence_features)
 
             # Feature group 6: Dynamic analysis (30 features)
-            dynamic_features = self._extract_dynamic_features(midi_data)
+            dynamic_features = self._extract_dynamic_features(parsed_data)
             features.extend(dynamic_features)
 
             # Feature group 7: Register distribution (30 features)
-            register_features = self._extract_register_features(midi_data)
+            register_features = self._extract_register_features(parsed_data)
             features.extend(register_features)
 
             # Feature group 8: Texture evolution (20 features)
-            texture_features = self._extract_texture_features(midi_data)
+            texture_features = self._extract_texture_features(parsed_data)
             features.extend(texture_features)
 
             # Pad or truncate to exactly 200 features
@@ -322,85 +329,284 @@ class OrchestrationFeatureExtractor:
             # Return zeros as fallback
             return np.zeros(200, dtype=np.float32)
 
-    def _extract_density_features(self, midi_data: Any) -> List[float]:
+    def _parse_midi_data(self, midi_data: Any) -> Dict:
+        """Parse MIDI data into structured format for feature extraction"""
+        import mido
+
+        parsed = {
+            'tracks': [],
+            'programs': {},  # channel -> program
+            'notes_by_track': [],
+            'notes_by_program': {},
+            'all_notes': []
+        }
+
+        try:
+            for track_idx, track in enumerate(midi_data.tracks):
+                track_notes = []
+                current_notes = {}  # (note, channel) -> (velocity, start_time)
+                current_time = 0.0
+                current_program = {i: 0 for i in range(16)}  # Default program for each channel
+
+                for msg in track:
+                    current_time += msg.time
+
+                    # Track program changes
+                    if msg.type == 'program_change':
+                        current_program[msg.channel] = msg.program
+                        parsed['programs'][msg.channel] = msg.program
+
+                    # Track notes
+                    elif msg.type == 'note_on' and msg.velocity > 0:
+                        key = (msg.note, msg.channel)
+                        current_notes[key] = (msg.velocity, current_time, current_program[msg.channel])
+
+                    elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
+                        key = (msg.note, msg.channel)
+                        if key in current_notes:
+                            velocity, start_time, program = current_notes.pop(key)
+                            note_data = {
+                                'pitch': msg.note,
+                                'velocity': velocity,
+                                'start': start_time,
+                                'end': current_time,
+                                'duration': current_time - start_time,
+                                'channel': msg.channel,
+                                'program': program,
+                                'track': track_idx
+                            }
+                            track_notes.append(note_data)
+                            parsed['all_notes'].append(note_data)
+
+                            # Group by program
+                            if program not in parsed['notes_by_program']:
+                                parsed['notes_by_program'][program] = []
+                            parsed['notes_by_program'][program].append(note_data)
+
+                parsed['notes_by_track'].append(track_notes)
+
+            # Sort all notes by start time
+            parsed['all_notes'].sort(key=lambda n: n['start'])
+
+        except Exception as e:
+            warnings.warn(f"Error parsing MIDI: {e}")
+
+        return parsed
+
+    def _extract_density_features(self, parsed_data: Dict) -> List[float]:
         """Extract density-related features (20 features)"""
         features = []
+        notes = parsed_data['all_notes']
 
-        # Placeholder implementation
-        # TODO: Implement actual density analysis
-        features.extend([0.5] * 20)  # Avg active voices, density evolution, etc.
+        if not notes:
+            return [0.0] * 20
 
-        return features
+        # Calculate active voices over time (sample every 0.1 seconds)
+        max_time = max(n['end'] for n in notes) if notes else 1.0
+        time_samples = np.arange(0, max_time, 0.1)
+        active_voices = []
 
-    def _extract_spacing_features(self, midi_data: Any) -> List[float]:
+        for t in time_samples:
+            count = sum(1 for n in notes if n['start'] <= t < n['end'])
+            active_voices.append(count)
+
+        active_voices = np.array(active_voices) if active_voices else np.array([0])
+
+        # 1-5: Active voice statistics
+        features.append(float(np.mean(active_voices)))  # mean active voices
+        features.append(float(np.std(active_voices)))   # std of density
+        features.append(float(np.max(active_voices)))   # peak density
+        features.append(float(np.min(active_voices)))   # minimum density
+        features.append(float(np.median(active_voices))) # median density
+
+        # 6-10: Density evolution (split into 5 sections)
+        section_size = len(active_voices) // 5 if len(active_voices) >= 5 else 1
+        for i in range(5):
+            start_idx = i * section_size
+            end_idx = min((i+1) * section_size, len(active_voices))
+            section_mean = np.mean(active_voices[start_idx:end_idx]) if start_idx < len(active_voices) else 0.0
+            features.append(float(section_mean))
+
+        # 11-15: Density change rate
+        if len(active_voices) > 1:
+            density_changes = np.diff(active_voices)
+            features.append(float(np.mean(np.abs(density_changes))))  # avg change rate
+            features.append(float(np.std(density_changes)))           # variability
+            features.append(float(np.max(density_changes)))           # max increase
+            features.append(float(np.min(density_changes)))           # max decrease
+            features.append(float(len(np.where(density_changes > 2)[0]) / len(density_changes)))  # spike frequency
+        else:
+            features.extend([0.0] * 5)
+
+        # 16-20: Additional density metrics
+        features.append(float(len(parsed_data['notes_by_track'])))  # number of tracks
+        features.append(float(len(parsed_data['programs'])))        # number of different instruments
+        features.append(float(len(notes) / max_time if max_time > 0 else 0))  # notes per second
+        features.append(float(np.percentile(active_voices, 75)))    # 75th percentile density
+        features.append(float(np.percentile(active_voices, 25)))    # 25th percentile density
+
+        return features[:20]  # Ensure exactly 20 features
+
+    def _extract_spacing_features(self, parsed_data: Dict) -> List[float]:
         """Extract vertical spacing features (20 features)"""
-        features = []
+        notes = parsed_data['all_notes']
+        if not notes:
+            return [0.0] * 20
 
-        # Placeholder implementation
-        # TODO: Implement actual spacing analysis
-        features.extend([0.5] * 20)  # Interval distributions, register gaps, etc.
+        # Analyze vertical spacing at each timestamp
+        time_samples = sorted(set(n['start'] for n in notes))[:100]  # Sample first 100 timestamps
+        spacings = []
 
-        return features
+        for t in time_samples:
+            simultaneous = sorted([n['pitch'] for n in notes if n['start'] <= t < n['end']])
+            if len(simultaneous) > 1:
+                intervals = [simultaneous[i+1] - simultaneous[i] for i in range(len(simultaneous)-1)]
+                spacings.extend(intervals)
 
-    def _extract_doubling_features(self, midi_data: Any) -> List[float]:
+        if spacings:
+            return [
+                float(np.mean(spacings)), float(np.std(spacings)), float(np.min(spacings)),
+                float(np.max(spacings)), float(np.median(spacings)),
+                float(np.percentile(spacings, 25)), float(np.percentile(spacings, 75)),
+                float(sum(1 for s in spacings if s <= 2) / len(spacings)),  # close voicing ratio
+                float(sum(1 for s in spacings if s >= 12) / len(spacings)), # wide spacing ratio
+                float(sum(1 for s in spacings if 3 <= s <= 7) / len(spacings)),  # mid spacing
+            ] + [float(np.mean(spacings))] * 10  # Repeat mean for remaining features
+        return [0.0] * 20
+
+    def _extract_doubling_features(self, parsed_data: Dict) -> List[float]:
         """Extract doubling detection features (20 features)"""
-        features = []
+        notes = parsed_data['all_notes']
+        if not notes:
+            return [0.0] * 20
 
-        # Placeholder implementation
-        # TODO: Implement doubling detection
-        features.extend([0.3] * 20)  # Octave doubling freq, unison freq, etc.
+        doublings = {'octave': 0, 'unison': 0, 'total_pairs': 0}
+        time_samples = sorted(set(n['start'] for n in notes))[:100]
 
-        return features
+        for t in time_samples:
+            simultaneous = [n for n in notes if n['start'] <= t < n['end']]
+            for i, n1 in enumerate(simultaneous):
+                for n2 in simultaneous[i+1:]:
+                    doublings['total_pairs'] += 1
+                    pitch_diff = abs(n1['pitch'] - n2['pitch'])
+                    if pitch_diff == 0:
+                        doublings['unison'] += 1
+                    elif pitch_diff % 12 == 0:
+                        doublings['octave'] += 1
 
-    def _extract_timbral_features(self, midi_data: Any) -> List[float]:
+        total = doublings['total_pairs'] if doublings['total_pairs'] > 0 else 1
+        return [
+            float(doublings['octave'] / total), float(doublings['unison'] / total),
+            float((doublings['octave'] + doublings['unison']) / total)
+        ] + [0.0] * 17
+
+    def _extract_timbral_features(self, parsed_data: Dict) -> List[float]:
         """Extract timbral balance features (30 features)"""
-        features = []
+        programs = parsed_data['programs']
+        notes_by_program = parsed_data['notes_by_program']
 
-        # Placeholder implementation
-        # TODO: Implement timbral analysis per family
-        features.extend([0.4] * 30)  # Family prominence, blend characteristics
+        # Count notes per instrument family
+        family_counts = {family: 0 for family in self.instrument_families}
+        for program, notes in notes_by_program.items():
+            for family, program_range in self.instrument_families.items():
+                if program in program_range:
+                    family_counts[family] += len(notes)
+                    break
 
-        return features
+        total_notes = sum(family_counts.values()) if sum(family_counts.values()) > 0 else 1
 
-    def _extract_voice_independence_features(self, midi_data: Any) -> List[float]:
+        features = [float(count / total_notes) for count in family_counts.values()]
+        features.extend([float(len(programs))])  # Number of unique programs
+        features.extend([0.0] * (30 - len(features)))  # Pad to 30
+        return features[:30]
+
+    def _extract_voice_independence_features(self, parsed_data: Dict) -> List[float]:
         """Extract voice independence features (30 features)"""
-        features = []
+        tracks = parsed_data['notes_by_track']
+        if not tracks:
+            return [0.0] * 30
 
-        # Placeholder implementation
-        # TODO: Implement voice independence metrics
-        features.extend([0.5] * 30)  # Melodic independence, crossing freq, etc.
+        # Analyze melodic independence per track
+        independence_scores = []
+        for track_notes in tracks[:10]:  # Analyze first 10 tracks
+            if len(track_notes) > 1:
+                pitches = [n['pitch'] for n in sorted(track_notes, key=lambda x: x['start'])]
+                intervals = [abs(pitches[i+1] - pitches[i]) for i in range(len(pitches)-1)]
+                independence = np.std(intervals) if intervals else 0.0
+                independence_scores.append(independence)
 
-        return features
+        features = [float(np.mean(independence_scores)) if independence_scores else 0.0]
+        features.append(float(len(tracks)))  # Number of voices
+        features.extend([0.0] * (30 - len(features)))
+        return features[:30]
 
-    def _extract_dynamic_features(self, midi_data: Any) -> List[float]:
+    def _extract_dynamic_features(self, parsed_data: Dict) -> List[float]:
         """Extract dynamic balance features (30 features)"""
-        features = []
+        notes = parsed_data['all_notes']
+        if not notes:
+            return [0.0] * 30
 
-        # Placeholder implementation
-        # TODO: Implement dynamic analysis
-        features.extend([0.6] * 30)  # Velocity distributions per family, ratios
+        velocities = [n['velocity'] for n in notes]
+        features = [
+            float(np.mean(velocities)), float(np.std(velocities)),
+            float(np.min(velocities)), float(np.max(velocities)),
+            float(np.median(velocities))
+        ]
 
-        return features
+        # Velocity distribution per program
+        for program, program_notes in list(parsed_data['notes_by_program'].items())[:5]:
+            vels = [n['velocity'] for n in program_notes]
+            features.append(float(np.mean(vels)) if vels else 0.0)
 
-    def _extract_register_features(self, midi_data: Any) -> List[float]:
+        features.extend([0.0] * (30 - len(features)))
+        return features[:30]
+
+    def _extract_register_features(self, parsed_data: Dict) -> List[float]:
         """Extract register distribution features (30 features)"""
-        features = []
+        notes = parsed_data['all_notes']
+        if not notes:
+            return [0.0] * 30
 
-        # Placeholder implementation
-        # TODO: Implement register distribution analysis
-        features.extend([0.5] * 30)  # Pitch histograms, register occupancy
+        pitches = [n['pitch'] for n in notes]
+        # Divide into register bins
+        registers = {
+            'very_low': sum(1 for p in pitches if p < 36),
+            'low': sum(1 for p in pitches if 36 <= p < 48),
+            'mid_low': sum(1 for p in pitches if 48 <= p < 60),
+            'mid': sum(1 for p in pitches if 60 <= p < 72),
+            'mid_high': sum(1 for p in pitches if 72 <= p < 84),
+            'high': sum(1 for p in pitches if 84 <= p < 96),
+            'very_high': sum(1 for p in pitches if p >= 96)
+        }
 
-        return features
+        total = len(pitches)
+        features = [float(count / total) for count in registers.values()]
+        features.extend([float(np.mean(pitches)), float(np.std(pitches))])
+        features.extend([0.0] * (30 - len(features)))
+        return features[:30]
 
-    def _extract_texture_features(self, midi_data: Any) -> List[float]:
+    def _extract_texture_features(self, parsed_data: Dict) -> List[float]:
         """Extract texture evolution features (20 features)"""
-        features = []
+        notes = parsed_data['all_notes']
+        if not notes:
+            return [0.0] * 20
 
-        # Placeholder implementation
-        # TODO: Implement texture analysis over time
-        features.extend([0.5] * 20)  # Texture changes, homophonic vs polyphonic
+        # Sample texture density over time (5 sections)
+        max_time = max(n['end'] for n in notes) if notes else 1.0
+        section_duration = max_time / 5
+        texture_densities = []
 
-        return features
+        for i in range(5):
+            section_start = i * section_duration
+            section_end = (i + 1) * section_duration
+            section_notes = [n for n in notes if section_start <= n['start'] < section_end]
+            density = len(section_notes) / section_duration if section_duration > 0 else 0
+            texture_densities.append(float(density))
+
+        features = texture_densities
+        features.extend([float(np.mean(texture_densities)), float(np.std(texture_densities))])
+        features.extend([0.0] * (20 - len(features)))
+        return features[:20]
 
 
 # ============================================================================
