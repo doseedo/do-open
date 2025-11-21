@@ -16,7 +16,7 @@ This pipeline coordinates 6 specialized encoders:
 Architecture:
     MIDI Corpus
         ↓
-    OptimizedFeatureExtractor (200D)
+    EnhancedFeatureExtractor (220D) - v2.0
         ↓
     [PARALLEL] 5 Domain Encoders → 110 params
         ↓
@@ -89,7 +89,7 @@ except ImportError:
 
 class FeatureDataset(Dataset):
     """
-    Simple dataset that provides 200D features from MIDI files for training.
+    Simple dataset that provides 220D features from MIDI files for training (v2.0).
 
     This dataset extracts features on-the-fly during training, avoiding the need
     to precompute and store all features upfront.
@@ -99,7 +99,7 @@ class FeatureDataset(Dataset):
         """
         Args:
             midi_files: List of MIDI file paths
-            feature_extractor: Feature extractor instance (OptimizedFeatureExtractor)
+            feature_extractor: Feature extractor instance (EnhancedFeatureExtractor v2.0)
         """
         self.midi_files = midi_files
         self.feature_extractor = feature_extractor
@@ -112,12 +112,12 @@ class FeatureDataset(Dataset):
         Extract features from MIDI file.
 
         Returns:
-            features: torch.Tensor of shape (200,)
+            features: torch.Tensor of shape (220,)
         """
         midi_file = self.midi_files[idx]
 
         try:
-            # Extract 200D features
+            # Extract 220D features (200 base + 20 velocity)
             features = self.feature_extractor.extract(midi_file, use_cache=True)
 
             # Convert to torch tensor
@@ -128,7 +128,7 @@ class FeatureDataset(Dataset):
         except Exception as e:
             # Return zero vector if extraction fails
             warnings.warn(f"Failed to extract features from {midi_file}: {e}")
-            return torch.zeros(200, dtype=torch.float32)
+            return torch.zeros(220, dtype=torch.float32)
 
 
 # =============================================================================
@@ -668,9 +668,8 @@ class ModularSemanticDiscoveryPipeline:
         if self.config.verbose:
             print(f"\n🧬 Extracting Musical DNA from {midi_file.name}...")
 
-        # Step 1: Extract 200D features (placeholder)
-        # In production, would use OptimizedFeatureExtractor
-        features_200d = self._extract_features(midi_file)
+        # Step 1: Extract 220D features using EnhancedFeatureExtractor v2.0
+        features_220d = self._extract_features(midi_file)
 
         # Step 2: Extract domain parameters
         domain_params = {}
@@ -685,7 +684,7 @@ class ModularSemanticDiscoveryPipeline:
 
         for dimension in domain_dimensions:
             encoder = self.encoders[dimension]
-            params = self._extract_params_with_encoder(encoder, features_200d)
+            params = self._extract_params_with_encoder(encoder, features_220d)
             domain_params[dimension] = params
 
         # Step 3: Extract cross-dimensional parameters
@@ -736,17 +735,17 @@ class ModularSemanticDiscoveryPipeline:
         raise NotImplementedError("Generation from DNA requires decoder model")
 
     def _init_feature_extractor(self):
-        """Initialize the feature extractor"""
+        """Initialize the feature extractor (v2.0 EnhancedFeatureExtractor with 220D features)"""
         try:
-            from midi_generator.feature_selection.optimized_feature_extractor import OptimizedFeatureExtractor
+            from midi_generator.feature_selection.enhanced_feature_extractor import EnhancedFeatureExtractor
 
             # Path to selected features JSON
             selected_features_path = Path(__file__).parent.parent / "feature_selection" / "output" / "selected_features_200_template.json"
 
             if selected_features_path.exists():
-                self._feature_extractor = OptimizedFeatureExtractor.from_selection_file(
+                self._feature_extractor = EnhancedFeatureExtractor.from_selection_file(
                     selected_features_path,
-                    cache_full_extraction=True
+                    cache_extraction=True
                 )
             else:
                 raise FileNotFoundError(f"Selected features file not found at {selected_features_path}")
@@ -755,19 +754,19 @@ class ModularSemanticDiscoveryPipeline:
             raise RuntimeError(f"Failed to initialize feature extractor: {e}")
 
     def _extract_features(self, midi_file: Path) -> np.ndarray:
-        """Extract 200D features from MIDI file using OptimizedFeatureExtractor"""
+        """Extract 220D features from MIDI file using EnhancedFeatureExtractor (v2.0)"""
         try:
             # Initialize extractor if not already initialized
             if not hasattr(self, '_feature_extractor'):
                 self._init_feature_extractor()
 
-            # Extract 200D features
+            # Extract 220D features (200 base + 20 velocity)
             features = self._feature_extractor.extract(midi_file, use_cache=True)
             return features
 
         except Exception as e:
             warnings.warn(f"Feature extraction failed: {e}. Using random features as fallback.")
-            return np.random.randn(200)  # Fallback to random if extraction fails
+            return np.random.randn(220)  # Fallback to random if extraction fails
 
     def _extract_params_with_encoder(
         self,

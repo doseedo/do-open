@@ -19,9 +19,12 @@ Architecture:
     The factory configures input dimensions, locality functions, and interpretation
     strategies specific to each musical dimension.
 
+Input Features (v2.0):
+    220D features from EnhancedFeatureExtractor (200 base + 20 velocity)
+
 Author: Agent 8 - Integration Pipeline Builder
 Date: November 21, 2025
-Version: 1.0.0
+Version: 2.0.0
 """
 
 from dataclasses import dataclass, field
@@ -77,8 +80,8 @@ class DimensionSpec:
     dimension: MusicalDimension
     num_params: int  # Number of parameters to discover
 
-    # Feature extraction
-    input_dim: int = 200  # Input feature dimension
+    # Feature extraction (v2.0: 220D = 200 base + 20 velocity)
+    input_dim: int = 220  # Input feature dimension
     hidden_dim: int = 512  # Hidden layer dimension
 
     # Locality transformations specific to this dimension
