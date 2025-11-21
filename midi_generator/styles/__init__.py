@@ -21,8 +21,17 @@ License: MIT
 """
 
 # Classic Big Band Styles (Agents 13 & 14)
-from .ellington_profile import ELLINGTON_STYLE, EllingtonStyleConfig
-from .basie_profile import BASIE_STYLE, BasieStyleConfig
+try:
+    from .ellington_profile import ELLINGTON_STYLE, EllingtonStyleConfig
+    _ellington_exports = ['ELLINGTON_STYLE', 'EllingtonStyleConfig']
+except ImportError:
+    _ellington_exports = []
+
+try:
+    from .basie_profile import BASIE_STYLE, BasieStyleConfig
+    _basie_exports = ['BASIE_STYLE', 'BasieStyleConfig']
+except ImportError:
+    _basie_exports = []
 
 # Modern Big Band Styles (Agent 15)
 from .modern_profiles import (
@@ -50,15 +59,15 @@ except ImportError:
 
 # Export list
 __all__ = [
-    # Classic Profiles
-    'ELLINGTON_STYLE',
-    'EllingtonStyleConfig',
-    'BASIE_STYLE',
-    'BasieStyleConfig',
     # Modern Profiles
     'THAD_JONES_STYLE',
     'MARIA_SCHNEIDER_STYLE',
     'GORDON_GOODWIN_STYLE',
     'StyleProfile',
     'ModernBigBandArranger',
-] + _arrangers_available
+]
+
+# Add classic profiles if available
+__all__.extend(_ellington_exports)
+__all__.extend(_basie_exports)
+__all__.extend(_arrangers_available)
