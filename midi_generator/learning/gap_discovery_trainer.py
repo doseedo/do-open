@@ -320,8 +320,12 @@ class LocalityTransformGenerator:
             transform_type: Specific transform type (random if None)
 
         Returns:
-            Transformed features, transformation type used
+            Transformed features, transformation type used (or None if no locality types)
         """
+        # If no locality types configured, return None
+        if len(self.locality_types) == 0:
+            return None, None
+
         if transform_type is None:
             transform_type = np.random.choice(self.locality_types)
 
@@ -804,11 +808,13 @@ class GapDiscoveryTrainer:
             features_transformed, _ = self.locality_generator.apply_random_transform(
                 features_original
             )
-            locality_loss = self.locality_generator.compute_locality_loss(
-                features_original,
-                features_transformed,
-                self.model.encode if hasattr(self.model, 'encode') else self.model.encoder
-            )
+            # Only compute locality loss if transform was applied (not None)
+            if features_transformed is not None:
+                locality_loss = self.locality_generator.compute_locality_loss(
+                    features_original,
+                    features_transformed,
+                    self.model.encode if hasattr(self.model, 'encode') else self.model.encoder
+                )
 
         # 4. Orthogonality loss: Encourage feature independence
         orthogonality_loss = torch.tensor(0.0, device=self.device)
@@ -1190,7 +1196,7 @@ class GapDiscoveryTrainer:
             outputs = self.model(features)
 
             semantic_features = outputs['semantic_features'].cpu().numpy()
-            reconstruction = outputs['reconstruction'].cpu().numpy()
+            reconstruction = outputs['reconstructed'].cpu().numpy()
 
             # Compute reconstruction error
             reconstruction_error = np.mean((reconstruction - features.cpu().numpy()) ** 2, axis=1)
