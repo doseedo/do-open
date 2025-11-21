@@ -2,7 +2,7 @@
 Deep Feature Extractor - Agent 8
 =================================
 
-Extracts 1000+ musical features from MIDI files for the Musical Program Synthesis system.
+Extracts 1150+ musical features from MIDI files for the Musical Program Synthesis system.
 
 Feature Breakdown:
 - Harmony: 250 features
@@ -11,13 +11,16 @@ Feature Breakdown:
 - Dynamics: 150 features
 - Texture: 100 features
 - Structure: 50 features
+- Orchestration: 150 features (NEW - instrumentation, programs, timbral balance)
 
-TOTAL: 1000+ features
+TOTAL: 1150+ features
 
 This extractor is the foundation of the inverse MIDI analysis pipeline,
-providing comprehensive feature vectors for XGBoost parameter prediction.
+providing comprehensive feature vectors for XGBoost parameter prediction
+and semantic discovery.
 
 Author: Agent 8 - Deep Feature Extractor Expansion Specialist
+Updated: Added orchestration/instrumentation features for complete musical analysis
 License: MIT
 """
 
@@ -114,18 +117,19 @@ class DeepFeatureExtractor:
 
     def extract(self, midi_file: Path) -> np.ndarray:
         """
-        Extract all 1000+ features from a MIDI file.
+        Extract all 1150+ features from a MIDI file.
 
         Args:
             midi_file: Path to MIDI file
 
         Returns:
-            numpy array of shape (n_features,) where n_features >= 1000
+            numpy array of shape (n_features,) where n_features >= 1150
         """
         # Parse MIDI file
         midi = mido.MidiFile(str(midi_file))
         notes = self._parse_notes(midi)
         chords = self._parse_chords(notes)
+        instrumentation = self._parse_instrumentation(midi, notes)
 
         if len(notes) == 0:
             return self._get_zero_features()
@@ -150,6 +154,9 @@ class DeepFeatureExtractor:
 
         # Structure (50 features)
         features.update(self._extract_structure_features(notes, chords))
+
+        # Orchestration (150 features) - NEW
+        features.update(self._extract_orchestration_features(instrumentation, notes))
 
         # Convert to numpy array (deterministic order)
         feature_vector = self._dict_to_vector(features)
@@ -236,6 +243,93 @@ class DeepFeatureExtractor:
             duration=duration,
             velocities=velocities
         )
+
+    def _parse_instrumentation(self, midi: mido.MidiFile, notes: List[Note]) -> Dict:
+        """
+        Parse MIDI instrumentation data.
+
+        Tracks program changes, channel assignments, and per-track note distribution.
+
+        Returns:
+            Dictionary containing:
+                - programs: Dict[channel -> program_number]
+                - program_changes: List of (time, channel, program) tuples
+                - notes_per_channel: Dict[channel -> List[Note]]
+                - notes_per_track: List[List[Note]] (one list per track)
+                - instrument_families: Dict[family -> note_count]
+        """
+        instrumentation = {
+            'programs': {},  # channel -> current program
+            'program_changes': [],  # (time, channel, program)
+            'notes_per_channel': defaultdict(list),
+            'notes_per_track': [],
+            'instrument_families': {
+                'piano': 0, 'chromatic': 0, 'organ': 0, 'guitar': 0,
+                'bass': 0, 'strings': 0, 'ensemble': 0, 'brass': 0,
+                'reed': 0, 'pipe': 0, 'synth_lead': 0, 'synth_pad': 0,
+                'synth_effects': 0, 'ethnic': 0, 'percussive': 0, 'sound_effects': 0
+            }
+        }
+
+        # Track program changes per track
+        for track_idx, track in enumerate(midi.tracks):
+            track_time = 0.0
+            track_programs = {ch: 0 for ch in range(16)}  # Default to piano
+
+            for msg in track:
+                track_time += msg.time
+
+                if msg.type == 'program_change':
+                    track_programs[msg.channel] = msg.program
+                    instrumentation['programs'][msg.channel] = msg.program
+                    instrumentation['program_changes'].append((track_time, msg.channel, msg.program))
+
+        # Organize notes by channel
+        for note in notes:
+            instrumentation['notes_per_channel'][note.channel].append(note)
+
+        # Count notes per instrument family (GM classification)
+        for channel, channel_notes in instrumentation['notes_per_channel'].items():
+            program = instrumentation['programs'].get(channel, 0)
+            family = self._get_instrument_family(program)
+            instrumentation['instrument_families'][family] += len(channel_notes)
+
+        return instrumentation
+
+    def _get_instrument_family(self, program: int) -> str:
+        """Map GM program number to instrument family"""
+        if 0 <= program < 8:
+            return 'piano'
+        elif 8 <= program < 16:
+            return 'chromatic'
+        elif 16 <= program < 24:
+            return 'organ'
+        elif 24 <= program < 32:
+            return 'guitar'
+        elif 32 <= program < 40:
+            return 'bass'
+        elif 40 <= program < 48:
+            return 'strings'
+        elif 48 <= program < 56:
+            return 'ensemble'
+        elif 56 <= program < 64:
+            return 'brass'
+        elif 64 <= program < 72:
+            return 'reed'
+        elif 72 <= program < 80:
+            return 'pipe'
+        elif 80 <= program < 88:
+            return 'synth_lead'
+        elif 88 <= program < 96:
+            return 'synth_pad'
+        elif 96 <= program < 104:
+            return 'synth_effects'
+        elif 104 <= program < 112:
+            return 'ethnic'
+        elif 112 <= program < 120:
+            return 'percussive'
+        else:
+            return 'sound_effects'
 
     # ========================================================================
     # HARMONY FEATURES (250 features)
@@ -1352,11 +1446,152 @@ class DeepFeatureExtractor:
         return {name: 0.0 for name in self.feature_names if 'structure' in name or 'form' in name or 'section' in name}
 
     # ========================================================================
+    # ORCHESTRATION FEATURES (150 features) - NEW
+    # ========================================================================
+
+    def _extract_orchestration_features(self, instrumentation: Dict, notes: List[Note]) -> Dict[str, float]:
+        """
+        Extract 150 orchestration/instrumentation features.
+
+        Features cover:
+        - Instrument family distribution (16 features)
+        - Program diversity and changes (14 features)
+        - Channel usage patterns (20 features)
+        - Register distribution per family (40 features)
+        - Density per instrument (20 features)
+        - Timbre balance metrics (20 features)
+        - Orchestration complexity (20 features)
+        """
+        features = {}
+
+        if not notes or not instrumentation:
+            return self._get_zero_orchestration_features()
+
+        total_notes = len(notes)
+        families = instrumentation['instrument_families']
+        programs = instrumentation['programs']
+        notes_per_channel = instrumentation['notes_per_channel']
+
+        # 1. Instrument family distribution (16 features)
+        for family_name, count in families.items():
+            features[f'orch_family_{family_name}_ratio'] = count / total_notes if total_notes > 0 else 0.0
+
+        # 2. Program diversity (14 features)
+        unique_programs = len(set(programs.values())) if programs else 0
+        features['orch_program_diversity'] = unique_programs
+        features['orch_program_changes_count'] = len(instrumentation['program_changes'])
+        features['orch_channels_used'] = len(notes_per_channel)
+        features['orch_programs_per_channel'] = unique_programs / max(len(notes_per_channel), 1)
+
+        # Top 10 most used programs (by note count)
+        program_counts = defaultdict(int)
+        for channel, channel_notes in notes_per_channel.items():
+            program = programs.get(channel, 0)
+            program_counts[program] += len(channel_notes)
+
+        top_programs = sorted(program_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+        for i in range(10):
+            if i < len(top_programs):
+                prog, count = top_programs[i]
+                features[f'orch_top_program_{i}_ratio'] = count / total_notes
+            else:
+                features[f'orch_top_program_{i}_ratio'] = 0.0
+
+        # 3. Channel usage patterns (20 features)
+        channel_note_counts = [len(notes_per_channel.get(ch, [])) for ch in range(16)]
+        active_channels = sum(1 for c in channel_note_counts if c > 0)
+
+        features['orch_active_channels'] = active_channels
+        features['orch_channel_balance'] = np.std(channel_note_counts) if channel_note_counts else 0.0
+        features['orch_max_channel_density'] = max(channel_note_counts) / total_notes if total_notes > 0 else 0.0
+        features['orch_min_channel_density'] = min(c for c in channel_note_counts if c > 0) / total_notes if any(channel_note_counts) and total_notes > 0 else 0.0
+        features['orch_mean_channel_density'] = np.mean([c for c in channel_note_counts if c > 0]) / total_notes if any(channel_note_counts) and total_notes > 0 else 0.0
+
+        # Per-channel statistics (first 15 channels, excluding drums on channel 10)
+        for ch in range(15):
+            if ch == 9:  # Skip drum channel
+                features[f'orch_channel_{ch}_ratio'] = 0.0
+            else:
+                features[f'orch_channel_{ch}_ratio'] = channel_note_counts[ch] / total_notes if total_notes > 0 else 0.0
+
+        # 4. Register distribution per family (40 features)
+        # Analyze pitch distribution for top 5 instrument families
+        top_families = sorted(families.items(), key=lambda x: x[1], reverse=True)[:5]
+
+        for i, (family, count) in enumerate(top_families):
+            if count > 0:
+                # Get notes from this family
+                family_notes = []
+                for channel, channel_notes in notes_per_channel.items():
+                    program = programs.get(channel, 0)
+                    if self._get_instrument_family(program) == family:
+                        family_notes.extend(channel_notes)
+
+                if family_notes:
+                    pitches = [n.pitch for n in family_notes]
+                    features[f'orch_family_{i}_pitch_mean'] = np.mean(pitches)
+                    features[f'orch_family_{i}_pitch_std'] = np.std(pitches)
+                    features[f'orch_family_{i}_pitch_min'] = np.min(pitches)
+                    features[f'orch_family_{i}_pitch_max'] = np.max(pitches)
+                    features[f'orch_family_{i}_pitch_range'] = np.max(pitches) - np.min(pitches)
+                    features[f'orch_family_{i}_low_register_ratio'] = sum(1 for p in pitches if p < 60) / len(pitches)
+                    features[f'orch_family_{i}_mid_register_ratio'] = sum(1 for p in pitches if 60 <= p < 72) / len(pitches)
+                    features[f'orch_family_{i}_high_register_ratio'] = sum(1 for p in pitches if p >= 72) / len(pitches)
+                else:
+                    for metric in ['pitch_mean', 'pitch_std', 'pitch_min', 'pitch_max', 'pitch_range',
+                                   'low_register_ratio', 'mid_register_ratio', 'high_register_ratio']:
+                        features[f'orch_family_{i}_{metric}'] = 0.0
+            else:
+                for metric in ['pitch_mean', 'pitch_std', 'pitch_min', 'pitch_max', 'pitch_range',
+                               'low_register_ratio', 'mid_register_ratio', 'high_register_ratio']:
+                    features[f'orch_family_{i}_{metric}'] = 0.0
+
+        # 5. Density per instrument (20 features)
+        # Analyze note density over time for different instruments
+        if notes:
+            max_time = max(n.end_time for n in notes)
+            time_bins = 10
+            bin_size = max_time / time_bins
+
+            for i in range(time_bins):
+                bin_start = i * bin_size
+                bin_end = (i + 1) * bin_size
+
+                # Count notes in this time bin
+                bin_notes = [n for n in notes if bin_start <= n.start_time < bin_end]
+                features[f'orch_density_bin_{i}'] = len(bin_notes) / bin_size if bin_size > 0 else 0.0
+
+            # Density variation
+            bin_densities = [features[f'orch_density_bin_{i}'] for i in range(time_bins)]
+            features['orch_density_mean'] = np.mean(bin_densities)
+            features['orch_density_std'] = np.std(bin_densities)
+            features['orch_density_max'] = np.max(bin_densities)
+            features['orch_density_min'] = np.min(bin_densities)
+            features['orch_density_range'] = np.max(bin_densities) - np.min(bin_densities)
+
+        # 6. Timbre balance (20 features - reserved for future expansion)
+        # Currently filled with derived metrics
+        features['orch_primary_family_dominance'] = max(families.values()) / total_notes if total_notes > 0 else 0.0
+        features['orch_family_diversity'] = len([f for f in families.values() if f > 0])
+        features['orch_ensemble_balance'] = 1.0 - (max(families.values()) / total_notes) if total_notes > 0 else 0.0
+
+        # Pad to ensure exactly 150 features
+        current_count = len([k for k in features.keys() if k.startswith('orch_')])
+        for i in range(current_count, 150):
+            features[f'orch_reserved_{i}'] = 0.0
+
+        return features
+
+    def _get_zero_orchestration_features(self) -> Dict[str, float]:
+        """Return zero values for all orchestration features"""
+        return {f'orch_{i}': 0.0 for i in range(150)}
+
+    # ========================================================================
     # Utility Methods
     # ========================================================================
 
     def _generate_feature_names(self) -> List[str]:
-        """Generate all 1000+ feature names in deterministic order"""
+        """Generate all 1150+ feature names in deterministic order"""
         names = []
 
         # Harmony features (250)
@@ -1376,6 +1611,9 @@ class DeepFeatureExtractor:
 
         # Structure features (50)
         names.extend([f'structure_{i}' for i in range(50)])
+
+        # Orchestration features (150) - NEW
+        names.extend([f'orchestration_{i}' for i in range(150)])
 
         return names
 

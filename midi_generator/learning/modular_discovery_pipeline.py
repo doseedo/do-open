@@ -76,10 +76,59 @@ except ImportError:
 # PyTorch
 try:
     import torch
+    from torch.utils.data import Dataset, DataLoader
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
     warnings.warn("PyTorch not available")
+
+
+# =============================================================================
+# Dataset for Training
+# =============================================================================
+
+class FeatureDataset(Dataset):
+    """
+    Simple dataset that provides 200D features from MIDI files for training.
+
+    This dataset extracts features on-the-fly during training, avoiding the need
+    to precompute and store all features upfront.
+    """
+
+    def __init__(self, midi_files: List[Path], feature_extractor):
+        """
+        Args:
+            midi_files: List of MIDI file paths
+            feature_extractor: Feature extractor instance (OptimizedFeatureExtractor)
+        """
+        self.midi_files = midi_files
+        self.feature_extractor = feature_extractor
+
+    def __len__(self):
+        return len(self.midi_files)
+
+    def __getitem__(self, idx):
+        """
+        Extract features from MIDI file.
+
+        Returns:
+            features: torch.Tensor of shape (200,)
+        """
+        midi_file = self.midi_files[idx]
+
+        try:
+            # Extract 200D features
+            features = self.feature_extractor.extract(midi_file, use_cache=True)
+
+            # Convert to torch tensor
+            features_tensor = torch.from_numpy(features).float()
+
+            return features_tensor
+
+        except Exception as e:
+            # Return zero vector if extraction fails
+            warnings.warn(f"Failed to extract features from {midi_file}: {e}")
+            return torch.zeros(200, dtype=torch.float32)
 
 
 # =============================================================================
@@ -450,32 +499,139 @@ class ModularSemanticDiscoveryPipeline:
         midi_corpus: List[Path]
     ) -> Dict[str, Any]:
         """
-        Train a single encoder.
+        Train a single encoder using GapDiscoveryTrainer.
 
-        This is a simplified training loop. In production, this would use
-        GapDiscoveryTrainer and the full training infrastructure.
+        Args:
+            dimension: Which encoder to train
+            midi_corpus: List of MIDI files for training
+
+        Returns:
+            Training results dictionary
         """
         if self.config.verbose:
             print(f"\n  Training {dimension.value} encoder...")
 
         encoder = self.encoders[dimension]
 
-        # Placeholder for actual training
-        # In production, would use GapDiscoveryTrainer
-        result = {
-            'dimension': dimension.value,
-            'status': 'success',
-            'epochs': self.config.max_epochs,
-            'final_loss': 0.0,  # Placeholder
-            'best_epoch': 0,
-        }
+        # Split corpus into train/val
+        n_files = len(midi_corpus)
+        n_train = int(n_files * self.config.train_split)
+        n_val = int(n_files * self.config.val_split)
 
-        # Save checkpoint
-        if self.config.save_intermediate_encoders:
-            checkpoint_path = self.config.output_dir / f"{dimension.value}_encoder.pt"
-            encoder.save(checkpoint_path)
+        train_files = midi_corpus[:n_train]
+        val_files = midi_corpus[n_train:n_train + n_val]
 
-        return result
+        if self.config.verbose:
+            print(f"    Train files: {len(train_files)}")
+            print(f"    Val files: {len(val_files)}")
+
+        # Create datasets
+        train_dataset = FeatureDataset(train_files, self._feature_extractor)
+        val_dataset = FeatureDataset(val_files, self._feature_extractor)
+
+        # Create data loaders
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=self.config.batch_size,
+            shuffle=True,
+            num_workers=0  # Use 0 to avoid multiprocessing issues with feature extraction
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=self.config.batch_size,
+            shuffle=False,
+            num_workers=0
+        )
+
+        # Create training config from gap_discovery_trainer
+        from midi_generator.learning.gap_discovery_trainer import TrainingConfig as GapTrainingConfig
+
+        training_config = GapTrainingConfig(
+            # Paths
+            midi_corpus_dir=self.config.midi_corpus_dir,
+            output_dir=self.config.output_dir / dimension.value,
+            checkpoint_dir=self.config.output_dir / dimension.value / "checkpoints",
+            log_dir=self.config.output_dir / dimension.value / "logs",
+
+            # Architecture (from encoder config)
+            input_dim=encoder.config.input_dim,
+            hidden_dim=encoder.config.hidden_dim,
+            num_semantic_features=encoder.config.num_semantic_features,
+
+            # Training
+            batch_size=self.config.batch_size,
+            num_epochs=self.config.max_epochs,
+            learning_rate=self.config.learning_rate,
+            weight_decay=1e-5,
+
+            # Loss weights
+            reconstruction_weight=encoder.config.reconstruction_weight,
+            sparsity_weight=encoder.config.sparsity_weight,
+            locality_weight=encoder.config.locality_weight,
+            orthogonality_weight=0.01,
+
+            # Early stopping
+            early_stopping_patience=self.config.early_stopping_patience,
+            early_stopping_min_delta=0.0001,
+
+            # Checkpointing
+            save_every_n_epochs=5,
+            keep_n_checkpoints=3,
+
+            # Logging
+            log_every_n_steps=10,
+            use_tensorboard=False,
+            use_wandb=False,
+
+            # Device
+            device=self.config.device,
+            random_seed=42,
+
+            # Locality
+            locality_types=[],  # Disable locality for now
+            locality_epsilon=0.1,
+
+            # Feature interpretation
+            min_interpretability_score=0.3,
+        )
+
+        # Create output directories
+        training_config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        training_config.log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create trainer
+        trainer = GapDiscoveryTrainer(
+            model=encoder,
+            config=training_config
+        )
+
+        # Train!
+        try:
+            result = trainer.train(train_loader, val_loader)
+
+            result['dimension'] = dimension.value
+            result['status'] = 'success'
+
+            # Save final encoder
+            if self.config.save_intermediate_encoders:
+                checkpoint_path = self.config.output_dir / f"{dimension.value}_encoder.pt"
+                encoder.save(checkpoint_path)
+
+                if self.config.verbose:
+                    print(f"    ✅ Saved encoder to {checkpoint_path}")
+
+            return result
+
+        except Exception as e:
+            warnings.warn(f"Training failed for {dimension.value}: {e}")
+            return {
+                'dimension': dimension.value,
+                'status': 'failed',
+                'error': str(e),
+                'epochs': 0,
+                'final_loss': float('inf'),
+            }
 
     def _train_cross_dimensional_encoder(self, midi_corpus: List[Path]):
         """Train cross-dimensional encoder on outputs of domain encoders"""
