@@ -407,6 +407,12 @@ class ModularSemanticDiscoveryPipeline:
         if midi_corpus is None:
             midi_corpus = self._load_corpus()
 
+        # Initialize feature extractor if not already initialized
+        if not hasattr(self, '_feature_extractor'):
+            if self.config.verbose:
+                print("\n🔧 Initializing feature extractor...")
+            self._init_feature_extractor()
+
         if self.config.verbose:
             print(f"\n🎓 Training modular encoders on {len(midi_corpus)} MIDI files...")
 
@@ -729,24 +735,31 @@ class ModularSemanticDiscoveryPipeline:
         # In production, would use decoder or generation model
         raise NotImplementedError("Generation from DNA requires decoder model")
 
-    def _extract_features(self, midi_file: Path) -> np.ndarray:
-        """Extract 200D features from MIDI file using OptimizedFeatureExtractor"""
+    def _init_feature_extractor(self):
+        """Initialize the feature extractor"""
         try:
             from midi_generator.feature_selection.optimized_feature_extractor import OptimizedFeatureExtractor
 
-            # Initialize extractor with selected features from template
-            if not hasattr(self, '_feature_extractor'):
-                # Path to selected features JSON
-                selected_features_path = Path(__file__).parent.parent / "feature_selection" / "output" / "selected_features_200_template.json"
+            # Path to selected features JSON
+            selected_features_path = Path(__file__).parent.parent / "feature_selection" / "output" / "selected_features_200_template.json"
 
-                if selected_features_path.exists():
-                    self._feature_extractor = OptimizedFeatureExtractor.from_selection_file(
-                        selected_features_path,
-                        cache_full_extraction=True
-                    )
-                else:
-                    warnings.warn(f"Selected features file not found at {selected_features_path}. Using fallback.")
-                    return np.random.randn(200)
+            if selected_features_path.exists():
+                self._feature_extractor = OptimizedFeatureExtractor.from_selection_file(
+                    selected_features_path,
+                    cache_full_extraction=True
+                )
+            else:
+                raise FileNotFoundError(f"Selected features file not found at {selected_features_path}")
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize feature extractor: {e}")
+
+    def _extract_features(self, midi_file: Path) -> np.ndarray:
+        """Extract 200D features from MIDI file using OptimizedFeatureExtractor"""
+        try:
+            # Initialize extractor if not already initialized
+            if not hasattr(self, '_feature_extractor'):
+                self._init_feature_extractor()
 
             # Extract 200D features
             features = self._feature_extractor.extract(midi_file, use_cache=True)
