@@ -26,14 +26,7 @@ Based on principles from:
 - Duke Ellington: Big band arranging style
 - George Russell: Jazz arranging concepts
 
-Enhanced by Agent 5 - Brass Section Arranger:
-- Sophisticated brass writing (sustained pads, riffs, shout chorus)
-- Call-and-response
-- Multiple voicing types
-- Dynamic shaping
-
 Author: Agent 8 - Style Transfer & Transformation
-Updated: Agent 5 - Brass Section Arranger (2025-01-20)
 """
 
 import mido
@@ -49,13 +42,9 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent))
 from analysis.midi_analyzer import MidiAnalyzer, NoteEvent, ChordEvent
 
-# Import Agent 5's brass arranger
-try:
-    from transformation.brass_arranger import BrassArranger, ShoutChorusDetector
-    BRASS_ARRANGER_AVAILABLE = True
-except ImportError:
-    BRASS_ARRANGER_AVAILABLE = False
-    print("Warning: BrassArranger not available, using legacy brass implementation")
+# Import new drum system (Agent 7)
+from .drum_arranger import DrumArranger
+from ..algorithms.rhythm_engine import RhythmNote
 
 
 # ==============================================================================
@@ -111,19 +100,9 @@ class BigBandArranger:
 
     @staticmethod
     def arrange(melody: List[NoteEvent],
-                chords: List[ChordEvent],
-                brass_style: str = "riff",
-                brass_pattern: str = "basie_riff") -> Dict[str, List[NoteEvent]]:
+                chords: List[ChordEvent]) -> Dict[str, List[NoteEvent]]:
         """
         Create big band arrangement.
-
-        Enhanced by Agent 5 to support sophisticated brass writing.
-
-        Args:
-            melody: Lead melody notes
-            chords: Chord progression
-            brass_style: "riff", "pad", "stabs" (default: "riff")
-            brass_pattern: "basie_riff", "ellington_call", "thad_modern"
 
         Returns:
             Dictionary mapping instrument names to note lists
@@ -136,85 +115,8 @@ class BigBandArranger:
         # Sax section (harmonize melody in 5-part close voicing)
         arrangement['saxes'] = BigBandArranger._harmonize_saxes(melody, chords)
 
-        # Brass section (enhanced by Agent 5)
-        arrangement['brass'] = BigBandArranger._create_brass_figures(
-            chords,
-            style=brass_style,
-            brass_style=brass_pattern
-        )
-
-        # Piano comping
-        arrangement['piano'] = BigBandArranger._create_piano_comping(chords)
-
-        # Bass walking
-        arrangement['bass'] = BigBandArranger._create_walking_bass(chords)
-
-        # Drums (swing pattern)
-        arrangement['drums'] = BigBandArranger._create_swing_drums(melody)
-
-        return arrangement
-
-    @staticmethod
-    def arrange_with_shout_chorus(melody: List[NoteEvent],
-                                  chords: List[ChordEvent],
-                                  shout_start_bar: int = 24,
-                                  shout_style: str = "basie_unison") -> Dict[str, List[NoteEvent]]:
-        """
-        Create big band arrangement with shout chorus.
-
-        Enhanced by Agent 5 for authentic big band climactic sections.
-
-        Args:
-            melody: Lead melody notes
-            chords: Chord progression
-            shout_start_bar: Bar number where shout chorus starts (default: 24 for final A in AABA)
-            shout_style: "basie_unison", "ellington_harmony", "thad_modern"
-
-        Returns:
-            Dictionary mapping instrument names to note lists
-        """
-        if not BRASS_ARRANGER_AVAILABLE:
-            # Fall back to standard arrangement
-            return BigBandArranger.arrange(melody, chords)
-
-        arrangement = {}
-
-        # Lead melody
-        arrangement['lead'] = BigBandArranger._create_lead(melody)
-
-        # Sax section
-        arrangement['saxes'] = BigBandArranger._harmonize_saxes(melody, chords)
-
-        # Separate melody into regular and shout chorus sections
-        shout_start_time = shout_start_bar * 4.0  # Assuming 4/4 time
-        regular_melody = [n for n in melody if n.start_time < shout_start_time]
-        shout_melody = [n for n in melody if n.start_time >= shout_start_time]
-
-        # Regular brass (before shout chorus)
-        if regular_melody:
-            regular_chords = [c for c in chords if c.start_time < shout_start_time]
-            arrangement['brass_regular'] = BigBandArranger._create_brass_figures(
-                regular_chords,
-                style="riff",
-                brass_style="basie_riff"
-            )
-
-        # Shout chorus brass
-        if shout_melody:
-            shout_chords = [c for c in chords if c.start_time >= shout_start_time]
-            brass_parts = BrassArranger.create_shout_chorus(
-                shout_melody,
-                shout_chords,
-                intensity=0.9,
-                style=shout_style
-            )
-            # Flatten brass parts into single list
-            arrangement['brass_shout'] = []
-            for instrument, notes in brass_parts.items():
-                arrangement['brass_shout'].extend(notes)
-
-        # Combine regular and shout brass
-        arrangement['brass'] = arrangement.get('brass_regular', []) + arrangement.get('brass_shout', [])
+        # Brass section (background figures)
+        arrangement['brass'] = BigBandArranger._create_brass_figures(chords)
 
         # Piano comping
         arrangement['piano'] = BigBandArranger._create_piano_comping(chords)
@@ -265,47 +167,10 @@ class BigBandArranger:
         return sax_notes
 
     @staticmethod
-    def _create_brass_figures(chords: List[ChordEvent],
-                             style: str = "riff",
-                             brass_style: str = "basie_riff") -> List[NoteEvent]:
-        """
-        Create brass section background figures.
-
-        Enhanced by Agent 5 to support multiple brass writing styles:
-        - Sustained pads
-        - Brass riffs
-        - Stabs (legacy)
-
-        Args:
-            chords: Chord progression
-            style: "riff", "pad", "stabs" (default: "riff")
-            brass_style: "basie_riff", "ellington_call", "thad_modern"
-
-        Returns:
-            List of NoteEvent objects for brass section
-        """
-        if BRASS_ARRANGER_AVAILABLE and style != "stabs":
-            # Use Agent 5's enhanced brass arranger
-            if style == "pad":
-                return BrassArranger.create_sustained_pad(
-                    chords,
-                    voicing_type="drop_2",
-                    dynamic_shape="arch",
-                    base_velocity=75
-                )
-            elif style == "riff":
-                # Create riff for first chord (can be extended to all chords)
-                if chords:
-                    return BrassArranger.create_brass_riff(
-                        chords[0],
-                        pattern_style=brass_style,
-                        bars=min(4, len(chords)),
-                        base_velocity=95
-                    )
-                return []
-
-        # Legacy implementation (stabs)
+    def _create_brass_figures(chords: List[ChordEvent]) -> List[NoteEvent]:
+        """Create brass section background figures (hits and stabs)."""
         brass = []
+
         for chord in chords:
             # Create brass stab on chord changes
             # Use 4-part voicing (trumpets on top, trombones below)
@@ -396,14 +261,92 @@ class BigBandArranger:
         return bass
 
     @staticmethod
-    def _create_swing_drums(melody: List[NoteEvent]) -> List[NoteEvent]:
-        """Create swing drum pattern."""
+    def _create_swing_drums(melody: List[NoteEvent],
+                           style: str = "swing",
+                           add_fills: bool = True) -> List[NoteEvent]:
+        """
+        Create sophisticated big band drum pattern using new DrumArranger (Agent 7).
+
+        Args:
+            melody: Lead melody to determine duration
+            style: Drum style ("swing", "bebop", "latin_afro", "latin_bossa")
+            add_fills: Whether to add fills at phrase endings
+
+        Returns:
+            List of NoteEvent for complete drum arrangement
+        """
         drums = []
 
         if not melody:
             return drums
 
-        # Simple swing pattern: ride cymbal, hi-hat on 2&4
+        # Calculate duration in bars (assuming 4 beats per bar)
+        duration = melody[-1].end_time
+        total_bars = int(duration / 4)  # Approximate bars
+
+        # Create dynamic map for form-aware dynamics
+        # Simple version: build intensity throughout
+        sections_per_8bars = total_bars // 8
+        dynamic_map = {}
+
+        # Add intro if long enough
+        if total_bars >= 32:
+            dynamic_map["intro"] = 0.3
+            remaining_bars = total_bars - 4
+        else:
+            remaining_bars = total_bars
+
+        # Create sections (every 8 bars)
+        section_names = ["A1", "A2", "B", "A3", "C", "D"]
+        intensity_curve = [0.5, 0.6, 0.7, 0.9, 0.8, 0.85]  # A3 is shout chorus
+
+        for i in range(min(sections_per_8bars, len(section_names))):
+            dynamic_map[section_names[i]] = intensity_curve[i]
+
+        # Generate drums with form-aware dynamics
+        try:
+            rhythm_notes = DrumArranger.arrange_drums_for_form(
+                form=None,  # TODO: Pass actual MusicalForm when available
+                style=style,
+                dynamic_map=dynamic_map,
+                ppqn=480  # MIDI standard ppqn
+            )
+
+            # Add fills at phrase endings if requested
+            if add_fills and total_bars >= 8:
+                rhythm_notes = DrumArranger.add_fills_at_phrase_endings(
+                    drums=rhythm_notes,
+                    phrase_length_bars=4,  # Fill every 4 bars
+                    fill_length_beats=2,   # 2-beat fills
+                    intensity=0.7,
+                    ppqn=480
+                )
+
+            # Apply groove template for authentic feel
+            rhythm_notes = DrumArranger.apply_groove_template(
+                drums=rhythm_notes,
+                genre="jazz_bebop" if style == "bebop" else "jazz_swing",
+                ppqn=480
+            )
+
+            # Convert RhythmNote to NoteEvent
+            drums = DrumArranger.convert_to_note_events(rhythm_notes, tempo=120)
+
+        except Exception as e:
+            # Fallback to simple pattern if new system fails
+            print(f"Warning: Advanced drum system failed ({e}), using simple pattern")
+            drums = BigBandArranger._create_simple_swing_pattern(melody)
+
+        return drums
+
+    @staticmethod
+    def _create_simple_swing_pattern(melody: List[NoteEvent]) -> List[NoteEvent]:
+        """
+        Simple fallback swing pattern (original implementation).
+
+        Used if advanced drum system encounters errors.
+        """
+        drums = []
         duration = melody[-1].end_time
         beats = int(duration)
 

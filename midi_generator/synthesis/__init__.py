@@ -1,8 +1,12 @@
+#!/usr/bin/env python3
 """
-Synthesis Module
-================
+Musical Program Synthesis System
+=================================
 
-This module contains inverse synthesis and analysis tools for Musical Program Synthesis.
+This package implements a complete Musical Program Synthesis system that:
+1. Extracts deep features from MIDI files (1000+ dimensions)
+2. Learns optimal parameters via XGBoost
+3. Generates similar music with precise control
 
 Modules:
 - deep_feature_extractor: Extract 1000+ musical features from MIDI files (Agent 8) ✅
@@ -19,8 +23,7 @@ Neural Program Synthesis (Agent 8):
 - Phase 4: Training infrastructure with grammar-constrained generation ✅
 - Complete system for learning transforms from MIDI examples
 
-Author: Musical Program Synthesis Team
-License: MIT
+Author: Agent 10 - Integration & API
 """
 
 from .deep_feature_extractor import DeepFeatureExtractor, extract_features
