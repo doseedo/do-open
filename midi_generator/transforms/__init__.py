@@ -21,6 +21,11 @@ Dimensions:
 Total: 60 theory-based transforms
 Target: Expand to 200-400 with sparse dictionary learning + gap discovery
 
+Transform Discovery:
+- HybridTransformSynthesizer: Combines 5 research techniques for auto-discovery
+- LLMCodeGenerator: PyCraft-style code generation from examples
+- Supports OpenAI GPT-4, Anthropic Claude, and local models
+
 Usage:
     from midi_generator.transforms import get_transform_registry
 
@@ -148,6 +153,34 @@ from .advanced_transforms import (
     SpectralDensityTransform
 )
 
+# Transform discovery (Phase 2-3)
+try:
+    from .hybrid_synthesizer import (
+        HybridTransformSynthesizer,
+        GapCluster,
+        DiscoveredPattern,
+        SynthesisConfig,
+        MIDIGraphTransformMining,
+        MIDIReasoningPrimitives
+    )
+    from .llm_code_generator import (
+        LLMCodeGenerator,
+        TransformExampleLibrary,
+        TransformValidator
+    )
+    TRANSFORM_DISCOVERY_AVAILABLE = True
+except ImportError:
+    HybridTransformSynthesizer = None
+    GapCluster = None
+    DiscoveredPattern = None
+    SynthesisConfig = None
+    MIDIGraphTransformMining = None
+    MIDIReasoningPrimitives = None
+    LLMCodeGenerator = None
+    TransformExampleLibrary = None
+    TransformValidator = None
+    TRANSFORM_DISCOVERY_AVAILABLE = False
+
 
 __all__ = [
     # Core classes
@@ -237,9 +270,21 @@ __all__ = [
     'PolymeterTransform',
     'MicrorhythmTransform',
     'SpectralDensityTransform',
+
+    # Transform discovery (Phase 2-3)
+    'HybridTransformSynthesizer',
+    'GapCluster',
+    'DiscoveredPattern',
+    'SynthesisConfig',
+    'MIDIGraphTransformMining',
+    'MIDIReasoningPrimitives',
+    'LLMCodeGenerator',
+    'TransformExampleLibrary',
+    'TransformValidator',
+    'TRANSFORM_DISCOVERY_AVAILABLE',
 ]
 
 
 # Version info
-__version__ = '0.2.0'  # Updated to 60 transforms
+__version__ = '0.3.0'  # Updated to 60 transforms + discovery infrastructure
 __author__ = 'Agent 8 - Data Pipeline & Transform Architecture'
