@@ -1,25 +1,32 @@
 /**
  * BasePlugin - Foundation class for all Web Audio plugins
  *
- * Provides core functionality:
- * - Parameter registration and management
- * - Audio routing (input/output nodes)
+ * @description
+ * Base class that provides common functionality for all audio plugins:
+ * - Audio node routing (input/output)
+ * - Parameter management and registration
+ * - Preset save/load
  * - Bypass functionality
- * - Preset management
  * - Resource cleanup
  *
- * @author Agent 10 (Core Infrastructure)
- * @version 1.0.0
+ * All plugins MUST extend this class and register with PluginFactory
+ *
+ * @example
+ * class MyPlugin extends BasePlugin {
+ *   constructor(audioContext, options = {}) {
+ *     super(audioContext, options);
+ *     // Your implementation
+ *   }
+ * }
  */
 
 export class BasePlugin {
   /**
    * Create a new plugin instance
    * @param {AudioContext} audioContext - Web Audio API context
-   * @param {Object} options - Plugin configuration options
-   * @param {string} options.category - Plugin category
+   * @param {Object} options - Plugin configuration
+   * @param {string} options.category - Plugin category (e.g., 'vintage', 'dynamics')
    * @param {string} options.description - Plugin description
-   * @param {string} options.name - Plugin name (optional, defaults to class name)
    */
   constructor(audioContext, options = {}) {
     if (!audioContext) {
@@ -29,212 +36,254 @@ export class BasePlugin {
     this.audioContext = audioContext;
     this.category = options.category || 'uncategorized';
     this.description = options.description || '';
-    this.name = options.name || this.constructor.name;
+    this.name = this.constructor.name;
 
-    // Create input and output nodes for routing
+    // Create input and output nodes
     this.input = audioContext.createGain();
     this.output = audioContext.createGain();
 
     // Bypass functionality
-    this._bypassed = false;
+    this._bypass = false;
     this._bypassGain = audioContext.createGain();
-    this._bypassGain.connect(this.output);
 
     // Parameter tracking
-    this._parameters = new Map();
+    this.parameters = new Map();
+    this.parameterValues = new Map();
 
-    // Preset storage
-    this._currentPreset = null;
+    // Performance tracking
+    this.cpuUsage = 0;
+    this._processingStartTime = 0;
 
-    // Performance metrics
-    this._processingTime = 0;
+    // Unique instance ID
+    this.instanceId = this._generateId();
+
+    // Internal nodes for subclasses
+    this._nodes = [];
   }
 
   /**
    * Register a parameter for automation and preset management
    * @param {string} name - Parameter name
-   * @param {AudioParam} audioParam - Web Audio AudioParam to control
+   * @param {AudioParam} audioParam - Web Audio AudioParam
    * @param {Object} config - Parameter configuration
-   * @param {number} config.min - Minimum value
-   * @param {number} config.max - Maximum value
-   * @param {number} config.default - Default value
-   * @param {string} config.unit - Unit label (Hz, dB, %, etc.)
-   * @param {string} config.label - Display label
-   * @param {string} config.type - Parameter type (continuous, discrete, switch)
    */
   registerParameter(name, audioParam, config = {}) {
-    this._parameters.set(name, {
+    const paramConfig = {
       param: audioParam,
-      config: {
-        min: config.min ?? 0,
-        max: config.max ?? 1,
-        default: config.default ?? 0.5,
-        unit: config.unit || '',
-        label: config.label || name,
-        type: config.type || 'continuous'
-      }
-    });
-  }
+      min: config.min !== undefined ? config.min : audioParam.minValue || 0,
+      max: config.max !== undefined ? config.max : audioParam.maxValue || 1,
+      default: config.default !== undefined ? config.default : audioParam.value,
+      unit: config.unit || '',
+      label: config.label || name,
+      type: config.type || 'continuous', // continuous, discrete, boolean
+      ...config
+    };
 
-  /**
-   * Get a registered parameter
-   * @param {string} name - Parameter name
-   * @returns {Object} Parameter object with param and config
-   */
-  getParameter(name) {
-    return this._parameters.get(name);
-  }
+    this.parameters.set(name, paramConfig);
+    this.parameterValues.set(name, audioParam.value);
 
-  /**
-   * Get all registered parameters
-   * @returns {Map} All parameters
-   */
-  getAllParameters() {
-    return this._parameters;
+    return this;
   }
 
   /**
    * Set a parameter value
    * @param {string} name - Parameter name
    * @param {number} value - New value
-   * @param {number} time - Time to apply change (AudioContext time)
+   * @param {number} rampTime - Ramp time in seconds (optional)
    */
-  setParameter(name, value, time = null) {
-    const param = this._parameters.get(name);
-    if (!param) {
-      console.warn(`Parameter ${name} not found in ${this.name}`);
-      return;
+  setParameter(name, value, rampTime = 0) {
+    const paramConfig = this.parameters.get(name);
+    if (!paramConfig) {
+      console.warn(`Parameter "${name}" not found in ${this.name}`);
+      return this;
     }
 
-    const { min, max } = param.config;
-    const clampedValue = Math.max(min, Math.min(max, value));
+    // Clamp value to min/max
+    const clampedValue = Math.max(paramConfig.min, Math.min(paramConfig.max, value));
 
-    if (time === null) {
-      param.param.value = clampedValue;
+    if (rampTime > 0) {
+      const now = this.audioContext.currentTime;
+      paramConfig.param.setTargetAtTime(clampedValue, now, rampTime);
     } else {
-      param.param.setValueAtTime(clampedValue, time);
-    }
-  }
-
-  /**
-   * Connect this plugin to another audio node or plugin
-   * @param {AudioNode|BasePlugin} destination - Destination node or plugin
-   */
-  connect(destination) {
-    if (destination instanceof BasePlugin) {
-      this.output.connect(destination.input);
-    } else if (destination instanceof AudioNode) {
-      this.output.connect(destination);
-    } else {
-      throw new Error('Invalid connection destination');
-    }
-  }
-
-  /**
-   * Disconnect this plugin from all outputs
-   */
-  disconnect() {
-    this.output.disconnect();
-  }
-
-  /**
-   * Bypass/enable the plugin
-   * @param {boolean} bypassed - True to bypass, false to enable
-   */
-  setBypass(bypassed) {
-    this._bypassed = bypassed;
-
-    if (bypassed) {
-      // Direct connection: input -> output
-      this.input.disconnect();
-      this.input.connect(this._bypassGain);
-    } else {
-      // Normal processing chain
-      this.input.disconnect();
-      // Subclasses will implement their own processing chain
-    }
-  }
-
-  /**
-   * Check if plugin is bypassed
-   * @returns {boolean} Bypass state
-   */
-  isBypassed() {
-    return this._bypassed;
-  }
-
-  /**
-   * Load a preset
-   * @param {Object} preset - Preset object with parameter values
-   * @param {string} preset.name - Preset name
-   * @param {Object} preset.parameters - Parameter values
-   */
-  loadPreset(preset) {
-    if (!preset || !preset.parameters) {
-      console.warn('Invalid preset format');
-      return;
+      paramConfig.param.value = clampedValue;
     }
 
-    Object.entries(preset.parameters).forEach(([name, value]) => {
-      this.setParameter(name, value);
-    });
+    this.parameterValues.set(name, clampedValue);
 
-    this._currentPreset = preset;
+    return this;
+  }
+
+  /**
+   * Get a parameter value
+   * @param {string} name - Parameter name
+   * @returns {number} Current value
+   */
+  getParameter(name) {
+    return this.parameterValues.get(name);
+  }
+
+  /**
+   * Get all parameters
+   * @returns {Object} All parameter values
+   */
+  getAllParameters() {
+    const params = {};
+    for (const [name, value] of this.parameterValues.entries()) {
+      params[name] = value;
+    }
+    return params;
   }
 
   /**
    * Save current state as a preset
    * @param {string} name - Preset name
-   * @returns {Object} Preset object
+   * @param {string} category - Preset category
+   * @param {string} description - Preset description
+   * @returns {Object} Preset data
    */
-  savePreset(name) {
-    const parameters = {};
-
-    this._parameters.forEach((param, paramName) => {
-      parameters[paramName] = param.param.value;
-    });
-
-    const preset = {
+  savePreset(name, category = 'User', description = '') {
+    return {
       name,
+      category,
+      description,
       plugin: this.name,
-      category: this.category,
-      parameters
+      version: '1.0.0',
+      timestamp: Date.now(),
+      parameters: this.getAllParameters()
     };
-
-    this._currentPreset = preset;
-    return preset;
   }
 
   /**
-   * Get current preset
-   * @returns {Object|null} Current preset or null
+   * Load a preset
+   * @param {Object} preset - Preset data
+   * @param {number} morphTime - Morph time in seconds
    */
-  getCurrentPreset() {
-    return this._currentPreset;
+  loadPreset(preset, morphTime = 0) {
+    if (preset.plugin !== this.name) {
+      console.warn(`Preset is for ${preset.plugin}, but this is ${this.name}`);
+      return this;
+    }
+
+    for (const [name, value] of Object.entries(preset.parameters)) {
+      this.setParameter(name, value, morphTime);
+    }
+
+    return this;
   }
 
   /**
-   * Cleanup and release resources
-   * Must be called when plugin is no longer needed
+   * Enable/disable bypass
+   * @param {boolean} bypass - Bypass state
+   */
+  setBypass(bypass) {
+    this._bypass = bypass;
+
+    if (bypass) {
+      // Route input directly to output
+      this.input.disconnect();
+      this.input.connect(this.output);
+    } else {
+      // TODO: Subclasses should override _reconnect() method
+      this._reconnect();
+    }
+
+    return this;
+  }
+
+  /**
+   * Get bypass state
+   * @returns {boolean} Bypass state
+   */
+  getBypass() {
+    return this._bypass;
+  }
+
+  /**
+   * Connect this plugin to another node
+   * @param {AudioNode|BasePlugin} destination - Destination node
+   */
+  connect(destination) {
+    if (destination instanceof BasePlugin) {
+      this.output.connect(destination.input);
+    } else {
+      this.output.connect(destination);
+    }
+    return this;
+  }
+
+  /**
+   * Disconnect this plugin
+   */
+  disconnect() {
+    this.output.disconnect();
+    return this;
+  }
+
+  /**
+   * Reconnect internal routing (called after bypass)
+   * Subclasses should override this
+   * @protected
+   */
+  _reconnect() {
+    // Default: direct connection
+    this.input.connect(this.output);
+  }
+
+  /**
+   * Clean up resources
+   * IMPORTANT: Always call super.dispose() in subclasses
    */
   dispose() {
-    this.disconnect();
+    // Disconnect all nodes
     this.input.disconnect();
+    this.output.disconnect();
     this._bypassGain.disconnect();
-    this._parameters.clear();
+
+    // Disconnect tracked nodes
+    for (const node of this._nodes) {
+      if (node && typeof node.disconnect === 'function') {
+        node.disconnect();
+      }
+    }
+
+    // Clear maps
+    this.parameters.clear();
+    this.parameterValues.clear();
+    this._nodes = [];
+  }
+
+  /**
+   * Generate a unique ID
+   * @private
+   * @returns {string} Unique ID
+   */
+  _generateId() {
+    return `${this.name}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Track an audio node for cleanup
+   * @protected
+   * @param {AudioNode} node - Node to track
+   */
+  _trackNode(node) {
+    this._nodes.push(node);
+    return node;
   }
 
   /**
    * Get plugin info
-   * @returns {Object} Plugin metadata
+   * @returns {Object} Plugin information
    */
   getInfo() {
     return {
       name: this.name,
+      instanceId: this.instanceId,
       category: this.category,
       description: this.description,
-      parameterCount: this._parameters.size,
-      bypassed: this._bypassed
+      parameterCount: this.parameters.size,
+      bypass: this._bypass,
+      cpuUsage: this.cpuUsage
     };
   }
 }
