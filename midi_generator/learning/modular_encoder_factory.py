@@ -118,6 +118,7 @@ class DimensionSpec:
 HARMONY_SPEC = DimensionSpec(
     dimension=MusicalDimension.HARMONY,
     num_params=30,
+    input_dim=250,  # FIXED: 250D harmony features from DeepFeatureExtractor
     locality_functions=[
         'transpose',      # Key invariance
         'invert',         # Interval preservation
@@ -143,6 +144,7 @@ HARMONY_SPEC = DimensionSpec(
 RHYTHM_SPEC = DimensionSpec(
     dimension=MusicalDimension.RHYTHM,
     num_params=20,
+    input_dim=250,  # FIXED: 250D rhythm features from DeepFeatureExtractor
     locality_functions=[
         'augment',        # Tempo scaling
         'time_shift',     # Phase invariance
@@ -165,6 +167,7 @@ RHYTHM_SPEC = DimensionSpec(
 FORM_SPEC = DimensionSpec(
     dimension=MusicalDimension.FORM,
     num_params=15,
+    input_dim=50,  # FIXED: 50D structure features from DeepFeatureExtractor
     locality_functions=[
         'section_permute',     # Rearrange sections
         'section_repeat',      # Repeat sections
@@ -185,6 +188,7 @@ FORM_SPEC = DimensionSpec(
 ORCHESTRATION_SPEC = DimensionSpec(
     dimension=MusicalDimension.ORCHESTRATION,
     num_params=25,
+    input_dim=150,  # FIXED: 150D orchestration features from DeepFeatureExtractor
     locality_functions=[
         'instrument_swap',        # Change instrumentation
         'octave_shift',          # Vertical spacing
@@ -207,6 +211,7 @@ ORCHESTRATION_SPEC = DimensionSpec(
 TEXTURE_SPEC = DimensionSpec(
     dimension=MusicalDimension.TEXTURE,
     num_params=20,
+    input_dim=100,  # FIXED: 100D texture features from DeepFeatureExtractor
     locality_functions=[
         'density_morph',          # Change note density
         'layer_add_remove',       # Layering

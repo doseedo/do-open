@@ -601,8 +601,7 @@ class ModularSemanticDiscoveryPipeline:
             print(f"    Val files: {len(val_files)}")
 
         # Create datasets
-        # For cross-dimensional encoder, use domain parameters (110D)
-        # For domain encoders, use raw features (220D)
+        # FIXED: Use dimension-specific features for each encoder
         if dimension == MusicalDimension.CROSS_DIMENSIONAL:
             # Collect trained domain encoders
             domain_encoders = {
@@ -618,9 +617,24 @@ class ModularSemanticDiscoveryPipeline:
             train_dataset = CrossDimensionalDataset(train_files, self._feature_extractor, domain_encoders)
             val_dataset = CrossDimensionalDataset(val_files, self._feature_extractor, domain_encoders)
         else:
-            # Domain encoders use raw 220D features
-            train_dataset = FeatureDataset(train_files, self._feature_extractor)
-            val_dataset = FeatureDataset(val_files, self._feature_extractor)
+            # FIXED: Domain encoders use dimension-specific features
+            # Check if we have the new feature router
+            if hasattr(self._feature_extractor, 'extract_for_dimension'):
+                # Use dimension-specific dataset
+                from midi_generator.learning.modular_pipeline_fixed import DimensionSpecificDataset
+                train_dataset = DimensionSpecificDataset(train_files, dimension, self._feature_extractor)
+                val_dataset = DimensionSpecificDataset(val_files, dimension, self._feature_extractor)
+
+                if self.config.verbose:
+                    feature_dim = self._feature_extractor.get_dimension_size(dimension)
+                    print(f"    Using dimension-specific features: {feature_dim}D")
+            else:
+                # Fallback to old method (all encoders get same 220D features)
+                train_dataset = FeatureDataset(train_files, self._feature_extractor)
+                val_dataset = FeatureDataset(val_files, self._feature_extractor)
+
+                if self.config.verbose:
+                    warnings.warn(f"Using shared features for {dimension.value} encoder - dimension separation not active")
 
         # Create data loaders
         train_loader = DataLoader(
@@ -822,12 +836,29 @@ class ModularSemanticDiscoveryPipeline:
         raise NotImplementedError("Generation from DNA requires decoder model")
 
     def _init_feature_extractor(self):
-        """Initialize the feature extractor (v2.0 EnhancedFeatureExtractor with 220D features)"""
+        """Initialize the feature extractor (FIXED: DimensionFeatureRouter with 1150D features)"""
         try:
+            from midi_generator.learning.dimension_feature_router import DimensionFeatureRouter
+
+            # Use dimension-specific feature router
+            self._feature_extractor = DimensionFeatureRouter(cache_dir=self.config.cache_dir)
+
+            if self.config.verbose:
+                print("✅ Using DimensionFeatureRouter for dimension-specific feature extraction")
+                print("   Feature dimensions:")
+                from midi_generator.learning.dimension_feature_router import MusicalDimension
+                for dim in [MusicalDimension.HARMONY, MusicalDimension.RHYTHM,
+                           MusicalDimension.FORM, MusicalDimension.ORCHESTRATION,
+                           MusicalDimension.TEXTURE]:
+                    size = self._feature_extractor.get_dimension_size(dim)
+                    print(f"     {dim.value}: {size}D")
+
+        except ImportError:
+            # Fallback to old method if router not available
+            warnings.warn("DimensionFeatureRouter not available, falling back to EnhancedFeatureExtractor")
             from midi_generator.feature_selection.enhanced_feature_extractor import EnhancedFeatureExtractor
 
-            # Use the corrected feature selection file
-            selected_features_path = Path(__file__).parent.parent / "feature_selection" / "output" / "selected_features_200_actual.json"
+            selected_features_path = Path(__file__).parent.parent / "feature_selection" / "output" / "selected_features_200_balanced.json"
 
             if selected_features_path.exists():
                 self._feature_extractor = EnhancedFeatureExtractor.from_selection_file(
@@ -835,7 +866,7 @@ class ModularSemanticDiscoveryPipeline:
                     cache_extraction=True
                 )
             else:
-                raise FileNotFoundError(f"Selected features file not found at {selected_features_path}")
+                raise FileNotFoundError(f"Balanced features file not found at {selected_features_path}")
 
         except Exception as e:
             raise RuntimeError(f"Failed to initialize feature extractor: {e}")
