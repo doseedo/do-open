@@ -1,73 +1,41 @@
 #!/usr/bin/env python3
 """
-Big Band Style Profiles Module
-===============================
+Big Band Style Profiles
+=======================
 
-This module provides style profiles for different big band arrangers and eras.
-Each profile defines arranging characteristics, voicing preferences, harmonic
-complexity, and orchestration techniques.
+Style profiles for different big band composers and arrangers.
 
-Available Profiles:
-------------------
+Each style profile defines characteristics such as:
+- Orchestration preferences
+- Harmonic complexity
+- Voicing choices
+- Articulation usage
+- Dynamic range
+- Form preferences
+- Texture density
+
+Implemented Styles:
 - Duke Ellington: Exotic harmonies, plunger mutes, rich orchestration
 - Count Basie: Simple riffs, powerful rhythm section, sparse piano
-- Thad Jones: Modern, angular, quartal harmony
-- Maria Schneider: Orchestral colors, impressionistic
-- Gordon Goodwin: High energy, contemporary swing
+- Thad Jones: Modern voicings, angular melodies, quartal harmony
+- Maria Schneider: Orchestral colors, impressionistic approach
 
-Authors: Agents 13, 14, 15 - Style Analyzers
-Date: 2025
-License: MIT
+Author: Agent 13 - Duke Ellington Style Analyzer
 """
 
-# Classic Big Band Styles (Agents 13 & 14)
-try:
-    from .ellington_profile import ELLINGTON_STYLE, EllingtonStyleConfig
-    _ellington_exports = ['ELLINGTON_STYLE', 'EllingtonStyleConfig']
-except ImportError:
-    _ellington_exports = []
+from .ellington_profile import ELLINGTON_STYLE, EllingtonStyleConfig
 
-try:
-    from .basie_profile import BASIE_STYLE, BasieStyleConfig
-    _basie_exports = ['BASIE_STYLE', 'BasieStyleConfig']
-except ImportError:
-    _basie_exports = []
-
-# Modern Big Band Styles (Agent 15)
-from .modern_profiles import (
-    THAD_JONES_STYLE,
-    MARIA_SCHNEIDER_STYLE,
-    GORDON_GOODWIN_STYLE,
-    StyleProfile,
-    ModernBigBandArranger
-)
-
-# Import arrangers only if dependencies are available
-_arrangers_available = []
-
+# Import arranger only if dependencies are available
 try:
     from .ellington_arranger import EllingtonArranger
-    _arrangers_available.append('EllingtonArranger')
-except ImportError:
-    pass
-
-try:
-    from .basie_arranger import BasieArranger, BasieRiffGenerator
-    _arrangers_available.extend(['BasieArranger', 'BasieRiffGenerator'])
-except ImportError:
-    pass
-
-# Export list
-__all__ = [
-    # Modern Profiles
-    'THAD_JONES_STYLE',
-    'MARIA_SCHNEIDER_STYLE',
-    'GORDON_GOODWIN_STYLE',
-    'StyleProfile',
-    'ModernBigBandArranger',
-]
-
-# Add classic profiles if available
-__all__.extend(_ellington_exports)
-__all__.extend(_basie_exports)
-__all__.extend(_arrangers_available)
+    __all__ = [
+        'ELLINGTON_STYLE',
+        'EllingtonStyleConfig',
+        'EllingtonArranger',
+    ]
+except ImportError as e:
+    # Mido not available, skip arranger import
+    __all__ = [
+        'ELLINGTON_STYLE',
+        'EllingtonStyleConfig',
+    ]
