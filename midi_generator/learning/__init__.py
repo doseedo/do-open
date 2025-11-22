@@ -15,6 +15,7 @@ This module contains machine learning components for the system:
 - Texture semantic encoding (Agent 6)
 - Texture analysis algorithms (Agent 6)
 - Cross-dimensional pattern discovery (Agent 7)
+- Sparse transform learning and gap-driven discovery (Agent 8)
 
 Key Components:
 
@@ -38,6 +39,13 @@ Key Components:
 - Discovers 10 cross-dimensional parameters capturing musical coherence
 - InteractionPatternDiscoverer: Finds statistical patterns between dimensions
 - ParameterCouplingValidator: Validates musical coherence constraints
+
+**Agent 8: Sparse Transform Learning & Gap-Driven Discovery**
+- SparseTransformLearner: Discover 120-140 data-driven transforms via sparse coding
+- GapDrivenDiscovery: Iteratively discover transforms to fill reconstruction gaps
+- MIDIFeatureExtractor: Extract 1,150D feature vectors from MIDI
+- ResidualAnalyzer: Analyze reconstruction residuals
+- GapClusterer: Cluster residuals to identify systematic gaps
 
 **Agent 9: Feature-Parameter Mapping**
 - FeatureParameterMapper: Maps 1000 features to 515+ parameters
@@ -234,6 +242,30 @@ except ImportError:
     CouplingType = None
     PARAMETER_COUPLING_AVAILABLE = False
 
+# Agent 8: Sparse Transform Learning & Gap-Driven Discovery
+try:
+    from .sparse_transform_learning import (
+        SparseTransformLearner,
+        MIDIFeatureExtractor,
+        LearnedComponent
+    )
+    from .gap_driven_discovery import (
+        GapDrivenDiscovery,
+        ResidualAnalyzer,
+        GapClusterer,
+        ReconstructionResult
+    )
+    SPARSE_LEARNING_AVAILABLE = True
+except ImportError:
+    SparseTransformLearner = None
+    MIDIFeatureExtractor = None
+    LearnedComponent = None
+    GapDrivenDiscovery = None
+    ResidualAnalyzer = None
+    GapClusterer = None
+    ReconstructionResult = None
+    SPARSE_LEARNING_AVAILABLE = False
+
 
 __all__ = [
     # Agent 3: Semantic Feature Discovery
@@ -302,6 +334,16 @@ __all__ = [
     'CouplingConstraint',
     'CouplingType',
     'PARAMETER_COUPLING_AVAILABLE',
+
+    # Agent 8: Sparse Transform Learning & Gap-Driven Discovery
+    'SparseTransformLearner',
+    'MIDIFeatureExtractor',
+    'LearnedComponent',
+    'GapDrivenDiscovery',
+    'ResidualAnalyzer',
+    'GapClusterer',
+    'ReconstructionResult',
+    'SPARSE_LEARNING_AVAILABLE',
 
     # Agent 9: Feature-Parameter Mapping
     'FeatureParameterMapper',
