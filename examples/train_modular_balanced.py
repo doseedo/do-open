@@ -241,7 +241,8 @@ def train_encoder(
             batch = batch.to(device)
 
             # Forward pass
-            loss, components = encoder.compute_loss(batch)
+            loss_dict = encoder.compute_loss(batch)
+            loss = loss_dict['total_loss']
 
             # Backward pass
             optimizer.zero_grad()
@@ -260,8 +261,8 @@ def train_encoder(
         with torch.no_grad():
             for batch in val_loader:
                 batch = batch.to(device)
-                loss, _ = encoder.compute_loss(batch)
-                val_losses.append(loss.item())
+                loss_dict = encoder.compute_loss(batch)
+                val_losses.append(loss_dict['total_loss'].item())
 
         avg_val_loss = np.mean(val_losses)
 
