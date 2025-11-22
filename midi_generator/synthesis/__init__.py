@@ -10,12 +10,14 @@ Modules:
 - gap_detector: Intelligent gap detection (Agent 10) ✅
 - transform_dsl: Domain-Specific Language for MIDI transforms (Agent 8) ✅
 - synthetic_dataset: Generate training data for neural program synthesis (Agent 8) ✅
+- neural_synthesizer: Neural architecture for learning transforms (Agent 8) ✅
+- program_synthesis_trainer: Training infrastructure (Agent 8) ✅
 
 Neural Program Synthesis (Agent 8):
-- DSL with constrained grammar for musical transformations
-- 100 transform templates across 6 categories
-- Synthetic dataset generator for 10,000 training examples
-- Foundation for learning transforms from MIDI examples
+- Phase 1-2: DSL with constrained grammar + 100 transform templates ✅
+- Phase 3: Neural architecture (Transformer encoder-decoder) ✅
+- Phase 4: Training infrastructure with grammar-constrained generation ✅
+- Complete system for learning transforms from MIDI examples
 
 Author: Musical Program Synthesis Team
 License: MIT
@@ -45,6 +47,19 @@ try:
         SyntheticExample,
         TransformTemplateLibrary
     )
+    from .neural_synthesizer import (
+        NeuralProgramSynthesizer,
+        MIDIDifferenceEncoder,
+        DSLProgramDecoder,
+        DSLGrammarConstraints,
+        midi_to_pianoroll
+    )
+    from .program_synthesis_trainer import (
+        ProgramSynthesisTrainer,
+        SyntheticMIDIDataset,
+        create_dataloaders,
+        train_neural_synthesizer
+    )
     NEURAL_SYNTHESIS_AVAILABLE = True
 except ImportError:
     DSLProgram = None
@@ -63,6 +78,15 @@ except ImportError:
     SyntheticDatasetGenerator = None
     SyntheticExample = None
     TransformTemplateLibrary = None
+    NeuralProgramSynthesizer = None
+    MIDIDifferenceEncoder = None
+    DSLProgramDecoder = None
+    DSLGrammarConstraints = None
+    midi_to_pianoroll = None
+    ProgramSynthesisTrainer = None
+    SyntheticMIDIDataset = None
+    create_dataloaders = None
+    train_neural_synthesizer = None
     NEURAL_SYNTHESIS_AVAILABLE = False
 
 __all__ = [
@@ -89,5 +113,19 @@ __all__ = [
     'SyntheticDatasetGenerator',
     'SyntheticExample',
     'TransformTemplateLibrary',
+
+    # Neural Program Synthesis - Neural Architecture
+    'NeuralProgramSynthesizer',
+    'MIDIDifferenceEncoder',
+    'DSLProgramDecoder',
+    'DSLGrammarConstraints',
+    'midi_to_pianoroll',
+
+    # Neural Program Synthesis - Training
+    'ProgramSynthesisTrainer',
+    'SyntheticMIDIDataset',
+    'create_dataloaders',
+    'train_neural_synthesizer',
+
     'NEURAL_SYNTHESIS_AVAILABLE',
 ]
