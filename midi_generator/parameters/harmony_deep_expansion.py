@@ -1488,6 +1488,9 @@ def register_specialized_techniques():
 # MAIN REGISTRATION FUNCTION
 # ============================================================================
 
+# Global flag to prevent duplicate registration
+_HARMONY_EXPANSION_REGISTERED = False
+
 def register_all_harmony_deep_expansion():
     """
     Register all 94 harmony deep expansion parameters.
@@ -1503,6 +1506,9 @@ def register_all_harmony_deep_expansion():
 
     Total: 94 new parameters
     """
+    global _HARMONY_EXPANSION_REGISTERED
+    if _HARMONY_EXPANSION_REGISTERED:
+        return (REGISTRY.parameter_count(), 0)  # Already registered, return current counts
 
     print("=" * 80)
     print("HARMONY DEEP EXPANSION - Agent 3")
@@ -1556,6 +1562,7 @@ def register_all_harmony_deep_expansion():
 
     print("\n" + "=" * 80)
 
+    _HARMONY_EXPANSION_REGISTERED = True
     return final_harmony, added
 
 

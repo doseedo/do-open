@@ -82,6 +82,14 @@ except ImportError:
     TORCH_AVAILABLE = False
     warnings.warn("PyTorch not available")
 
+# Feature extraction
+try:
+    from midi_generator.feature_selection.optimized_feature_extractor import OptimizedFeatureExtractor
+    FEATURE_EXTRACTOR_AVAILABLE = True
+except ImportError:
+    FEATURE_EXTRACTOR_AVAILABLE = False
+    warnings.warn("OptimizedFeatureExtractor not available")
+
 
 # =============================================================================
 # Datasets for Training
@@ -418,6 +426,28 @@ class ModularSemanticDiscoveryPipeline:
 
         # Storage for encoders
         self.encoders: Dict[MusicalDimension, SemanticFeatureEncoder] = {}
+
+        # Initialize feature extractor
+        if FEATURE_EXTRACTOR_AVAILABLE:
+            # Import DeepFeatureExtractor to get actual feature names
+            try:
+                from midi_generator.synthesis.deep_feature_extractor import DeepFeatureExtractor
+                base_extractor = DeepFeatureExtractor()
+                all_features = base_extractor.feature_names
+                # Use first 200 features
+                selected_features = all_features[:200]
+                self._feature_extractor = OptimizedFeatureExtractor(
+                    selected_features=selected_features,
+                    cache_full_extraction=True
+                )
+                if config.verbose:
+                    print(f"✅ Using first 200 features from DeepFeatureExtractor")
+            except Exception as e:
+                self._feature_extractor = None
+                warnings.warn(f"Failed to initialize feature extractor: {e}")
+        else:
+            self._feature_extractor = None
+            warnings.warn("Feature extractor not available - training will fail")
 
         # Training state
         self.is_trained = False

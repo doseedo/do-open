@@ -248,12 +248,129 @@ def load_dataset(args, config):
 
             print(f"\n📂 Loading MIDI corpus from {args.corpus_dir}")
 
-            # Create full dataset
-            full_dataset = GapDataset(
-                midi_corpus_dir=args.corpus_dir,
-                cache_dir=config.output_dir / 'gap_cache',
-                precompute_gaps=True
+            # Get list of MIDI files
+            midi_files = list(Path(args.corpus_dir).glob('**/*.mid')) + \
+                        list(Path(args.corpus_dir).glob('**/*.midi'))
+
+            if len(midi_files) == 0:
+                raise ValueError(f"No MIDI files found in {args.corpus_dir}")
+
+            print(f"Found {len(midi_files)} MIDI files")
+
+            # Create dataset using EnhancedFeatureExtractor (220D) with normalization
+            import torch
+            import numpy as np
+            from midi_generator.feature_selection.enhanced_feature_extractor import (
+                EnhancedFeatureExtractor,
+                NormalizedFeatureExtractor
             )
+
+            # Initialize EnhancedFeatureExtractor with BALANCED feature selection
+            selection_file = Path(__file__).parent.parent / "midi_generator/feature_selection/output/selected_features_200_balanced.json"
+
+            print(f"\n🔧 Using EnhancedFeatureExtractor (220D) with normalization")
+            print(f"   Feature selection file: {selection_file}")
+            print(f"   ✅ BALANCED selection: 50 harmony, 40 melody, 40 rhythm, 30 dynamics, 20 texture, 10 structure, 10 orchestration")
+
+            try:
+                base_extractor = EnhancedFeatureExtractor.from_selection_file(str(selection_file))
+                print(f"   ✅ EnhancedFeatureExtractor loaded")
+            except Exception as e:
+                print(f"   ⚠️  Could not load from selection file: {e}")
+                print(f"   Creating EnhancedFeatureExtractor without feature selection...")
+                base_extractor = EnhancedFeatureExtractor()
+
+            # Wrap with normalization (CRITICAL for convergence!)
+            print(f"\n📊 Fitting normalizer on training corpus (sample_size=200)...")
+            normalized_extractor = NormalizedFeatureExtractor(base_extractor)
+
+            # Fit normalizer on a sample of the training data
+            sample_files = [str(f) for f in midi_files[:min(200, len(midi_files))]]
+            normalized_extractor.fit(sample_files, sample_size=min(200, len(sample_files)))
+            print(f"   ✅ Normalizer fitted")
+
+            # Get feature dimension from base extractor
+            actual_feature_dim = 220  # EnhancedFeatureExtractor is always 220D (200 base + 20 velocity)
+            print(f"   Feature dimension: {actual_feature_dim}D")
+
+            # Update config to match actual feature dimension
+            if actual_feature_dim != config.input_dim:
+                print(f"   ⚠️  Adjusting input_dim: {config.input_dim} → {actual_feature_dim}")
+                config.input_dim = actual_feature_dim
+
+            # Extract features from all MIDI files using batch extraction
+            print(f"\n📊 Extracting normalized features from {len(midi_files)} MIDI files...")
+
+            # Use batch extraction for efficiency
+            midi_file_paths = [str(f) for f in midi_files]
+            all_features = normalized_extractor.extract_batch(midi_file_paths, show_progress=True)
+
+            # Remove any samples with NaN or Inf
+            valid_mask = ~(np.isnan(all_features).any(axis=1) | np.isinf(all_features).any(axis=1))
+            all_features = all_features[valid_mask]
+            valid_count = len(all_features)
+
+            print(f"✅ Extracted features from {valid_count}/{len(midi_files)} files")
+            print(f"   Feature shape: {all_features.shape}")
+            print(f"   Non-zero features per sample: {(all_features != 0).sum(axis=1).mean():.1f}/{actual_feature_dim}")
+            print(f"   Mean: {all_features.mean():.3f}, Std: {all_features.std():.3f}")
+
+            if len(all_features) == 0:
+                raise ValueError("No valid features extracted from MIDI files")
+
+            # Split into train/val/test
+            n_total = len(all_features)
+            n_train = int(n_total * 0.7)
+            n_val = int(n_total * 0.15)
+            n_test = n_total - n_train - n_val
+
+            indices = np.random.permutation(n_total)
+            train_indices = indices[:n_train]
+            val_indices = indices[n_train:n_train+n_val]
+            test_indices = indices[n_train+n_val:]
+
+            # Create torch datasets
+            train_dataset = torch.utils.data.TensorDataset(
+                torch.FloatTensor(all_features[train_indices])
+            )
+            val_dataset = torch.utils.data.TensorDataset(
+                torch.FloatTensor(all_features[val_indices])
+            )
+            test_dataset = torch.utils.data.TensorDataset(
+                torch.FloatTensor(all_features[test_indices])
+            )
+
+            # Create data loaders
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=config.batch_size,
+                shuffle=True,
+                num_workers=4,
+                pin_memory=torch.cuda.is_available()
+            )
+
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=config.batch_size,
+                shuffle=False,
+                num_workers=4,
+                pin_memory=torch.cuda.is_available()
+            )
+
+            test_loader = DataLoader(
+                test_dataset,
+                batch_size=config.batch_size,
+                shuffle=False,
+                num_workers=4,
+                pin_memory=torch.cuda.is_available()
+            )
+
+            print(f"✅ Created dataloaders:")
+            print(f"   Train: {len(train_dataset)} samples")
+            print(f"   Val: {len(val_dataset)} samples")
+            print(f"   Test: {len(test_dataset)} samples")
+
+            return train_loader, val_loader, test_loader
 
             # Split into train/val/test
             n_total = len(full_dataset)

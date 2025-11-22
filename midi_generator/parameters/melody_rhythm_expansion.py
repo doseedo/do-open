@@ -1476,6 +1476,9 @@ def register_rhythm_expansion_parameters():
     ))
 
 
+# Global flag to prevent duplicate registration
+_MELODY_RHYTHM_EXPANSION_REGISTERED = False
+
 def register_all_melody_rhythm_expansion():
     """
     Register all 120 new melody and rhythm parameters
@@ -1486,6 +1489,10 @@ def register_all_melody_rhythm_expansion():
 
     Total: 120 new parameters
     """
+    global _MELODY_RHYTHM_EXPANSION_REGISTERED
+    if _MELODY_RHYTHM_EXPANSION_REGISTERED:
+        return (REGISTRY.parameter_count(), 0)  # Already registered, return current counts
+
     print("Registering Melody & Rhythm Expansion Parameters...")
     print("=" * 70)
 
@@ -1509,6 +1516,8 @@ def register_all_melody_rhythm_expansion():
     print("Agent 4 Complete: 120 new parameters registered")
     print("Total new parameters: 63 (melody) + 57 (rhythm) = 120")
     print("=" * 70)
+
+    _MELODY_RHYTHM_EXPANSION_REGISTERED = True
 
 
 # Auto-register when module is imported
