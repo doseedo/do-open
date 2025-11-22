@@ -75,6 +75,32 @@ from .form_transforms import (
     RecapitulationTransform
 )
 
+from .expression_transforms import (
+    DynamicsContourTransform,
+    PhrasingTransform,
+    AccentPatternTransform,
+    LegatoStaccatoTransform,
+    VelocityCurveTransform,
+    AttackDecayTransform,
+    PedalingTransform,
+    VibratoTransform,
+    TremoloTransform,
+    BendTransform,
+    GlissandoTransform,
+    OrnamentationTransform
+)
+
+from .advanced_transforms import (
+    MetricModulationTransform,
+    ModalMixtureTransform,
+    CounterpointDensityTransform,
+    TexturalEvolutionTransform,
+    HarmonicModulationTransform,
+    PolymeterTransform,
+    MicrorhythmTransform,
+    SpectralDensityTransform
+)
+
 
 # ============================================================================
 # Transform Registry
@@ -84,12 +110,16 @@ class TransformRegistry:
     """
     Central registry of all space-level transforms.
 
-    Manages 40 transforms across 5 dimensions:
+    Manages 60 transforms across 6 dimensions:
     - Pitch (8 transforms)
-    - Rhythm (8 transforms)
-    - Harmony (8 transforms)
-    - Texture (8 transforms)
+    - Rhythm (11 transforms: 8 + 3 advanced)
+    - Harmony (11 transforms: 8 + 3 advanced)
+    - Texture (10 transforms: 8 + 2 advanced)
     - Form (8 transforms)
+    - Expression (12 transforms) - NEW dimension
+
+    Total: 60 theory-based transforms
+    Target: Expand to 200-400 with sparse learning + gap discovery
 
     Example:
         registry = TransformRegistry()
@@ -101,7 +131,7 @@ class TransformRegistry:
         pitch_transforms = registry.get_by_dimension('pitch')
 
         # Get transform vector for MIDI
-        dna = registry.encode(midi_file)  # 40D vector
+        dna = registry.encode(midi_file)  # 60D vector (expandable to 200-400D)
 
         # Apply transform vector to reconstruct
         reconstructed = registry.decode(dna)
@@ -115,14 +145,15 @@ class TransformRegistry:
             'rhythm': [],
             'harmony': [],
             'texture': [],
-            'form': []
+            'form': [],
+            'expression': []  # NEW dimension
         }
         self.transform_order: List[str] = []  # Ordered list of transform names
 
         self._register_all_transforms()
 
     def _register_all_transforms(self):
-        """Register all 40 transforms"""
+        """Register all 60 transforms (expanded from 40)"""
 
         # Pitch transforms (8)
         self._register(TransposeTransform())
@@ -134,7 +165,7 @@ class TransformRegistry:
         self._register(OctaveDoublingTransform())
         self._register(MicrotonalDetuneTransform())
 
-        # Rhythm transforms (8)
+        # Rhythm transforms (8 + 3 advanced)
         self._register(TempoTransform())
         self._register(SwingTransform())
         self._register(SyncopationTransform())
@@ -143,8 +174,12 @@ class TransformRegistry:
         self._register(GrooveTransform())
         self._register(RubatoTransform())
         self._register(PolyrhythmTransform())
+        # Advanced rhythm
+        self._register(MetricModulationTransform())
+        self._register(PolymeterTransform())
+        self._register(MicrorhythmTransform())
 
-        # Harmony transforms (8)
+        # Harmony transforms (8 + 3 advanced)
         self._register(HarmonicComplexityTransform())
         self._register(TensionTransform())
         self._register(ChordExtensionsTransform())
@@ -153,8 +188,12 @@ class TransformRegistry:
         self._register(ChromaticismTransform())
         self._register(HarmonicRhythmTransform())
         self._register(SubstitutionTransform())
+        # Advanced harmony
+        self._register(ModalMixtureTransform())
+        self._register(HarmonicModulationTransform())
+        self._register(SpectralDensityTransform())
 
-        # Texture transforms (8)
+        # Texture transforms (8 + 2 advanced)
         self._register(PolyphonyTransform())
         self._register(VoiceSpacingTransform())
         self._register(DoublingTransform())
@@ -163,6 +202,9 @@ class TransformRegistry:
         self._register(DynamicRangeTransform())
         self._register(TextureDensityTransform())
         self._register(TimbreVarietyTransform())
+        # Advanced texture
+        self._register(CounterpointDensityTransform())
+        self._register(TexturalEvolutionTransform())
 
         # Form transforms (8)
         self._register(RepetitionTransform())
@@ -173,6 +215,20 @@ class TransformRegistry:
         self._register(FragmentationTransform())
         self._register(ContinuityTransform())
         self._register(RecapitulationTransform())
+
+        # Expression transforms (12) - NEW DIMENSION
+        self._register(DynamicsContourTransform())
+        self._register(PhrasingTransform())
+        self._register(AccentPatternTransform())
+        self._register(LegatoStaccatoTransform())
+        self._register(VelocityCurveTransform())
+        self._register(AttackDecayTransform())
+        self._register(PedalingTransform())
+        self._register(VibratoTransform())
+        self._register(TremoloTransform())
+        self._register(BendTransform())
+        self._register(GlissandoTransform())
+        self._register(OrnamentationTransform())
 
     def _register(self, transform: SpaceLevelTransform):
         """Register a single transform"""
