@@ -8,7 +8,7 @@ Irreducible mathematical operations based on music theory:
 - Time-space duality (retrograde, inversion)
 - Group-theoretic operations
 
-These 12-15 transforms are PROVABLY IRREDUCIBLE - they cannot be
+These 14 transforms are PROVABLY IRREDUCIBLE - they cannot be
 decomposed into simpler operations. All other transforms are
 compositions of these primitives.
 
@@ -40,6 +40,11 @@ from .space_level_transforms import (
     TransformMetadata,
     extract_notes_from_midi,
     notes_to_midi
+)
+from .multitrack_support import (
+    extract_notes_with_instruments,
+    filter_notes_by_instrument,
+    notes_to_midi_multitrack
 )
 
 
@@ -704,6 +709,136 @@ class Quantize16thTransform(SpaceLevelTransform):
 
 
 # ============================================================================
+# MULTITRACK OPERATIONS (Essential for multitrack MIDI)
+# ============================================================================
+
+class TrackFilterTransform(SpaceLevelTransform):
+    """
+    TrackFilter: Select specific track(s).
+
+    MINIMAL multitrack support - just filter by track number.
+    Enables compositions like:
+    - drums_preserve = identity ∘ filter(track=0)
+    - piano_transpose = T₁⁷ ∘ filter(track=1)
+
+    Discovery learns patterns naturally:
+    - If drums (track 0) never transpose → discovery learns filter(0.0) blocks transpose
+    - If piano+bass appear together → discovery learns their co-occurrence
+    - If strings need legato → discovery finds time_scale ∘ filter(track)
+
+    Mathematical: Filter_t: Notes → Notes[track=t] (subset selection)
+
+    Simple: amount 0.0 = track 0, 0.1 = track 1, ..., 1.0 = track 10
+    """
+
+    def __init__(self):
+        metadata = TransformMetadata(
+            name='track_filter',
+            dimension='texture',
+            level='section',
+            description='Filter to specific track',
+            parameter_range=(0.0, 1.0),  # Maps to tracks 0-10
+            default_value=0.0,  # Track 0
+            is_invertible=False
+        )
+        super().__init__(metadata)
+
+    def apply(self, midi: mido.MidiFile, amount: float) -> mido.MidiFile:
+        """Filter to specific track"""
+        amount = np.clip(amount, 0.0, 1.0)
+        target_track = int(amount * 10)  # 0.0→0, 0.1→1, ..., 1.0→10
+
+        notes = extract_notes_from_midi(midi)
+
+        # Filter to target track
+        filtered = [n for n in notes if n.get('track', 0) == target_track]
+
+        if len(filtered) == 0:
+            return midi  # Return original if track empty
+
+        return notes_to_midi(filtered, midi.ticks_per_beat)
+
+    def get_current_value(self, midi: mido.MidiFile) -> float:
+        """Get dominant track"""
+        notes = extract_notes_from_midi(midi)
+
+        if len(notes) == 0:
+            return 0.0
+
+        # Count notes per track
+        from collections import Counter
+        track_counts = Counter(n.get('track', 0) for n in notes)
+
+        # Most common track
+        dominant_track = track_counts.most_common(1)[0][0]
+
+        # Map back to 0-1 range
+        return min(dominant_track / 10.0, 1.0)
+
+
+# ============================================================================
+# SCORE-LEVEL STRUCTURE (For hierarchical patterns)
+# ============================================================================
+
+class SegmentMarkerTransform(SpaceLevelTransform):
+    """
+    SegmentMarker: Mark structural boundaries in score.
+
+    Enables discovery to learn HIERARCHICAL patterns:
+    - Apply transform X to first 30% (intro/verse)
+    - Apply transform Y to middle 40% (chorus/development)
+    - Apply transform Z to final 30% (outro/recapitulation)
+
+    Discovery learns score structures as conditional compositions:
+    - sonata_form = segment(0.3) ∘ [expo] ∘ segment(0.6) ∘ [dev] ∘ segment(1.0) ∘ [recap]
+    - verse_chorus = segment(0.25) ∘ [verse] ∘ segment(0.5) ∘ [chorus] ∘ segment(0.75) ∘ [verse] ∘ [chorus]
+
+    Mathematical: Segment_p: piece → piece[0:p] (temporal partitioning)
+
+    Simple: amount 0.0-1.0 = position in piece to segment
+    """
+
+    def __init__(self):
+        metadata = TransformMetadata(
+            name='segment_marker',
+            dimension='form',
+            level='section',
+            description='Mark structural segment boundary',
+            parameter_range=(0.0, 1.0),
+            default_value=0.5,  # Middle of piece
+            is_invertible=False
+        )
+        super().__init__(metadata)
+
+    def apply(self, midi: mido.MidiFile, amount: float) -> mido.MidiFile:
+        """Mark segment boundary (returns piece up to boundary)"""
+        amount = np.clip(amount, 0.0, 1.0)
+
+        notes = extract_notes_from_midi(midi)
+
+        if len(notes) == 0:
+            return midi
+
+        # Find total duration
+        max_time = max(n['start_time'] + n['duration'] for n in notes)
+
+        # Segment boundary
+        boundary = max_time * amount
+
+        # Keep notes before boundary
+        segmented = [n for n in notes if n['start_time'] < boundary]
+
+        if len(segmented) == 0:
+            return midi
+
+        return notes_to_midi(segmented, midi.ticks_per_beat)
+
+    def get_current_value(self, midi: mido.MidiFile) -> float:
+        """Always returns 1.0 (full piece)"""
+        return 1.0
+
+
+# ============================================================================
 # Minimal Transform Registry
 # ============================================================================
 
@@ -731,15 +866,24 @@ MINIMAL_THEORETICAL_BASE = [
 
     # Essential (1)
     Quantize16thTransform(),       # Q quantization
+
+    # Multitrack (1)
+    TrackFilterTransform(),        # Filter to specific track
+
+    # Score-level (1)
+    SegmentMarkerTransform(),      # Mark structural boundaries
 ]
 
 
 def get_minimal_base() -> List[SpaceLevelTransform]:
     """
-    Get the 12 irreducible theoretical transforms.
+    Get the 14 irreducible theoretical transforms.
 
     Returns:
-        List of 12 minimal transforms
+        List of 14 minimal transforms:
+        - 12 theoretical primitives (pitch, time, harmony, structure, dynamics, quantization)
+        - 1 multitrack filter (track isolation)
+        - 1 score-level marker (structural segmentation)
     """
     return MINIMAL_THEORETICAL_BASE.copy()
 
