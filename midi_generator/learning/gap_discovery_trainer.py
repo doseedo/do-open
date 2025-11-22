@@ -685,16 +685,22 @@ class GapDiscoveryTrainer:
         Tries to use Agent 3's SemanticFeatureEncoder, falls back to simple autoencoder.
         """
         try:
-            from midi_generator.learning.semantic_encoder import SemanticFeatureEncoder
-            model = SemanticFeatureEncoder(
+            from midi_generator.learning.semantic_encoder import SemanticFeatureEncoder, EncoderConfig
+
+            # Create config object for SemanticFeatureEncoder
+            encoder_config = EncoderConfig(
                 input_dim=self.config.input_dim,
                 hidden_dim=self.config.hidden_dim,
-                num_features=self.config.num_semantic_features
+                num_semantic_features=self.config.num_semantic_features
             )
+            model = SemanticFeatureEncoder(encoder_config)
             print("✅ Using Agent 3's SemanticFeatureEncoder")
             return model
         except ImportError:
             print("⚠️  Agent 3's SemanticFeatureEncoder not available, using simple autoencoder")
+            return self._create_simple_autoencoder()
+        except TypeError as e:
+            print(f"⚠️  Error creating SemanticFeatureEncoder: {e}, using simple autoencoder")
             return self._create_simple_autoencoder()
 
     def _create_simple_autoencoder(self) -> nn.Module:

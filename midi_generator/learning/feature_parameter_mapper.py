@@ -354,7 +354,7 @@ class FeatureParameterMapper:
             raise RuntimeError("Parameter registry not available")
 
         # Core storage
-        self.models: Dict[str, xgb.XGBModel] = {}  # param_name -> trained model
+        self.models: Dict[str, Any] = {}  # param_name -> trained model (xgb.XGBModel)
         self.feature_names: List[str] = []  # Names of 1000 features
         self.metrics: Dict[str, MappingMetrics] = {}  # param_name -> metrics
         self.feature_importance: Dict[str, FeatureImportance] = {}  # param_name -> importance
@@ -528,7 +528,7 @@ class FeatureParameterMapper:
                             X_val: np.ndarray,
                             y_val: np.ndarray,
                             param_def: ParameterDefinition,
-                            **xgb_params) -> xgb.XGBModel:
+                            **xgb_params):
         """Train XGBoost model with appropriate objective"""
 
         # Determine objective based on parameter type
@@ -574,7 +574,7 @@ class FeatureParameterMapper:
         return model
 
     def _evaluate_model(self,
-                       model: xgb.XGBModel,
+                       model: Any,
                        X_train: np.ndarray,
                        y_train: np.ndarray,
                        X_val: np.ndarray,
@@ -627,7 +627,7 @@ class FeatureParameterMapper:
         return metrics
 
     def _analyze_feature_importance(self,
-                                   model: xgb.XGBModel,
+                                   model: Any,
                                    param_name: str,
                                    feature_names: List[str],
                                    selected_indices: Optional[List[int]] = None) -> FeatureImportance:

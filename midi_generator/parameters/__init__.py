@@ -49,9 +49,12 @@ except ImportError:
     pass
 
 # Agent 3: Harmony deep expansion
+_harmony_registered = False
 try:
     from . import harmony_deep_expansion
-    harmony_deep_expansion.register_all_harmony_deep_expansion()
+    if not _harmony_registered:
+        harmony_deep_expansion.register_all_harmony_deep_expansion()
+        _harmony_registered = True
 except (ImportError, AttributeError):
     pass
 
