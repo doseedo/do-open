@@ -28,8 +28,8 @@ from enum import Enum
 import random
 
 # Import from existing modules
-from midi.midi_constants import GM_DRUM_MAP, PPQN_HIGH_RES
-from algorithms.rhythm_engine import RhythmNote
+from ..midi.midi_constants import GM_DRUM_MAP, PPQN_HIGH_RES
+from ..algorithms.rhythm_engine import RhythmNote
 
 
 # ============================================================================
