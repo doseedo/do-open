@@ -56,6 +56,17 @@ from .abstraction_layer import (
     ExpressionNode
 )
 
+# GPU acceleration (optional)
+try:
+    import torch
+    GPU_AVAILABLE = torch.cuda.is_available()
+    if GPU_AVAILABLE:
+        from .gpu_discovery_pipeline import GPUDiscoveryPipeline
+        from ..core.gpu_memory_manager import GPUMemoryManager, print_gpu_info
+except ImportError:
+    GPU_AVAILABLE = False
+    print("PyTorch not installed - GPU acceleration disabled")
+
 
 # ============================================================================
 # Configuration
@@ -609,7 +620,13 @@ class DiscoveryPipelineRunner:
     Includes hierarchical abstraction (V2).
     """
 
-    def __init__(self, registry: TransformRegistry, enable_abstraction: bool = True):
+    def __init__(self, registry: TransformRegistry, enable_abstraction: bool = True, use_gpu: bool = True):
+        """
+        Args:
+            registry: Transform registry
+            enable_abstraction: Enable V2 hierarchical abstraction
+            use_gpu: Use GPU acceleration if available (default: True)
+        """
         self.registry = registry
         self.validator = InformationTheoreticValidator(registry)
 
@@ -625,6 +642,26 @@ class DiscoveryPipelineRunner:
                 min_frequency=10,  # Pattern must appear 10+ times
                 top_k_abstractions=50  # Create up to 50 meta-patterns
             )
+
+        # GPU acceleration
+        self.use_gpu = use_gpu and GPU_AVAILABLE
+        if self.use_gpu:
+            print("\n" + "="*70)
+            print("GPU ACCELERATION: ENABLED")
+            print("="*70)
+            print_gpu_info()
+            self.gpu_pipeline = GPUDiscoveryPipeline(device='cuda')
+            self.gpu_memory_manager = GPUMemoryManager(device='cuda')
+        else:
+            if use_gpu and not GPU_AVAILABLE:
+                print("\n" + "="*70)
+                print("GPU ACCELERATION: REQUESTED BUT NOT AVAILABLE")
+                print("="*70)
+                print("Install PyTorch with CUDA: pip install torch --index-url https://download.pytorch.org/whl/cu118")
+                print("Falling back to CPU mode...")
+                print("="*70 + "\n")
+            self.gpu_pipeline = None
+            self.gpu_memory_manager = None
 
     def run_discovery(
         self,

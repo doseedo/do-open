@@ -151,11 +151,24 @@ def extract_notes_from_midi(midi: mido.MidiFile) -> List[Dict[str, Any]]:
         - start_time: Onset time in seconds
         - duration: Note duration in seconds
         - track: Track index
+        - channel: MIDI channel (0-15)
+        - program: General MIDI program/instrument number (0-127)
+        - is_drum: True if channel 9 (drums)
     """
     notes = []
     current_time = [0.0] * len(midi.tracks)
     tempo = 500000  # Default tempo (120 BPM)
     active_notes = {}  # (track, pitch) -> start_time
+
+    # Extract program number (instrument) for each track
+    track_programs = {}
+    for track_idx, track in enumerate(midi.tracks):
+        current_program = 0  # Default: Acoustic Grand Piano
+        for msg in track:
+            if msg.type == 'program_change':
+                current_program = msg.program
+                break  # Use first program change
+        track_programs[track_idx] = current_program
 
     for track_idx, track in enumerate(midi.tracks):
         for msg in track:
@@ -183,6 +196,8 @@ def extract_notes_from_midi(midi: mido.MidiFile) -> List[Dict[str, Any]]:
                 if key in active_notes:
                     note_info = active_notes[key]
                     channel = note_info.get('channel', 0)
+                    program = track_programs.get(track_idx, 0)
+
                     notes.append({
                         'pitch': msg.note,
                         'velocity': note_info['velocity'],
@@ -190,6 +205,7 @@ def extract_notes_from_midi(midi: mido.MidiFile) -> List[Dict[str, Any]]:
                         'duration': current_time[track_idx] - note_info['start_time'],
                         'track': track_idx,
                         'channel': channel,
+                        'program': program,  # ← CRITICAL FIX: Instrument identity!
                         'is_drum': (channel == 9)  # MIDI channel 10 (0-indexed = 9) is drums
                     })
                     del active_notes[key]
