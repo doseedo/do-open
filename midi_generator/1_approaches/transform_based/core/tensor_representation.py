@@ -41,12 +41,18 @@ class TensorMIDICorpus:
         - Memory-efficient for A100 (2000 pieces × 2000 steps × 132 features × 4 bytes ≈ 2 GB)
     """
 
-    def __init__(self, max_time_steps: int = 2000, num_features: int = 132):
+    def __init__(self, max_time_steps: int = 2000, num_features: int = 133):
         """
         Args:
             max_time_steps: Maximum time steps (bars × 16 for 16th note resolution)
                            Default 2000 = 125 bars at 16th note resolution
-            num_features: 128 (pitch) + 1 (velocity) + 1 (track) + 1 (channel) + 1 (is_drum)
+            num_features: 133 total:
+                [0:128]   - Pitch (one-hot encoding for 128 MIDI pitches)
+                [128]     - Velocity (normalized 0-1)
+                [129]     - Program/Instrument (General MIDI 0-127, normalized 0-1) ← CRITICAL!
+                [130]     - Channel (0-15, normalized 0-1)
+                [131]     - is_drum flag (0 or 1)
+                [132]     - Track ID (0-19, normalized 0-1) - auxiliary for debugging
         """
         self.max_time_steps = max_time_steps
         self.num_features = num_features
@@ -95,14 +101,22 @@ class TensorMIDICorpus:
                 # Velocity (normalized 0-1)
                 tensor[step, 128] = note['velocity'] / 127.0
 
-                # Track ID (normalized 0-1, max 20 tracks)
-                tensor[step, 129] = np.clip(note.get('track', 0), 0, 19) / 20.0
+                # Program/Instrument (General MIDI 0-127, normalized 0-1)
+                # CRITICAL: This is instrument IDENTITY, not track position!
+                # program=0 is always "Acoustic Grand Piano" across ALL files
+                # program=32 is always "Acoustic Bass" across ALL files
+                # program=56 is always "Trumpet" across ALL files, etc.
+                tensor[step, 129] = note.get('program', 0) / 127.0
 
                 # Channel (normalized 0-1)
                 tensor[step, 130] = note.get('channel', 0) / 15.0
 
-                # Is drum flag
+                # Is drum flag (channel 9 = drums)
                 tensor[step, 131] = 1.0 if note.get('is_drum', False) else 0.0
+
+                # Track ID (normalized 0-1, auxiliary for debugging)
+                # Note: Track position varies across files, so this is NOT used for filtering
+                tensor[step, 132] = np.clip(note.get('track', 0), 0, 19) / 20.0
 
         return tensor
 
@@ -184,9 +198,10 @@ class TensorMIDICorpus:
             active_pitches = torch.where(pitch_vector > 0.5)[0]
 
             # Extract metadata
-            track = int(tensor[step, 129].item() * 20)
+            program = int(tensor[step, 129].item() * 127)  # Instrument identity
             channel = int(tensor[step, 130].item() * 15)
             is_drum = tensor[step, 131].item() > 0.5
+            track = int(tensor[step, 132].item() * 20)  # Auxiliary (for track assignment)
 
             for pitch_tensor in active_pitches:
                 pitch = int(pitch_tensor.item())
@@ -198,6 +213,7 @@ class TensorMIDICorpus:
                         'start_step': step,
                         'velocity': velocity,
                         'channel': channel,
+                        'program': program,  # Instrument identity
                         'is_drum': is_drum
                     }
 
@@ -218,6 +234,7 @@ class TensorMIDICorpus:
                         'duration': max(ticks_per_16th, (step - start_step) * ticks_per_16th),
                         'track': track,
                         'channel': note_info['channel'],
+                        'program': note_info.get('program', 0),  # Instrument identity
                         'is_drum': note_info['is_drum']
                     })
 
@@ -239,6 +256,7 @@ class TensorMIDICorpus:
                 'duration': max(ticks_per_16th, (final_step - start_step) * ticks_per_16th),
                 'track': track,
                 'channel': note_info['channel'],
+                'program': note_info.get('program', 0),  # Instrument identity
                 'is_drum': note_info['is_drum']
             })
 
@@ -259,7 +277,7 @@ class TensorMIDICorpus:
         """
         bytes_per_element = 4  # float32
 
-        # Corpus tensor: (B, T, F)
+        # Corpus tensor: (B, T, F) where F=133
         corpus_elements = num_pieces * self.max_time_steps * self.num_features
         corpus_gb = (corpus_elements * bytes_per_element) / 1e9
 

@@ -113,7 +113,7 @@ class GPUMemoryManager:
         num_pieces: int,
         num_transforms: int,
         max_time_steps: int = 2000,
-        num_features: int = 132
+        num_features: int = 133
     ) -> Dict[str, float]:
         """
         Estimate total memory usage for discovery pipeline.
@@ -122,7 +122,7 @@ class GPUMemoryManager:
             num_pieces: Number of MIDI files (B)
             num_transforms: Number of transforms (M)
             max_time_steps: Time steps (T)
-            num_features: Features (F)
+            num_features: Features (F) - default 133 (includes program number)
 
         Returns:
             memory_breakdown: Dict with memory estimates in GB
@@ -187,7 +187,7 @@ class GPUMemoryManager:
         total_pieces: int,
         num_transforms: int = 500,
         max_time_steps: int = 2000,
-        num_features: int = 132
+        num_features: int = 133
     ) -> Tuple[int, str]:
         """
         Recommend batch size for processing.
@@ -196,7 +196,7 @@ class GPUMemoryManager:
             total_pieces: Total pieces in corpus
             num_transforms: Number of transforms
             max_time_steps: Time steps
-            num_features: Features
+            num_features: Features (default 133)
 
         Returns:
             recommended_batch_size: Optimal batch size

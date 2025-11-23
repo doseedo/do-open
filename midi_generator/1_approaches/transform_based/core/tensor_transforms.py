@@ -138,29 +138,61 @@ class TensorTransformLibrary:
         return result
 
     @staticmethod
-    def track_filter(batch: torch.Tensor, target_track: int) -> torch.Tensor:
+    def instrument_filter(batch: torch.Tensor, target_program: int) -> torch.Tensor:
         """
-        Keep only notes from target track.
+        Keep only notes from target instrument (General MIDI program).
+
+        CRITICAL: Uses program number (instrument identity), NOT track position!
+        This ensures patterns generalize across files with different arrangements.
 
         Args:
-            batch: (B, T, F) where F[129] is track ID
-            target_track: which track to keep (0-19)
+            batch: (B, T, F) where F[129] is program/instrument number
+            target_program: which instrument to keep (0-127, General MIDI)
+                Examples:
+                - 0 = Acoustic Grand Piano
+                - 32 = Acoustic Bass
+                - 56 = Trumpet
+                - 64 = Soprano Sax
+                - Channel 9 (any program) = Drums
 
         Returns:
-            filtered: (B, T, F)
+            filtered: (B, T, F) with only target instrument
         """
         result = batch.clone()
 
-        # Track ID is normalized 0-1 (representing 0-20 tracks)
-        track_id = batch[:, :, 129]  # (B, T)
-        target_normalized = target_track / 20.0
+        # Program number is normalized 0-1 (representing 0-127 instruments)
+        program = batch[:, :, 129]  # (B, T)
+        target_normalized = target_program / 127.0
 
-        # Mask: keep only target track
-        # Allow small tolerance for floating point comparison
-        mask = torch.abs(track_id - target_normalized) < 0.025  # Within 0.5 track
+        # Mask: keep only target instrument
+        # Tolerance of ±0.004 ≈ ±0.5 program number for float precision
+        mask = torch.abs(program - target_normalized) < 0.004
         mask = mask.unsqueeze(-1).expand(-1, -1, 128)  # Expand to pitch dimensions
 
-        # Zero out non-matching tracks
+        # Zero out non-matching instruments
+        result[:, :, :128] = batch[:, :, :128] * mask.float()
+
+        return result
+
+    @staticmethod
+    def track_filter(batch: torch.Tensor, target_track: int) -> torch.Tensor:
+        """
+        DEPRECATED: Use instrument_filter() instead!
+
+        Track position varies across files - this breaks cross-file learning.
+        Kept for backward compatibility only.
+
+        Use instrument_filter(batch, program) where program is General MIDI number.
+        """
+        result = batch.clone()
+
+        # Track ID is in feature 132 (auxiliary)
+        track_id = batch[:, :, 132]  # (B, T)
+        target_normalized = target_track / 20.0
+
+        mask = torch.abs(track_id - target_normalized) < 0.025
+        mask = mask.unsqueeze(-1).expand(-1, -1, 128)
+
         result[:, :, :128] = batch[:, :, :128] * mask.float()
 
         return result
@@ -257,39 +289,72 @@ class TensorTransformLibrary:
         return result
 
     @staticmethod
+    def instrument_derive(
+        batch: torch.Tensor,
+        source_program: int,
+        target_program: int
+    ) -> torch.Tensor:
+        """
+        Derive notes from source instrument and assign to target instrument.
+
+        CRITICAL: Uses program numbers (instrument identity), NOT track positions!
+
+        Examples:
+            - derive(piano=0, bass=32) ∘ T₁⁻¹² = "Bass plays octave below piano"
+            - derive(sax1=64, sax2=65) ∘ T₁⁻³ = "Alto sax harmonizes 3 semitones below soprano"
+
+        Args:
+            batch: (B, T, F)
+            source_program: instrument to copy from (0-127, General MIDI)
+            target_program: instrument to assign to (0-127, General MIDI)
+
+        Returns:
+            derived: (B, T, F) with derived notes added
+        """
+        result = batch.clone()
+
+        # Extract source instrument notes
+        source_norm = source_program / 127.0
+        program = batch[:, :, 129]  # Program is in feature 129
+        source_mask = (torch.abs(program - source_norm) < 0.004).unsqueeze(-1).expand(-1, -1, 133)
+
+        # Copy source notes
+        source_notes = batch * source_mask.float()
+
+        # Update program number for derived notes
+        source_notes[:, :, 129] = target_program / 127.0
+
+        # Add to result (combine with existing)
+        result = result + source_notes
+
+        # Clamp pitch (one-hot, so max 1.0)
+        result[:, :, :128] = torch.clamp(result[:, :, :128], 0.0, 1.0)
+
+        return result
+
+    @staticmethod
     def track_derive(
         batch: torch.Tensor,
         source_track: int,
         target_track: int
     ) -> torch.Tensor:
         """
-        Derive target track from source track (cross-track derivation).
+        DEPRECATED: Use instrument_derive() instead!
 
-        Args:
-            batch: (B, T, F)
-            source_track: track to copy from (0-19)
-            target_track: track to copy to (0-19)
-
-        Returns:
-            derived: (B, T, F) with target track added
+        Track position varies across files - this breaks cross-file learning.
+        Use instrument_derive(batch, source_program, target_program) instead.
         """
         result = batch.clone()
 
-        # Extract source track notes
+        # Track ID is in feature 132 (auxiliary)
         source_norm = source_track / 20.0
-        track_id = batch[:, :, 129]
-        source_mask = (torch.abs(track_id - source_norm) < 0.025).unsqueeze(-1).expand(-1, -1, 132)
+        track_id = batch[:, :, 132]
+        source_mask = (torch.abs(track_id - source_norm) < 0.025).unsqueeze(-1).expand(-1, -1, 133)
 
-        # Copy source to target
         source_notes = batch * source_mask.float()
+        source_notes[:, :, 132] = target_track / 20.0
 
-        # Update track ID for copied notes
-        source_notes[:, :, 129] = target_track / 20.0
-
-        # Add to result (combine with existing)
         result = result + source_notes
-
-        # Clamp pitch (one-hot, so max 1.0)
         result[:, :, :128] = torch.clamp(result[:, :, :128], 0.0, 1.0)
 
         return result
@@ -406,8 +471,18 @@ class TensorTransformLibrary:
             elif transform_name == 'velocity_scale':
                 result = lib.velocity_scale(result, amount)
 
+            elif transform_name == 'instrument_filter':
+                result = lib.instrument_filter(result, int(amount * 127))
+
             elif transform_name == 'track_filter':
+                # Deprecated: kept for backward compatibility
                 result = lib.track_filter(result, int(amount * 20))
+
+            elif transform_name == 'instrument_derive':
+                # amount encodes [source, target] as 0.XXYY where XX and YY are program numbers
+                source = int(amount * 100) // 100 * 127 // 100
+                target = int(amount * 10000) % 100 * 127 // 100
+                result = lib.instrument_derive(result, source, target)
 
             elif transform_name == 'time_scale':
                 result = lib.time_scale(result, amount)
@@ -449,7 +524,7 @@ class TensorTransformLibrary:
 def create_transform_dictionary_tensor(
     transforms: List[Dict],
     max_time_steps: int = 2000,
-    num_features: int = 132,
+    num_features: int = 133,
     device: str = 'cuda'
 ) -> torch.Tensor:
     """
@@ -458,7 +533,7 @@ def create_transform_dictionary_tensor(
     Args:
         transforms: List of {name: str, amount: float} dicts
         max_time_steps: T dimension
-        num_features: F dimension
+        num_features: F dimension (default 133)
         device: 'cuda' or 'cpu'
 
     Returns:
@@ -475,9 +550,10 @@ def create_transform_dictionary_tensor(
     identity = torch.zeros(1, T, F, device=device)
     identity[0, T//2, 60] = 1.0  # Middle C
     identity[0, T//2, 128] = 0.8  # Velocity
-    identity[0, T//2, 129] = 0.0  # Track 0
+    identity[0, T//2, 129] = 0.0  # Program 0 (Acoustic Grand Piano)
     identity[0, T//2, 130] = 0.0  # Channel 0
     identity[0, T//2, 131] = 0.0  # Not drum
+    identity[0, T//2, 132] = 0.0  # Track 0 (auxiliary)
 
     lib = TensorTransformLibrary()
     dict_tensors = []
