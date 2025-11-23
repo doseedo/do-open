@@ -97,7 +97,7 @@ def main():
 
     # Check corpus
     print("MIDI Corpus:")
-    corpus_path = Path("/home/user/Do/midi_generator/midi_corpus/big_band")
+    corpus_path = project_root / "midi_corpus/big_band"
     if corpus_path.exists():
         midi_files = list(corpus_path.glob("*.mid"))
         print(f"  ✓ Corpus directory found")

@@ -19,20 +19,36 @@ import argparse
 from pathlib import Path
 import mido
 import torch
+import json
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "1_approaches/transform_based"))
 
-from core.tensor_representation import load_corpus_to_gpu, TensorMIDICorpus
+from discovery.gpu_discovery_pipeline import GPUDiscoveryPipeline
+from core.minimal_theoretical_base import get_minimal_base
 from core.gpu_memory_manager import GPUMemoryManager
-from discovery.gpu_discovery_pipeline import discovery_iteration_gpu, run_full_discovery
-from core.minimal_theoretical_base import get_base_primitives
+
+
+def transforms_to_dicts(transforms):
+    """Convert SpaceLevelTransform objects to dict format."""
+    result = []
+    for t in transforms:
+        # Check if it's already a dict
+        if isinstance(t, dict):
+            result.append(t)
+        else:
+            # Convert SpaceLevelTransform to dict
+            result.append({
+                'name': t.name,
+                'amount': getattr(t, 'amount', 1.0)
+            })
+    return result
 
 
 def main():
     parser = argparse.ArgumentParser(description='Start discovery pipeline')
     parser.add_argument('--corpus-path', type=str,
-                       default='/home/user/Do/midi_generator/midi_corpus/big_band',
+                       default=None,
                        help='Path to MIDI corpus directory')
     parser.add_argument('--batch-size', type=int, default=None,
                        help='Number of files to process (default: all that fit in memory)')
@@ -42,15 +58,24 @@ def main():
                        help='Device to use: cuda or cpu (default: cuda)')
     parser.add_argument('--max-time-steps', type=int, default=2000,
                        help='Maximum time steps per piece (default: 2000)')
-    parser.add_argument('--num-candidates', type=int, default=10000,
-                       help='Number of composition candidates to test (default: 10000)')
-    parser.add_argument('--top-k', type=int, default=50,
+    parser.add_argument('--max-transforms-per-iteration', type=int, default=50,
                        help='Number of best transforms to keep per iteration (default: 50)')
     parser.add_argument('--checkpoint-dir', type=str,
-                       default='/home/user/Do/midi_generator/checkpoints',
+                       default=None,
                        help='Directory to save checkpoints')
+    parser.add_argument('--target-quality', type=float, default=0.99,
+                       help='Target reconstruction quality to reach (default: 0.99)')
 
     args = parser.parse_args()
+
+    # Determine paths relative to project root
+    project_root = Path(__file__).parent.parent
+
+    if args.corpus_path is None:
+        args.corpus_path = str(project_root / "midi_corpus/big_band")
+
+    if args.checkpoint_dir is None:
+        args.checkpoint_dir = str(project_root / "checkpoints")
 
     print("="*70)
     print("NEURAL PROGRAM SYNTHESIS - DISCOVERY PIPELINE")
@@ -60,8 +85,8 @@ def main():
     print(f"  Corpus path: {args.corpus_path}")
     print(f"  Device: {args.device}")
     print(f"  Iterations: {args.iterations}")
-    print(f"  Candidates per iteration: {args.num_candidates:,}")
-    print(f"  Top-k per iteration: {args.top_k}")
+    print(f"  Target quality: {args.target_quality:.1%}")
+    print(f"  Max transforms/iteration: {args.max_transforms_per_iteration}")
     print()
 
     # Check device availability
@@ -73,16 +98,25 @@ def main():
         print()
         args.device = 'cpu'
 
+    # Find all MIDI files
+    corpus_path = Path(args.corpus_path)
+    if not corpus_path.exists():
+        print(f"[!] ERROR: Corpus path not found: {corpus_path}")
+        print("    Please verify the path or use --corpus-path")
+        return 1
+
+    all_midi_files = sorted(corpus_path.glob("*.mid"))
+    total_files = len(all_midi_files)
+
+    if total_files == 0:
+        print(f"[!] ERROR: No MIDI files found in {corpus_path}")
+        return 1
+
+    print(f"Found {total_files:,} MIDI files in corpus\n")
+
     # Memory check (GPU only)
     if args.device == 'cuda':
         mem_manager = GPUMemoryManager(device='cuda', reserve_gb=10.0)
-
-        # Find all MIDI files
-        corpus_path = Path(args.corpus_path)
-        all_midi_files = sorted(corpus_path.glob("*.mid"))
-        total_files = len(all_midi_files)
-
-        print(f"Found {total_files:,} MIDI files in corpus\n")
 
         if args.batch_size is None:
             # Auto-determine batch size
@@ -97,118 +131,158 @@ def main():
         else:
             print(f"Using specified batch size: {args.batch_size:,}\n")
     else:
-        # CPU mode - just count files
-        corpus_path = Path(args.corpus_path)
-        all_midi_files = sorted(corpus_path.glob("*.mid"))
-        total_files = len(all_midi_files)
-
-        print(f"Found {total_files:,} MIDI files in corpus")
-
+        # CPU mode - use smaller batch
         if args.batch_size is None:
-            args.batch_size = min(100, total_files)  # Default to 100 for CPU
+            args.batch_size = min(100, total_files)
             print(f"[CPU Mode] Using batch size: {args.batch_size}")
             print("(CPU is slow - consider using smaller batch or GPU)\n")
 
     # Load corpus
     print("="*70)
-    print("STEP 1: LOADING CORPUS TO GPU")
+    print("LOADING CORPUS")
     print("="*70)
 
-    midi_files = [mido.MidiFile(f) for f in all_midi_files[:args.batch_size]]
+    midi_files = []
+    print(f"Loading {min(args.batch_size, total_files):,} MIDI files...")
 
-    print(f"Loading {len(midi_files):,} MIDI files to {args.device}...")
-    corpus_tensor, converter = load_corpus_to_gpu(
-        midi_files,
-        max_time_steps=args.max_time_steps,
-        device=args.device
-    )
+    for i, midi_path in enumerate(all_midi_files[:args.batch_size]):
+        try:
+            midi_files.append(mido.MidiFile(midi_path))
+            if (i + 1) % 100 == 0:
+                print(f"  Loaded {i + 1:,}/{min(args.batch_size, total_files):,} files...")
+        except Exception as e:
+            print(f"  [!] Warning: Failed to load {midi_path.name}: {e}")
 
-    print(f"\n✓ Corpus loaded successfully!")
-    print(f"  Shape: {corpus_tensor.shape}")
-    print(f"  Device: {corpus_tensor.device}")
-    print(f"  Memory: {corpus_tensor.element_size() * corpus_tensor.nelement() / 1e9:.2f} GB")
+    print(f"\n✓ Loaded {len(midi_files):,} MIDI files successfully")
     print()
 
     # Load base primitives
     print("="*70)
-    print("STEP 2: LOADING BASE PRIMITIVES")
+    print("LOADING BASE PRIMITIVES")
     print("="*70)
 
-    base_primitives = get_base_primitives()
+    base_primitives_objects = get_minimal_base()
+    base_primitives = transforms_to_dicts(base_primitives_objects)
 
-    print(f"\n✓ Loaded {len(base_primitives)} irreducible primitives:")
-    print("  Transpositional: T₁, T₁⁻¹, T₁⁷, T₁⁻⁷, T₁¹², T₁⁻¹²")
-    print("  Neo-Riemannian: P, L, R, PLR, LPR, RPL")
-    print("  Inversion: I")
-    print("  Rhythm: augmentation (×2), diminution (×½)")
-    print("  Multitrack: instrument_filter, instrument_derive")
+    print(f"\n✓ Loaded {len(base_primitives)} irreducible primitives")
+    print(f"  Transform names: {', '.join([t['name'] for t in base_primitives[:5]])}...")
     print()
+
+    # Initialize pipeline
+    pipeline = GPUDiscoveryPipeline(
+        device=args.device,
+        batch_size=args.batch_size,
+        chunk_size=1000,
+        lambda_sparsity=0.1
+    )
+
+    # Create checkpoint directory
+    checkpoint_dir = Path(args.checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     # Run discovery
     if args.iterations == 1:
         print("="*70)
-        print("STEP 3: RUNNING DISCOVERY ITERATION")
+        print("RUNNING SINGLE DISCOVERY ITERATION")
         print("="*70)
+        print()
 
-        new_dict, metrics = discovery_iteration_gpu(
+        # Load corpus to GPU
+        corpus_tensor = pipeline.load_corpus_to_gpu(midi_files)
+
+        # Run iteration
+        results = pipeline.discovery_iteration_gpu(
             corpus_tensor=corpus_tensor,
-            current_dict=base_primitives,
-            num_candidates=args.num_candidates,
-            top_k=args.top_k,
-            device=args.device
+            existing_transforms=base_primitives,
+            target_quality=args.target_quality,
+            max_new_transforms=args.max_transforms_per_iteration
         )
+
+        # Build final transform list
+        all_transforms = base_primitives + results['new_transforms']
 
         print(f"\n{'='*70}")
         print("ITERATION 1 COMPLETE")
         print(f"{'='*70}")
-        print(f"Dictionary size: {len(base_primitives)} → {len(new_dict)} transforms")
-        print(f"Sparsity: {metrics['sparsity_mean']:.1f} transforms/piece")
-        print(f"Reconstruction error: {metrics['reconstruction_error']:.4f}")
-        print(f"Time elapsed: {metrics['time_elapsed']:.1f}s ({metrics['time_elapsed']/60:.1f}m)")
+        print(f"Dictionary size: {len(base_primitives)} → {len(all_transforms)} transforms")
+        print(f"Quality: {results['quality']:.1%}")
+        print(f"Sparsity: {results['sparsity']:.1f} transforms/piece")
+        print(f"Candidates tested: {results['candidates_tested']}")
+        print(f"Time elapsed: {results['time']:.1f}s ({results['time']/60:.1f}m)")
         print()
 
         # Save checkpoint
-        checkpoint_dir = Path(args.checkpoint_dir)
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        metrics = {
+            'iteration': 1,
+            'quality': results['quality'],
+            'sparsity': results['sparsity'],
+            'dict_size': len(all_transforms),
+            'new_transforms': len(results['new_transforms']),
+            'time_seconds': results['time']
+        }
 
-        import json
         with open(checkpoint_dir / 'iteration_1_metrics.json', 'w') as f:
             json.dump(metrics, f, indent=2)
 
-        print(f"✓ Metrics saved to {checkpoint_dir / 'iteration_1_metrics.json'}")
+        torch.save({
+            'transforms': all_transforms,
+            'metrics': metrics
+        }, checkpoint_dir / 'iteration_1_dict.pt')
+
+        print(f"✓ Results saved to {checkpoint_dir}/")
+        print(f"  - iteration_1_metrics.json")
+        print(f"  - iteration_1_dict.pt")
 
     else:
         print("="*70)
-        print(f"STEP 3: RUNNING {args.iterations} DISCOVERY ITERATIONS")
+        print(f"RUNNING {args.iterations} DISCOVERY ITERATIONS")
         print("="*70)
+        print()
 
-        final_dict, all_metrics = run_full_discovery(
-            corpus_tensor=corpus_tensor,
-            initial_dict=base_primitives,
+        results = pipeline.run_full_discovery(
+            midi_files=midi_files,
+            initial_transforms=base_primitives,
+            target_quality=args.target_quality,
             max_iterations=args.iterations,
-            target_dict_size=17 + (args.iterations * args.top_k),
-            num_candidates=args.num_candidates,
-            top_k=args.top_k,
-            device=args.device,
-            save_checkpoint_every=max(1, args.iterations // 4),
-            checkpoint_dir=args.checkpoint_dir
+            max_transforms_per_iteration=args.max_transforms_per_iteration
         )
 
         print(f"\n{'='*70}")
         print("FULL DISCOVERY COMPLETE")
         print(f"{'='*70}")
-        print(f"Final dictionary size: {len(final_dict)} transforms")
-        print(f"Total time: {sum(m['time_elapsed'] for m in all_metrics)/3600:.2f} hours")
+        print(f"Final dictionary size: {len(results['all_transforms'])} transforms")
+        print(f"Final quality: {results['final_quality']:.1%}")
+        print(f"Total iterations: {results['iterations']}")
+        print(f"Total time: {results['total_time']/60:.1f} minutes")
         print()
 
         # Print iteration summary
         print("Iteration Summary:")
-        for i, metrics in enumerate(all_metrics, 1):
-            print(f"  Iteration {i}: {metrics['dict_size']} transforms, " +
-                  f"{metrics['time_elapsed']/60:.1f}m, " +
-                  f"error={metrics['reconstruction_error']:.4f}")
+        for i, iter_info in enumerate(results['iteration_history'], 1):
+            print(f"  Iteration {i}: {iter_info['total_transforms']} transforms, " +
+                  f"quality={iter_info['quality']:.1%}, " +
+                  f"{iter_info['time']:.1f}s")
         print()
 
+        # Save final results
+        with open(checkpoint_dir / 'final_metrics.json', 'w') as f:
+            json.dump({
+                'final_quality': results['final_quality'],
+                'iterations': results['iterations'],
+                'total_time': results['total_time'],
+                'iteration_history': results['iteration_history']
+            }, f, indent=2)
+
+        torch.save({
+            'transforms': results['all_transforms'],
+            'metrics': results
+        }, checkpoint_dir / 'final_dict.pt')
+
+        print(f"✓ Results saved to {checkpoint_dir}/")
+        print(f"  - final_metrics.json")
+        print(f"  - final_dict.pt")
+
+    print()
     print("="*70)
     print("DISCOVERY COMPLETE")
     print("="*70)
@@ -221,6 +295,8 @@ def main():
     print("See DISCOVERY_QUICKSTART.md for details")
     print()
 
+    return 0
+
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
