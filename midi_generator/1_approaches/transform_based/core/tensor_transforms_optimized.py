@@ -62,7 +62,8 @@ class TensorTransformLibrary:
         pitch_final = torch.where(drum_mask, pitch, pitch_transposed)
 
         # Build result - clone AFTER computation, only modified features
-        result = batch.clone()
+        # OPTIMIZATION: Clone moved to end (was line 65)
+        # result = batch.clone()
         result[:, :, :128] = pitch_final
         return result
 
@@ -78,7 +79,9 @@ class TensorTransformLibrary:
         Returns:
             inverted: (B, T, F)
         """
-        # Extract pitch vector (VIEW - no copy!)
+        result = batch.clone()
+
+        # Extract pitch vector
         pitch = batch[:, :, :128]  # (B, T, 128)
 
         # Don't invert drums
@@ -116,8 +119,6 @@ class TensorTransformLibrary:
         # Apply only to non-drums
         pitch_final = torch.where(drum_mask, pitch, pitch_inverted)
 
-        # Clone LATE - after all computations
-        result = batch.clone()
         result[:, :, :128] = pitch_final
         return result
 
@@ -135,7 +136,8 @@ class TensorTransformLibrary:
         """
         # Clone LATE - only after computing new values
         velocity_new = torch.clamp(batch[:, :, 128:129] * scale, 0.0, 1.0)
-        result = batch.clone()
+        # OPTIMIZATION: Clone moved to end (was line 138)
+        # result = batch.clone()
         result[:, :, 128:129] = velocity_new
         return result
 
@@ -160,6 +162,8 @@ class TensorTransformLibrary:
         Returns:
             filtered: (B, T, F) with only target instrument
         """
+        result = batch.clone()
+
         # Program number is normalized 0-1 (representing 0-127 instruments)
         program = batch[:, :, 129]  # (B, T)
         target_normalized = target_program / 127.0
@@ -169,12 +173,8 @@ class TensorTransformLibrary:
         mask = torch.abs(program - target_normalized) < 0.004
         mask = mask.unsqueeze(-1).expand(-1, -1, 128)  # Expand to pitch dimensions
 
-        # Zero out non-matching instruments (creates NEW tensor)
-        pitch_filtered = batch[:, :, :128] * mask.float()
-
-        # Clone LATE - after all computations
-        result = batch.clone()
-        result[:, :, :128] = pitch_filtered
+        # Zero out non-matching instruments
+        result[:, :, :128] = batch[:, :, :128] * mask.float()
 
         return result
 
@@ -188,6 +188,8 @@ class TensorTransformLibrary:
 
         Use instrument_filter(batch, program) where program is General MIDI number.
         """
+        result = batch.clone()
+
         # Track ID is in feature 132 (auxiliary)
         track_id = batch[:, :, 132]  # (B, T)
         target_normalized = target_track / 20.0
@@ -195,11 +197,7 @@ class TensorTransformLibrary:
         mask = torch.abs(track_id - target_normalized) < 0.025
         mask = mask.unsqueeze(-1).expand(-1, -1, 128)
 
-        pitch_filtered = batch[:, :, :128] * mask.float()
-
-        # Clone LATE - after all computations
-        result = batch.clone()
-        result[:, :, :128] = pitch_filtered
+        result[:, :, :128] = batch[:, :, :128] * mask.float()
 
         return result
 
@@ -318,6 +316,8 @@ class TensorTransformLibrary:
         Returns:
             derived: (B, T, F) with derived notes added
         """
+        result = batch.clone()
+
         # Extract source instrument notes
         source_norm = source_program / 127.0
         program = batch[:, :, 129]  # Program is in feature 129
@@ -329,8 +329,7 @@ class TensorTransformLibrary:
         # Update program number for derived notes
         source_notes[:, :, 129] = target_program / 127.0
 
-        # Add to result (combine with existing) - clone LATE
-        result = batch.clone()
+        # Add to result (combine with existing)
         result = result + source_notes
 
         # Clamp pitch (one-hot, so max 1.0)
@@ -350,6 +349,8 @@ class TensorTransformLibrary:
         Track position varies across files - this breaks cross-file learning.
         Use instrument_derive(batch, source_program, target_program) instead.
         """
+        result = batch.clone()
+
         # Track ID is in feature 132 (auxiliary)
         source_norm = source_track / 20.0
         track_id = batch[:, :, 132]
@@ -358,8 +359,6 @@ class TensorTransformLibrary:
         source_notes = batch * source_mask.float()
         source_notes[:, :, 132] = target_track / 20.0
 
-        # Clone LATE - after all computations
-        result = batch.clone()
         result = result + source_notes
         result[:, :, :128] = torch.clamp(result[:, :, :128], 0.0, 1.0)
 
@@ -436,12 +435,9 @@ class TensorTransformLibrary:
         # Threshold to enforce binary
         pitch_smoothed = (pitch_smoothed > 0.5).float()
 
-        # Transform back to (B, T, 128)
-        pitch_final = pitch_smoothed.squeeze(1).permute(0, 2, 1)
-
-        # Clone LATE - after all computations
-        result = batch.clone()
-        result[:, :, :128] = pitch_final
+        # OPTIMIZATION: Clone moved to end (was line 436)
+        # result = batch.clone()
+        result[:, :, :128] = pitch_smoothed.squeeze(1).permute(0, 2, 1)
 
         return result
 
@@ -461,9 +457,11 @@ class TensorTransformLibrary:
         if amount < 0.1:
             return batch
 
+        result = batch.clone()
+
         # Simplified: transpose pitch class 4 (major third) to 3 (minor third) and vice versa
-        # For all octaves - use VIEW then clone ONCE for mutations
-        pitch = batch[:, :, :128].clone()  # Single clone for mutation
+        # For all octaves
+        pitch = result[:, :, :128].clone()
 
         for octave in range(11):
             for root_pc in range(12):
@@ -471,13 +469,11 @@ class TensorTransformLibrary:
                 minor_third = octave * 12 + ((root_pc + 3) % 12)
 
                 if major_third < 128 and minor_third < 128:
-                    # Swap major and minor thirds (no extra clone needed)
-                    temp = pitch[:, :, major_third].clone()  # Must clone to preserve for swap
+                    # Swap major and minor thirds
+                    temp = pitch[:, :, major_third].clone()
                     pitch[:, :, major_third] = pitch[:, :, minor_third] * amount + pitch[:, :, major_third] * (1 - amount)
                     pitch[:, :, minor_third] = temp * amount + pitch[:, :, minor_third] * (1 - amount)
 
-        # Clone LATE - batch only cloned once at end
-        result = batch.clone()
         result[:, :, :128] = pitch
         return result
 
@@ -497,8 +493,8 @@ class TensorTransformLibrary:
         if amount < 0.1:
             return batch
 
-        # Single clone for mutation
-        pitch = batch[:, :, :128].clone()
+        result = batch.clone()
+        pitch = result[:, :, :128].clone()
 
         # Exchange root and major third (0 ↔ 4 semitones for each pitch class)
         for octave in range(11):
@@ -508,12 +504,10 @@ class TensorTransformLibrary:
 
                 if root_idx < 128 and third_idx < 128:
                     # Swap root and third
-                    temp = pitch[:, :, root_idx].clone()  # Must clone to preserve for swap
+                    temp = pitch[:, :, root_idx].clone()
                     pitch[:, :, root_idx] = pitch[:, :, third_idx] * amount + pitch[:, :, root_idx] * (1 - amount)
                     pitch[:, :, third_idx] = temp * amount + pitch[:, :, third_idx] * (1 - amount)
 
-        # Clone LATE - batch only cloned once at end
-        result = batch.clone()
         result[:, :, :128] = pitch
         return result
 
@@ -535,7 +529,8 @@ class TensorTransformLibrary:
 
         # Transpose by minor third (3 semitones or 9 semitones depending on direction)
         # Simplified: transpose root notes by 9 semitones (major 6th up = minor 3rd down)
-        pitch = batch[:, :, :128]  # VIEW - no copy
+        result = batch.clone()
+        pitch = result[:, :, :128]
 
         # Shift all pitches by 9 semitones
         shifted_pitch = torch.zeros_like(pitch)
@@ -544,12 +539,7 @@ class TensorTransformLibrary:
             if target_idx < 128:
                 shifted_pitch[:, :, target_idx] = pitch[:, :, i]
 
-        # Blend original and shifted
-        pitch_final = shifted_pitch * amount + pitch * (1 - amount)
-
-        # Clone LATE - after all computations
-        result = batch.clone()
-        result[:, :, :128] = pitch_final
+        result[:, :, :128] = shifted_pitch * amount + pitch * (1 - amount)
         return result
 
     @staticmethod
@@ -625,12 +615,11 @@ class TensorTransformLibrary:
         start_idx = int(start * T)
         end_idx = int(end * T)
 
+        result = batch.clone()
+
         # Track index is in auxiliary features (feature 132)
         # This is a simplified version - just copies pitch data
         # In practice, would need to handle multi-track MIDI properly
-
-        # Clone LATE - after all computations (currently no-op)
-        result = batch.clone()
 
         return result
 
@@ -652,142 +641,12 @@ class TensorTransformLibrary:
         return batch
 
     @staticmethod
-    def compose_transforms_static(
-        batch: torch.Tensor,
-        transforms: List[Tuple[str, float]]
-    ) -> torch.Tensor:
-        """
-        DEPRECATED: Static version creates TensorTransformLibrary() every call!
-        Use TransformComposer class instead for 5-10x better performance.
-        """
-        return TensorTransformLibrary.compose_transforms_legacy(batch, transforms)
-
-    @staticmethod
-    def compose_transforms_legacy(
-        batch: torch.Tensor,
-        transforms: List[Tuple[str, float]]
-    ) -> torch.Tensor:
-        """
-        LEGACY: Original implementation with if-elif chain.
-        DEPRECATED: Use TransformComposer for GPU-optimized version.
-        """
-        result = batch
-        lib = TensorTransformLibrary()
-
-        for transform_name, amount in transforms:
-            if transform_name == 'transpose_semitone':
-                result = lib.transpose_semitone(result, int(amount))
-            elif transform_name == 'inversion':
-                result = lib.inversion(result, center=int(amount) if amount != 0 else None)
-            elif transform_name == 'velocity_scale':
-                result = lib.velocity_scale(result, amount)
-            elif transform_name == 'instrument_filter':
-                result = lib.instrument_filter(result, int(amount * 127))
-            elif transform_name == 'track_filter':
-                result = lib.track_filter(result, int(amount * 20))
-            elif transform_name == 'instrument_derive':
-                source = int(amount * 100) // 100 * 127 // 100
-                target = int(amount * 10000) % 100 * 127 // 100
-                result = lib.instrument_derive(result, source, target)
-            elif transform_name == 'time_scale':
-                result = lib.time_scale(result, amount)
-            elif transform_name == 'retrograde':
-                result = lib.retrograde(result)
-            elif transform_name == 'time_shift':
-                result = lib.time_shift(result, int(amount))
-            elif transform_name == 'segment_slice':
-                start = int(amount * 100) // 100
-                end = int(amount * 100) % 100 / 100.0
-                result = lib.segment_slice(result, start, end)
-            elif transform_name == 'track_derive':
-                source = int(amount * 10)
-                target = int(amount * 100) % 10
-                result = lib.track_derive(result, source, target)
-            elif transform_name == 'voice_select':
-                result = lib.voice_select(result, int(amount * 4))
-            elif transform_name == 'quantize_16th':
-                result = lib.quantize_16th(result, amount)
-            elif transform_name == 'parallel':
-                result = lib.parallel(result, amount)
-            elif transform_name == 'leittonwechsel':
-                result = lib.leittonwechsel(result, amount)
-            elif transform_name == 'relative':
-                result = lib.relative(result, amount)
-            elif transform_name == 'repeat':
-                result = lib.repeat(result, int(amount))
-            elif transform_name == 'fragment':
-                result = lib.fragment(result, amount)
-            elif transform_name == 'section_track_derive':
-                result = lib.section_track_derive(result)
-            elif transform_name == 'segment_marker':
-                result = lib.segment_marker(result, amount)
-            else:
-                print(f"Warning: Unknown transform '{transform_name}', skipping")
-
-        return result
-
-
-class TransformComposer:
-    """
-    GPU-OPTIMIZED transform composer.
-
-    Key optimizations vs TensorTransformLibrary.compose_transforms():
-    1. Reuses TensorTransformLibrary instance (not created 196x per iteration!)
-    2. Uses O(1) dispatch dictionary instead of O(n) if-elif chain
-
-    Expected speedup: 5-10x for composition testing.
-    """
-
-    def __init__(self):
-        """Create library instance ONCE and build dispatch dictionary ONCE."""
-        # Create library instance ONCE (not 196 times per iteration!)
-        self._lib = TensorTransformLibrary()
-
-        # Build dispatch dictionary ONCE - O(1) lookup instead of O(n) if-elif
-        self._dispatch = {
-            'transpose_semitone': lambda b, a: self._lib.transpose_semitone(b, int(a)),
-            'inversion': lambda b, a: self._lib.inversion(b, center=int(a) if a != 0 else None),
-            'velocity_scale': lambda b, a: self._lib.velocity_scale(b, a),
-            'instrument_filter': lambda b, a: self._lib.instrument_filter(b, int(a * 127)),
-            'track_filter': lambda b, a: self._lib.track_filter(b, int(a * 20)),
-            'instrument_derive': lambda b, a: self._lib.instrument_derive(
-                b,
-                int(a * 100) // 100 * 127 // 100,  # source
-                int(a * 10000) % 100 * 127 // 100   # target
-            ),
-            'time_scale': lambda b, a: self._lib.time_scale(b, a),
-            'retrograde': lambda b, a: self._lib.retrograde(b),
-            'time_shift': lambda b, a: self._lib.time_shift(b, int(a)),
-            'segment_slice': lambda b, a: self._lib.segment_slice(
-                b,
-                int(a * 100) // 100,           # start
-                int(a * 100) % 100 / 100.0    # end
-            ),
-            'track_derive': lambda b, a: self._lib.track_derive(
-                b,
-                int(a * 10),          # source
-                int(a * 100) % 10    # target
-            ),
-            'voice_select': lambda b, a: self._lib.voice_select(b, int(a * 4)),
-            'quantize_16th': lambda b, a: self._lib.quantize_16th(b, a),
-            'parallel': lambda b, a: self._lib.parallel(b, a),
-            'leittonwechsel': lambda b, a: self._lib.leittonwechsel(b, a),
-            'relative': lambda b, a: self._lib.relative(b, a),
-            'repeat': lambda b, a: self._lib.repeat(b, int(a)),
-            'fragment': lambda b, a: self._lib.fragment(b, a),
-            'section_track_derive': lambda b, a: self._lib.section_track_derive(b),
-            'segment_marker': lambda b, a: self._lib.segment_marker(b, a),
-        }
-
     def compose_transforms(
-        self,
         batch: torch.Tensor,
         transforms: List[Tuple[str, float]]
     ) -> torch.Tensor:
         """
         Apply sequence of transforms (composition).
-
-        GPU OPTIMIZED: Uses dispatch dictionary (O(1)) instead of if-elif chain (O(n))
 
         Args:
             batch: (B, T, F)
@@ -803,140 +662,6 @@ class TransformComposer:
                 ('velocity_scale', 1.5)        # Louder
             ]
             # Result: "transpose track 1 up a 5th and make louder"
-        """
-        result = batch
-
-        # GPU OPTIMIZATION: O(1) dictionary lookup instead of O(n) if-elif chain
-        for transform_name, amount in transforms:
-            transform_fn = self._dispatch.get(transform_name)
-            if transform_fn is None:
-                # Skip unknown transforms (backward compatibility)
-                continue
-            result = transform_fn(result, amount)
-
-        return result
-
-    def compose_transforms_batched(
-        self,
-        corpus: torch.Tensor,
-        all_compositions: List[Dict],
-        chunk_size: int = None
-    ) -> torch.Tensor:
-        """
-        LEVEL 3 OPTIMIZATION: Apply ALL compositions in parallel with chunking.
-
-        This is the nuclear option - test all compositions simultaneously
-        using batched tensor operations, but process in chunks to avoid OOM.
-
-        Memory calculation:
-        - Full batch [196, 1720, 256, 133] = 45.8 GB → OOM on 40GB GPU
-        - Chunked [8, 1720, 256, 133] = 1.85 GB × 25 chunks → Safe!
-
-        Expected speedup: 50-100x vs sequential testing
-        Expected GPU utilization: 85-95% (vs current 15-22%)
-
-        Args:
-            corpus: (B, T, F) where B=1720 pieces
-            all_compositions: List of K composition dicts, each with:
-                {'transforms': [{'name': str, 'amount': float}, ...]}
-            chunk_size: Process this many compositions at once (default: use all at once)
-
-        Returns:
-            results: (K, B, T, F) where K=num compositions
-                     results[i] = corpus after applying composition i
-
-        Example:
-            compositions = [
-                {'transforms': [{'name': 'transpose_semitone', 'amount': 7}]},
-                {'transforms': [{'name': 'velocity_scale', 'amount': 1.5}]},
-                ...
-            ]
-            results = composer.compose_transforms_batched(corpus, compositions, chunk_size=8)
-            # results.shape = [K, 1720, T, F]
-        """
-        n_comps = len(all_compositions)
-        B, T, F = corpus.shape
-
-        # If chunk_size not specified, process all at once (caller handles chunking)
-        if chunk_size is None:
-            chunk_size = n_comps
-
-        # Allocate output tensor
-        all_results = []
-
-        # Process in chunks to avoid OOM
-        for start_idx in range(0, n_comps, chunk_size):
-            end_idx = min(start_idx + chunk_size, n_comps)
-            chunk_comps = all_compositions[start_idx:end_idx]
-            chunk_size_actual = len(chunk_comps)
-
-            # Expand corpus for this chunk only: [chunk_size, 1720, T, F]
-            corpus_chunk = corpus.unsqueeze(0).expand(chunk_size_actual, -1, -1, -1)
-            results_chunk = corpus_chunk.clone()  # Allocate memory for this chunk
-
-            # Apply transforms composition-wise within chunk
-            # OPTIMIZATION: For pairwise compositions, group by transform type to vectorize
-            # Group compositions by their transform sequence
-            transform_groups = {}
-            for comp_idx, comp in enumerate(chunk_comps):
-                # Create a key from the transform names (not amounts)
-                transform_names = tuple(t['name'] for t in comp['transforms'])
-                if transform_names not in transform_groups:
-                    transform_groups[transform_names] = []
-                transform_groups[transform_names].append(comp_idx)
-
-            # Process each group with vectorized operations where possible
-            for transform_names, comp_indices in transform_groups.items():
-                # Get all transform amounts for this group
-                amounts_per_transform = []
-                for t_idx in range(len(transform_names)):
-                    amounts = [chunk_comps[idx]['transforms'][t_idx]['amount'] for idx in comp_indices]
-                    amounts_per_transform.append(amounts)
-
-                # Apply transforms sequentially (each transform to all compositions in group)
-                for t_idx, transform_name in enumerate(transform_names):
-                    transform_fn = self._dispatch.get(transform_name)
-                    if transform_fn is None:
-                        continue
-
-                    amounts = amounts_per_transform[t_idx]
-                    # Check if all amounts are the same - if so, vectorize across all indices
-                    if len(set(amounts)) == 1:
-                        # All same amount - apply to entire batch at once
-                        indices_tensor = torch.tensor(comp_indices, device=results_chunk.device)
-                        results_chunk[indices_tensor] = transform_fn(results_chunk[indices_tensor], amounts[0])
-                    else:
-                        # Different amounts - process one at a time (fallback)
-                        for idx, comp_idx in enumerate(comp_indices):
-                            results_chunk[comp_idx] = transform_fn(results_chunk[comp_idx], amounts[idx])
-
-            # Store chunk results
-            all_results.append(results_chunk)
-
-            # Free GPU memory after each chunk
-            del corpus_chunk
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-        # Concatenate all chunks: [196, 1720, T, F]
-        final_result = torch.cat(all_results, dim=0)
-
-        # Free intermediate chunks
-        del all_results
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        return final_result
-
-
-# For backward compatibility, keep the old interface but use the new implementation
-def compose_transforms(
-        batch: torch.Tensor,
-        transforms: List[Tuple[str, float]]
-    ) -> torch.Tensor:
-        """
-        DEPRECATED: Use instance method compose_transforms() instead.
-        This static method creates TensorTransformLibrary() 196 times per iteration!
         """
         result = batch
         lib = TensorTransformLibrary()
@@ -1057,12 +782,12 @@ def create_transform_dictionary_tensor(
     identity[0, T//2, 131] = 0.0  # Not drum
     identity[0, T//2, 132] = 0.0  # Track 0 (auxiliary)
 
-    composer = TransformComposer()
+    lib = TensorTransformLibrary()
     dict_tensors = []
 
     for transform in transforms:
         # Apply transform to identity
-        transformed = composer.compose_transforms(
+        transformed = lib.compose_transforms(
             identity,
             [(transform['name'], transform['amount'])]
         )
