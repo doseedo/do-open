@@ -58,7 +58,7 @@ class TensorTransformLibrary:
 
         # Circular shift (transpose)
         # torch.roll shifts along dimension, wrapping around
-        pitch_transposed = torch.roll(pitch, shifts=amount, dims=2)
+        pitch_transposed = torch.roll(pitch, shifts=int(amount), dims=2)
 
         # Apply only to non-drums
         pitch_final = torch.where(drum_mask, pitch, pitch_transposed)
@@ -109,7 +109,7 @@ class TensorTransformLibrary:
         # mapping[i, j] = 1 if inverted_indices[i] == j
         mapping = torch.zeros(128, 128, device=batch.device)
         for i in range(128):
-            j = inverted_indices[i]
+            j = int(inverted_indices[i].item())
             mapping[i, j] = 1.0
 
         # Apply inversion: (B, T, 128) @ (128, 128) = (B, T, 128)
@@ -235,12 +235,13 @@ class TensorTransformLibrary:
         return resampled.permute(0, 2, 1)  # Back to (B, T, F)
 
     @staticmethod
-    def retrograde(batch: torch.Tensor) -> torch.Tensor:
+    def retrograde(batch: torch.Tensor, amount: float = 1.0) -> torch.Tensor:
         """
         Reverse time (R time reversal).
 
         Args:
             batch: (B, T, F)
+            amount: unused, for API consistency
 
         Returns:
             reversed: (B, T, F)
@@ -249,7 +250,7 @@ class TensorTransformLibrary:
         return torch.flip(batch, dims=[1])
 
     @staticmethod
-    def time_shift(batch: torch.Tensor, shift: int) -> torch.Tensor:
+    def time_shift(batch: torch.Tensor, shift: float) -> torch.Tensor:
         """
         Shift in time (O_t temporal translation).
 
@@ -261,7 +262,7 @@ class TensorTransformLibrary:
             shifted: (B, T, F)
         """
         # Roll along time dimension
-        return torch.roll(batch, shifts=shift, dims=1)
+        return torch.roll(batch, shifts=int(shift), dims=1)
 
     @staticmethod
     def segment_slice(batch: torch.Tensor, start: float, end: float) -> torch.Tensor:

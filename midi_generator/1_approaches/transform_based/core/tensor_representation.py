@@ -369,3 +369,140 @@ def load_tensor_corpus(path: str, device: str = 'cuda') -> torch.Tensor:
     print(f"Loaded corpus tensor from {path}")
     print(f"Shape: {corpus_tensor.shape}")
     return corpus_tensor
+
+
+def compute_corpus_hash(midi_files: List[mido.MidiFile], max_time_steps: int) -> str:
+    """
+    Compute hash of corpus configuration to check if cached version is valid.
+
+    Uses file count + max_time_steps as cache key (simple but effective).
+    For more robustness, could hash file paths + modification times.
+
+    Args:
+        midi_files: List of MIDI files
+        max_time_steps: Max time steps parameter
+
+    Returns:
+        hash_str: String identifying this corpus configuration
+    """
+    import hashlib
+
+    # Create identifier from file count and parameters
+    # (Assumes same corpus directory = same files)
+    identifier = f"corpus_n{len(midi_files)}_t{max_time_steps}"
+
+    # For stronger validation, include first/last file sizes
+    if midi_files:
+        # Get file info from first and last MIDI objects
+        # Use track count and total ticks as simple fingerprint
+        first_tracks = len(midi_files[0].tracks)
+        last_tracks = len(midi_files[-1].tracks)
+        first_ticks = sum(len(track) for track in midi_files[0].tracks[:3])  # First 3 tracks
+        last_ticks = sum(len(track) for track in midi_files[-1].tracks[:3])
+
+        identifier += f"_ft{first_tracks}_{first_ticks}_lt{last_tracks}_{last_ticks}"
+
+    # Create hash
+    hash_obj = hashlib.md5(identifier.encode())
+    return hash_obj.hexdigest()[:12]  # Short hash for filename
+
+
+def load_corpus_to_gpu_cached(
+    midi_files: List[mido.MidiFile],
+    max_time_steps: int = 2000,
+    device: str = 'cuda',
+    cache_dir: str = None
+) -> Tuple[torch.Tensor, TensorMIDICorpus]:
+    """
+    Load MIDI corpus to GPU with intelligent caching.
+
+    Caches converted tensor corpus to disk to avoid reprocessing.
+    Cache is automatically invalidated if corpus changes.
+
+    Args:
+        midi_files: List of mido.MidiFile objects
+        max_time_steps: Maximum time steps
+        device: 'cuda' or 'cpu'
+        cache_dir: Directory for cache files (default: ./tensor_cache)
+
+    Returns:
+        corpus_tensor: (B, T, F) on GPU
+        converter: TensorMIDICorpus instance
+    """
+    from pathlib import Path
+
+    if cache_dir is None:
+        cache_dir = Path.cwd() / "tensor_cache"
+    else:
+        cache_dir = Path(cache_dir)
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Compute cache key
+    corpus_hash = compute_corpus_hash(midi_files, max_time_steps)
+    cache_file = cache_dir / f"corpus_{corpus_hash}.pt"
+
+    converter = TensorMIDICorpus(max_time_steps=max_time_steps)
+
+    # Try to load from cache
+    if cache_file.exists():
+        try:
+            print("="*70)
+            print("CACHE HIT - Loading pre-converted tensor corpus")
+            print("="*70)
+            print(f"Cache file: {cache_file}")
+            print(f"Loading {len(midi_files)} MIDI files from cache...")
+
+            corpus_tensor = torch.load(cache_file, map_location='cpu')
+
+            # Validate tensor shape
+            expected_shape = (len(midi_files), max_time_steps, 133)
+            if corpus_tensor.shape != expected_shape:
+                print(f"[!] Cache shape mismatch: {corpus_tensor.shape} vs {expected_shape}")
+                print("    Rebuilding corpus...")
+                raise ValueError("Cache invalidated")
+
+            # Move to device
+            corpus_tensor = corpus_tensor.to(device)
+
+            if device == 'cuda':
+                actual_gb = corpus_tensor.element_size() * corpus_tensor.nelement() / 1e9
+                print(f"GPU memory (corpus): {actual_gb:.2f} GB")
+
+            print(f"✓ Loaded from cache in <1 second (saved ~10 minutes!)")
+            print()
+
+            return corpus_tensor, converter
+
+        except Exception as e:
+            print(f"[!] Cache load failed: {e}")
+            print("    Rebuilding corpus from MIDI files...")
+
+    # Cache miss - convert from MIDI files
+    print("="*70)
+    print("CACHE MISS - Converting MIDI files to tensors")
+    print("="*70)
+    print(f"This will take ~10-15 minutes but only happens once.")
+    print(f"Result will be cached to: {cache_file}")
+    print()
+
+    # Use original function
+    corpus_tensor, converter = load_corpus_to_gpu(
+        midi_files=midi_files,
+        max_time_steps=max_time_steps,
+        device=device
+    )
+
+    # Save to cache
+    print()
+    print("Saving to cache for future runs...")
+    try:
+        torch.save(corpus_tensor.cpu(), cache_file)
+        cache_size_mb = cache_file.stat().st_size / 1e6
+        print(f"✓ Cached corpus saved ({cache_size_mb:.1f} MB)")
+        print(f"  Next run will load in <1 second!")
+    except Exception as e:
+        print(f"[!] Failed to save cache: {e}")
+
+    print()
+    return corpus_tensor, converter

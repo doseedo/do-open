@@ -187,8 +187,9 @@ def main():
         print("="*70)
         print()
 
-        # Load corpus to GPU
-        corpus_tensor = pipeline.load_corpus_to_gpu(midi_files)
+        # Load corpus to GPU (with caching)
+        cache_dir = checkpoint_dir / "tensor_cache"
+        corpus_tensor = pipeline.load_corpus_to_gpu(midi_files, cache_dir=str(cache_dir))
 
         # Run iteration
         results = pipeline.discovery_iteration_gpu(
@@ -239,12 +240,14 @@ def main():
         print("="*70)
         print()
 
+        cache_dir = checkpoint_dir / "tensor_cache"
         results = pipeline.run_full_discovery(
             midi_files=midi_files,
             initial_transforms=base_primitives,
             target_quality=args.target_quality,
             max_iterations=args.iterations,
-            max_transforms_per_iteration=args.max_transforms_per_iteration
+            max_transforms_per_iteration=args.max_transforms_per_iteration,
+            cache_dir=str(cache_dir)
         )
 
         print(f"\n{'='*70}")
