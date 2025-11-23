@@ -50,6 +50,11 @@ from ..core.multitrack_support import (
     analyze_orchestration,
     get_instrument_family
 )
+from .abstraction_layer import (
+    AbstractionPipeline,
+    TransformComposition,
+    ExpressionNode
+)
 
 
 # ============================================================================
@@ -601,9 +606,10 @@ class DiscoveryPipelineRunner:
     End-to-end discovery pipeline.
 
     Coordinates all stages to discover new transforms.
+    Includes hierarchical abstraction (V2).
     """
 
-    def __init__(self, registry: TransformRegistry):
+    def __init__(self, registry: TransformRegistry, enable_abstraction: bool = True):
         self.registry = registry
         self.validator = InformationTheoreticValidator(registry)
 
@@ -611,6 +617,14 @@ class DiscoveryPipelineRunner:
         self.clusterer = GapClusterer()
         self.pattern_miner = PatternMiner()
         self.generator = TransformGenerator()
+
+        # V2: Abstraction layer
+        self.enable_abstraction = enable_abstraction
+        if enable_abstraction:
+            self.abstraction_pipeline = AbstractionPipeline(
+                min_frequency=10,  # Pattern must appear 10+ times
+                top_k_abstractions=50  # Create up to 50 meta-patterns
+            )
 
     def run_discovery(
         self,
@@ -635,6 +649,7 @@ class DiscoveryPipelineRunner:
         print(f"Target quality: {config.target_quality:.1%}\n")
 
         discovered_transforms = []
+        all_patterns = []  # Collect all discovered patterns for abstraction
         iteration = 0
 
         while iteration < config.max_iterations:
@@ -660,7 +675,8 @@ class DiscoveryPipelineRunner:
                 cluster_patterns = self.pattern_miner.mine_patterns(cluster, config)
                 patterns.extend(cluster_patterns)
 
-            print(f"Discovered {len(patterns)} patterns")
+            print(f"Discovered {len(patterns)} patterns in iteration {iteration}")
+            all_patterns.extend(patterns)  # Collect for abstraction
 
             # Stage 4: Code Generation
             print("\nStage 4: Code Generation")
@@ -674,17 +690,42 @@ class DiscoveryPipelineRunner:
             # (Would validate and integrate here)
 
             # Check if we've reached target
-            current_count = self.registry.count_transforms() + len(patterns)
+            current_count = self.registry.count_transforms() + len(all_patterns)
             if current_count >= config.target_transforms:
                 print(f"\n✅ Reached target: {current_count} transforms")
                 break
+
+        # Stage 6: Hierarchical Abstraction (V2)
+        abstraction_results = None
+        if self.enable_abstraction and len(all_patterns) >= 20:
+            print(f"\n{'='*70}")
+            print("STAGE 6: HIERARCHICAL ABSTRACTION (V2)")
+            print(f"{'='*70}")
+
+            # Convert patterns to compositions
+            compositions = self._patterns_to_compositions(all_patterns)
+
+            # Run abstraction pipeline
+            abstraction_results = self.abstraction_pipeline.run(compositions)
+
+            # Generate code for abstractions
+            if len(abstraction_results['abstractions']) > 0:
+                print("\n\nGenerating code for meta-patterns...")
+                for abstraction in abstraction_results['abstractions']:
+                    self._save_abstraction_code(abstraction)
 
         print(f"\n{'='*70}")
         print("DISCOVERY COMPLETE")
         print(f"{'='*70}\n")
 
         print(f"Final transform count: {self.registry.count_transforms()}")
-        print(f"Newly discovered: {len(discovered_transforms)}")
+        print(f"Newly discovered: {len(all_patterns)}")
+
+        if abstraction_results:
+            print(f"\nAbstraction Summary:")
+            print(f"  Meta-patterns: {len(abstraction_results['abstractions'])}")
+            print(f"  Refactored: {len(abstraction_results['refactored'])}")
+            print(f"  MDL improvement: {abstraction_results['metrics']['improvement']*100:.1f}%")
 
         return discovered_transforms
 
@@ -700,6 +741,131 @@ class DiscoveryPipelineRunner:
             f.write(code)
 
         print(f"  Saved: {filepath}")
+
+    def _patterns_to_compositions(
+        self,
+        patterns: List[DiscoveredPattern]
+    ) -> List[TransformComposition]:
+        """
+        Convert DiscoveredPattern objects to TransformComposition objects.
+
+        This enables abstraction layer to analyze pattern structures.
+        """
+        compositions = []
+
+        for pattern in patterns:
+            # Parse pattern description to extract transform sequence
+            # Simplified: Use pattern_type and description
+            transform_names = self._parse_pattern_to_transforms(pattern)
+
+            # Create expression tree (simplified: linear chain)
+            root = None
+            current = None
+
+            for transform_name in transform_names:
+                node = ExpressionNode(
+                    transform_name=transform_name,
+                    parameters={"amount": 0.5}  # Placeholder
+                )
+
+                if root is None:
+                    root = node
+                    current = node
+                else:
+                    current.children = [node]
+                    current = node
+
+            if root is not None:
+                compositions.append(TransformComposition(
+                    pattern_id=pattern.pattern_id,
+                    root=root,
+                    transform_sequence=transform_names
+                ))
+
+        return compositions
+
+    def _parse_pattern_to_transforms(self, pattern: DiscoveredPattern) -> List[str]:
+        """
+        Parse pattern description to extract transform names.
+
+        Simplified implementation - in full version would parse actual code.
+        """
+        # Extract from pattern type and description
+        transforms = []
+
+        # Based on pattern type
+        if pattern.pattern_type == "pitch":
+            transforms.append("transpose_semitone")
+        elif pattern.pattern_type == "rhythm":
+            transforms.append("time_scale")
+        elif pattern.pattern_type == "harmony":
+            transforms.append("parallel")
+
+        # If has target instrument, add track filter
+        if pattern.target_instrument:
+            transforms.append("track_filter")
+
+        # If is orchestration, add derive
+        if pattern.is_orchestration:
+            transforms.append("track_derive")
+
+        return transforms if transforms else ["identity"]
+
+    def _save_abstraction_code(self, abstraction: 'MetaPattern'):
+        """Save generated meta-pattern code to file"""
+        output_dir = Path("discovered_transforms/abstractions")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate code for meta-pattern
+        code = self._generate_abstraction_code(abstraction)
+
+        filename = f"{abstraction.name}.py"
+        filepath = output_dir / filename
+
+        with open(filepath, 'w') as f:
+            f.write(code)
+
+        print(f"  Meta-pattern: {filepath}")
+
+    def _generate_abstraction_code(self, abstraction: 'MetaPattern') -> str:
+        """
+        Generate Python code for a meta-pattern.
+
+        Example output:
+            def harmonize_fifth_below(source_track, target_track, segment):
+                '''Harmonize target track 5th below source'''
+                return compose([
+                    TransposeSemitoneTransform(amount=7),
+                    TrackDeriveTransform(source=source_track, target=target_track),
+                    SegmentMarkerTransform(boundary=segment)
+                ])
+        """
+        params_str = ", ".join(abstraction.parameters)
+
+        code = f'''"""
+Meta-Pattern: {abstraction.name}
+{abstraction.description}
+
+Appears {abstraction.frequency} times in discovered patterns.
+Auto-generated by Abstraction Layer (V2)
+"""
+
+from core.minimal_theoretical_base import *
+
+def {abstraction.name}({params_str}):
+    """
+    {abstraction.description}
+
+    Parameters:
+        {chr(10).join(f"{p}: float" for p in abstraction.parameters)}
+
+    Returns:
+        TransformComposition
+    """
+    # TODO: Implement composition
+    pass
+'''
+        return code
 
 
 # ============================================================================
