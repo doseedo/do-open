@@ -44,6 +44,12 @@ import pickle
 from ..core.space_level_transforms import SpaceLevelTransform, extract_notes_from_midi
 from ..core.transform_registry import TransformRegistry
 from ..core.information_theoretic_validator import InformationTheoreticValidator
+from ..core.multitrack_support import (
+    extract_notes_with_instruments,
+    filter_notes_by_instrument,
+    analyze_orchestration,
+    get_instrument_family
+)
 
 
 # ============================================================================
@@ -97,6 +103,9 @@ class ReconstructionGap:
     encoding: np.ndarray
     reconstruction_quality: float
     residual: np.ndarray  # Difference between original and reconstructed
+    # Multitrack support
+    instrument_quality: Dict[str, float] = None  # Per-instrument quality scores
+    dominant_instrument: str = None  # Which instrument has worst quality
 
 
 class GapDetector:
@@ -129,7 +138,7 @@ class GapDetector:
                 midi = mido.MidiFile(file_path)
 
                 # Skip if too small
-                notes = extract_notes_from_midi(midi)
+                notes = extract_notes_with_instruments(midi)  # ← Now with instruments
                 if len(notes) < config.min_notes_per_file:
                     continue
 
@@ -139,19 +148,31 @@ class GapDetector:
                 # Decode
                 reconstructed = self.registry.decode(encoding, base_template=midi)
 
-                # Measure quality
-                quality = self._measure_quality(midi, reconstructed)
+                # Measure quality (overall + per-instrument)
+                quality, instrument_quality = self._measure_quality_multitrack(
+                    midi, reconstructed, notes
+                )
 
                 # If quality is poor, this is a gap
                 if quality < config.reconstruction_threshold:
                     residual = self._compute_residual(midi, reconstructed, encoding)
+
+                    # Find worst instrument
+                    worst_instrument = None
+                    if instrument_quality:
+                        worst_instrument = min(
+                            instrument_quality.items(),
+                            key=lambda x: x[1]
+                        )[0]
 
                     gaps.append(ReconstructionGap(
                         file_path=file_path,
                         midi=midi,
                         encoding=encoding,
                         reconstruction_quality=quality,
-                        residual=residual
+                        residual=residual,
+                        instrument_quality=instrument_quality,
+                        dominant_instrument=worst_instrument
                     ))
 
             except Exception as e:
@@ -181,7 +202,7 @@ class GapDetector:
         original: mido.MidiFile,
         reconstructed: mido.MidiFile
     ) -> float:
-        """Measure reconstruction quality"""
+        """Measure reconstruction quality (legacy method)"""
         notes_orig = extract_notes_from_midi(original)
         notes_recon = extract_notes_from_midi(reconstructed)
 
@@ -201,6 +222,69 @@ class GapDetector:
         corr = np.corrcoef(pitches_orig, pitches_recon)[0, 1]
 
         return max(0.0, corr)
+
+    def _measure_quality_multitrack(
+        self,
+        original: mido.MidiFile,
+        reconstructed: mido.MidiFile,
+        notes_with_instruments: List[Dict[str, Any]]
+    ) -> Tuple[float, Dict[str, float]]:
+        """
+        Measure reconstruction quality per instrument.
+
+        Args:
+            original: Original MIDI
+            reconstructed: Reconstructed MIDI
+            notes_with_instruments: Notes with instrument info
+
+        Returns:
+            (overall_quality, instrument_quality_dict)
+        """
+        # Extract notes from reconstructed (with instruments)
+        notes_recon = extract_notes_with_instruments(reconstructed)
+
+        # Overall quality (backward compatible)
+        overall_quality = self._measure_quality(original, reconstructed)
+
+        # Per-instrument quality
+        instrument_quality = {}
+
+        # Get unique instruments
+        instruments = set(n['instrument_family'] for n in notes_with_instruments)
+
+        for instrument in instruments:
+            # Filter original notes for this instrument
+            orig_instrument = filter_notes_by_instrument(
+                notes_with_instruments,
+                instrument
+            )
+
+            # Filter reconstructed notes for this instrument
+            recon_instrument = filter_notes_by_instrument(
+                notes_recon,
+                instrument
+            )
+
+            if len(orig_instrument) == 0:
+                continue
+
+            # Measure quality for this instrument
+            pitches_orig = [n['pitch'] for n in orig_instrument]
+            pitches_recon = [n['pitch'] for n in recon_instrument] if recon_instrument else [60]
+
+            # Pad to same length
+            max_len = max(len(pitches_orig), len(pitches_recon))
+            pitches_orig = pitches_orig + [60] * (max_len - len(pitches_orig))
+            pitches_recon = pitches_recon + [60] * (max_len - len(pitches_recon))
+
+            # Correlation
+            if max_len > 1:
+                corr = np.corrcoef(pitches_orig, pitches_recon)[0, 1]
+                instrument_quality[instrument] = max(0.0, corr)
+            else:
+                instrument_quality[instrument] = 1.0 if pitches_orig == pitches_recon else 0.0
+
+        return overall_quality, instrument_quality
 
     def _compute_residual(
         self,
@@ -306,6 +390,9 @@ class DiscoveredPattern:
     description: str
     frequency: float  # How often it appears in cluster
     example_files: List[Path]
+    # Multitrack support
+    target_instrument: Optional[str] = None  # Which instrument this pattern applies to
+    is_orchestration: bool = False  # Cross-instrument pattern
 
 
 class PatternMiner:
@@ -320,8 +407,12 @@ class PatternMiner:
         Mine patterns from a gap cluster.
 
         Analyzes what's common across all gaps in cluster.
+        NOW: Also identifies target instrument and orchestration patterns.
         """
         patterns = []
+
+        # Identify dominant instrument in this cluster
+        target_instrument, is_orchestration = self._identify_target_instrument(cluster)
 
         # Analyze centroid to understand what dimension is affected
         centroid = cluster.centroid
@@ -339,7 +430,7 @@ class PatternMiner:
             # Describe pattern
             # (This is simplified - would do more sophisticated analysis)
             pattern_type = self._infer_pattern_type(dim_idx)
-            description = self._describe_pattern(dim_idx, residual_value)
+            description = self._describe_pattern(dim_idx, residual_value, target_instrument)
 
             patterns.append(DiscoveredPattern(
                 pattern_id=f"pattern_{cluster.cluster_id}_{dim_idx}",
@@ -347,10 +438,41 @@ class PatternMiner:
                 pattern_type=pattern_type,
                 description=description,
                 frequency=1.0,  # Appears in all files (by definition of centroid)
-                example_files=[g.file_path for g in cluster.gaps[:3]]
+                example_files=[g.file_path for g in cluster.gaps[:3]],
+                target_instrument=target_instrument,
+                is_orchestration=is_orchestration
             ))
 
         return patterns[:config.max_patterns_per_cluster]
+
+    def _identify_target_instrument(
+        self,
+        cluster: GapCluster
+    ) -> Tuple[Optional[str], bool]:
+        """
+        Identify which instrument this cluster's patterns apply to.
+
+        Returns:
+            (target_instrument, is_orchestration)
+        """
+        # Count which instruments have worst quality in this cluster
+        instrument_counts = {}
+
+        for gap in cluster.gaps:
+            if gap.dominant_instrument:
+                instrument_counts[gap.dominant_instrument] = \
+                    instrument_counts.get(gap.dominant_instrument, 0) + 1
+
+        if not instrument_counts:
+            return None, False
+
+        # Most common worst instrument
+        target_instrument = max(instrument_counts.items(), key=lambda x: x[1])[0]
+
+        # Is orchestration pattern if multiple instruments are involved
+        is_orchestration = len(instrument_counts) > 1
+
+        return target_instrument, is_orchestration
 
     def _infer_pattern_type(self, dim_idx: int) -> str:
         """Infer pattern type from dimension index"""
@@ -368,7 +490,12 @@ class PatternMiner:
         else:
             return "expression"
 
-    def _describe_pattern(self, dim_idx: int, residual: float) -> str:
+    def _describe_pattern(
+        self,
+        dim_idx: int,
+        residual: float,
+        target_instrument: Optional[str] = None
+    ) -> str:
         """Describe pattern in natural language"""
         pattern_type = self._infer_pattern_type(dim_idx)
 
@@ -377,7 +504,11 @@ class PatternMiner:
         else:
             direction = "decrease"
 
-        return f"{pattern_type} {direction} (dim {dim_idx}, residual {residual:.2f})"
+        # Include instrument if specified
+        if target_instrument:
+            return f"{target_instrument}: {pattern_type} {direction} (dim {dim_idx}, residual {residual:.2f})"
+        else:
+            return f"{pattern_type} {direction} (dim {dim_idx}, residual {residual:.2f})"
 
 
 # ============================================================================
