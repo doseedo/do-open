@@ -365,17 +365,17 @@ class ParallelTransform(SpaceLevelTransform):
 
         notes = extract_notes_from_midi(midi)
 
-        # Identify triads and transform thirds
-        # (Simplified implementation)
+        # Identify triads and transform thirds (skip drums)
         for note in notes:
-            pc = note['pitch'] % 12
-            # If likely a third (4 or 3 semitones from root)
-            if pc in [3, 4]:
-                # Invert: major third (4) ↔ minor third (3)
-                if pc == 4:
-                    note['pitch'] -= 1  # Major → Minor
-                else:
-                    note['pitch'] += 1  # Minor → Major
+            if not note.get('is_drum', False):  # Skip drums
+                pc = note['pitch'] % 12
+                # If likely a third (4 or 3 semitones from root)
+                if pc in [3, 4]:
+                    # Invert: major third (4) ↔ minor third (3)
+                    if pc == 4:
+                        note['pitch'] -= 1  # Major → Minor
+                    else:
+                        note['pitch'] += 1  # Minor → Major
 
         return notes_to_midi(notes, midi.ticks_per_beat)
 
@@ -429,15 +429,15 @@ class LeittonwechselTransform(SpaceLevelTransform):
 
         notes = extract_notes_from_midi(midi)
 
-        # Exchange root and leading tone
-        # (Simplified implementation)
+        # Exchange root and leading tone (skip drums)
         for note in notes:
-            pc = note['pitch'] % 12
-            # If root or leading tone
-            if pc == 0:  # C
-                note['pitch'] += 4  # → E
-            elif pc == 4:  # E
-                note['pitch'] -= 4  # → C
+            if not note.get('is_drum', False):  # Skip drums
+                pc = note['pitch'] % 12
+                # If root or leading tone
+                if pc == 0:  # C
+                    note['pitch'] += 4  # → E
+                elif pc == 4:  # E
+                    note['pitch'] -= 4  # → C
 
         return notes_to_midi(notes, midi.ticks_per_beat)
 
@@ -481,11 +481,12 @@ class RelativeTransform(SpaceLevelTransform):
 
         notes = extract_notes_from_midi(midi)
 
-        # Shift root by minor third
+        # Shift root by minor third (skip drums)
         for note in notes:
-            pc = note['pitch'] % 12
-            if pc == 0:  # Root
-                note['pitch'] += 9  # Down minor third (up major 6th)
+            if not note.get('is_drum', False):  # Skip drums
+                pc = note['pitch'] % 12
+                if pc == 0:  # Root
+                    note['pitch'] += 9  # Down minor third (up major 6th)
 
         return notes_to_midi(notes, midi.ticks_per_beat)
 
