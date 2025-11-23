@@ -257,13 +257,13 @@ class GPUDiscoveryPipeline:
         baseline_error: torch.Tensor
     ) -> torch.Tensor:
         """
-        GPU-optimized batched composition testing.
+        Memory-efficient GPU-optimized composition testing.
 
         Key optimizations:
-        1. Process 10 compositions simultaneously on GPU
+        1. Process compositions one at a time (memory-safe)
         2. Keep all tensors on GPU (no .cpu() calls in loop)
-        3. Vectorize error computation across batch
-        4. Expected speedup: 50-100x vs sequential CPU-bound version
+        3. Accumulate results directly into GPU tensor
+        4. No large intermediate allocations (prevents OOM)
 
         Args:
             corpus_tensor: (B, T, F)
@@ -276,51 +276,35 @@ class GPUDiscoveryPipeline:
         K = len(compositions)
         B, T, F = corpus_tensor.shape
 
-        # Allocate result tensor on GPU
+        # Allocate result tensor on GPU (small - just K scalars)
         all_improvements = torch.zeros(K, device=self.device)
 
-        # Process in batches of 10 for GPU efficiency
-        comp_batch_size = 10
+        # Progress logging every 50 compositions
+        for idx, comp in enumerate(compositions):
+            if idx % 50 == 0:
+                print(f"    Testing compositions {idx}-{min(idx+50, K)}/{K}", flush=True)
 
-        for batch_start in range(0, K, comp_batch_size):
-            batch_end = min(batch_start + comp_batch_size, K)
-            batch_comps = compositions[batch_start:batch_end]
-            actual_batch = len(batch_comps)
+            try:
+                # Apply composition (stays on GPU)
+                result = self.transform_lib.compose_transforms(
+                    corpus_tensor,
+                    [(t['name'], t['amount']) for t in comp['transforms']]
+                )
 
-            # Progress logging every 50 compositions
-            if batch_start % 50 == 0:
-                print(f"    Testing compositions {batch_start}-{min(batch_start+50, K)}/{K}", flush=True)
+                # Compute error: (B, T, F) - (B, T, F) → (B,)
+                # This avoids the huge (batch_size, B, T, F) allocation
+                error = ((corpus_tensor - result) ** 2).sum(dim=(1, 2))
 
-            # Pre-allocate batch results on GPU: (batch_size, B, T, F)
-            batch_results = torch.zeros(actual_batch, B, T, F, device=self.device)
+                # Improvement = reduction in error (stays on GPU!)
+                improvement = (baseline_error - error).mean()
 
-            # Apply all compositions in this batch
-            for i, comp in enumerate(batch_comps):
-                try:
-                    # Apply composition (stays on GPU)
-                    result = self.transform_lib.compose_transforms(
-                        corpus_tensor,
-                        [(t['name'], t['amount']) for t in comp['transforms']]
-                    )
-                    batch_results[i] = result
+                # Store directly in result tensor (all on GPU)
+                all_improvements[idx] = improvement
 
-                except Exception as e:
-                    # Log error and use zero tensor (already initialized)
-                    print(f"    [!] Error testing {comp['name']}: {str(e)[:80]}")
-                    # batch_results[i] remains zeros
-
-            # Vectorized error computation for entire batch (GPU-accelerated)
-            # Shape: corpus_tensor is (B, T, F)
-            #        batch_results is (batch_size, B, T, F)
-            # We need to broadcast: (1, B, T, F) - (batch_size, B, T, F)
-            corpus_expanded = corpus_tensor.unsqueeze(0)  # (1, B, T, F)
-            batch_errors = ((corpus_expanded - batch_results) ** 2).sum(dim=(2, 3))  # (batch_size, B)
-
-            # Compute improvements: reduction in error (stays on GPU!)
-            batch_improvements = (baseline_error.unsqueeze(0) - batch_errors).mean(dim=1)  # (batch_size,)
-
-            # Store in result tensor (all on GPU, no CPU transfer)
-            all_improvements[batch_start:batch_end] = batch_improvements
+            except Exception as e:
+                # Log error and continue with zero improvement
+                print(f"    [!] Error testing {comp['name']}: {str(e)[:80]}")
+                # all_improvements[idx] remains 0.0
 
         # Return improvements on GPU (caller will handle .item() extraction if needed)
         return all_improvements
