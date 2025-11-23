@@ -139,7 +139,9 @@ class CPUDiscoveryPipeline:
     def _compute_baseline_error(self, corpus: np.ndarray) -> float:
         """Compute baseline reconstruction error (identity transform)."""
         # For initial iteration, baseline is just the corpus variance
-        return np.mean(corpus ** 2)
+        baseline = np.mean(corpus ** 2)
+        print(f"Baseline error (MSE): {baseline:.8f}")
+        return baseline
 
     def discovery_iteration_cpu(
         self,
