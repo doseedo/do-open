@@ -452,38 +452,23 @@ class TensorTransformLibrary:
             return batch
 
         result = batch.clone()
-        B, T, F = batch.shape
 
-        # Get pitch activations (first 128 features)
-        pitch = result[:, :, :128]
+        # Simplified: transpose pitch class 4 (major third) to 3 (minor third) and vice versa
+        # For all octaves
+        pitch = result[:, :, :128].clone()
 
-        # For each pitch class, swap major/minor thirds (3 ↔ 4 semitones)
-        # This is a simplified version - swaps PC 3 and PC 4
-        for pc_offset in range(12):
-            major_third_pc = (pc_offset + 4) % 12  # Major third
-            minor_third_pc = (pc_offset + 3) % 12  # Minor third
+        for octave in range(11):
+            for root_pc in range(12):
+                major_third = octave * 12 + ((root_pc + 4) % 12)
+                minor_third = octave * 12 + ((root_pc + 3) % 12)
 
-            # Collect all octaves of each pitch class
-            major_third_mask = torch.zeros(128, dtype=torch.bool, device=batch.device)
-            minor_third_mask = torch.zeros(128, dtype=torch.bool, device=batch.device)
+                if major_third < 128 and minor_third < 128:
+                    # Swap major and minor thirds
+                    temp = pitch[:, :, major_third].clone()
+                    pitch[:, :, major_third] = pitch[:, :, minor_third] * amount + pitch[:, :, major_third] * (1 - amount)
+                    pitch[:, :, minor_third] = temp * amount + pitch[:, :, minor_third] * (1 - amount)
 
-            for octave in range(11):
-                pitch_idx = octave * 12 + pc_offset
-                if pitch_idx < 128:
-                    major_idx = octave * 12 + major_third_pc
-                    minor_idx = octave * 12 + minor_third_pc
-                    if major_idx < 128:
-                        major_third_mask[major_idx] = True
-                    if minor_idx < 128:
-                        minor_third_mask[minor_idx] = True
-
-            # Swap major and minor thirds
-            major_activations = pitch[:, :, major_third_mask].clone()
-            minor_activations = pitch[:, :, minor_third_mask].clone()
-
-            result[:, :, major_third_mask] = minor_activations * amount + major_activations * (1 - amount)
-            result[:, :, minor_third_mask] = major_activations * amount + minor_activations * (1 - amount)
-
+        result[:, :, :128] = pitch
         return result
 
     @staticmethod
@@ -503,33 +488,21 @@ class TensorTransformLibrary:
             return batch
 
         result = batch.clone()
+        pitch = result[:, :, :128].clone()
 
-        # Exchange root (C) and major third (E): 0 ↔ 4 semitones
-        # For all pitch classes
-        pitch = result[:, :, :128]
-
-        for pc_offset in range(12):
-            root_pc = pc_offset % 12
-            third_pc = (pc_offset + 4) % 12
-
-            root_mask = torch.zeros(128, dtype=torch.bool, device=batch.device)
-            third_mask = torch.zeros(128, dtype=torch.bool, device=batch.device)
-
-            for octave in range(11):
+        # Exchange root and major third (0 ↔ 4 semitones for each pitch class)
+        for octave in range(11):
+            for root_pc in range(12):
                 root_idx = octave * 12 + root_pc
-                third_idx = octave * 12 + third_pc
-                if root_idx < 128:
-                    root_mask[root_idx] = True
-                if third_idx < 128:
-                    third_mask[third_idx] = True
+                third_idx = octave * 12 + ((root_pc + 4) % 12)
 
-            # Swap root and third
-            root_activations = pitch[:, :, root_mask].clone()
-            third_activations = pitch[:, :, third_mask].clone()
+                if root_idx < 128 and third_idx < 128:
+                    # Swap root and third
+                    temp = pitch[:, :, root_idx].clone()
+                    pitch[:, :, root_idx] = pitch[:, :, third_idx] * amount + pitch[:, :, root_idx] * (1 - amount)
+                    pitch[:, :, third_idx] = temp * amount + pitch[:, :, third_idx] * (1 - amount)
 
-            result[:, :, root_mask] = third_activations * amount + root_activations * (1 - amount)
-            result[:, :, third_mask] = root_activations * amount + third_activations * (1 - amount)
-
+        result[:, :, :128] = pitch
         return result
 
     @staticmethod
