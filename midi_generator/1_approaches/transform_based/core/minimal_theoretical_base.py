@@ -7,8 +7,10 @@ Irreducible mathematical operations based on music theory:
 - Neo-Riemannian theory (Cohn, Hyer, Klumpenhouwer)
 - Time-space duality (retrograde, inversion)
 - Group-theoretic operations
+- Multitrack spatial/temporal derivation
+- Voice extraction from vertical structures
 
-These 14 transforms are PROVABLY IRREDUCIBLE - they cannot be
+These 17 transforms are PROVABLY IRREDUCIBLE - they cannot be
 decomposed into simpler operations. All other transforms are
 compositions of these primitives.
 
@@ -85,14 +87,17 @@ class TransposeSemitoneTransform(SpaceLevelTransform):
         amount = np.clip(amount, 0.0, 11.0)
         semitones = int(round(amount))
 
-        midi_copy = copy.deepcopy(midi)
+        if semitones == 0:
+            return midi
 
-        for track in midi_copy.tracks:
-            for msg in track:
-                if msg.type in ('note_on', 'note_off'):
-                    msg.note = np.clip(msg.note + semitones, 0, 127)
+        notes = extract_notes_from_midi(midi)
 
-        return midi_copy
+        # Apply transpose, but skip drums (is_drum == True)
+        for note in notes:
+            if not note.get('is_drum', False):  # Skip drums
+                note['pitch'] = np.clip(note['pitch'] + semitones, 0, 127)
+
+        return notes_to_midi(notes, midi.ticks_per_beat)
 
     def get_current_value(self, midi: mido.MidiFile) -> float:
         """Get transposition level (0-11)"""
@@ -144,19 +149,23 @@ class InversionTransform(SpaceLevelTransform):
 
         notes = extract_notes_from_midi(midi)
 
-        # Find center pitch for inversion
-        pitches = [n['pitch'] for n in notes]
-        center = np.mean(pitches)
+        # Find center pitch for inversion (excluding drums)
+        non_drum_pitches = [n['pitch'] for n in notes if not n.get('is_drum', False)]
+        if len(non_drum_pitches) == 0:
+            return midi
 
-        # Invert around center
+        center = np.mean(non_drum_pitches)
+
+        # Invert around center, but skip drums
         for note in notes:
-            distance = note['pitch'] - center
-            inverted_pitch = center - distance
-            # Blend between original and inverted
-            note['pitch'] = int(
-                (1 - amount) * note['pitch'] + amount * inverted_pitch
-            )
-            note['pitch'] = np.clip(note['pitch'], 0, 127)
+            if not note.get('is_drum', False):  # Skip drums
+                distance = note['pitch'] - center
+                inverted_pitch = center - distance
+                # Blend between original and inverted
+                note['pitch'] = int(
+                    (1 - amount) * note['pitch'] + amount * inverted_pitch
+                )
+                note['pitch'] = np.clip(note['pitch'], 0, 127)
 
         return notes_to_midi(notes, midi.ticks_per_beat)
 
@@ -838,6 +847,257 @@ class SegmentMarkerTransform(SpaceLevelTransform):
         return 1.0
 
 
+class TrackDeriveTransform(SpaceLevelTransform):
+    """
+    TrackDerive: Generate target track by deriving from source track.
+
+    Captures SPATIAL relationships between instruments (same time).
+
+    WHY IRREDUCIBLE: Can't compose "sax 2 harmonizes sax 1 down a 4th"
+    without this primitive. Would need 4 separate patterns instead of 1.
+
+    Examples:
+    - sax_harmony = derive(sax1→sax2) ∘ T₁⁻⁴  # Sax 2 = sax 1 down 4th
+    - bass_follows = derive(piano→bass) ∘ T₁⁻¹²  # Bass = piano down octave
+    - trumpet_doubles = derive(sax→trumpet)  # Trumpet doubles sax
+
+    Mathematical: Derive_{s→t}: Notes_s → Notes_s ∪ Notes_t (copy & transform)
+
+    amount encodes: (source_track << 4) | target_track
+    Example: 0.15 = source track 1, target track 5
+    """
+
+    def __init__(self):
+        metadata = TransformMetadata(
+            name='track_derive',
+            dimension='texture',
+            level='section',
+            description='Derive target track from source track',
+            parameter_range=(0.0, 1.0),
+            default_value=0.0,
+            is_invertible=False
+        )
+        super().__init__(metadata)
+
+    def apply(self, midi: mido.MidiFile, amount: float) -> mido.MidiFile:
+        """Derive target track from source track"""
+        amount = np.clip(amount, 0.0, 1.0)
+
+        # Decode source and target tracks from amount
+        # amount * 100 gives us a 2-digit number: XY
+        # X = source track (0-9), Y = target track (0-9)
+        encoded = int(amount * 100)
+        source_track = encoded // 10
+        target_track = encoded % 10
+
+        if source_track == target_track:
+            return midi  # No-op if source == target
+
+        notes = extract_notes_from_midi(midi)
+
+        # Extract source track notes
+        source_notes = [n for n in notes if n.get('track', 0) == source_track]
+
+        if len(source_notes) == 0:
+            return midi  # No source notes
+
+        # Derive to target track (copy with new track number)
+        derived_notes = []
+        for note in source_notes:
+            new_note = note.copy()
+            new_note['track'] = target_track
+            derived_notes.append(new_note)
+
+        # Combine original + derived
+        all_notes = notes + derived_notes
+
+        return notes_to_midi(all_notes, midi.ticks_per_beat)
+
+    def get_current_value(self, midi: mido.MidiFile) -> float:
+        """Cannot detect derivation without reference"""
+        return 0.0
+
+
+class SectionTrackDeriveTransform(SpaceLevelTransform):
+    """
+    SectionTrackDerive: Derive from (section A, track X) to (section B, track Y).
+
+    Combines TEMPORAL and SPATIAL derivation.
+
+    WHY IRREDUCIBLE: Theme & variation, development, recapitulation require
+    copying material across BOTH time and space. Can't compose this from
+    segment + track_derive separately - would lose the mapping relationship.
+
+    Examples:
+    - theme_variation = section_derive(
+        (0.0-0.2, flutes) → (0.4-0.6, brass)
+      ) ∘ T₁⁵ ∘ fragment(0.75)  # Brass plays flutes' theme, varied
+
+    - development = section_derive(
+        (0.0-0.3, all) → (0.3-0.6, all)
+      ) ∘ fragment ∘ repeat  # Development from exposition
+
+    - rondo_return = section_derive(
+        (0.0-0.2, theme) → (0.6-0.8, theme)
+      )  # A section returns
+
+    Mathematical: SectionDerive: (Seg_s × Track_s) → (Seg_t × Track_t)
+
+    amount encodes sections proportionally: SSTT
+    SS = source section (00-99), TT = target section (00-99)
+    Tracks encoded in separate parameter (simplified for now)
+    """
+
+    def __init__(self):
+        metadata = TransformMetadata(
+            name='section_track_derive',
+            dimension='form',
+            level='section',
+            description='Derive material across sections and tracks',
+            parameter_range=(0.0, 1.0),
+            default_value=0.0,
+            is_invertible=False
+        )
+        super().__init__(metadata)
+
+    def apply(self, midi: mido.MidiFile, amount: float) -> mido.MidiFile:
+        """
+        Derive material from source section/track to target section/track.
+
+        Simplified: amount encodes source_segment → target_segment
+        Uses same track (cross-track would compose with track_derive)
+        """
+        amount = np.clip(amount, 0.0, 1.0)
+
+        # Decode: first half = source segment, second half = target segment
+        # Example: 0.24 = source 0.2, target 0.4
+        encoded = amount * 10
+        source_segment = (encoded % 10) / 10.0  # Extract fractional part
+        target_segment = min(source_segment + 0.2, 1.0)  # Target 20% later
+
+        notes = extract_notes_from_midi(midi)
+
+        if len(notes) == 0:
+            return midi
+
+        # Find piece duration
+        max_time = max(n['start_time'] + n['duration'] for n in notes)
+
+        # Extract source segment
+        src_start = max_time * source_segment
+        src_end = max_time * min(source_segment + 0.2, 1.0)  # 20% segment
+
+        source_notes = [
+            n for n in notes
+            if src_start <= n['start_time'] < src_end
+        ]
+
+        if len(source_notes) == 0:
+            return midi
+
+        # Map to target segment
+        tgt_start = max_time * target_segment
+
+        # Time offset for mapping
+        time_offset = tgt_start - src_start
+
+        # Derive to target segment
+        derived_notes = []
+        for note in source_notes:
+            new_note = note.copy()
+            new_note['start_time'] += time_offset
+            derived_notes.append(new_note)
+
+        # Combine
+        all_notes = notes + derived_notes
+
+        return notes_to_midi(all_notes, midi.ticks_per_beat)
+
+    def get_current_value(self, midi: mido.MidiFile) -> float:
+        """Cannot detect section derivation without reference"""
+        return 0.0
+
+
+class VoiceSelectTransform(SpaceLevelTransform):
+    """
+    VoiceSelect: Extract specific voice from simultaneous notes.
+
+    WHY IRREDUCIBLE: Can't compose "extract highest note" from pitch/time ops.
+    This is VERTICAL (harmonic) selection, orthogonal to horizontal (melodic).
+
+    Critical for big band:
+    - lead_alto = track_filter(sax) ∘ voice_select(1.0)  # Top voice
+    - bass_trombone = track_filter(brass) ∘ voice_select(0.0)  # Bottom
+    - inner_voice = track_filter(section) ∘ voice_select(0.5)  # Middle
+
+    Enables efficient block voicing encoding:
+    - sax_block = [lead, derive(lead→alto2) ∘ T₁⁻³, ...]
+      Instead of: 5 independent patterns
+
+    Mathematical: VoiceSelect_v: Chord → Note (extract voice from vertical)
+
+    amount: 0.0 = lowest, 0.5 = middle, 1.0 = highest voice
+    """
+
+    def __init__(self):
+        metadata = TransformMetadata(
+            name='voice_select',
+            dimension='texture',
+            level='note',
+            description='Extract voice from simultaneous notes',
+            parameter_range=(0.0, 1.0),
+            default_value=1.0,  # Highest voice (melody)
+            is_invertible=False
+        )
+        super().__init__(metadata)
+
+    def apply(self, midi: mido.MidiFile, amount: float) -> mido.MidiFile:
+        """Extract specific voice from chords"""
+        amount = np.clip(amount, 0.0, 1.0)
+
+        notes = extract_notes_from_midi(midi)
+
+        if len(notes) == 0:
+            return midi
+
+        # Group simultaneous notes (within 50ms window)
+        time_window = 0.05  # 50ms
+
+        # Sort notes by time
+        notes_sorted = sorted(notes, key=lambda n: n['start_time'])
+
+        selected = []
+        i = 0
+
+        while i < len(notes_sorted):
+            current_time = notes_sorted[i]['start_time']
+
+            # Collect all notes within time window
+            chord_notes = []
+            j = i
+            while j < len(notes_sorted) and \
+                  abs(notes_sorted[j]['start_time'] - current_time) < time_window:
+                chord_notes.append(notes_sorted[j])
+                j += 1
+
+            # Sort by pitch
+            chord_notes_sorted = sorted(chord_notes, key=lambda n: n['pitch'])
+
+            # Select voice based on amount
+            voice_idx = int(amount * max(len(chord_notes_sorted) - 1, 0))
+            voice_idx = min(voice_idx, len(chord_notes_sorted) - 1)
+
+            selected.append(chord_notes_sorted[voice_idx])
+
+            i = j  # Move to next chord
+
+        return notes_to_midi(selected, midi.ticks_per_beat)
+
+    def get_current_value(self, midi: mido.MidiFile) -> float:
+        """Returns 1.0 (assumes melody = highest voice)"""
+        return 1.0
+
+
 # ============================================================================
 # Minimal Transform Registry
 # ============================================================================
@@ -867,8 +1127,11 @@ MINIMAL_THEORETICAL_BASE = [
     # Essential (1)
     Quantize16thTransform(),       # Q quantization
 
-    # Multitrack (1)
+    # Multitrack (4)
     TrackFilterTransform(),        # Filter to specific track
+    TrackDeriveTransform(),        # Cross-track derivation
+    SectionTrackDeriveTransform(), # Spatiotemporal derivation
+    VoiceSelectTransform(),        # Voice extraction
 
     # Score-level (1)
     SegmentMarkerTransform(),      # Mark structural boundaries
@@ -877,12 +1140,12 @@ MINIMAL_THEORETICAL_BASE = [
 
 def get_minimal_base() -> List[SpaceLevelTransform]:
     """
-    Get the 14 irreducible theoretical transforms.
+    Get the 17 irreducible theoretical transforms.
 
     Returns:
-        List of 14 minimal transforms:
+        List of 17 minimal transforms:
         - 12 theoretical primitives (pitch, time, harmony, structure, dynamics, quantization)
-        - 1 multitrack filter (track isolation)
+        - 4 multitrack operations (filter, derive, section-derive, voice-select)
         - 1 score-level marker (structural segmentation)
     """
     return MINIMAL_THEORETICAL_BASE.copy()

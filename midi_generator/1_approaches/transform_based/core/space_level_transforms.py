@@ -173,7 +173,8 @@ def extract_notes_from_midi(midi: mido.MidiFile) -> List[Dict[str, Any]]:
                 key = (track_idx, msg.note)
                 active_notes[key] = {
                     'start_time': current_time[track_idx],
-                    'velocity': msg.velocity
+                    'velocity': msg.velocity,
+                    'channel': msg.channel if hasattr(msg, 'channel') else 0
                 }
 
             # Note off (or note_on with velocity 0)
@@ -181,12 +182,15 @@ def extract_notes_from_midi(midi: mido.MidiFile) -> List[Dict[str, Any]]:
                 key = (track_idx, msg.note)
                 if key in active_notes:
                     note_info = active_notes[key]
+                    channel = note_info.get('channel', 0)
                     notes.append({
                         'pitch': msg.note,
                         'velocity': note_info['velocity'],
                         'start_time': note_info['start_time'],
                         'duration': current_time[track_idx] - note_info['start_time'],
-                        'track': track_idx
+                        'track': track_idx,
+                        'channel': channel,
+                        'is_drum': (channel == 9)  # MIDI channel 10 (0-indexed = 9) is drums
                     })
                     del active_notes[key]
 
