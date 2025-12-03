@@ -1,0 +1,222 @@
+{
+  "timestamp": "2025-11-27T20:55:36.453102",
+  "checkpoint_path": "checkpoint_v2.npz",
+  "corpus_path": "/home/arlo/do-repo/midi_generator/midi_corpus/big_band",
+  "output_dir": "validation_output",
+  "total_elapsed_seconds": 194.00790739059448,
+  "steps": [
+    {
+      "step": 1,
+      "name": "Decoder",
+      "success": true,
+      "elapsed_seconds": 0.7285494804382324,
+      "metrics": {
+        "notes_decoded": 56949,
+        "patterns_decoded": 14917,
+        "tracks": 5,
+        "canonicals": 489,
+        "token_counts": {
+          "INTRO": 489,
+          "REPEAT": 15995,
+          "TRANSFORM": 661,
+          "TRACK_BOUNDARY": 4
+        }
+      }
+    },
+    {
+      "step": 2,
+      "name": "Round-trip",
+      "success": true,
+      "elapsed_seconds": 8.488795757293701,
+      "metrics": {
+        "files_tested": 10,
+        "decoded_notes": 56949,
+        "decoded_patterns": 14917
+      },
+      "notes": "Full round-trip requires per-file encoding (not stored in checkpoint)"
+    },
+    {
+      "step": 3,
+      "name": "Train/Test Split",
+      "success": true,
+      "skipped": true,
+      "reason": "Skipped by user request"
+    },
+    {
+      "step": 4,
+      "name": "Generalization",
+      "success": false,
+      "skipped": true,
+      "reason": "Requires step 3 (train/test split)"
+    },
+    {
+      "step": 5,
+      "name": "Pattern Inspection",
+      "success": true,
+      "elapsed_seconds": 0.09722042083740234,
+      "metrics": {
+        "patterns_analyzed": 20,
+        "coherent_patterns": 1,
+        "incoherent_patterns": 2,
+        "chord_arpeggios": 0,
+        "scale_fragments": 1,
+        "melodic_motifs": 17,
+        "length_distribution": {
+          "3": 6,
+          "5": 2,
+          "6": 2,
+          "10": 1,
+          "4": 2,
+          "2": 4,
+          "7": 2,
+          "9": 1
+        }
+      },
+      "top_patterns": [
+        {
+          "id": 3,
+          "notes": [
+            "D#",
+            "F#",
+            "G#"
+          ],
+          "usage": 2805,
+          "type": "stepwise motif",
+          "coherence": "medium"
+        },
+        {
+          "id": 2,
+          "notes": [
+            "B",
+            "C",
+            "C#",
+            "D",
+            "D#"
+          ],
+          "usage": 1790,
+          "type": "stepwise motif",
+          "coherence": "medium"
+        },
+        {
+          "id": 4,
+          "notes": [
+            "F",
+            "F#",
+            "G",
+            "G#",
+            "A",
+            "A#"
+          ],
+          "usage": 1165,
+          "type": "stepwise motif",
+          "coherence": "medium"
+        },
+        {
+          "id": 0,
+          "notes": [
+            "F#",
+            "G",
+            "G#"
+          ],
+          "usage": 725,
+          "type": "stepwise motif",
+          "coherence": "medium"
+        },
+        {
+          "id": 27,
+          "notes": [
+            "C#",
+            "B",
+            "C",
+            "D",
+            "E",
+            "G#",
+            "D",
+            "D#"
+          ],
+          "usage": 575,
+          "type": null,
+          "coherence": "low"
+        },
+        {
+          "id": 7,
+          "notes": [
+            "A#",
+            "B",
+            "C",
+            "C#"
+          ],
+          "usage": 565,
+          "type": "stepwise motif",
+          "coherence": "medium"
+        },
+        {
+          "id": 36,
+          "notes": [
+            "D",
+            "D#",
+            "E"
+          ],
+          "usage": 485,
+          "type": "stepwise motif",
+          "coherence": "medium"
+        },
+        {
+          "id": 38,
+          "notes": [
+            "F",
+            "F#",
+            "G"
+          ],
+          "usage": 480,
+          "type": "stepwise motif",
+          "coherence": "medium"
+        },
+        {
+          "id": 61,
+          "notes": [
+            "D#",
+            "F",
+            "G#",
+            "A#"
+          ],
+          "usage": 390,
+          "type": "blues scale",
+          "coherence": "high"
+        },
+        {
+          "id": 18,
+          "notes": [
+            "F",
+            "F#"
+          ],
+          "usage": 375,
+          "type": "stepwise motif",
+          "coherence": "medium"
+        }
+      ]
+    },
+    {
+      "step": 6,
+      "name": "Cross-Piece Analysis",
+      "success": true,
+      "elapsed_seconds": 181.68542528152466,
+      "metrics": {
+        "n_pieces": 1731,
+        "n_canonicals": 489,
+        "single_piece_patterns": 7,
+        "multi_piece_patterns": 64,
+        "universal_patterns": 13,
+        "sharing_rate": 0.130879345603272,
+        "universal_rate": 0.026584867075664622
+      },
+      "interpretation": "MODERATE_SHARING"
+    }
+  ],
+  "summary": {
+    "total_steps": 6,
+    "completed": 5,
+    "failed": 0,
+    "skipped": 2
+  }
+}
