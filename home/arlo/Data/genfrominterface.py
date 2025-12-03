@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Web UI backend for Dø v1
+Gradio Web UI for ACE-Step generation (ControlBranch-ready)
 
 - Loads the same Pipeline you trained with and restores hparams from the Lightning .ckpt
 - Works with ctrl_enc + ctrlnet residual injection (ControlBranch1D)
@@ -24,12 +24,15 @@ from mido import MidiFile, MidiTrack, MetaMessage
 
 torch.set_float32_matmul_precision("high")
 
+# Generation trajectory logger for debugging
+from generation_trajectory_logger import GenerationLogger, get_logger
+
 # ------------------------------------------------------------------------------
 # Project imports
 # ------------------------------------------------------------------------------
-sys.path.insert(0, '/home/arlo/Data')  # folder that has trainer_performer.py
-sys.path.insert(0, '/home/arlo/Data/dø')  # Add dø directory first (has DoTrainComponents for generate-do endpoint)
-sys.path.insert(0, '/home/arlo/Data/ACE-Step')  # Add ACE-Step directory for schedulers and generate-ace-step endpoint
+sys.path.append('/home/arlo/Data')  # folder that has trainer_performer.py
+sys.path.append('/home/arlo/Data/dø')  # Add dø directory first (has DoTrainComponents for generate-do endpoint)
+sys.path.append('/home/arlo/Data/ACE-Step')  # Add ACE-Step directory for schedulers and generate-ace-step endpoint
 
 try:
     from trainer_performerCN2 import Pipeline  # Use the actual training script
@@ -40,7 +43,6 @@ except Exception:
         from trainer_performer import Pipeline
 
 from dataloader import APPROVED_GROUPS, APPROVED_SUBGROUPS
-from output_paths import get_output_path, ensure_path_exists
 
 # ------------------------------------------------------------------------------
 # Constants
@@ -80,7 +82,6 @@ INSTRUMENT_SOUNDFONTS = {
 
     # Bass
     "electric_bass": "/home/arlo/Data/soundfonts/electric bass.sf2",
-    "bass": "/home/arlo/Data/soundfonts/electric bass.sf2",
 
     "undefined": "/usr/share/sounds/sf2/FluidR3_GM.sf2",
     "default": "/usr/share/sounds/sf2/FluidR3_GM.sf2"  # fallback
@@ -135,10 +136,13 @@ CONDITIONING_CACHE: dict = {}
 # Cache for ground truth latents
 LATENT_CACHE: dict = {}
 
-# Maximum window_slow to prevent CUDA out-of-bounds errors with long MIDI files
-# Model's position embeddings have a maximum sequence length - exceeding this causes:
-# "CUDA error: device-side assert triggered"
-# Typical model max: 2048-4096 frames. Using 2048 as safe limit (~47.5 seconds at 43.066 fps)
+# Generation trajectory logging for debugging
+DEBUG_TRAJECTORY_LOGGING = os.environ.get("DEBUG_TRAJECTORY_LOGGING", "false").lower() in ("true", "1", "yes")
+TRAJECTORY_LOGGER = None  # Will be initialized when needed
+
+# Maximum window_slow to prevent CUDA OOM errors
+# Using 2048 frames (~47.5 seconds at 43.066 fps) for 24GB GPU with FP16 model
+# FP16 model uses ~7GB, leaving ~15GB for activations - plenty for 2048 frames
 MAX_WINDOW_SLOW = 2048
 
 def clamp_window_slow(window_slow: int, duration_seconds: float = None, fps: float = 43.066) -> int:
@@ -293,16 +297,35 @@ def _pipeline_ctor_kwargs_from_ckpt_hparams(hp: dict) -> dict:
 
 def load_model_any_ckpt(ckpt_path: str, checkpoint_dir: str, manifest_json: str) -> Pipeline:
     print(f"Loading checkpoint: {ckpt_path}")
-    blob = torch.load(ckpt_path, map_location="cpu")
+
+    # Clear CUDA cache BEFORE loading checkpoint to maximize available memory
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        import gc
+        gc.collect()
+        print("🗑️  Pre-load CUDA cache cleared")
+
+    # Use mmap=True to memory-map the checkpoint file instead of loading into RAM
+    # This is critical for L4 instances with 16GB RAM loading 17GB checkpoints
+    print("📂 Loading checkpoint with memory-mapping (mmap=True) to reduce RAM usage...")
+    blob = torch.load(ckpt_path, map_location="cpu", mmap=True)
 
     hp = blob.get("hyper_parameters", {})
     ctor_kwargs = _pipeline_ctor_kwargs_from_ckpt_hparams(hp)
     ctor_kwargs["checkpoint_dir"] = checkpoint_dir
     ctor_kwargs["manifest_json"]  = manifest_json
 
+    # Override batch_size for inference (checkpoint may have training batch_size)
+    if "batch_size" in ctor_kwargs:
+        original_batch_size = ctor_kwargs["batch_size"]
+        ctor_kwargs["batch_size"] = 1
+        print(f"⚠️  Overriding batch_size: {original_batch_size} → 1 (for inference)")
+
     print("Instantiating Pipeline with restored hyperparameters:")
     for k in sorted(ctor_kwargs.keys()):
         print(f"  - {k} = {ctor_kwargs[k]}")
+
+    # Create model on CPU first
     model = Pipeline(**ctor_kwargs).eval()
 
     sd = blob.get("state_dict", blob)
@@ -336,12 +359,90 @@ def load_model_any_ckpt(ckpt_path: str, checkpoint_dir: str, manifest_json: str)
         if k in sd and tuple(sd[k].shape) != tuple(target.shape):
             sd[k] = _resize_like(sd[k], target)
 
+    # Check checkpoint dtype before loading
+    sample_key = next(iter(sd.keys()))
+    sample_tensor = sd[sample_key]
+    if isinstance(sample_tensor, torch.Tensor):
+        print(f"📊 Checkpoint dtype: {sample_tensor.dtype} (sample key: {sample_key})")
+
     print("Loading state dict (strict=False)...")
     missing, unexpected = model.load_state_dict(sd, strict=False)
     if missing:
         print(f"[compat] Missing keys ({len(missing)}). Example: {missing[:8]}...")
     if unexpected:
         print(f"[compat] Unexpected keys ({len(unexpected)}). Example: {unexpected[:8]}...")
+
+    # Delete checkpoint blob immediately to free RAM (~13GB saved!)
+    del blob
+    del sd
+    import gc
+    gc.collect()
+    print("🗑️  Deleted checkpoint blob to free RAM")
+
+    # Clear CUDA cache before moving to GPU
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print("🗑️  Cleared CUDA cache")
+
+    # Disable cudnn benchmarking to save memory
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cuda.matmul.allow_tf32 = True  # Use TF32 for matmul (faster, less memory)
+
+    # Convert to bfloat16 on CPU BEFORE moving to CUDA (halves VRAM transfer size)
+    # Using bfloat16 instead of float16 for better numerical stability with LayerNorm
+    print("🔄 Converting model to bfloat16 on CPU before CUDA transfer...")
+    model = model.to(torch.bfloat16)
+    gc.collect()
+    print("✓ Converted to bfloat16 on CPU")
+
+    # Move to CUDA (now in FP16, uses ~7GB instead of ~14GB)
+    print("🔄 Moving model to CUDA...")
+    model = model.to('cuda')
+    print("✓ Moved to CUDA")
+
+    # Check what dtypes we actually have
+    param_dtypes = {p.dtype for p in model.parameters()}
+    print(f"✓ Model loaded with dtypes: {param_dtypes}")
+
+    # Print first parameter dtype for verification
+    for name, param in model.named_parameters():
+        print(f"  First param '{name}': dtype={param.dtype}, shape={param.shape}")
+        break
+
+    # Model already converted to bfloat16 above, just ensure ctrl_enc is also bfloat16
+    if hasattr(model, 'ctrl_enc'):
+        model.ctrl_enc = model.ctrl_enc.to(torch.bfloat16)
+        print("  ✓ Ensured ctrl_enc is bfloat16")
+
+    model._use_autocast = True  # Use autocast to handle any edge cases
+
+    # Check memory after loading
+    torch.cuda.empty_cache()
+    mem_allocated = torch.cuda.memory_allocated(0) / 1e9
+    print(f"✓ Model on CUDA in bfloat16: {mem_allocated:.2f}GB VRAM")
+
+    # Enable gradient checkpointing if available
+    if hasattr(model, 'transformers'):
+        if hasattr(model.transformers, 'enable_gradient_checkpointing'):
+            model.transformers.enable_gradient_checkpointing()
+            print("✓ Gradient checkpointing enabled on transformers")
+
+    # Keep DCAE on GPU for faster inference (L4 has enough VRAM now)
+    if hasattr(model, 'dcae'):
+        model.dcae = model.dcae.to('cuda').to(torch.bfloat16)
+        print("✓ DCAE on GPU in bfloat16 for fast inference")
+
+    # Clear cache again after loading
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # Check memory usage
+    if torch.cuda.is_available():
+        mem_allocated = torch.cuda.memory_allocated(0) / 1e9
+        mem_reserved = torch.cuda.memory_reserved(0) / 1e9
+        print(f"✓ Model loaded:")
+        print(f"  - Allocated: {mem_allocated:.2f}GB VRAM")
+        print(f"  - Reserved:  {mem_reserved:.2f}GB VRAM")
 
     return model
 
@@ -802,21 +903,36 @@ def render_midi_to_audio(midi_path: str, output_dir: str = "./temp_audio", instr
         print(f"   Using soundfont: {soundfont_path}")
 
     try:
+        # Render to temporary file first
+        audio_path_temp = output_dir / f"{audio_path.stem}_temp.wav"
+
         # Try fluidsynth first (preferred)
         cmd = [
             "fluidsynth",
             "-ni",  # no interactive mode
             "-g", "0.625",  # gain
             "-r", "44100",  # sample rate (CRITICAL: must match expected rate)
-            "-F", str(audio_path),  # output file
+            "-F", str(audio_path_temp),  # output to temp file
             soundfont_path,  # soundfont based on instrument group
             str(midi_path)
         ]
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
-        if result.returncode == 0 and audio_path.exists():
-            print(f"✅ FluidSynth rendering successful: {audio_path}")
+        if result.returncode == 0 and audio_path_temp.exists():
+            # Pad audio to include 2 seconds of release time
+            import torchaudio
+            import torch
+            waveform, sample_rate = torchaudio.load(str(audio_path_temp))
+            release_samples = int(2.0 * sample_rate)  # 2 seconds of silence
+            padding = torch.zeros((waveform.shape[0], release_samples))
+            padded_waveform = torch.cat([waveform, padding], dim=1)
+            torchaudio.save(str(audio_path), padded_waveform, sample_rate)
+
+            # Clean up temp file
+            audio_path_temp.unlink()
+
+            print(f"✅ FluidSynth rendering successful (with 2.0s release): {audio_path}")
             return str(audio_path)
         else:
             print(f"⚠️ FluidSynth failed with return code {result.returncode}")
@@ -1158,8 +1274,12 @@ def midi_to_piano_roll_conditioning(midi_path: str, window_slow: int = 1024, fps
     print(f"🎵 Using fps={fps:.3f} (no tempo adjustment needed)")
 
     # Get duration and create time grid with standard fps
-    duration = max(midi_data.get_end_time(), 1.0)  # At least 1 second
+    # Add release extension to capture note decay
+    midi_end_time = midi_data.get_end_time()
+    release_extension = 2.0  # seconds for natural decay
+    duration = max(midi_end_time + release_extension, 1.0)  # At least 1 second
     time_steps = int(duration * fps) + 1
+    print(f"🎵 Duration: MIDI ends at {midi_end_time:.2f}s + {release_extension:.2f}s release = {duration:.2f}s")
 
     # Create piano roll
     piano_roll = np.zeros((128, time_steps))
@@ -1258,11 +1378,16 @@ def midi_to_multitrack_piano_rolls(midi_path: str, window_slow: int = 1024, fps:
 
     # Process multitrack MIDI
     midi_data = pretty_midi.PrettyMIDI(midi_path)
-    duration = max(midi_data.get_end_time(), 1.0)
+    midi_end_time = midi_data.get_end_time()
+
+    # Add release extension to capture note decay
+    release_extension = 2.0  # seconds for natural decay
+    duration = max(midi_end_time + release_extension, 1.0)
 
     # CRITICAL FIX: DO NOT apply tempo adjustment!
     # pretty_midi already handles tempo in get_end_time() and note.start/note.end
     print(f"🎵 Using fps={fps:.3f} (no tempo adjustment needed)")
+    print(f"🎵 Duration: MIDI ends at {midi_end_time:.2f}s + {release_extension:.2f}s release = {duration:.2f}s")
 
     time_steps = int(duration * fps) + 1
 
@@ -1362,7 +1487,7 @@ def midi_to_multitrack_piano_rolls(midi_path: str, window_slow: int = 1024, fps:
 # MIDI Generation Functions (from ac.py midigen feature)
 # ------------------------------------------------------------------------------
 SOUNDFONT_PATH = "/home/arlo/.local/lib/python3.9/site-packages/pretty_midi/TimGM6mb.sf2"
-MIDI_CHORD_FOLDER = '/home/arlo/harmonymodule/output/01 - C Major - A minor/4 Progression/Major'
+MIDI_CHORD_FOLDER = '/home/arlo/free-midi-chords/output/01 - C Major - A minor/4 Progression/Major'
 
 def ensure_midi_above_c2(midi_path: str) -> str:
     """
@@ -2156,11 +2281,19 @@ def extract_conditioning_from_audio_fast_mode(audio_path: str, output_dir: str =
             import librosa
 
             # Run Basic Pitch to get MIDI (pass file path, not audio array)
+            # High-resolution parameters for detailed MIDI extraction
+            # Parameters match the Basic Pitch web interface settings:
+            # - Note Segmentation: 0.60 (higher = split notes more easily)
+            # - Model Confidence: 0.20 (lower = capture more notes)
+            # - Min Note Length: 6ms (capture very short notes)
+            # - Min/Max Frequency: None (use model defaults for full range)
             model_output, midi_data, note_events = predict(
                 audio_path,
-                onset_threshold=0.55,      # Moderately stricter onset detection (reduces false onsets from vibrato)
-                frame_threshold=0.35,      # Moderately stronger activation required (smooths out weak pitch variations)
-                minimum_note_length=188    # Moderate note duration filtering (filters rapid vibrato fluctuations)
+                onset_threshold=0.60,      # Note segmentation: how easily notes split (higher = split more easily)
+                frame_threshold=0.20,      # Model confidence: lower threshold captures more notes
+                minimum_note_length=6      # Minimum note length in milliseconds (allows very short notes)
+                # Note: minimum_frequency and maximum_frequency omitted to use model defaults
+                # Setting minimum_frequency too low (e.g., < 50 Hz) causes extraction to fail
             )
 
             # Convert to piano roll (128 x T format)
@@ -3276,7 +3409,8 @@ def handle_midi_download(audio_file, subgroup=None, progress=gr.Progress(track_t
                 original_tempo = extract_midi_tempo(audio_file)
 
                 progress(0.4, desc="Separating voices...")
-                voices = separate_piano_roll_voices(pr)
+                # Pass MIDI path to preserve note boundaries
+                voices = separate_piano_roll_voices(pr, midi_path=audio_file)
 
                 progress(0.6, desc="Saving voice MIDI files...")
                 # Save individual voice MIDI files
@@ -3492,19 +3626,51 @@ def assign_note_to_voice(voice_piano_roll, note, original_piano_roll):
         if original_piano_roll[note.pitch, frame] > 0.1:
             voice_piano_roll[note.pitch, frame] = original_piano_roll[note.pitch, frame]
 
-def separate_piano_roll_voices_new(piano_roll):
+def separate_piano_roll_voices_new(piano_roll, midi_path=None):
     """
     NEW NOTE-BASED voice separation that processes actual note events.
     CRITICAL FIX: Processes notes instead of individual frames.
+
+    Args:
+        piano_roll: Piano roll array to separate (for writing output)
+        midi_path: Optional path to original MIDI file. If provided, notes will be extracted
+                   directly from MIDI to preserve note boundaries that may be lost in piano roll.
     """
     print(f"🎼 Input piano roll shape: {piano_roll.shape}")
 
-    # Extract actual note events instead of processing every frame
-    note_events = extract_note_events_from_piano_roll(piano_roll)
+    # If MIDI path provided, extract notes directly from MIDI (preserves note boundaries)
+    if midi_path is not None:
+        try:
+            import pretty_midi
+            print(f"🎼 Extracting notes directly from MIDI: {Path(midi_path).name}")
+            pm = pretty_midi.PrettyMIDI(midi_path)
+
+            # Extract note events from all non-drum instruments
+            note_events = []
+            fps = 43.066  # Should match piano roll fps
+
+            for instrument in pm.instruments:
+                if not instrument.is_drum:
+                    for note in instrument.notes:
+                        # Create NoteEvent objects from MIDI notes
+                        note_events.append(NoteEvent(note.pitch, note.start, note.end))
+
+            # Sort by start time
+            note_events = sorted(note_events, key=lambda n: n.start_time)
+            print(f"🎼 Found {len(note_events)} note events from MIDI file (preserves note boundaries)")
+
+        except Exception as e:
+            print(f"⚠️  Failed to extract from MIDI ({e}), falling back to piano roll extraction")
+            note_events = extract_note_events_from_piano_roll(piano_roll)
+    else:
+        # Fall back to piano roll extraction (may merge consecutive same-pitch notes)
+        print(f"🎼 Extracting notes from piano roll (may merge consecutive same-pitch notes)")
+        note_events = extract_note_events_from_piano_roll(piano_roll)
+
     if len(note_events) == 0:
         return [piano_roll]
 
-    print(f"🎼 Found {len(note_events)} note events for voice separation")
+    print(f"🎼 Processing {len(note_events)} note events for voice separation")
 
     # Group note events by chord changes (simultaneous onsets)
     chord_changes = group_notes_by_chord_changes(note_events)
@@ -3561,8 +3727,9 @@ def separate_piano_roll_voices_new(piano_roll):
 
             voice_assignments[i] = assignments
         else:
-            # Subsequent chords: simple register-based assignment for consistent voice leading
-            assignments = assign_first_chord_by_register(current_pitches, target_voices)
+            # Subsequent chords: use Hungarian algorithm to maintain voice leading continuity
+            prev_assignments = voice_assignments[i-1]
+            assignments = solve_voice_assignment(current_pitches, prev_assignments, voice_identities, i)
 
             # Apply assignments
             for voice_idx, pitch in assignments.items():
@@ -3576,7 +3743,15 @@ def separate_piano_roll_voices_new(piano_roll):
                     if voice_idx not in voice_identities:
                         voice_identities[voice_idx] = []
                     voice_identities[voice_idx].append((current_time, pitch))
-                    print(f"   Voice {voice_idx}: -> {pitch}")
+
+                    # Show the voice leading interval
+                    prev_pitch = prev_assignments.get(voice_idx)
+                    if prev_pitch is not None:
+                        interval = pitch - prev_pitch
+                        interval_str = f"{'+' if interval > 0 else ''}{interval}"
+                        print(f"   Voice {voice_idx}: {prev_pitch} -> {pitch} ({interval_str})")
+                    else:
+                        print(f"   Voice {voice_idx}: -> {pitch} (new)")
 
             voice_assignments[i] = assignments
 
@@ -3612,17 +3787,18 @@ def separate_piano_roll_voices_new(piano_roll):
 
     print(f"🎵 Successfully separated {len(final_voices)} voices from piano roll")
     return final_voices
-def separate_piano_roll_voices(piano_roll):
+def separate_piano_roll_voices(piano_roll, midi_path=None):
     """
     Separate piano roll into individual voices using NOTE-BASED processing.
     CRITICAL FIX: Processes actual note events instead of individual frames.
     Args:
         piano_roll: numpy array of shape [128, T] representing MIDI piano roll
+        midi_path: Optional path to original MIDI file for direct note extraction
     Returns:
         list of piano roll arrays, each containing one voice
     """
     # Use the new note-based approach
-    return separate_piano_roll_voices_new(piano_roll)
+    return separate_piano_roll_voices_new(piano_roll, midi_path=midi_path)
 
 def assign_pitches_to_voices(current_pitches, prev_assignments, max_voices):
     """
@@ -3703,78 +3879,13 @@ def solve_voice_assignment(current_pitches, prev_assignments, voice_identities, 
                     else:
                         cost_matrix[voice_idx, pitch_idx] = 201
         else:
-            # Has previous assignment - favor closest pitches with strict register enforcement
+            # Has previous assignment - favor closest pitches (voice leading continuity)
             for pitch_idx, pitch in enumerate(current_pitches):
                 distance = abs(pitch - prev_pitch)
+
+                # SIMPLIFIED: Prioritize smooth voice leading over register preferences
+                # Base cost is just the distance
                 cost = distance
-
-                # Apply OVERLAPPING register boundaries with preferences (not absolute exclusions)
-                register_penalty = 0
-
-                # Very high pitches (80+) prefer Voice 0, but can use Voice 1
-                if pitch >= 80:
-                    if voice_idx == 0:
-                        register_penalty = 0  # Perfect match
-                    elif voice_idx == 1:
-                        register_penalty = 50  # Acceptable but penalized
-                    else:
-                        register_penalty = 200  # Heavy penalty but not impossible
-
-                # High pitches (70-79) prefer Voice 1, but can use Voice 0 or 2
-                elif pitch >= 70:
-                    if voice_idx == 1:
-                        register_penalty = 0  # Perfect match
-                    elif voice_idx in [0, 2]:
-                        register_penalty = 50  # Acceptable but penalized
-                    else:
-                        register_penalty = 200  # Heavy penalty but not impossible
-
-                # Upper mid pitches (65-69) prefer Voice 2, but can use Voice 1 or 3
-                elif pitch >= 65:
-                    if voice_idx == 2:
-                        register_penalty = 0  # Perfect match
-                    elif voice_idx in [1, 3]:
-                        register_penalty = 50  # Acceptable but penalized
-                    else:
-                        register_penalty = 200  # Heavy penalty but not impossible
-
-                # Mid pitches (60-64) prefer Voice 3, but can use Voice 2 or 4
-                elif pitch >= 60:
-                    if voice_idx == 3:
-                        register_penalty = 0  # Perfect match
-                    elif voice_idx in [2, 4]:
-                        register_penalty = 50  # Acceptable but penalized
-                    else:
-                        register_penalty = 200  # Heavy penalty but not impossible
-
-                # Lower mid pitches (55-59) prefer Voice 4, but can use Voice 3 or 5
-                elif pitch >= 55:
-                    if voice_idx == 4:
-                        register_penalty = 0  # Perfect match
-                    elif voice_idx in [3, 5]:
-                        register_penalty = 50  # Acceptable but penalized
-                    else:
-                        register_penalty = 200  # Heavy penalty but not impossible
-
-                # Low pitches (50-54) prefer Voice 5, but can use Voice 4 or 6
-                elif pitch >= 50:
-                    if voice_idx == 5:
-                        register_penalty = 0  # Perfect match
-                    elif voice_idx in [4, 6]:
-                        register_penalty = 50  # Acceptable but penalized
-                    else:
-                        register_penalty = 200  # Heavy penalty but not impossible
-
-                # Very low pitches (<50) prefer Voice 6, but can use Voice 5
-                else:
-                    if voice_idx == 6:
-                        register_penalty = 0  # Perfect match
-                    elif voice_idx == 5:
-                        register_penalty = 50  # Acceptable but penalized
-                    else:
-                        register_penalty = 200  # Heavy penalty but not impossible
-
-                cost += register_penalty
 
                 # Add historical affinity bonus
                 identity_key = f"voice_{voice_idx}"
@@ -4761,10 +4872,17 @@ def generate(
     # Self-consistency ensembling
     use_self_consistency=False, consistency_samples=3, consistency_noise_scale=0.05,
     # Render & extract mode flag
-    render_and_extract=False
+    render_and_extract=False,
+    # Debug trajectory logging
+    collect_trajectory=False
 ):
     device = next(model.parameters()).device
     model.eval()
+
+    # Clear CUDA cache before generation to free up memory
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print(f"🗑️  Cleared CUDA cache before generation")
 
     # ids
     g2i = getattr(model, "group2id", None)
@@ -4947,6 +5065,17 @@ def generate(
     steps   = max(1, int(steps))
     dt      = float(t0) / float(steps)  # Use t0 to match noise level with timestep schedule
 
+    # Initialize trajectory collection if requested
+    trajectory = None
+    if collect_trajectory:
+        trajectory = {
+            'timesteps': [],
+            'latents': [],
+            'latent_norms': [],
+            'step_indices': [],
+        }
+        print(f"[TrajectoryLogger] Collecting trajectory data for {steps} steps")
+
     for i in range(steps, 0, -1):
         t_cont = torch.full((x.shape[0],), i * dt, device=device, dtype=torch.float32)
         t_idx  = (t_cont * (T_train - 1)).long().clamp(0, T_train - 1)
@@ -5061,6 +5190,14 @@ def generate(
             v_pred = torch.stack(predictions).mean(dim=0)
 
         x = x - dt * v_pred  # Use dt to match timestep schedule
+
+        # Collect trajectory data if requested
+        if collect_trajectory and trajectory is not None:
+            trajectory['timesteps'].append(float(t_cont[0].item()))
+            trajectory['latents'].append(x.detach().cpu().clone())
+            trajectory['latent_norms'].append(float(torch.norm(x).item()))
+            trajectory['step_indices'].append(i)
+
         if i == steps:
             if use_cfg:
                 print(f"[CondEnergy] on={cond_on.norm().item():.3f} off={cond_off.norm().item():.3f}")
@@ -5140,6 +5277,11 @@ def generate(
     out_path = out_dir / f"{time.strftime('%Y%m%d-%H%M%S')}_seed{seed}_cfg{cfg_weight:.1f}.wav"
     torchaudio.save(str(out_path), wav, sr_pred)
     print(f"✅ Wrote: {out_path}")
+
+    # Return trajectory if collected
+    if collect_trajectory and trajectory is not None:
+        print(f"[TrajectoryLogger] Collected {len(trajectory['latents'])} trajectory points")
+        return str(out_path), trajectory
     return str(out_path)
 
 def analyze_voice_pitch_range(voice_piano_roll):
@@ -5800,7 +5942,6 @@ def select_random_file_by_group(target_group):
     return str(Path(shutil.copy(src, tmp)))
 
 def create_ui():
-    import gradio as gr  # Lazy import
     with gr.Blocks(theme=gr.themes.Soft()) as iface:
         gr.Markdown("### dø stem — ControlBranch Pipeline")
         with gr.Row():
@@ -6151,14 +6292,14 @@ def init_worker(**kwargs):
     print(f"   Checkpoint Dir: {checkpoint_dir}")
     print(f"   Manifest: {manifest}")
 
-    # Manifest not needed - removed random file selection feature
-    MANIFEST_DATA = []
-    print(f"ℹ️  Manifest loading disabled (random file selection feature removed)")
+    # Load manifest
+    with open(manifest, "r") as f:
+        MANIFEST_DATA = json.load(f)
 
-    # Load model
+    # Load model (already moved to CUDA inside load_model_any_ckpt)
     MODEL = load_model_any_ckpt(checkpoint, checkpoint_dir, manifest)
-    dev = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    MODEL.to(dev).eval()
+    # Model is already on CUDA and in eval mode from load_model_any_ckpt, no need to move again
+    dev = next(MODEL.parameters()).device  # Get the device the model is already on
 
     GROUP_NAMES = list(APPROVED_GROUPS) if not isinstance(APPROVED_GROUPS, dict) else list(APPROVED_GROUPS.keys())
     SUBGROUP_NAMES = sorted({sg for subs in APPROVED_SUBGROUPS.values() for sg in subs})
@@ -6174,7 +6315,8 @@ def init_worker(**kwargs):
         from acestep.pipeline_ace_step import ACEStepPipeline
         ACE_STEP_PIPELINE = ACEStepPipeline(
             device_id=0,
-            dtype="bfloat16"
+            dtype="bfloat16",
+            cpu_offload=True  # Keep on CPU, move to GPU only during inference (saves ~7GB VRAM)
         )
         # Pre-load the checkpoint to avoid loading it on first generation
         print(f"   Loading checkpoint weights...")
@@ -6212,6 +6354,8 @@ def generate_do_task(
     pitch_fidelity_boost: float,
     onset_guidance_boost: float,
     pitch_snap_strength: float,
+    temperature: float = 1.0,
+    eta: float = 0.5,
     instrument_group: str = None,
     instrument_subgroup: str = None,
     monophonic_mode: bool = False,
@@ -6241,7 +6385,7 @@ def generate_do_task(
     adaptation_steps: int = 10,
     adaptation_learning_rate: float = 1e-4,
     use_self_consistency: bool = False,
-    consistency_samples: int = 3,
+    consistency_samples: int = 1,
     consistency_noise_scale: float = 0.05,
     use_time_varying_noise: bool = False,
     onset_preservation: float = 0.7,
@@ -6254,7 +6398,8 @@ def generate_do_task(
     enable_midi_export: bool = False,
     use_chords: bool = False,
     chord_beat_map: Optional[dict] = None,
-    extract_formats: Optional[list] = None
+    extract_formats: Optional[list] = None,
+    debug_mode: bool = False
 ):
     """Celery task for ACE-Step audio generation"""
     try:
@@ -6291,6 +6436,7 @@ def generate_do_task(
         print(f"🔊 USE OVERLAP DECODER: {use_overlap_decoder}")
         print(f"⚡ FAST MODE: {fast_mode_variant} ({fast_mode_variant or 'disabled'})")
         print(f"📋 EXTRACTION FORMATS: {extract_formats or 'all (default)'}")
+        print(f"🌡️ VARIANCE CONTROL: Temperature={temperature}, Eta={eta}")
         if inpaint_mode:
             print(f"\n🎨 INPAINTING MODE:")
             print(f"   Inpaint region: {inpaint_start_time:.2f}s - {inpaint_end_time:.2f}s")
@@ -7392,7 +7538,8 @@ def generate_do_task(
 
         # Setup output directory
         process_id = str(uuid.uuid4())
-        output_dir = ensure_path_exists(get_output_path('ace_step_output', process_id=process_id))
+        output_dir = Path("/home/arlo/ScoreAI/audiofiles") / f"ace_step_output_{process_id}"
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         # Handle monophonic mode with scene changes (pre-rendered voices)
         if monophonic_mode and audio_file_path is None and 'voice_midi_paths' in locals():
@@ -7433,11 +7580,16 @@ def generate_do_task(
             if 'concatenated_midi_path' in locals() and concatenated_midi_path:
                 import pretty_midi
                 pm_concat = pretty_midi.PrettyMIDI(concatenated_midi_path)
-                consistent_duration = pm_concat.get_end_time()
+                midi_end_time = pm_concat.get_end_time()
+
+                # Add release time extension (2.0 seconds to capture natural decay)
+                release_extension = 2.0  # seconds
+                consistent_duration = midi_end_time + release_extension
                 consistent_window_slow = clamp_window_slow(int(consistent_duration * fps), consistent_duration, fps)
+
                 print(f"\n📏 Using consistent duration for all voices:")
                 print(f"   Source: {Path(concatenated_midi_path).name}")
-                print(f"   Duration: {consistent_duration:.2f}s")
+                print(f"   MIDI end: {midi_end_time:.2f}s + {release_extension:.2f}s release = {consistent_duration:.2f}s")
                 print(f"   Window: {consistent_window_slow} frames")
             else:
                 consistent_duration = None
@@ -7676,7 +7828,19 @@ def generate_do_task(
                 voice_seed = seed + (voice_idx * 1000)
                 print(f"   Generating with seed {voice_seed}...")
 
-                voice_output = generate(
+                # Initialize trajectory logger if debug mode is enabled
+                global TRAJECTORY_LOGGER
+                # Use frontend debug_mode parameter OR global environment variable
+                collect_trajectory_flag = debug_mode or DEBUG_TRAJECTORY_LOGGING
+                if collect_trajectory_flag and TRAJECTORY_LOGGER is None:
+                    TRAJECTORY_LOGGER = get_logger(
+                        debug_mode=True,
+                        save_every_n_steps=10,
+                        base_dir="/mnt/msdd/generation_debug"
+                    )
+                    print(f"[TrajectoryLogger] Initialized logger (frontend debug_mode={debug_mode}, env DEBUG_TRAJECTORY_LOGGING={DEBUG_TRAJECTORY_LOGGING})")
+
+                gen_result = generate(
                     model=MODEL,
                     piano_roll=piano_roll,
                     amp=amp,
@@ -7706,8 +7870,58 @@ def generate_do_task(
                     noise_level=noise_level,
                     audio_file=voice_audio,
                     fast_mode_variant=fast_mode_variant,  # Pass fast_mode_variant for T_dcae conversion
-                    target_audio_duration=consistent_duration  # Ensure consistent latent extraction
+                    target_audio_duration=consistent_duration,  # Ensure consistent latent extraction
+                    collect_trajectory=collect_trajectory_flag  # Collect trajectory if debug mode enabled
                 )
+
+                # Handle generate() return value (may include trajectory)
+                if collect_trajectory_flag and isinstance(gen_result, tuple):
+                    voice_output, trajectory = gen_result
+                else:
+                    voice_output = gen_result
+                    trajectory = None
+
+                # Log trajectory if collected
+                if collect_trajectory_flag and trajectory is not None and TRAJECTORY_LOGGER is not None:
+                    try:
+                        metadata = TRAJECTORY_LOGGER.log_generation(
+                            conditioning={
+                                'piano_roll_shape': piano_roll.shape,
+                                'amp_shape': amp.shape,
+                                'rframe_shape': rframe.shape,
+                                'rbend_shape': rbend.shape,
+                                'encodec_shape': encodec_tokens.shape,
+                                'group': group,
+                                'subgroup': subgroup,
+                            },
+                            params={
+                                'steps': steps,
+                                'seed': voice_seed,
+                                'cfg_weight': cfg_weight,
+                                'adapter_scale': adapter_scale,
+                                'noise_level': noise_level,
+                                'instrument_strength': instrument_strength,
+                                'pitch_fidelity_boost': pitch_fidelity_boost,
+                                'onset_guidance_boost': onset_guidance_boost,
+                                'pitch_snap_strength': pitch_snap_strength,
+                                'fast_mode_variant': fast_mode_variant,
+                            },
+                            trajectory=trajectory,
+                            audio_output_path=voice_output,
+                            user_rating=None,
+                            additional_metadata={
+                                'voice_idx': voice_idx,
+                                'midi_end_time': midi_end_time,
+                                'actual_duration': actual_duration,
+                                # Link to frontend process_id for searching
+                                'process_id': process_id,
+                                'output_dir': str(output_dir),
+                                'original_audio_path': voice_output,
+                            }
+                        )
+                        print(f"✅ Logged trajectory: {metadata['generation_id']} (process_id: {process_id})")
+                    except Exception as e:
+                        print(f"⚠️ Failed to log trajectory: {e}")
 
                 # Crop audio to MIDI duration (avoid white noise from zero conditioning after MIDI ends)
                 import torchaudio
@@ -8642,62 +8856,131 @@ def generate_do_task(
                     print(f"   💾 Voice {i+1}: {len(inst.notes)} notes → {voice_midi_path.name}")
 
                     # Render with FluidSynth
+                    voice_audio_path_temp = voice_debug_dir / f"voice_{i+1}_render_temp.wav"
                     voice_audio_path = voice_debug_dir / f"voice_{i+1}_render.wav"
                     soundfont_path = INSTRUMENT_SOUNDFONTS.get(subgroup, INSTRUMENT_SOUNDFONTS.get("default"))
                     import subprocess
                     subprocess.run([
-                        "fluidsynth", "-ni", "-g", "0.625", "-r", "44100", "-F", str(voice_audio_path),
+                        "fluidsynth", "-ni", "-g", "0.625", "-r", "44100", "-F", str(voice_audio_path_temp),
                         soundfont_path, str(voice_midi_path)
                     ], check=True, capture_output=True)
+
+                    # Pad audio to include release time (2 seconds)
+                    import torchaudio
+                    import torch
+                    waveform, sample_rate = torchaudio.load(str(voice_audio_path_temp))
+                    release_samples = int(2.0 * sample_rate)  # 2 seconds of silence
+                    padding = torch.zeros((waveform.shape[0], release_samples))
+                    padded_waveform = torch.cat([waveform, padding], dim=1)
+                    torchaudio.save(str(voice_audio_path), padded_waveform, sample_rate)
+
+                    # Clean up temp file
+                    voice_audio_path_temp.unlink()
+
                     voice_audio_paths.append(str(voice_audio_path))
-                    print(f"      🎵 Rendered: {voice_audio_path.name}")
+                    print(f"      🎵 Rendered: {voice_audio_path.name} (with 2.0s release padding)")
 
             else:
-                # Single-track MIDI: split by note overlap
-                print(f"   Single-track MIDI: splitting by note overlap...")
+                # Single-track MIDI: use proper voice separation with Hungarian algorithm
+                print(f"   Single-track MIDI: splitting with voice leading algorithm...")
                 instrument = non_empty_instruments[0]
-                sorted_notes = sorted(instrument.notes, key=lambda n: n.start)
 
-                # Voice separation: group overlapping notes
-                voices = []
-                for note in sorted_notes:
-                    assigned = False
-                    for voice_notes in voices:
-                        if all(note.start >= existing.end for existing in voice_notes):
-                            voice_notes.append(note)
-                            assigned = True
-                            break
-                    if not assigned:
-                        voices.append([note])
+                # Convert pretty_midi to piano roll for voice separation
+                # Calculate duration and create piano roll
+                midi_duration = max(note.end for note in instrument.notes)
+                fps = 43.066  # Standard fps for piano roll
+                num_frames = int(midi_duration * fps) + 10
+                piano_roll_input = np.zeros((128, num_frames))
 
-                print(f"   Split into {len(voices)} voices")
+                # Fill piano roll from pretty_midi notes
+                for note in instrument.notes:
+                    start_frame = int(note.start * fps)
+                    end_frame = int(note.end * fps)
+                    for frame in range(start_frame, min(end_frame, num_frames)):
+                        piano_roll_input[note.pitch, frame] = note.velocity / 127.0
+
+                # Use the fixed voice separation algorithm
+                separated_voices_pr = separate_piano_roll_voices_new(piano_roll_input)
+                print(f"   Split into {len(separated_voices_pr)} voices")
 
                 voice_midi_paths = []
                 voice_audio_paths = []
 
-                for voice_idx, voice_notes in enumerate(voices):
-                    # Create MIDI for this voice
+                for voice_idx, voice_pr in enumerate(separated_voices_pr):
+                    # Convert voice piano roll back to pretty_midi
                     voice_pm = pretty_midi.PrettyMIDI(resolution=pm.resolution)
                     voice_inst = pretty_midi.Instrument(program=0)
-                    voice_inst.notes = voice_notes
+
+                    # Extract notes from voice piano roll
+                    # Find note onsets and offsets
+                    for pitch in range(128):
+                        in_note = False
+                        note_start = 0
+                        note_velocity = 0
+
+                        for frame in range(voice_pr.shape[1]):
+                            if voice_pr[pitch, frame] > 0.1 and not in_note:
+                                # Note onset
+                                in_note = True
+                                note_start = frame / fps
+                                note_velocity = int(voice_pr[pitch, frame] * 127)
+                            elif voice_pr[pitch, frame] <= 0.1 and in_note:
+                                # Note offset
+                                in_note = False
+                                note_end = frame / fps
+                                if note_end - note_start > 0.05:  # Minimum note duration
+                                    note = pretty_midi.Note(
+                                        velocity=note_velocity,
+                                        pitch=pitch,
+                                        start=note_start,
+                                        end=note_end
+                                    )
+                                    voice_inst.notes.append(note)
+
+                        # Handle note still active at end
+                        if in_note:
+                            note_end = voice_pr.shape[1] / fps
+                            if note_end - note_start > 0.05:
+                                note = pretty_midi.Note(
+                                    velocity=note_velocity,
+                                    pitch=pitch,
+                                    start=note_start,
+                                    end=note_end
+                                )
+                                voice_inst.notes.append(note)
+
                     voice_pm.instruments.append(voice_inst)
 
                     # Save voice MIDI
                     voice_midi_path = voice_debug_dir / f"voice_{voice_idx+1}.mid"
                     voice_pm.write(str(voice_midi_path))
                     voice_midi_paths.append(str(voice_midi_path))
-                    print(f"   💾 Voice {voice_idx+1}: {len(voice_notes)} notes → {voice_midi_path.name}")
+                    print(f"   💾 Voice {voice_idx+1}: {len(voice_inst.notes)} notes → {voice_midi_path.name}")
 
                     # Render with FluidSynth
+                    voice_audio_path_temp = voice_debug_dir / f"voice_{voice_idx+1}_render_temp.wav"
                     voice_audio_path = voice_debug_dir / f"voice_{voice_idx+1}_render.wav"
                     soundfont_path = INSTRUMENT_SOUNDFONTS.get(subgroup, INSTRUMENT_SOUNDFONTS.get("default"))
                     import subprocess
                     subprocess.run([
-                        "fluidsynth", "-ni", "-g", "0.625", "-r", "44100", "-F", str(voice_audio_path),
+                        "fluidsynth", "-ni", "-g", "0.625", "-r", "44100", "-F", str(voice_audio_path_temp),
                         soundfont_path, str(voice_midi_path)
                     ], check=True, capture_output=True)
+
+                    # Pad audio to include release time (2 seconds)
+                    import torchaudio
+                    import torch
+                    waveform, sample_rate = torchaudio.load(str(voice_audio_path_temp))
+                    release_samples = int(2.0 * sample_rate)  # 2 seconds of silence
+                    padding = torch.zeros((waveform.shape[0], release_samples))
+                    padded_waveform = torch.cat([waveform, padding], dim=1)
+                    torchaudio.save(str(voice_audio_path), padded_waveform, sample_rate)
+
+                    # Clean up temp file
+                    voice_audio_path_temp.unlink()
+
                     voice_audio_paths.append(str(voice_audio_path))
-                    print(f"      🎵 Rendered: {voice_audio_path.name}")
+                    print(f"      🎵 Rendered: {voice_audio_path.name} (with 2.0s release padding)")
 
             print(f"\n✅ Prepared {len(voice_audio_paths)} voices for monophonic processing")
             print(f"   Processing voices now...\n")
@@ -8706,18 +8989,25 @@ def generate_do_task(
             import torchaudio
             import torch
             process_id = str(uuid.uuid4())
-            output_dir = ensure_path_exists(get_output_path('ace_step_output', process_id=process_id))
+            output_dir = Path("/home/arlo/ScoreAI/audiofiles") / f"ace_step_output_{process_id}"
+            output_dir.mkdir(parents=True, exist_ok=True)
 
             # Process each voice
             completed_voices = []
             input_files = {}
             fps = 43.066
 
-            # Calculate consistent duration
+            # Calculate consistent duration with release time extension
             pm_concat = pretty_midi.PrettyMIDI(concatenated_midi_path)
-            consistent_duration = pm_concat.get_end_time()
+            midi_end_time = pm_concat.get_end_time()
+
+            # Add release time extension (default 2.0 seconds to capture natural decay)
+            release_extension = 2.0  # seconds
+            consistent_duration = midi_end_time + release_extension
             consistent_window_slow = clamp_window_slow(int(consistent_duration * fps), consistent_duration, fps)
-            print(f"📏 Consistent duration: {consistent_duration:.2f}s ({consistent_window_slow} frames)\n")
+
+            print(f"📏 Consistent duration: {consistent_duration:.2f}s ({consistent_window_slow} frames)")
+            print(f"   MIDI end: {midi_end_time:.2f}s + {release_extension:.2f}s release = {consistent_duration:.2f}s\n")
 
             for voice_idx in range(len(voice_audio_paths)):
                 print(f"🎼 Voice {voice_idx + 1}/{len(voice_audio_paths)}")
@@ -9044,16 +9334,17 @@ def generate_do_task(
                 print(f"🎨 INPAINT MODE: Regenerating voice {inpaint_voice_index} only")
 
                 # Separate voices to identify which one to regenerate
-                if enable_voice_separation:
+                # IMPORTANT: Always enable voice separation when inpainting a specific voice
+                if enable_voice_separation or inpaint_voice_index > 1:
                     print(f"   Separating piano roll into voices...")
                     voices = separate_piano_roll_voices(piano_roll)
                 else:
-                    print(f"   Using tracks as-is (multi-track MIDI)")
+                    print(f"   Using tracks as-is (single track)")
                     voices = [piano_roll]
 
                 # Validate voice index
                 if inpaint_voice_index < 1 or inpaint_voice_index > len(voices):
-                    raise ValueError(f"Invalid voice index {inpaint_voice_index}. Track has {len(voices)} voices.")
+                    raise ValueError(f"Invalid voice index {inpaint_voice_index}. Track has {len(voices)} voices. Enable voice separation or check your voice selection.")
 
                 # Convert 1-indexed to 0-indexed
                 voice_idx = inpaint_voice_index - 1
@@ -9952,13 +10243,9 @@ def generate_simple_ace_step_task(
     duration: float = 30.0,
     seed: int = 0,
     noise_level: float = 0.8,
-    ref_audio_path: str = None,
-    detailed_mode: bool = False
+    ref_audio_path: str = None
 ):
-    """Simple Celery task for ACE-Step generation using pre-loaded pipeline
-
-    If detailed_mode=True, uses phrase-by-phrase generation with noise-to-noise architecture.
-    """
+    """Simple Celery task for ACE-Step generation using pre-loaded pipeline"""
     try:
         global ACE_STEP_PIPELINE
         import uuid
@@ -9966,8 +10253,7 @@ def generate_simple_ace_step_task(
         import time
 
         print(f"\n{'='*80}")
-        mode_label = "DETAILED MODE (Phrase-by-Phrase)" if detailed_mode else "Standard Mode"
-        print(f"🎵 ACE-STEP GENERATION TASK STARTED - {mode_label}")
+        print(f"🎵 ACE-STEP GENERATION TASK STARTED")
         print(f"{'='*80}")
         print(f"Prompt: {prompt}")
         print(f"Lyrics: {lyrics[:100]}..." if len(lyrics) > 100 else f"Lyrics: {lyrics}")
@@ -9975,7 +10261,6 @@ def generate_simple_ace_step_task(
         print(f"Duration: {duration}s")
         print(f"Noise Level: {noise_level}")
         print(f"Ref Audio: {ref_audio_path if ref_audio_path else 'None'}")
-        print(f"Detailed Mode: {detailed_mode}")
         print(f"{'='*80}\n")
 
         # Generate unique process ID
@@ -9988,35 +10273,8 @@ def generate_simple_ace_step_task(
         # Create output path
         output_path = output_dir / f"output_{int(time.time())}.wav"
 
-        # Handle detailed mode (phrase-by-phrase generation)
-        if detailed_mode and lyrics and ref_audio_path:
-            print(f"🔬 Using DETAILED MODE: phrase-by-phrase generation with noise-to-noise")
-            from generate_ace_step_detailed import generate_detailed_mode
-
-            result = generate_detailed_mode(
-                pipeline=ACE_STEP_PIPELINE if ACE_STEP_PIPELINE is not None else None,
-                lyrics=lyrics,
-                ref_audio_path=ref_audio_path,
-                output_dir=output_dir,
-                prompt=prompt,
-                key=key,
-                seed=seed,
-                noise_level=noise_level,
-                steps=steps,
-                use_mfa=True,
-                device="cuda" if torch.cuda.is_available() else "cpu"
-            )
-
-            # Copy final output to expected location
-            import shutil
-            shutil.copy(result['output_path'], str(output_path))
-
-            print(f"✅ Detailed mode generation complete!")
-            print(f"   Output: {output_path}")
-            print(f"   Generated {len(result['phrase_paths'])} phrases")
-
         # Use pre-loaded pipeline if available, otherwise fall back to wrapper script
-        elif ACE_STEP_PIPELINE is not None:
+        if ACE_STEP_PIPELINE is not None:
             print(f"🚀 Using pre-loaded ACE-Step pipeline...")
             generation_start = time.time()
 
@@ -10101,39 +10359,9 @@ def generate_simple_ace_step_task(
         if not output_path.exists():
             raise Exception("Output file was not created")
 
-        # Return local path immediately (like generate_do does)
-        # NOTE: process_id must match directory name ace_step_{process_id}
-        local_download_path = f"/download-ace-step/{process_id}/{output_path.name}"
-        print(f"📁 Output directory: {output_dir}")
-        print(f"📁 Output file: {output_path}")
-        print(f"🌐 Download URL: {local_download_path}")
-
-        print(f"✅ ACE-Step generation complete! Returning local path: {local_download_path}")
-
-        # Upload to GCS in background (optional, non-blocking)
-        import threading
-        def background_upload():
-            try:
-                from gcs_storage import upload_to_gcs, get_gcs_url
-                print(f"📤 Background: Uploading to GCS...")
-                gcs_path = upload_to_gcs(
-                    str(output_path),
-                    prefix="audiofiles/ace_step",
-                    user_id="ace_step",
-                    make_public=True
-                )
-                gcs_url = get_gcs_url(gcs_path)
-                print(f"✅ Background: Uploaded to GCS: {gcs_url}")
-            except Exception as e:
-                print(f"⚠️  Background GCS upload failed: {e}")
-
-        # Start background upload thread
-        upload_thread = threading.Thread(target=background_upload, daemon=True)
-        upload_thread.start()
-
-        # Return local path immediately
+        # Return file path
         return {
-            "file_paths": [local_download_path],
+            "file_paths": [f"/download-ace-step/{process_id}/{output_path.name}"],
             "input_files": []
         }
 
@@ -10312,8 +10540,7 @@ async def generate_ace_step_simple(
         duration=duration,
         seed=seed,
         noise_level=noise_level,
-        ref_audio_path=ref_audio_path,
-        detailed_mode=detailed_mode
+        ref_audio_path=ref_audio_path
     )
 
     return {
@@ -10321,6 +10548,76 @@ async def generate_ace_step_simple(
         "expected_voices": 1
     }
 
+
+# Alias endpoint for frontend /api/generate-do route
+@app.post("/api/generate-do")
+async def generate_do_alias(
+    params: Optional[str] = Form(None),
+    description: str = Form(""),
+    duration: Optional[float] = Form(None),
+    steps: int = Form(50),
+    seed: int = Form(0),
+    adapter_scale: float = Form(1.0),
+    cfg_weight: float = Form(3.0),
+    instrument_strength: float = Form(1.0),
+    noise_level: float = Form(1.0),
+    piano_roll_gain: float = Form(1.0),
+    amp_gain: float = Form(1.0),
+    rframe_gain: float = Form(1.0),
+    rbend_gain: float = Form(1.0),
+    encodec_gain: float = Form(1.0),
+    pitch_fidelity_boost: float = Form(1.0),
+    onset_guidance_boost: float = Form(2.0),
+    pitch_snap_strength: float = Form(0.5),
+    monophonic_mode: bool = Form(False),
+    enable_voice_separation: bool = Form(False),
+    temperature: float = Form(1.0),
+    eta: float = Form(0.5),
+    inpaint_mode: bool = Form(False),
+    inpaint_start_time: Optional[float] = Form(None),
+    inpaint_end_time: Optional[float] = Form(None),
+    inpaint_voice_index: Optional[int] = Form(None),
+    audio_file: Optional[UploadFile] = File(None),
+    conditioningAudio: Optional[UploadFile] = File(None),
+    audioFile: Optional[UploadFile] = File(None),
+    scene_durations: Optional[str] = Form(None),
+    automation_data: Optional[str] = Form(None),
+    debug_mode: bool = Form(False)
+):
+    """Alias endpoint for /api/generate-do - delegates to generate_audio"""
+    return await generate_audio(
+        params=params,
+        description=description,
+        duration=duration,
+        steps=steps,
+        seed=seed,
+        adapter_scale=adapter_scale,
+        cfg_weight=cfg_weight,
+        instrument_strength=instrument_strength,
+        noise_level=noise_level,
+        piano_roll_gain=piano_roll_gain,
+        amp_gain=amp_gain,
+        rframe_gain=rframe_gain,
+        rbend_gain=rbend_gain,
+        encodec_gain=encodec_gain,
+        pitch_fidelity_boost=pitch_fidelity_boost,
+        onset_guidance_boost=onset_guidance_boost,
+        pitch_snap_strength=pitch_snap_strength,
+        monophonic_mode=monophonic_mode,
+        enable_voice_separation=enable_voice_separation,
+        temperature=temperature,
+        eta=eta,
+        inpaint_mode=inpaint_mode,
+        inpaint_start_time=inpaint_start_time,
+        inpaint_end_time=inpaint_end_time,
+        inpaint_voice_index=inpaint_voice_index,
+        audio_file=audio_file,
+        conditioningAudio=conditioningAudio,
+        audioFile=audioFile,
+        scene_durations=scene_durations,
+        automation_data=automation_data,
+        debug_mode=debug_mode
+    )
 
 @app.post("/generate")
 async def generate_audio(
@@ -10344,6 +10641,9 @@ async def generate_audio(
     pitch_snap_strength: float = Form(0.5),
     monophonic_mode: bool = Form(False),
     enable_voice_separation: bool = Form(False),
+    # Variance control parameters
+    temperature: float = Form(1.0),
+    eta: float = Form(0.5),
     # Inpainting parameters
     inpaint_mode: bool = Form(False),
     inpaint_start_time: Optional[float] = Form(None),
@@ -10355,7 +10655,9 @@ async def generate_audio(
     audioFile: Optional[UploadFile] = File(None),
     # Scene-aware MIDI generation parameters
     scene_durations: Optional[str] = Form(None),
-    automation_data: Optional[str] = Form(None)
+    automation_data: Optional[str] = Form(None),
+    # Debug trajectory logging
+    debug_mode: bool = Form(False)
 ):
     """FastAPI endpoint for ACE-Step generation"""
 
@@ -10422,6 +10724,9 @@ async def generate_audio(
         onset_guidance_boost = params_dict.get('onsetGuidanceBoost', onset_guidance_boost)
         pitch_snap_strength = params_dict.get('pitchSnapStrength', pitch_snap_strength)
         monophonic_mode = params_dict.get('monophonicMode', monophonic_mode)
+        # Variance control parameters
+        temperature = params_dict.get('temperature', 1.0)
+        eta = params_dict.get('eta', 0.5)
         arrange_mode = params_dict.get('arrangeMode', False)
         fatten_mode = params_dict.get('fattenMode', False)
         fatten_type = params_dict.get('fattenType', 'fake')
@@ -10471,6 +10776,11 @@ async def generate_audio(
         extract_formats = params_dict.get('extractFormats', None)
         if extract_formats:
             print(f"   Extraction formats: {extract_formats}")
+
+        # Parse debug mode
+        debug_mode = params_dict.get('debugMode', debug_mode)
+        if debug_mode:
+            print(f"   🐛 Debug mode enabled: trajectory logging active")
 
         # Parse chord parameters
         use_chords = params_dict.get('useChords', False)
@@ -10567,7 +10877,8 @@ async def generate_audio(
     if uploaded_file and uploaded_file.filename:
         file_extension = Path(uploaded_file.filename).suffix.lower()
         # Use shared directory instead of /tmp
-        upload_dir = ensure_path_exists(get_output_path('uploads'))
+        upload_dir = Path("/home/arlo/ScoreAI/uploads")
+        upload_dir.mkdir(parents=True, exist_ok=True)
 
         temp_file_path = str(upload_dir / f"{uuid.uuid4()}{file_extension}")
         with open(temp_file_path, "wb") as f:
@@ -10748,10 +11059,27 @@ async def generate_audio(
             # Check if it's multi-track MIDI with voice separation disabled
             is_multi, track_count, _ = is_multitrack_midi(temp_file_path)
 
+            # Check if extraction needs audio rendering
+            # Audio rendering NOT needed if:
+            # - Only MIDI format selected (no amp/rframe/rbend/encodec)
+            # - AND noise_level is 1.0 (no DCAE latents needed)
+            needs_audio_extraction = False
+            if extract_formats:
+                # Check if any non-MIDI formats are selected
+                audio_formats = {'amp', 'rframe', 'rbend', 'encodec'}
+                needs_audio_extraction = any(fmt in audio_formats for fmt in extract_formats)
+            else:
+                # If no extract_formats specified, assume all formats (need audio)
+                needs_audio_extraction = True
+
+            needs_latents = noise_level < 1.0
+            can_skip_audio_render = not needs_audio_extraction and not needs_latents
+
             # Keep MIDI as MIDI if:
             # 1. Monophonic mode with voice separation disabled (single or multi-track), OR
-            # 2. Fast mode is enabled (for proper timing/resolution)
-            should_keep_midi = (monophonic_mode and not enable_voice_separation) or fast_mode_variant
+            # 2. Fast mode is enabled (for proper timing/resolution), OR
+            # 3. Only MIDI extraction needed and no latents (noise_level=1.0)
+            should_keep_midi = (monophonic_mode and not enable_voice_separation) or fast_mode_variant or can_skip_audio_render
 
             if should_keep_midi:
                 if monophonic_mode and not enable_voice_separation:
@@ -10763,6 +11091,12 @@ async def generate_audio(
                     print(f"   is_multi={is_multi}, track_count={track_count}")
                     print(f"   Keeping MIDI file for direct conversion (better timing)")
                     print(f"   File will be: {temp_file_path}")
+                elif can_skip_audio_render:
+                    print(f"🎼 MIDI file detected - {track_count} track(s), multitrack={is_multi}")
+                    print(f"   Extract formats: {extract_formats}")
+                    print(f"   Needs audio extraction: {needs_audio_extraction}")
+                    print(f"   Needs latents (noise_level={noise_level}): {needs_latents}")
+                    print(f"   ✨ Skipping audio rendering - MIDI will be used directly as piano roll input")
                 # Keep the MIDI file, don't render to audio
                 audio_file_path = temp_file_path
                 print(f"✅ MIDI kept as: {audio_file_path}")
@@ -10907,6 +11241,8 @@ async def generate_audio(
         pitch_fidelity_boost,
         onset_guidance_boost,
         pitch_snap_strength,
+        temperature,
+        eta,
         instrument_group,
         instrument_subgroup,
         monophonic_mode,
@@ -10949,7 +11285,8 @@ async def generate_audio(
         enable_midi_export,
         use_chords,
         chord_beat_map,
-        extract_formats
+        extract_formats,
+        debug_mode
     )
 
     return {
@@ -10974,8 +11311,7 @@ def separate_stems_task(self, temp_input_path: str, process_id: str, mode: str =
     print(f"🎵 Starting stem separation task: {process_id} (mode: {mode})")
     print(f"   Input file: {temp_input_path}")
 
-    # Save to /mnt/models for scalability (same as generate-do endpoint)
-    output_base_dir = Path("/mnt/models/stems")
+    output_base_dir = Path("/home/arlo/ScoreAI/audiofiles")
     output_dir = output_base_dir / f"stems_{process_id}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -11028,23 +11364,17 @@ def separate_stems_task(self, temp_input_path: str, process_id: str, mode: str =
         if not stems_dir.exists():
             raise Exception(f"Stems directory not found: {stems_dir}")
 
-        # Copy stems to output directory and return local paths immediately
+        # Copy stems to output directory
         stem_files = {}
-        stem_paths_for_upload = []  # Track paths for background upload
 
         for stem_name in expected_stems:
             stem_file = stems_dir / f"{stem_name}.wav"
             if stem_file.exists():
                 output_stem_path = output_dir / f"{stem_name}.wav"
                 shutil.copy(stem_file, output_stem_path)
-                print(f"   ✅ {stem_name}: {output_stem_path}")
-
-                # Return local path immediately
                 download_url = f"/download-stem/{process_id}/{stem_name}.wav"
                 stem_files[stem_name] = download_url
-
-                # Track for background GCS upload
-                stem_paths_for_upload.append((stem_name, str(output_stem_path)))
+                print(f"   ✅ {stem_name}: {output_stem_path}")
 
         # For 2-stem mode, also create "instrumental" alias for "no_vocals"
         if mode == "2s" and "no_vocals" in stem_files:
@@ -11052,32 +11382,7 @@ def separate_stems_task(self, temp_input_path: str, process_id: str, mode: str =
             no_vocals_path = output_dir / "no_vocals.wav"
             shutil.copy(no_vocals_path, instrumental_path)
             stem_files["instrumental"] = f"/download-stem/{process_id}/instrumental.wav"
-            stem_paths_for_upload.append(("instrumental", str(instrumental_path)))
-
-        # Upload to GCS in background (non-blocking)
-        import threading
-        def background_upload_stems():
-            try:
-                from gcs_storage import upload_to_gcs, get_gcs_url
-                for stem_name, stem_path in stem_paths_for_upload:
-                    try:
-                        print(f"   📤 Background: Uploading {stem_name} to GCS...")
-                        gcs_path = upload_to_gcs(
-                            stem_path,
-                            prefix=f"stems/{process_id}",
-                            user_id="stems",
-                            make_public=True
-                        )
-                        gcs_url = get_gcs_url(gcs_path)
-                        print(f"   ✅ Background: Uploaded {stem_name} to GCS: {gcs_url}")
-                    except Exception as e:
-                        print(f"   ⚠️  Background: GCS upload failed for {stem_name}: {e}")
-            except Exception as e:
-                print(f"   ⚠️  Background: GCS upload error: {e}")
-
-        # Start background upload thread
-        upload_thread = threading.Thread(target=background_upload_stems, daemon=True)
-        upload_thread.start()
+            print(f"   ✅ instrumental: {instrumental_path} (alias for no_vocals)")
 
         # Clean up temp input file
         import os
@@ -11102,85 +11407,6 @@ def separate_stems_task(self, temp_input_path: str, process_id: str, mode: str =
         if os.path.exists(temp_input_path):
             os.remove(temp_input_path)
         raise
-
-
-# Alias endpoint for frontend compatibility
-@app.post("/api/generate-do")
-async def generate_do_endpoint(
-    params: Optional[str] = Form(None),
-    description: str = Form(""),
-    duration: Optional[float] = Form(None),
-    steps: int = Form(50),
-    seed: int = Form(0),
-    adapter_scale: float = Form(1.0),
-    cfg_weight: float = Form(3.0),
-    instrument_strength: float = Form(1.0),
-    noise_level: float = Form(1.0),
-    piano_roll_gain: float = Form(1.0),
-    amp_gain: float = Form(1.0),
-    rframe_gain: float = Form(1.0),
-    rbend_gain: float = Form(1.0),
-    encodec_gain: float = Form(1.0),
-    pitch_fidelity_boost: float = Form(1.0),
-    onset_guidance_boost: float = Form(2.0),
-    pitch_snap_strength: float = Form(0.5),
-    monophonic_mode: bool = Form(False),
-    enable_voice_separation: bool = Form(False),
-    inpaint_mode: bool = Form(False),
-    inpaint_start_time: Optional[float] = Form(None),
-    inpaint_end_time: Optional[float] = Form(None),
-    inpaint_voice_index: Optional[int] = Form(None),
-    audio_file: Optional[UploadFile] = File(None),
-    conditioningAudio: Optional[UploadFile] = File(None),
-    audioFile: Optional[UploadFile] = File(None),
-    midiFile: Optional[UploadFile] = File(None),
-    scene_durations: Optional[str] = Form(None),
-    automation_data: Optional[str] = Form(None)
-):
-    """
-    Frontend-compatible endpoint for Dø generation.
-    Forwards to generate_audio() with the same parameters.
-    """
-    return await generate_audio(
-        params=params,
-        description=description,
-        duration=duration,
-        steps=steps,
-        seed=seed,
-        adapter_scale=adapter_scale,
-        cfg_weight=cfg_weight,
-        instrument_strength=instrument_strength,
-        noise_level=noise_level,
-        piano_roll_gain=piano_roll_gain,
-        amp_gain=amp_gain,
-        rframe_gain=rframe_gain,
-        rbend_gain=rbend_gain,
-        encodec_gain=encodec_gain,
-        pitch_fidelity_boost=pitch_fidelity_boost,
-        onset_guidance_boost=onset_guidance_boost,
-        pitch_snap_strength=pitch_snap_strength,
-        monophonic_mode=monophonic_mode,
-        enable_voice_separation=enable_voice_separation,
-        inpaint_mode=inpaint_mode,
-        inpaint_start_time=inpaint_start_time,
-        inpaint_end_time=inpaint_end_time,
-        inpaint_voice_index=inpaint_voice_index,
-        audio_file=audio_file or midiFile,
-        conditioningAudio=conditioningAudio,
-        audioFile=audioFile,
-        scene_durations=scene_durations,
-        automation_data=automation_data
-    )
-
-
-# Also add /api/generate-do/task/{task_id} endpoint for status polling
-@app.get("/api/generate-do/task/{task_id}")
-async def get_do_task_status(task_id: str):
-    """
-    Frontend-compatible task status endpoint.
-    Forwards to the existing task status endpoint.
-    """
-    return await get_task_status(task_id)
 
 
 @app.post("/separate-stems")
@@ -11209,7 +11435,8 @@ async def separate_stems(
     # Use whichever file was provided
     uploaded_file = audio_file or audioFile
 
-    upload_dir = ensure_path_exists(get_output_path('uploads'))
+    upload_dir = Path("/home/arlo/ScoreAI/uploads")
+    upload_dir.mkdir(parents=True, exist_ok=True)
 
     # Handle URL-based separation (for ACE-Step generated files)
     if audioUrl and not uploaded_file:
@@ -11239,7 +11466,7 @@ async def separate_stems(
                 elif audioUrl.startswith('/download-upload/'):
                     # Handle uploaded files
                     filename = audioUrl.split('/')[-1]
-                    local_path = get_output_path('uploads') / filename
+                    local_path = Path("/home/arlo/ScoreAI/uploads") / filename
 
                     if not local_path.exists():
                         raise HTTPException(404, f"Audio file not found: {audioUrl}")
@@ -11354,40 +11581,11 @@ async def get_stem_separation_status(task_id: str):
 
 @app.get("/download-stem/{process_id}/{filename}")
 async def download_stem(process_id: str, filename: str):
-    """
-    Download separated stem file (serves from local or GCS)
-    This endpoint is kept for backward compatibility with local storage.
-    New stem separations return direct GCS URLs.
-    """
-    # Try local file first (check both new and old locations for backward compatibility)
-    # New location: /mnt/models/stems
-    file_path_new = get_output_path('stems', process_id=process_id) / filename
-    if file_path_new.exists():
-        return FileResponse(file_path_new, media_type="audio/wav", filename=filename)
-
-    # Old location: /home/arlo/ScoreAI/audiofiles (backward compatibility for old files)
-    file_path_old = Path("/home/arlo/ScoreAI/audiofiles") / f"stems_{process_id}" / filename
-    if file_path_old.exists():
-        return FileResponse(file_path_old, media_type="audio/wav", filename=filename)
-
-    # Try GCS if local file doesn't exist
-    try:
-        from gcs_storage import gcs_file_exists, download_from_gcs, get_gcs_path
-        import tempfile
-
-        # Construct GCS path
-        gcs_path = f"gs://score-ai-generations/stems/{process_id}/stems/{filename}"
-
-        if gcs_file_exists(gcs_path):
-            print(f"📥 Downloading from GCS: {gcs_path}")
-            # Download to temp file
-            temp_path = download_from_gcs(gcs_path)
-            return FileResponse(temp_path, media_type="audio/wav", filename=filename)
-    except Exception as e:
-        print(f"⚠️  GCS download failed: {e}")
-
-    # Not found
-    raise HTTPException(status_code=404, detail=f"Stem file not found: {filename}")
+    """Download separated stem file"""
+    file_path = Path("/home/arlo/ScoreAI/audiofiles") / f"stems_{process_id}" / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Stem file not found: {filename}")
+    return FileResponse(file_path, media_type="audio/wav", filename=filename)
 
 @app.post("/api/upload-audio")
 async def upload_audio(
@@ -11408,7 +11606,8 @@ async def upload_audio(
 
     # Save uploaded file to uploads directory
     file_extension = Path(audioFile.filename).suffix.lower()
-    upload_dir = ensure_path_exists(get_output_path('uploads'))
+    upload_dir = Path("/home/arlo/ScoreAI/uploads")
+    upload_dir.mkdir(parents=True, exist_ok=True)
 
     # Create unique filename
     unique_id = str(uuid.uuid4())
@@ -11434,7 +11633,7 @@ async def upload_audio(
 @app.get("/download-upload/{filename}")
 async def download_upload(filename: str):
     """Download uploaded audio file"""
-    file_path = get_output_path('uploads') / filename
+    file_path = Path("/home/arlo/ScoreAI/uploads") / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
 
@@ -11487,7 +11686,8 @@ async def generate_risers(
 
     # Create output directory matching the download endpoint path
     process_id = str(uuid.uuid4())
-    output_directory = ensure_path_exists(get_output_path('ace_step_output', process_id=process_id))
+    output_directory = Path("/home/arlo/ScoreAI/audiofiles") / f"ace_step_output_{process_id}"
+    os.makedirs(output_directory, exist_ok=True)
 
     # Randomly select and copy risers
     file_paths = []
@@ -11581,7 +11781,7 @@ async def generate_drums(
             print(f"⚠️ Could not parse automation data: {e}")
 
     # Check ORCH directory
-    orch_base_dir = "/home/arlo/harmonymodule/ORCH"
+    orch_base_dir = "/home/arlo/free-midi-chords/ORCH"
     if not os.path.isdir(orch_base_dir):
         raise HTTPException(404, f"ORCH folder not found: {orch_base_dir}")
 
@@ -11707,7 +11907,8 @@ async def generate_drums(
 
     # Create output directory
     process_id = str(uuid.uuid4())
-    output_directory = ensure_path_exists(get_output_path('ace_step_output', process_id=process_id))
+    output_directory = Path("/home/arlo/ScoreAI/audiofiles") / f"ace_step_output_{process_id}"
+    os.makedirs(output_directory, exist_ok=True)
 
     # Process each sample type separately to create separate tracks
     sample_tracks = {}
@@ -11762,10 +11963,81 @@ async def generate_drums(
         "total_samples": len(active_samples_list)
     }
 
+# Alias endpoint for /api/generate-do/task/{task_id}
+@app.get("/api/generate-do/task/{task_id}")
+async def get_generate_do_task_status(task_id: str):
+    """Check generate-do task status"""
+    task = generate_do_task.AsyncResult(task_id)
+    print(f"📊 Generate-do Task {task_id} state: {task.state}")
+
+    if task.state == "SUCCESS":
+        result = task.result
+        print(f"📊 Task result type: {type(result)}, value: {result}")
+
+        # Handle different result formats
+        if isinstance(result, dict) and "file_paths" in result:
+            file_paths = result["file_paths"]
+            input_files = result.get("input_files", {})
+            print(f"📊 Returning file_paths: {file_paths}")
+            print(f"📦 Returning input_files: {input_files}")
+            return {
+                "status": "completed",
+                "result": file_paths,
+                "input_files": input_files
+            }
+        elif isinstance(result, dict):
+            file_paths = result.get("file_paths", [])
+            input_files = result.get("input_files", {})
+            print(f"📊 Returning file_paths: {file_paths}")
+            print(f"📦 Returning input_files: {input_files}")
+            return {
+                "status": "completed",
+                "result": file_paths,
+                "input_files": input_files
+            }
+        else:
+            print(f"⚠️ Unexpected result format: {result}")
+            return {
+                "status": "completed",
+                "result": []
+            }
+    elif task.state == "FAILURE":
+        print(f"❌ Task failed: {task.info}")
+        return {"status": "failed", "error": str(task.info)}
+    elif task.state == "PROGRESS":
+        # Return partial results for incremental display
+        info = task.info or {}
+        completed_voices = info.get("completed_voices", [])
+        total_voices = info.get("total_voices", 0)
+        input_files = info.get("input_files", {})
+
+        # Calculate progress
+        if isinstance(completed_voices, list):
+            num_completed = len(completed_voices)
+            progress = num_completed / total_voices if total_voices > 0 else 0.0
+        else:
+            # Fallback if it's an int (backwards compatibility)
+            num_completed = completed_voices
+            progress = completed_voices / total_voices if total_voices > 0 else 0.0
+
+        print(f"📊 Progress: {num_completed}/{total_voices} voices completed ({progress*100:.1f}%)")
+        print(f"📊 Completed voices: {completed_voices}")
+        print(f"📦 Input files available: {len(input_files)} voices")
+
+        return {
+            "status": "processing",
+            "completed_voices": completed_voices,
+            "total_voices": total_voices,
+            "progress": progress,
+            "input_files": input_files
+        }
+    else:
+        return {"status": task.state}
+
 @app.get("/task/{task_id}")
 async def get_task_status(task_id: str):
     """Check task status"""
-    task = celery_app.AsyncResult(task_id)
+    task = generate_simple_ace_step_task.AsyncResult(task_id)
     print(f"📊 Task {task_id} state: {task.state}")
 
     if task.state == "SUCCESS":
@@ -11835,15 +12107,15 @@ async def get_task_status(task_id: str):
 @app.get("/download/{process_id}/{filename}")
 async def download_audio(process_id: str, filename: str):
     """Download generated audio file"""
-    file_path = get_output_path('ace_step_output', process_id=process_id) / filename
+    file_path = Path("/home/arlo/ScoreAI/audiofiles") / f"ace_step_output_{process_id}" / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(file_path, media_type="audio/wav")
 
 @app.get("/api/list-midi-files")
 async def list_midi_files():
-    """List all MIDI files from the harmonymodule directory"""
-    midi_dir = Path("/home/arlo/harmonymodule/drummidis")
+    """List all MIDI files from the free-midi-chords directory"""
+    midi_dir = Path("/home/arlo/free-midi-chords/drummidis")
 
     if not midi_dir.exists():
         return {"files": [], "error": "MIDI directory not found"}
@@ -11866,7 +12138,7 @@ async def list_midi_files():
 @app.get("/api/get-midi-file/{filename}")
 async def get_midi_file(filename: str):
     """Serve a specific MIDI file"""
-    midi_dir = Path("/home/arlo/harmonymodule/drummidis")
+    midi_dir = Path("/home/arlo/free-midi-chords/drummidis")
     file_path = midi_dir / filename
 
     # Security check: ensure the file is within the MIDI directory
@@ -11912,7 +12184,8 @@ async def audio_to_midi(
     try:
         # Save uploaded audio temporarily
         upload_id = str(uuid.uuid4())
-        temp_dir = ensure_path_exists(get_output_path('temp_recordings'))
+        temp_dir = Path("/home/arlo/ScoreAI/temp_recordings")
+        temp_dir.mkdir(exist_ok=True, parents=True)
 
         audio_path = temp_dir / f"{upload_id}_{audioFile.filename}"
         with open(audio_path, "wb") as f:
@@ -11952,13 +12225,21 @@ async def audio_to_midi(
             print(f"   🎵 Slowed audio duration: {slowed_duration:.2f}s (was {audio_duration:.2f}s)")
 
             # Extract MIDI using Basic Pitch on SLOWED audio
+            # High-resolution parameters for detailed MIDI extraction
+            # Parameters match the Basic Pitch web interface settings:
+            # - Note Segmentation: 0.60 (higher = split notes more easily)
+            # - Model Confidence: 0.20 (lower = capture more notes)
+            # - Min Note Length: 6ms (capture very short notes)
+            # - Min/Max Frequency: None (use model defaults for full range)
             print(f"   🎼 Running Basic Pitch inference on slowed audio...")
             model_output, midi_data, note_events = predict(
                 str(slowed_audio_path),
                 ICASSP_2022_MODEL_PATH,
-                onset_threshold=0.55,      # Moderately stricter onset detection (reduces false onsets from vibrato)
-                frame_threshold=0.35,      # Moderately stronger activation required (smooths out weak pitch variations)
-                minimum_note_length=188    # Moderate note duration filtering (filters rapid vibrato fluctuations)
+                onset_threshold=0.60,      # Note segmentation: how easily notes split (higher = split more easily)
+                frame_threshold=0.20,      # Model confidence: lower threshold captures more notes
+                minimum_note_length=6      # Minimum note length in milliseconds (allows very short notes)
+                # Note: minimum_frequency and maximum_frequency omitted to use model defaults
+                # Setting minimum_frequency too low (e.g., < 50 Hz) causes extraction to fail
             )
 
             # Save MIDI directly to temp file
@@ -12185,7 +12466,8 @@ async def download_with_fx(
 
         # Save uploaded audio to temp file
         upload_id = str(uuid.uuid4())
-        temp_dir = ensure_path_exists(get_output_path('temp_fx_processing'))
+        temp_dir = Path("/home/arlo/ScoreAI/temp_fx_processing")
+        temp_dir.mkdir(exist_ok=True, parents=True)
 
         input_path = temp_dir / f"{upload_id}_input.wav"
         with open(input_path, "wb") as f:
@@ -12398,7 +12680,8 @@ async def render_omnisphere_midi(
     try:
         # Create temp directory for processing
         upload_id = str(uuid.uuid4())
-        temp_dir = ensure_path_exists(get_output_path('temp_omnisphere'))
+        temp_dir = Path("/home/arlo/ScoreAI/temp_omnisphere")
+        temp_dir.mkdir(exist_ok=True, parents=True)
 
         # Save uploaded MIDI file
         input_midi_path = temp_dir / f"{upload_id}_input.mid"
@@ -12516,7 +12799,8 @@ async def generate_track_image(
 
         # Download and save the image locally for persistent storage
         process_id = str(uuid.uuid4())
-        output_dir = ensure_path_exists(get_output_path('images', process_id=process_id))
+        output_dir = Path(f"/home/arlo/ScoreAI/audiofiles/images_{process_id}")
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         image_filename = f"{instrumentGroup}_{instrumentSubgroup or 'default'}.png"
         image_path = output_dir / image_filename
@@ -12544,7 +12828,7 @@ async def generate_track_image(
 @app.get("/download-image/{process_id}/{filename}")
 async def download_image(process_id: str, filename: str):
     """Serve generated track images"""
-    file_path = get_output_path('images', process_id=process_id) / filename
+    file_path = Path(f"/home/arlo/ScoreAI/audiofiles/images_{process_id}") / filename
     if not file_path.exists():
         raise HTTPException(404, "Image not found")
     return FileResponse(file_path, media_type="image/png")
@@ -12559,14 +12843,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--checkpoint", default=DEFAULT_CKPT)
     ap.add_argument("--checkpoint_dir", required=True)
-    ap.add_argument("--manifest", required=False)  # Now optional
+    ap.add_argument("--manifest", required=True)
     ap.add_argument("--share", action="store_true")
     args = ap.parse_args()
 
-    # Manifest not needed - removed random file selection feature
-    MANIFEST_DATA = []
-    MANIFEST_PATHS = []
-    print(f"ℹ️  Manifest loading disabled (random file selection feature removed)")
+    with open(args.manifest, "r") as f:
+        MANIFEST_DATA = json.load(f)
 
     print("--- Initializing model ---")
     MODEL = load_model_any_ckpt(args.checkpoint, args.checkpoint_dir, args.manifest)
@@ -12576,7 +12858,8 @@ def main():
 
     GROUP_NAMES = list(APPROVED_GROUPS) if not isinstance(APPROVED_GROUPS, dict) else list(APPROVED_GROUPS.keys())
     SUBGROUP_NAMES = sorted({sg for subs in APPROVED_SUBGROUPS.values() for sg in subs})
-    print(f"Groups: {len(GROUP_NAMES)} | Subgroups: {len(SUBGROUP_NAMES)}")
+    MANIFEST_PATHS = [it["audio_path"] for it in MANIFEST_DATA if it.get("audio_path")]
+    print(f"Groups: {len(GROUP_NAMES)} | Subgroups: {len(SUBGROUP_NAMES)} | Manifest files: {len(MANIFEST_PATHS)}")
 
     ui = create_ui()
     ui.launch(share=args.share, server_name="0.0.0.0", server_port=7860)
@@ -12593,16 +12876,10 @@ def main():
 # DrumSampler API Endpoints (replaces HuggingFace Space)
 # ------------------------------------------------------------------------------
 
-# Import the drum sampler module (optional)
-try:
-    import sys
-    sys.path.insert(0, "/home/arlo/harmonymodule/harmonymodule")
-    from drum_sampler_simple import SimpleDrumSampler
-    DRUM_SAMPLER_AVAILABLE = True
-except ImportError:
-    SimpleDrumSampler = None
-    DRUM_SAMPLER_AVAILABLE = False
-    print("⚠️  Warning: drum_sampler_simple not available - drum sampling features will be disabled")
+# Import the drum sampler module
+import sys
+sys.path.insert(0, "/home/arlo/free-midi-chords")
+from drum_sampler_simple import SimpleDrumSampler
 
 # Global drum sampler instance
 _drum_sampler = None
@@ -12610,8 +12887,6 @@ _drum_sampler = None
 def get_drum_sampler():
     """Get or create the global drum sampler instance"""
     global _drum_sampler
-    if not DRUM_SAMPLER_AVAILABLE:
-        raise ImportError("drum_sampler_simple module is not available")
     if _drum_sampler is None:
         _drum_sampler = SimpleDrumSampler()
     return _drum_sampler
@@ -12627,7 +12902,7 @@ async def randomize_drum_pattern():
         import glob
         
         # Get list of available MIDI files
-        midi_dir = "/home/arlo/harmonymodule/drummidis"
+        midi_dir = "/home/arlo/free-midi-chords/drummidis"
         midi_files = glob.glob(os.path.join(midi_dir, "*.mid"))
         
         if not midi_files:
@@ -12663,7 +12938,7 @@ async def render_drum_midi(
     """
     try:
         # Find the MIDI file
-        midi_dir = "/home/arlo/harmonymodule/drummidis"
+        midi_dir = "/home/arlo/free-midi-chords/drummidis"
         midi_path = os.path.join(midi_dir, midiFile)
         
         if not os.path.exists(midi_path):
@@ -12673,7 +12948,8 @@ async def render_drum_midi(
         
         # Create output directory
         process_id = str(uuid.uuid4())
-        output_dir = ensure_path_exists(get_output_path('drums', process_id=process_id))
+        output_dir = Path(f"/home/arlo/ScoreAI/audiofiles/drums_{process_id}")
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate output filename
         output_filename = f"drums_{os.path.splitext(midiFile)[0]}.wav"
@@ -12710,10 +12986,126 @@ async def render_drum_midi(
 @app.get("/download-drums/{process_id}/{filename}")
 async def download_drum_audio(process_id: str, filename: str):
     """Serve rendered drum audio files"""
-    file_path = get_output_path('drums', process_id=process_id) / filename
+    file_path = Path(f"/home/arlo/ScoreAI/audiofiles/drums_{process_id}") / filename
     if not file_path.exists():
         raise HTTPException(404, "Drum audio file not found")
     return FileResponse(file_path, media_type="audio/wav", filename=filename)
+
+
+@app.post("/api/generate-melody")
+async def generate_melody(request: Request):
+    """
+    Generate algorithmic MIDI melody using the proper melody generator.
+
+    Request body (JSON):
+    {
+        "key": "C minor",
+        "chords": "Cm7,G7,Cm7,G7",
+        "bars": 4,
+        "minNote": 60,
+        "maxNote": 76,
+        "chromatic": 0.2,
+        "tempo": 120,
+        "seed": 42 (optional)
+    }
+
+    Returns:
+    {
+        "notes": [{"note": 60, "time": 0.0, "duration": 0.5, "velocity": 100}, ...],
+        "tempo": 120,
+        "duration": 8.0
+    }
+    """
+    try:
+        # Parse request body
+        body = await request.json()
+
+        key = body.get('key', 'C minor')
+        chords = body.get('chords', 'Cm7,G7,Cm7,G7')
+        bars = body.get('bars', 4)
+        min_note = body.get('minNote', 60)
+        max_note = body.get('maxNote', 76)
+        chromatic = body.get('chromatic', 0.2)
+        tempo = body.get('tempo', 120)
+        seed = body.get('seed')
+
+        print(f"🎹 Generating melody: key={key}, chords={chords}, bars={bars}")
+
+        # Build command for melody generator
+        import subprocess
+        import tempfile
+
+        # Create temp MIDI file
+        with tempfile.NamedTemporaryFile(suffix='.mid', delete=False) as tmp_midi:
+            tmp_midi_path = tmp_midi.name
+
+        cmd = [
+            'python', '/home/arlo/Data/melody_generator_proper.py',
+            '--output', tmp_midi_path,
+            '--chords', chords,
+            '--bars', str(bars),
+            '--min-note', str(min_note),
+            '--max-note', str(max_note),
+            '--chromatic', str(chromatic),
+            '--tempo', str(tempo)
+        ]
+
+        if seed is not None:
+            cmd.extend(['--seed', str(seed)])
+
+        print(f"   Running: {' '.join(cmd)}")
+
+        # Run melody generator
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode != 0:
+            print(f"❌ Melody generation failed: {result.stderr}")
+            raise HTTPException(500, f"Melody generation failed: {result.stderr}")
+
+        # Parse the generated MIDI file
+        import pretty_midi
+
+        midi_data = pretty_midi.PrettyMIDI(tmp_midi_path)
+
+        # Convert to JSON-serializable format
+        notes = []
+        for instrument in midi_data.instruments:
+            for note in instrument.notes:
+                notes.append({
+                    'note': note.pitch,
+                    'time': note.start,
+                    'duration': note.end - note.start,
+                    'velocity': note.velocity
+                })
+
+        # Clean up temp file
+        os.unlink(tmp_midi_path)
+
+        # Calculate duration
+        duration = max([n['time'] + n['duration'] for n in notes]) if notes else 0
+
+        print(f"✅ Generated {len(notes)} notes, duration: {duration:.2f}s")
+
+        return {
+            'notes': notes,
+            'tempo': tempo,
+            'duration': duration
+        }
+
+    except subprocess.TimeoutExpired:
+        print(f"❌ Melody generation timed out")
+        raise HTTPException(504, "Melody generation timed out")
+    except Exception as e:
+        print(f"❌ Error generating melody: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"Melody generation failed: {str(e)}")
+
 
 @app.post("/api/generate-ace-step")
 async def generate_ace_step_endpoint(
@@ -12724,8 +13116,7 @@ async def generate_ace_step_endpoint(
     seed: int = Form(0),
     noise_level: float = Form(0.8),
     ref_audio: UploadFile = File(None),
-    midi_lyric_map: str = Form(None),
-    detailed_mode: bool = Form(False)
+    midi_lyric_map: str = Form(None)
 ):
     """
     FastAPI endpoint for ACE-Step text-to-music generation
@@ -12741,7 +13132,6 @@ async def generate_ace_step_endpoint(
         seed: Random seed for reproducibility (default: 0)
         noise_level: Noise level for GT mixing, 0.0=pure GT, 1.0=pure noise (default: 0.8)
         ref_audio: Optional reference audio file for noise mixing
-        detailed_mode: If True, use phrase-by-phrase generation with noise-to-noise (default: False)
     """
     import subprocess
     import uuid
@@ -12749,8 +13139,7 @@ async def generate_ace_step_endpoint(
     import time
 
     print(f"\n{'='*80}")
-    mode_str = "DETAILED MODE (Phrase-by-Phrase)" if detailed_mode else "Standard Mode"
-    print(f"📥 RECEIVED /api/generate-ace-step REQUEST ({mode_str})")
+    print(f"📥 RECEIVED /api/generate-ace-step REQUEST (ACE-Step Mode)")
     print(f"{'='*80}")
     print(f"   steps: {steps}")
     print(f"   prompt: {prompt}")
@@ -12759,7 +13148,6 @@ async def generate_ace_step_endpoint(
     print(f"   seed: {seed}")
     print(f"   noise_level: {noise_level}")
     print(f"   ref_audio: {ref_audio.filename if ref_audio else 'None'}")
-    print(f"   detailed_mode: {detailed_mode}")
     print(f"{'='*80}\n")
     
     try:
@@ -12891,11 +13279,17 @@ async def generate_ace_step_endpoint(
                         print(f"{'='*80}\n")
                         raise HTTPException(500, f"MIDI rendering failed: {e}")
 
-        # Convert ref_audio_path to string for Celery
+        # Convert ref_audio_path to string for Celery (if it exists)
         ref_audio_path_str = str(ref_audio_path) if ref_audio_path else None
 
-        # Queue the simple ACE-Step task via Celery
-        print(f"🚀 Queueing ACE-Step Celery task...")
+        print(f"🚀 Dispatching ACE-Step generation task to Celery worker...")
+        print(f"   Prompt: {prompt}")
+        print(f"   Lyrics: {lyrics[:50]}..." if len(lyrics) > 50 else f"   Lyrics: {lyrics}")
+        print(f"   Steps: {steps}, Seed: {seed}")
+        print(f"   Noise Level: {noise_level}")
+        print(f"   Ref Audio: {ref_audio_path_str if ref_audio_path_str else 'None'}")
+
+        # Queue the ACE-Step task using Celery
         task = generate_simple_ace_step_task.delay(
             prompt=prompt,
             lyrics=lyrics,
@@ -12907,117 +13301,29 @@ async def generate_ace_step_endpoint(
             ref_audio_path=ref_audio_path_str
         )
 
-        print(f"✅ Task queued with ID: {task.id}")
+        print(f"✅ Task dispatched successfully!")
+        print(f"   Task ID: {task.id}")
 
         # Return task ID for status polling
         return {
             "task_id": task.id,
-            "status": "queued",
-            "message": "ACE-Step generation task queued"
+            "expected_voices": 1
         }
 
     except Exception as e:
-        print(f"❌ Error in ACE-Step generation: {str(e)}")
+        print(f"❌ Error dispatching ACE-Step generation: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(500, f"Generation failed: {str(e)}")
 
 
-@app.get("/api/generate-ace-step/task/{task_id}")
-async def get_ace_step_task_status(task_id: str):
-    """Check ACE-Step task status"""
-    task = celery_app.AsyncResult(task_id)
-    print(f"📊 ACE-Step Task {task_id} state: {task.state}")
-
-    if task.state == "SUCCESS":
-        result = task.result
-        print(f"📊 ACE-Step Task result: {result}")
-
-        # ACE-Step returns {"file_paths": [...], "input_files": []}
-        # Frontend expects {status: 'completed', result: {file_paths: [...], input_files: {}}}
-        if isinstance(result, dict):
-            file_paths = result.get("file_paths", [])
-            input_files = result.get("input_files", [])
-            print(f"✅ Returning {len(file_paths)} file(s): {file_paths}")
-            return {
-                "status": "completed",
-                "result": {
-                    "file_paths": file_paths,
-                    "input_files": input_files
-                }
-            }
-        else:
-            print(f"⚠️ Unexpected result format: {result}")
-            return {
-                "status": "completed",
-                "result": {
-                    "file_paths": [],
-                    "input_files": []
-                }
-            }
-    elif task.state == "FAILURE":
-        print(f"❌ ACE-Step Task failed: {task.info}")
-        return {"status": "failed", "error": str(task.info)}
-    elif task.state == "PENDING":
-        return {"status": "queued"}
-    else:
-        # STARTED, RETRY, etc.
-        return {"status": "processing"}
-
-
 @app.get("/download-ace-step/{process_id}/{filename}")
 async def download_ace_step_audio(process_id: str, filename: str):
-    """
-    Serve ACE-Step generated audio files.
-    Converts 32-bit float PCM to 16-bit PCM for browser compatibility.
-    """
-    import tempfile
-    import torchaudio
-
-    # Try local file first
+    """Serve ACE-Step generated audio files"""
     file_path = Path(f"./generated_ui/ace_step_{process_id}") / filename
-    source_path = None
-
-    if file_path.exists():
-        source_path = file_path
-    else:
-        # Try GCS fallback
-        try:
-            from gcs_storage import gcs_file_exists, download_from_gcs, get_gcs_path
-
-            gcs_path = get_gcs_path(filename, prefix="audiofiles", user_id="ace_step")
-            if gcs_file_exists(gcs_path):
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                    source_path = Path(tmp.name)
-                download_from_gcs(gcs_path, str(source_path))
-        except Exception as e:
-            print(f"⚠️  GCS fallback failed: {e}")
-
-    if not source_path:
+    if not file_path.exists():
         raise HTTPException(404, "ACE-Step audio file not found")
-
-    # Convert to 16-bit PCM for browser compatibility
-    try:
-        waveform, sample_rate = torchaudio.load(str(source_path))
-
-        # Create temporary file for converted audio
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            converted_path = tmp.name
-
-        # Save as 16-bit PCM
-        torchaudio.save(
-            converted_path,
-            waveform,
-            sample_rate,
-            encoding="PCM_S",
-            bits_per_sample=16
-        )
-
-        return FileResponse(converted_path, media_type="audio/wav", filename=filename)
-    except Exception as e:
-        print(f"❌ Error converting audio: {e}")
-        # Fallback to serving original file
-        return FileResponse(str(source_path), media_type="audio/wav", filename=filename)
+    return FileResponse(file_path, media_type="audio/wav", filename=filename)
 
 
 
@@ -13117,3 +13423,99 @@ async def download_chord_midi(process_id: str, filename: str):
     if not file_path.exists():
         raise HTTPException(404, "Chord MIDI file not found")
     return FileResponse(file_path, media_type="audio/midi", filename=filename)
+
+# ============================================
+# Generation Feedback Logging
+# ============================================
+
+from generation_feedback_logger import (
+    log_generation_feedback,
+    get_feedback_stats,
+    get_top_liked_params,
+    analyze_parameter_correlations
+)
+
+@app.post("/api/generation-feedback")
+async def submit_generation_feedback(request: Request):
+    """
+    Log generation parameters with user feedback (like/dislike)
+
+    Expected payload:
+    {
+        "feedback": "like" | "dislike",
+        "params": { ... generation params ... },
+        "taskId": "optional-task-id",
+        "outputFiles": ["optional", "file", "paths"],
+        "userNotes": "optional notes"
+    }
+    """
+    try:
+        data = await request.json()
+
+        feedback = data.get("feedback")
+        params = data.get("params", {})
+        task_id = data.get("taskId")
+        output_files = data.get("outputFiles", [])
+        user_notes = data.get("userNotes")
+
+        # Validate feedback
+        if feedback not in ["like", "dislike"]:
+            raise HTTPException(400, "feedback must be 'like' or 'dislike'")
+
+        # Log the feedback
+        log_entry = log_generation_feedback(
+            params=params,
+            feedback=feedback,
+            task_id=task_id,
+            output_files=output_files,
+            user_notes=user_notes
+        )
+
+        # Get current stats
+        stats = get_feedback_stats()
+
+        return {
+            "success": True,
+            "message": f"Feedback '{feedback}' logged successfully",
+            "stats": stats,
+            "log_entry_timestamp": log_entry["timestamp"]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error logging feedback: {e}")
+        raise HTTPException(500, f"Failed to log feedback: {str(e)}")
+
+@app.get("/api/generation-feedback/stats")
+async def get_generation_feedback_stats():
+    """Get statistics about logged generation feedback"""
+    try:
+        stats = get_feedback_stats()
+        return stats
+    except Exception as e:
+        print(f"❌ Error getting feedback stats: {e}")
+        raise HTTPException(500, f"Failed to get stats: {str(e)}")
+
+@app.get("/api/generation-feedback/top-liked")
+async def get_top_liked_generations(limit: int = 10):
+    """Get most recent liked generation parameters"""
+    try:
+        top_liked = get_top_liked_params(limit=limit)
+        return {
+            "count": len(top_liked),
+            "liked_generations": top_liked
+        }
+    except Exception as e:
+        print(f"❌ Error getting top liked params: {e}")
+        raise HTTPException(500, f"Failed to get top liked: {str(e)}")
+
+@app.get("/api/generation-feedback/analysis")
+async def get_parameter_analysis():
+    """Analyze which parameter values correlate with likes vs dislikes"""
+    try:
+        analysis = analyze_parameter_correlations()
+        return analysis
+    except Exception as e:
+        print(f"❌ Error analyzing parameters: {e}")
+        raise HTTPException(500, f"Failed to analyze: {str(e)}")
