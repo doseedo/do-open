@@ -56,7 +56,7 @@ class CPUDiscoveryPipeline:
         max_candidates: int = 100
     ) -> List[Dict]:
         """
-        Test pairwise compositions in parallel across all CPU cores.
+        Test pairwise compositions in parallel using sparse coding MDL.
 
         Args:
             corpus: (B, T, F) numpy array - MIDI corpus
@@ -66,8 +66,11 @@ class CPUDiscoveryPipeline:
         Returns:
             best_candidates: List of promising new transforms
         """
+        from core.cpu_sparse_coding import build_transform_dictionary
+        from core.greedy_encoder import GreedyEncoder
+
         print(f"\n{'='*70}")
-        print("TESTING COMPOSITIONS (CPU PARALLEL)")
+        print("TESTING COMPOSITIONS (CPU PARALLEL + GREEDY MDL)")
         print(f"{'='*70}")
 
         M = len(existing_transforms)
@@ -75,6 +78,35 @@ class CPUDiscoveryPipeline:
 
         print(f"Testing {total_compositions:,} pairwise compositions...")
         print(f"Using {self.n_cores} CPU cores in parallel")
+
+        # Build transform dictionary
+        print("Building transform dictionary...")
+        transforms_dict = build_transform_dictionary(
+            existing_transforms,
+            corpus.shape,
+            _get_transform_lib()
+        )
+        print(f"  Dictionary shape: {transforms_dict.shape}")
+
+        # Compute baseline sparse encoding using GreedyEncoder
+        print("Computing baseline encoding (Greedy with composition bonus)...")
+        from core.greedy_encoder import GreedyEncoder
+        encoder = GreedyEncoder(
+            max_atoms=5,
+            min_improvement=0.0001,
+            composition_bonus=0.0  # No bonus for baseline (only primitives)
+        )
+        baseline_encodings, baseline_metrics = encoder.encode_batch(
+            corpus,
+            transforms_dict,
+            verbose=True,
+            transform_metadata=existing_transforms
+        )
+
+        baseline_reconstruction = np.einsum('bm,mtf->btf', baseline_encodings, transforms_dict)
+        baseline_error = np.mean((corpus - baseline_reconstruction) ** 2)
+        print(f"  Baseline reconstruction error (MSE): {baseline_error:.8f}")
+        print(f"  Baseline sparsity: {baseline_metrics['sparsity_mean']:.1f} transforms/piece")
 
         # Generate all pairwise compositions
         compositions = []
@@ -90,18 +122,14 @@ class CPUDiscoveryPipeline:
                 }
                 compositions.append(comp)
 
-        # Compute baseline error
-        print("Computing baseline reconstruction error...")
-        baseline_error = self._compute_baseline_error(corpus)
-
         # Test all compositions in parallel
         start_time = time.time()
 
         print(f"Distributing {len(compositions)} compositions across {self.n_cores} cores...")
 
-        # Initialize workers with corpus (happens ONCE per worker, not per composition!)
+        # Initialize workers with baseline encodings and transforms dictionary
         with Pool(processes=self.n_cores, initializer=_init_worker,
-                  initargs=(corpus, baseline_error)) as pool:
+                  initargs=(corpus, baseline_encodings, transforms_dict, existing_transforms)) as pool:
             results = pool.map(_test_single_composition, compositions, chunksize=2)
 
         elapsed = time.time() - start_time
@@ -136,12 +164,6 @@ class CPUDiscoveryPipeline:
 
         return candidates[:max_candidates]
 
-    def _compute_baseline_error(self, corpus: np.ndarray) -> float:
-        """Compute baseline reconstruction error (identity transform)."""
-        # For initial iteration, baseline is just the corpus variance
-        baseline = np.mean(corpus ** 2)
-        print(f"Baseline error (MSE): {baseline:.8f}")
-        return baseline
 
     def discovery_iteration_cpu(
         self,
@@ -251,13 +273,14 @@ class CPUDiscoveryPipeline:
             # Add new transforms
             all_transforms.extend(iter_results['new_transforms'])
 
-            # Record history
+            # Record history with discovered compositions for dependency graph analysis
             iteration_history.append({
                 'iteration': iteration + 1,
                 'quality': iter_results['quality'],
                 'new_transforms': len(iter_results['new_transforms']),
                 'total_transforms': len(all_transforms),
-                'time': iter_results['time']
+                'time': iter_results['time'],
+                'discovered_compositions': iter_results['new_transforms']  # Track which compositions discovered when
             })
 
             print(f"\nIteration {iteration + 1} summary:")
@@ -284,55 +307,147 @@ class CPUDiscoveryPipeline:
         }
 
 
+# ============================================================================
+# Worker Functions
+# ============================================================================
+
+def _get_transform_lib():
+    """Helper to get transform library instance."""
+    from core.numpy_transforms import NumpyTransformLibrary
+    return NumpyTransformLibrary()
+
+
 # Global worker state (initialized once per process)
 _worker_corpus = None
-_worker_baseline_error = None
+_worker_baseline_encodings = None
+_worker_transforms_dict = None
+_worker_existing_transforms = None
 _worker_lib = None
 
 
-def _init_worker(corpus: np.ndarray, baseline_error: float):
+def _init_worker(corpus: np.ndarray, baseline_encodings: np.ndarray,
+                 transforms_dict: np.ndarray, existing_transforms: list):
     """Initialize worker process with shared data (called once per worker)."""
-    global _worker_corpus, _worker_baseline_error, _worker_lib
+    global _worker_corpus, _worker_baseline_encodings, _worker_transforms_dict
+    global _worker_existing_transforms, _worker_lib
     from core.numpy_transforms import NumpyTransformLibrary
 
     _worker_corpus = corpus
-    _worker_baseline_error = baseline_error
+    _worker_baseline_encodings = baseline_encodings
+    _worker_transforms_dict = transforms_dict
+    _worker_existing_transforms = existing_transforms
     _worker_lib = NumpyTransformLibrary()
 
 
 def _test_single_composition(composition: Dict) -> Tuple[int, float]:
     """
-    Test a single composition using global worker state (NO corpus copying!).
+    Test a single composition using CONSTRAINED re-encoding approach.
+
+    Key insight: Compositions should REPLACE their component primitives, not just be added.
+    This tests if using the composition reduces total sparsity when encoding from scratch.
+
+    Algorithm:
+    1. Baseline: encode corpus with primitives only → measure sparsity
+    2. Candidate: encode corpus with primitives + composition → measure sparsity
+    3. Check if composition was actually used AND if total sparsity decreased
 
     Args:
         composition: Composition dict with 'transforms' and 'idx'
 
     Returns:
-        (comp_idx, improvement): Index and improvement score
+        (comp_idx, improvement): Index and sparsity reduction across corpus
     """
     import time
+
     start = time.time()
 
     try:
-        # Use global corpus (no copy needed!)
-        result = _worker_corpus.copy()
+        M, T, F = _worker_transforms_dict.shape
 
-        # Apply transforms
+        # Create new transform by composing existing ones
         t1 = time.time()
-        for transform in composition['transforms']:
-            transform_name = transform['name']
-            amount = transform['amount']
-            result = _worker_lib.apply_transform(result, transform_name, amount)
+        identity = np.zeros((1, T, F))
+        identity[0, 0, 60] = 1.0  # Single note
 
-        # Compute error
+        composed_transform = identity.copy()
+        for transform in composition['transforms']:
+            composed_transform = _worker_lib.apply_transform(
+                composed_transform,
+                transform['name'],
+                transform['amount']
+            )
+
+        # Build expanded dictionary: (M+1, T, F)
+        expanded_dict = np.concatenate([
+            _worker_transforms_dict,
+            composed_transform
+        ], axis=0)
+
+        # Encode with expanded dictionary (composition available)
         t2 = time.time()
-        error = np.mean((_worker_corpus - result) ** 2)
-        improvement = _worker_baseline_error - error
+        from core.greedy_encoder import GreedyEncoder
+        encoder = GreedyEncoder(
+            max_atoms=5,
+            min_improvement=0.0001,
+            composition_bonus=0.2  # 20% bonus for compositions
+        )
+
+        # Build transform metadata for composition bonus
+        transform_metadata = list(_worker_existing_transforms) + [{
+            'name': composition['name'],
+            'transforms': composition['transforms']
+        }]
+
+        new_encodings, _ = encoder.encode_batch(
+            _worker_corpus,
+            expanded_dict,
+            verbose=False,
+            transform_metadata=transform_metadata
+        )
 
         t3 = time.time()
-        print(f"[PID {os.getpid()}] {composition['name']}: transform={t2-t1:.2f}s, error={t3-t2:.2f}s, total={t3-start:.2f}s, imp={improvement:.6f}", flush=True)
 
-        return composition['idx'], improvement
+        # Measure how many pieces used the composition and by how much
+        composition_idx = M  # Last index in expanded dict
+        composition_usage = np.abs(new_encodings[:, composition_idx]) > 1e-6
+        pieces_using_composition = np.sum(composition_usage)
+
+        # Compute sparsity for pieces that used the composition
+        if pieces_using_composition == 0:
+            # Composition was never selected - no improvement
+            print(f"[PID {os.getpid()}] {composition['name']}: UNUSED (compose={t2-t1:.2f}s, encode={t3-t2:.2f}s)", flush=True)
+            return composition['idx'], 0.0
+
+        # Compare sparsity for pieces that used composition
+        baseline_sparsity = np.sum(np.abs(_worker_baseline_encodings) > 1e-6, axis=1)
+        new_sparsity = np.sum(np.abs(new_encodings) > 1e-6, axis=1)
+
+        # Total sparsity reduction across corpus
+        sparsity_delta = baseline_sparsity - new_sparsity
+        total_improvement = np.sum(sparsity_delta[composition_usage])
+        avg_reduction_per_piece = total_improvement / pieces_using_composition
+
+        # Also check reconstruction quality didn't degrade significantly
+        baseline_reconstruction = np.einsum('bm,mtf->btf', _worker_baseline_encodings, _worker_transforms_dict)
+        baseline_error = np.mean(((_worker_corpus - baseline_reconstruction) ** 2)[composition_usage])
+
+        new_reconstruction = np.einsum('bm,mtf->btf', new_encodings, expanded_dict)
+        new_error = np.mean(((_worker_corpus - new_reconstruction) ** 2)[composition_usage])
+
+        error_increase = new_error - baseline_error
+
+        # Penalize if error increased significantly
+        if error_increase > 0.001:
+            total_improvement *= 0.5  # 50% penalty for quality degradation
+
+        t4 = time.time()
+        print(f"[PID {os.getpid()}] {composition['name']}: "
+              f"used_by={pieces_using_composition}/{len(_worker_corpus)}, "
+              f"spar_reduction={total_improvement:.2f} (avg={avg_reduction_per_piece:.3f}/piece), "
+              f"error_Δ={error_increase:.6f}, "
+              f"time={t4-start:.2f}s", flush=True)
+
+        return composition['idx'], total_improvement
 
     except Exception as e:
         print(f"Error testing {composition['name']}: {str(e)[:80]}", flush=True)

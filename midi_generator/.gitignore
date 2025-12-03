@@ -1,0 +1,42 @@
+# Large binary files
+*.npz
+*.pt
+*.mid
+*.wav
+*.mp3
+*.npy
+
+# Large data files  
+*.jsonl
+checkpoint_*.json
+*_results.json
+labeled_dataset.json
+
+# Generated outputs
+generated_*.txt
+corpus_tokens*.jsonl
+vocab*.json
+dag_*.json
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Results directories (but not test scripts)
+factored_v[0-9]*/
+vocab_first_v[0-9]*/
+test_[0-9]*/
+test_*_files*/
+test_*_results/
+discovery_results/
+full_corpus_discovery_results/
+checkpoints/
+
+# IDE
+.vscode/
+.idea/
+.claude/

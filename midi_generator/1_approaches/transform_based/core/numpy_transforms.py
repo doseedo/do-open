@@ -6,7 +6,7 @@ instead of PyTorch for better multiprocessing compatibility.
 """
 
 import numpy as np
-from typing import Tuple
+from typing import Tuple, List
 
 
 class NumpyTransformLibrary:
@@ -42,6 +42,14 @@ class NumpyTransformLibrary:
             return self.quantize_rhythm(batch, resolution=16)
         elif transform_name == 'quantize_8th':
             return self.quantize_rhythm(batch, resolution=8)
+        elif transform_name == 'concatenate':
+            # Legacy: homogeneous repetition (special case of concat_seq)
+            return self.concat_seq_homogeneous(batch, int(amount))
+        elif transform_name == 'concat_seq':
+            # Universal concatenation - amount encodes the pattern
+            # For homogeneous: amount = n (repeat n times)
+            # For heterogeneous: amount encodes split pattern (handled by caller)
+            return self.concat_seq_homogeneous(batch, int(amount))
         elif transform_name == 'track_derive':
             # Extract parameters from amount if needed
             return batch  # Placeholder
@@ -132,6 +140,103 @@ class NumpyTransformLibrary:
             result[:, steps:, :] = 0
 
         return result
+
+    # =========================================================================
+    # ConcatSeq: Universal concatenation primitive
+    # =========================================================================
+    #
+    # ConcatSeq is the ONLY atomic concatenation primitive. It handles both:
+    #   - Homogeneous: ConcatSeq([x, x, x]) - repetition (source repeated n times)
+    #   - Heterogeneous: ConcatSeq([x, y, z]) - composition (different sources)
+    #
+    # The old 'concatenate' is deprecated - it's just ConcatSeq with identical sources.
+    # =========================================================================
+
+    @staticmethod
+    def concat_seq_homogeneous(batch: np.ndarray, n_copies: int) -> np.ndarray:
+        """
+        ConcatSeq forward for homogeneous case: repeat source n times.
+
+        This is the fast path for patterns like [x, x, x, x].
+
+        Forward: source (B, T, F) -> target (B, T*n, F)
+
+        Args:
+            batch: (B, T, F) source tensor
+            n_copies: number of times to repeat
+
+        Returns:
+            (B, T*n_copies, F) concatenated tensor
+        """
+        return np.tile(batch, (1, n_copies, 1))
+
+    @staticmethod
+    def concat_seq_homogeneous_inverse(batch: np.ndarray, n_copies: int) -> np.ndarray:
+        """
+        ConcatSeq inverse for homogeneous case: extract first fragment.
+
+        Given target of length T (assumed to be T = source_len * n_copies),
+        return estimated source as first 1/n of target.
+
+        Args:
+            batch: (B, T, F) target tensor
+            n_copies: number of repetitions to undo
+
+        Returns:
+            (B, T//n_copies, F) estimated source
+        """
+        T = batch.shape[1]
+        fragment_len = T // n_copies
+        return batch[:, :fragment_len, :].copy()
+
+    @staticmethod
+    def concat_seq_heterogeneous(sources: List[np.ndarray]) -> np.ndarray:
+        """
+        ConcatSeq forward for heterogeneous case: concatenate different sources.
+
+        This handles patterns like [x, y, z] where sources are different.
+
+        Forward: [source1 (B, T1, F), source2 (B, T2, F), ...] -> target (B, T1+T2+..., F)
+
+        Args:
+            sources: List of (B, T_i, F) source tensors
+
+        Returns:
+            (B, sum(T_i), F) concatenated tensor
+        """
+        return np.concatenate(sources, axis=1)
+
+    @staticmethod
+    def concat_seq_heterogeneous_inverse(batch: np.ndarray, component_lengths: List[int]) -> List[np.ndarray]:
+        """
+        ConcatSeq inverse for heterogeneous case: split into components.
+
+        Given target and component lengths, split target into fragments.
+
+        Args:
+            batch: (B, T, F) target tensor where T = sum(component_lengths)
+            component_lengths: List of lengths for each component
+
+        Returns:
+            List of (B, T_i, F) component tensors
+        """
+        components = []
+        start = 0
+        for length in component_lengths:
+            components.append(batch[:, start:start+length, :].copy())
+            start += length
+        return components
+
+    # Legacy aliases for backwards compatibility
+    @staticmethod
+    def concatenate(batch: np.ndarray, n_copies: int) -> np.ndarray:
+        """DEPRECATED: Use concat_seq_homogeneous instead."""
+        return NumpyTransformLibrary.concat_seq_homogeneous(batch, n_copies)
+
+    @staticmethod
+    def concatenate_inverse(batch: np.ndarray, n_copies: int) -> np.ndarray:
+        """DEPRECATED: Use concat_seq_homogeneous_inverse instead."""
+        return NumpyTransformLibrary.concat_seq_homogeneous_inverse(batch, n_copies)
 
     @staticmethod
     def retrograde(batch: np.ndarray) -> np.ndarray:
