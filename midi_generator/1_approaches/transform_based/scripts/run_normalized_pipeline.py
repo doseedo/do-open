@@ -77,6 +77,11 @@ from discovery.interval_magnitude import (
     run_interval_magnitude_discovery,
 )
 
+# Feature Importance: MDL-based conditioning variable discovery
+from discovery.feature_importance import (
+    run_feature_importance_discovery,
+)
+
 
 def convert_normalized_to_factored_patterns(
     normalized_rules: dict,
@@ -150,6 +155,7 @@ def save_normalized_checkpoint(
     meta_patterns: dict = None,
     multi_factor_discovery: dict = None,
     track_derive_discovery: dict = None,
+    feature_importance_discovery: dict = None,
     verbose: bool = True
 ):
     """Save checkpoint with full normalized pattern data.
@@ -258,6 +264,24 @@ def save_normalized_checkpoint(
 
         if verbose:
             print(f"  Saved {track_derive_discovery.get('n_derives', 0)} TrackDerive relations")
+
+    # Add feature importance discovery (MDL-based feature selection)
+    if feature_importance_discovery and feature_importance_discovery.get('useful_features'):
+        fi_data = convert_numpy({
+            'useful_features': feature_importance_discovery.get('useful_features', []),
+            'feature_gains': feature_importance_discovery.get('feature_gains', {}),
+            'feature_clusters': feature_importance_discovery.get('feature_clusters', {}),
+            'feature_shifts': feature_importance_discovery.get('feature_shifts', {}),
+        })
+        feature_importance_path = f'{base_path}_feature_importance.json'
+        with open(feature_importance_path, 'w') as f:
+            json.dump(fi_data, f)
+        data['feature_importance_json_file'] = np.array([os.path.basename(feature_importance_path)])
+        data['n_useful_features'] = np.array([len(feature_importance_discovery.get('useful_features', []))])
+
+        if verbose:
+            useful = feature_importance_discovery.get('useful_features', [])
+            print(f"  Saved {len(useful)} useful features: {', '.join(useful)}")
 
     # Add meta patterns if available (can also be large)
     if meta_patterns:
@@ -1148,6 +1172,90 @@ def run_normalized_pipeline(
     stats['phase5d_time'] = time.time() - phase_start
 
     # =========================================================================
+    # PHASE 5e: Feature Importance Discovery (MDL-Based)
+    # =========================================================================
+    # This discovers WHICH features help predict transforms, without prescribing
+    # what those features mean. If "keys" are real, pitch_offset_relative will
+    # emerge as useful. If music is atonal, it will be ignored.
+    phase_start = time.time()
+    feature_importance_discovery = {'useful_features': []}
+
+    if len(canonicals) > 20 and stats.get('n_transform_vocabulary', 0) > 0:
+        if verbose:
+            print(f"\n[Phase 5e] Feature Importance Discovery (MDL-Based)...", flush=True)
+
+        try:
+            # Need transform lookup for this phase
+            # Build it from the transform discovery if available
+            if transform_discovery and 'lookup' in transform_discovery:
+                transform_lookup = transform_discovery['lookup']
+            else:
+                # Build a simple lookup from patterns
+                from scripts.level3_meta_patterns import build_transform_lookup_gpu
+                patterns_for_fi = [{
+                    'pitch_classes': p.pitch_classes,
+                    'occurrences': [{'piece_id': o.piece_id, 'track_id': o.track_id,
+                                     'onset_time': o.onset_time, 'pitch_offset': getattr(o, 'pitch_offset', 0)}
+                                    for o in p.occurrences] if hasattr(p, 'occurrences') else [],
+                } for p in canonicals]
+
+                transform_vocab = transform_discovery.get('vocabulary', []) if transform_discovery else []
+                if transform_vocab:
+                    transform_lookup = build_transform_lookup_gpu(
+                        patterns_for_fi, transform_vocab, device='cuda', verbose=False
+                    )
+                else:
+                    transform_lookup = None
+
+            if transform_lookup is not None:
+                # Prepare patterns with occurrences
+                patterns_for_fi = [{
+                    'pitch_classes': p.pitch_classes,
+                    'occurrences': [{'piece_id': o.piece_id, 'track_id': o.track_id,
+                                     'onset_time': o.onset_time,
+                                     'pitch_offset': getattr(o, 'pitch_offset', 0),
+                                     'instrument': getattr(o, 'instrument', o.track_id)}
+                                    for o in p.occurrences] if hasattr(p, 'occurrences') else [],
+                } for p in canonicals]
+
+                transform_names = transform_discovery.get('vocabulary', []) if transform_discovery else None
+
+                feature_importance_discovery = run_feature_importance_discovery(
+                    patterns_for_fi,
+                    transform_lookup,
+                    transform_names=transform_names,
+                    min_gain_bits=50.0,
+                    device='cuda',
+                    verbose=verbose
+                )
+
+                stats['useful_features'] = feature_importance_discovery.get('useful_features', [])
+                stats['n_useful_features'] = len(stats['useful_features'])
+
+                # Check if pitch_offset_relative emerged as useful (implies "keys are real")
+                if 'pitch_offset_relative' in stats['useful_features']:
+                    stats['keys_discovered'] = True
+                    if verbose:
+                        print(f"  → pitch_offset_relative is useful: 'scale degrees' emerged!", flush=True)
+                else:
+                    stats['keys_discovered'] = False
+
+        except Exception as e:
+            if verbose:
+                print(f"  Feature importance discovery failed: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            stats['useful_features'] = []
+            stats['n_useful_features'] = 0
+    else:
+        if verbose:
+            print(f"\n[Phase 5e] Skipping feature importance discovery (need >20 patterns and transforms)", flush=True)
+        stats['useful_features'] = []
+        stats['n_useful_features'] = 0
+
+    stats['phase5e_time'] = time.time() - phase_start
+
+    # =========================================================================
     # PHASE 6: Level 3 Meta-Pattern Discovery
     # =========================================================================
     phase_start = time.time()
@@ -1278,6 +1386,7 @@ def run_normalized_pipeline(
         meta_patterns=meta_patterns,
         multi_factor_discovery=multi_factor_discovery,
         track_derive_discovery=track_derive_discovery,
+        feature_importance_discovery=feature_importance_discovery,
         verbose=verbose
     )
 
@@ -1316,6 +1425,13 @@ def run_normalized_pipeline(
             print(f"    Magnitude compression: {mag:.2f}x")
             if pref == 'magnitude':
                 print(f"    → Corpus has diatonic structure (b3/3 treated as '3rds')")
+        if stats.get('useful_features'):
+            useful = stats['useful_features']
+            print(f"  Useful features (MDL): {', '.join(useful)}")
+            if 'pitch_offset_relative' in useful:
+                print(f"    → 'Keys' emerged as useful (pitch relative to piece mode)")
+            if 'pitch_offset_delta' in useful:
+                print(f"    → Melodic motion patterns emerged as useful")
         if meta_patterns.get('n_orchestration_rules'):
             print(f"  Orchestration rules (summary): {meta_patterns['n_orchestration_rules']}")
         print(f"  Total time: {stats['total_time']:.1f}s")
