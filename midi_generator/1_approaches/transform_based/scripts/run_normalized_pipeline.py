@@ -72,6 +72,11 @@ from discovery.track_derive import (
     run_track_derive_discovery,
 )
 
+# Interval Magnitude: Dual chromatic/diatonic transform representation
+from discovery.interval_magnitude import (
+    run_interval_magnitude_discovery,
+)
+
 
 def convert_normalized_to_factored_patterns(
     normalized_rules: dict,
@@ -1099,6 +1104,50 @@ def run_normalized_pipeline(
     stats['phase5c_time'] = time.time() - phase_start
 
     # =========================================================================
+    # PHASE 5d: Interval Magnitude Discovery (Diatonic vs Chromatic)
+    # =========================================================================
+    phase_start = time.time()
+    interval_magnitude_discovery = {'preferred_representation': 'chromatic'}
+
+    if len(canonicals) > 10:
+        if verbose:
+            print(f"\n[Phase 5d] Interval Magnitude Discovery (Diatonic vs Chromatic)...", flush=True)
+
+        try:
+            # Reuse patterns_for_td if available, else rebuild
+            if 'patterns_for_td' not in dir():
+                patterns_for_im = [{
+                    'pitch_classes': p.pitch_classes,
+                    'occurrences': p.occurrences if hasattr(p, 'occurrences') else [],
+                } for p in canonicals]
+            else:
+                patterns_for_im = patterns_for_td
+
+            interval_magnitude_discovery = run_interval_magnitude_discovery(
+                patterns_for_im,
+                device='cuda',
+                verbose=verbose
+            )
+
+            stats['preferred_interval_repr'] = interval_magnitude_discovery.get('preferred_representation', 'chromatic')
+            comp = interval_magnitude_discovery.get('compression_comparison', {})
+            stats['chromatic_compression'] = comp.get('chromatic', {}).get('compression', 0.0)
+            stats['magnitude_compression'] = comp.get('magnitude', {}).get('compression', 0.0)
+
+        except Exception as e:
+            if verbose:
+                print(f"  Interval magnitude discovery failed: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            stats['preferred_interval_repr'] = 'chromatic'
+    else:
+        if verbose:
+            print(f"\n[Phase 5d] Skipping interval magnitude discovery (need >10 patterns)", flush=True)
+        stats['preferred_interval_repr'] = 'chromatic'
+
+    stats['phase5d_time'] = time.time() - phase_start
+
+    # =========================================================================
     # PHASE 6: Level 3 Meta-Pattern Discovery
     # =========================================================================
     phase_start = time.time()
@@ -1258,6 +1307,15 @@ def run_normalized_pipeline(
                 td_transforms = stats['track_derive_transforms']
                 parts = [f"{k}:{v}" for k, v in sorted(td_transforms.items(), key=lambda x: -x[1])[:4]]
                 print(f"    By transform: {', '.join(parts)}")
+        if stats.get('preferred_interval_repr'):
+            pref = stats['preferred_interval_repr']
+            chrom = stats.get('chromatic_compression', 0)
+            mag = stats.get('magnitude_compression', 0)
+            print(f"  Interval representation: {pref}")
+            print(f"    Chromatic compression: {chrom:.2f}x")
+            print(f"    Magnitude compression: {mag:.2f}x")
+            if pref == 'magnitude':
+                print(f"    → Corpus has diatonic structure (b3/3 treated as '3rds')")
         if meta_patterns.get('n_orchestration_rules'):
             print(f"  Orchestration rules (summary): {meta_patterns['n_orchestration_rules']}")
         print(f"  Total time: {stats['total_time']:.1f}s")

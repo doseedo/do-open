@@ -37,6 +37,83 @@ class PrimitiveType(Enum):
     RETROGRADE = "retrograde"    # Involution (self-inverse)
 
 
+# =============================================================================
+# Interval Magnitude: Diatonic-Agnostic Interval Grouping
+# =============================================================================
+# This maps semitone distances to "magnitude" - a rough measure of interval size
+# that groups minor/major variants together WITHOUT prescribing music theory.
+#
+# The key insight: b3 (3 semitones) and 3 (4 semitones) are both "3rds"
+# This is a MATHEMATICAL grouping, not a theoretical prescription.
+# The system can DISCOVER when this grouping is useful for compression.
+#
+# Semitones -> Magnitude mapping (purely structural):
+#   0 -> 0 (unison)
+#   1,2 -> 1 (seconds - small steps)
+#   3,4 -> 2 (thirds - medium steps)
+#   5 -> 3 (fourth)
+#   6 -> 3 (tritone - groups with 4th/5th as "middle" intervals)
+#   7 -> 4 (fifth)
+#   8,9 -> 5 (sixths)
+#   10,11 -> 6 (sevenths)
+
+# Semitone to magnitude lookup (index = semitones mod 12)
+SEMITONE_TO_MAGNITUDE = [0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6]
+
+# Magnitude names for readability (not theory - just labels)
+MAGNITUDE_NAMES = ['U', '2', '3', '4', '5', '6', '7']  # Unison, 2nd, 3rd, etc.
+
+
+def semitones_to_magnitude(semitones: int) -> int:
+    """
+    Convert semitone distance to interval magnitude.
+
+    This is a pure mathematical binning that groups:
+    - Minor/major 2nds (1-2 semitones) -> magnitude 1
+    - Minor/major 3rds (3-4 semitones) -> magnitude 2
+    - Perfect 4th / tritone (5-6 semitones) -> magnitude 3
+    - Perfect 5th (7 semitones) -> magnitude 4
+    - Minor/major 6ths (8-9 semitones) -> magnitude 5
+    - Minor/major 7ths (10-11 semitones) -> magnitude 6
+
+    This allows the system to DISCOVER diatonic relationships without
+    prescribing what they should be.
+    """
+    return SEMITONE_TO_MAGNITUDE[semitones % 12]
+
+
+def magnitude_to_name(magnitude: int) -> str:
+    """Get readable name for magnitude."""
+    if 0 <= magnitude < len(MAGNITUDE_NAMES):
+        return MAGNITUDE_NAMES[magnitude]
+    return f"M{magnitude}"
+
+
+class IntervalMagnitude(Enum):
+    """
+    Interval magnitude classes - groups intervals by approximate size.
+
+    This is NOT music theory - it's a structural grouping that allows
+    the system to discover when b3/3, b6/6, b7/7 behave similarly.
+    """
+    UNISON = 0      # 0 semitones
+    SECOND = 1      # 1-2 semitones (minor/major 2nd)
+    THIRD = 2       # 3-4 semitones (minor/major 3rd)
+    FOURTH = 3      # 5-6 semitones (perfect 4th, tritone)
+    FIFTH = 4       # 7 semitones (perfect 5th)
+    SIXTH = 5       # 8-9 semitones (minor/major 6th)
+    SEVENTH = 6     # 10-11 semitones (minor/major 7th)
+
+    @classmethod
+    def from_semitones(cls, semitones: int) -> 'IntervalMagnitude':
+        """Convert semitone distance to magnitude."""
+        mag = semitones_to_magnitude(semitones)
+        return cls(mag)
+
+    def __str__(self):
+        return MAGNITUDE_NAMES[self.value]
+
+
 @dataclass(frozen=True)
 class Primitive:
     """An atomic transform primitive."""
