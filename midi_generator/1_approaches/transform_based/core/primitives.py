@@ -52,16 +52,16 @@ class PrimitiveType(Enum):
 #   1,2 -> 1 (seconds - small steps)
 #   3,4 -> 2 (thirds - medium steps)
 #   5 -> 3 (fourth)
-#   6 -> 3 (tritone - groups with 4th/5th as "middle" intervals)
-#   7 -> 4 (fifth)
-#   8,9 -> 5 (sixths)
-#   10,11 -> 6 (sevenths)
+#   6 -> 4 (tritone - UNIQUE: inverts to itself, distinct function)
+#   7 -> 5 (fifth)
+#   8,9 -> 6 (sixths)
+#   10,11 -> 7 (sevenths)
 
 # Semitone to magnitude lookup (index = semitones mod 12)
-SEMITONE_TO_MAGNITUDE = [0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6]
+SEMITONE_TO_MAGNITUDE = [0, 1, 1, 2, 2, 3, 4, 5, 6, 6, 7, 7]
 
 # Magnitude names for readability (not theory - just labels)
-MAGNITUDE_NAMES = ['U', '2', '3', '4', '5', '6', '7']  # Unison, 2nd, 3rd, etc.
+MAGNITUDE_NAMES = ['U', '2', '3', '4', 'TT', '5', '6', '7']  # TT = tritone
 
 
 def semitones_to_magnitude(semitones: int) -> int:
@@ -71,10 +71,11 @@ def semitones_to_magnitude(semitones: int) -> int:
     This is a pure mathematical binning that groups:
     - Minor/major 2nds (1-2 semitones) -> magnitude 1
     - Minor/major 3rds (3-4 semitones) -> magnitude 2
-    - Perfect 4th / tritone (5-6 semitones) -> magnitude 3
-    - Perfect 5th (7 semitones) -> magnitude 4
-    - Minor/major 6ths (8-9 semitones) -> magnitude 5
-    - Minor/major 7ths (10-11 semitones) -> magnitude 6
+    - Perfect 4th (5 semitones) -> magnitude 3
+    - Tritone (6 semitones) -> magnitude 4 (unique - inverts to itself)
+    - Perfect 5th (7 semitones) -> magnitude 5
+    - Minor/major 6ths (8-9 semitones) -> magnitude 6
+    - Minor/major 7ths (10-11 semitones) -> magnitude 7
 
     This allows the system to DISCOVER diatonic relationships without
     prescribing what they should be.
@@ -95,14 +96,18 @@ class IntervalMagnitude(Enum):
 
     This is NOT music theory - it's a structural grouping that allows
     the system to discover when b3/3, b6/6, b7/7 behave similarly.
+
+    The tritone gets its own class because it's mathematically unique:
+    it's the only interval that inverts to itself (12-6=6).
     """
     UNISON = 0      # 0 semitones
     SECOND = 1      # 1-2 semitones (minor/major 2nd)
     THIRD = 2       # 3-4 semitones (minor/major 3rd)
-    FOURTH = 3      # 5-6 semitones (perfect 4th, tritone)
-    FIFTH = 4       # 7 semitones (perfect 5th)
-    SIXTH = 5       # 8-9 semitones (minor/major 6th)
-    SEVENTH = 6     # 10-11 semitones (minor/major 7th)
+    FOURTH = 3      # 5 semitones (perfect 4th)
+    TRITONE = 4     # 6 semitones (unique - self-inverting)
+    FIFTH = 5       # 7 semitones (perfect 5th)
+    SIXTH = 6       # 8-9 semitones (minor/major 6th)
+    SEVENTH = 7     # 10-11 semitones (minor/major 7th)
 
     @classmethod
     def from_semitones(cls, semitones: int) -> 'IntervalMagnitude':
