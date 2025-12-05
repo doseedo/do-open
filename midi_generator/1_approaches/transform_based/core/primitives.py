@@ -484,7 +484,8 @@ def find_transforms_batch_gpu(
     candidates: List[CompoundTransform] = None,
     table: 'torch.Tensor' = None,
     retrograde_mask: 'torch.Tensor' = None,
-    device: str = 'cuda'
+    device: str = 'cuda',
+    check_pure_retrograde: bool = True
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Fully vectorized GPU transform matching for A100.
@@ -494,6 +495,7 @@ def find_transforms_batch_gpu(
     2. Single gather operation - O(1) per element, fully parallel
     3. No tensor cloning - direct table lookup
     4. Boolean exact match - faster than float comparison
+    5. NEW: Check pure retrograde FIRST (target == reverse(source))
 
     Args:
         sources: (B, L) source sequences
@@ -502,9 +504,11 @@ def find_transforms_batch_gpu(
         table: Precomputed (C, 12) lookup table (reuse across calls!)
         retrograde_mask: Precomputed boolean mask for retrograde transforms
         device: PyTorch device ('cuda' or 'cpu')
+        check_pure_retrograde: If True, check for pure R before compound transforms
 
     Returns:
         (best_indices, best_errors): Arrays of shape (B,)
+        For pure retrograde matches, returns index of pure R in candidates (or -2 special code)
     """
     try:
         import torch
@@ -535,38 +539,73 @@ def find_transforms_batch_gpu(
     sources_t = torch.tensor(sources, dtype=torch.long, device=device)
     targets_t = torch.tensor(targets, dtype=torch.long, device=device)
 
-    # Vectorized table lookup: transform ALL candidates simultaneously
-    # table: (C, 12) → expand to (C, 1, 1, 12) for broadcast
-    # sources_t: (B, L) → expand to (C, B, L) as indices
+    # Initialize result arrays
+    best_indices_t = torch.full((B,), -1, dtype=torch.long, device=device)
 
-    sources_expanded = sources_t.unsqueeze(0).expand(C, -1, -1)  # (C, B, L)
+    # =========================================================================
+    # NEW: Check pure retrograde FIRST (target == reverse(source))
+    # This catches R relationships that compound transforms might miss
+    # =========================================================================
+    if check_pure_retrograde and L > 1:
+        sources_reversed = sources_t.flip(dims=[1])  # (B, L)
+        pure_retrograde_matches = (sources_reversed == targets_t).all(dim=1)  # (B,)
 
-    # Use advanced indexing for fully vectorized lookup
-    # table[c, sources_expanded[c, b, l]] for all c, b, l simultaneously
-    all_transformed = table[
-        torch.arange(C, device=device).view(C, 1, 1).expand(C, B, L),
-        sources_expanded
-    ]  # (C, B, L)
+        # Find index of pure R in candidates (single R primitive)
+        pure_r_idx = -1
+        for i, c in enumerate(candidates):
+            if len(c.primitives) == 1 and c.primitives[0].type == PrimitiveType.RETROGRADE:
+                pure_r_idx = i
+                break
 
-    # Apply retrograde where needed - vectorized flip
-    if retrograde_mask.any():
-        # Flip only the retrograde candidates
-        retro_indices = retrograde_mask.nonzero(as_tuple=True)[0]
-        all_transformed[retro_indices] = all_transformed[retro_indices].flip(dims=[2])
+        if pure_r_idx >= 0:
+            # Mark pure retrograde matches
+            best_indices_t[pure_retrograde_matches] = pure_r_idx
+        else:
+            # Use special code -2 for pure retrograde if not in candidates
+            best_indices_t[pure_retrograde_matches] = -2
 
-    # Compare all at once using boolean exact match (faster than float)
-    targets_expanded = targets_t.unsqueeze(0)  # (1, B, L)
-    exact_matches = (all_transformed == targets_expanded).all(dim=2)  # (C, B) boolean
+    # =========================================================================
+    # Standard compound transform matching for remaining pairs
+    # =========================================================================
+    unmatched_mask = best_indices_t < 0  # Pairs not yet matched
 
-    # Find first matching transform per pair
-    any_match = exact_matches.any(dim=0)  # (B,)
+    if unmatched_mask.any():
+        # Vectorized table lookup: transform ALL candidates simultaneously
+        sources_expanded = sources_t.unsqueeze(0).expand(C, -1, -1)  # (C, B, L)
 
-    # argmax on int gives first True index
-    best_indices_t = exact_matches.int().argmax(dim=0)  # (B,)
-    best_indices_t[~any_match] = -1  # Mark no-match
+        # Use advanced indexing for fully vectorized lookup
+        all_transformed = table[
+            torch.arange(C, device=device).view(C, 1, 1).expand(C, B, L),
+            sources_expanded
+        ]  # (C, B, L)
+
+        # Apply retrograde where needed - vectorized flip
+        if retrograde_mask.any():
+            retro_indices = retrograde_mask.nonzero(as_tuple=True)[0]
+            all_transformed[retro_indices] = all_transformed[retro_indices].flip(dims=[2])
+
+        # Compare all at once using boolean exact match
+        targets_expanded = targets_t.unsqueeze(0)  # (1, B, L)
+        exact_matches = (all_transformed == targets_expanded).all(dim=2)  # (C, B) boolean
+
+        # Find first matching transform per pair
+        any_match = exact_matches.any(dim=0)  # (B,)
+
+        # argmax on int gives first True index
+        compound_indices = exact_matches.int().argmax(dim=0)  # (B,)
+
+        # Update only unmatched pairs that found a compound match
+        update_mask = unmatched_mask & any_match
+        best_indices_t[update_mask] = compound_indices[update_mask]
+
+    # Handle -2 (pure retrograde not in candidates) -> convert to -1 for compatibility
+    # But return additional info about pure retrograde
+    pure_retro_count = (best_indices_t == -2).sum().item()
+    best_indices_t[best_indices_t == -2] = -1  # Compatibility with existing code
 
     # Errors: 0 for match, 1 for no match
-    best_errors = (~any_match).float()
+    any_match_final = best_indices_t >= 0
+    best_errors = (~any_match_final).float()
 
     return best_indices_t.cpu().numpy(), best_errors.cpu().numpy()
 
