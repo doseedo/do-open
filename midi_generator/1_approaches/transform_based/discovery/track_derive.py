@@ -98,10 +98,19 @@ def find_vertical_slices_gpu(
     all_occs = []
     for p_idx, p in enumerate(patterns):
         for occ in p.get('occurrences', []):
-            piece_id = occ['piece_id']
-            track_id = int(occ['track_id'])
-            onset = int(occ['onset_time'])
-            pitch_offset = occ.get('pitch_offset', 0)
+            # Handle both dict and PatternOccurrence objects
+            if hasattr(occ, 'piece_id'):
+                # It's a PatternOccurrence object
+                piece_id = occ.piece_id
+                track_id = int(occ.track_id)
+                onset = int(occ.onset_time)
+                pitch_offset = getattr(occ, 'pitch_offset', 0)
+            else:
+                # It's a dict
+                piece_id = occ['piece_id']
+                track_id = int(occ['track_id'])
+                onset = int(occ['onset_time'])
+                pitch_offset = occ.get('pitch_offset', 0)
 
             # Get instrument (GM program)
             if track_instruments:
@@ -480,7 +489,11 @@ def add_derives_to_occurrences(
     occ_index = {}
     for p_idx, p in enumerate(patterns):
         for i, occ in enumerate(p.get('occurrences', [])):
-            key = (occ['piece_id'], occ['track_id'], occ['onset_time'], p_idx)
+            # Handle both dict and PatternOccurrence objects
+            if hasattr(occ, 'piece_id'):
+                key = (occ.piece_id, occ.track_id, occ.onset_time, p_idx)
+            else:
+                key = (occ['piece_id'], occ['track_id'], occ['onset_time'], p_idx)
             occ_index[key] = (p_idx, i)
 
     # Add derived_from to target occurrences
@@ -497,7 +510,7 @@ def add_derives_to_occurrences(
             occ = patterns[p_idx]['occurrences'][occ_idx]
 
             # Add derived_from info
-            occ['derived_from'] = {
+            derived_from = {
                 'source_track': derive.source_track,
                 'source_pattern': derive.source_pattern_id,
                 'transform': str(derive.transform),
@@ -505,6 +518,13 @@ def add_derives_to_occurrences(
                 'rhythm_scale': derive.rhythm_scale,
                 'velocity_scale': derive.velocity_scale,
             }
+
+            # Handle both dict and PatternOccurrence objects
+            if isinstance(occ, dict):
+                occ['derived_from'] = derived_from
+            elif hasattr(occ, '__dict__'):
+                # It's a dataclass or object - set attribute directly
+                object.__setattr__(occ, 'derived_from', derived_from)
 
 
 def run_track_derive_discovery(

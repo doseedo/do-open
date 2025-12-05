@@ -267,9 +267,18 @@ def extract_dual_transform_sequences(
 
     for p_idx, p in enumerate(patterns):
         for occ in p.get('occurrences', []):
-            piece_occurrences[occ['piece_id']].append({
+            # Handle both dict and PatternOccurrence objects
+            if hasattr(occ, 'piece_id'):
+                # It's a PatternOccurrence object
+                piece_id = occ.piece_id
+                onset_time = occ.onset_time
+            else:
+                # It's a dict
+                piece_id = occ['piece_id']
+                onset_time = occ['onset_time']
+            piece_occurrences[piece_id].append({
                 'pattern_idx': p_idx,
-                'onset_time': occ['onset_time'],
+                'onset_time': onset_time,
             })
 
     # Sort each piece's occurrences by time

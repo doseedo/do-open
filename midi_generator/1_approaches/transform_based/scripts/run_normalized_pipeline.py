@@ -1093,11 +1093,12 @@ def run_normalized_pipeline(
                 patterns_for_td.append(p_dict)
 
             # Build track_instruments mapping from all_tracks
+            # Note: all_tracks contains FactoredTrack objects, not dicts
             track_instruments = {}
             for track in all_tracks:
-                piece_id = track.get('piece_id', track.get('source_file', 'unknown'))
-                track_id = track.get('track_id', 0)
-                program = track.get('program', track_id)  # GM program or fallback
+                piece_id = getattr(track, 'piece_id', getattr(track, 'source_file', 'unknown'))
+                track_id = getattr(track, 'track_id', 0)
+                program = getattr(track, 'gm_program', getattr(track, 'program', track_id))
                 track_instruments[(piece_id, track_id)] = program
 
             track_derive_discovery = run_track_derive_discovery(

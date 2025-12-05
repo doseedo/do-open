@@ -15,6 +15,7 @@ A piece is a subgraph with temporal edges forming the timeline.
 """
 
 import json
+import os
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple, Iterator, Any
@@ -917,12 +918,25 @@ def convert_v24_to_genome_graph(checkpoint_path: str, include_cross_track: bool 
         GenomeGraph instance
     """
     data = np.load(checkpoint_path, allow_pickle=True)
+    checkpoint_dir = os.path.dirname(checkpoint_path)
 
     graph = GenomeGraph()
 
-    # Load patterns from grammar_rules_json or patterns_json (v33 format)
+    # Load patterns from various checkpoint formats
     rules = None
-    if 'grammar_rules_json' in data:
+
+    # v4 format: patterns stored in external JSON file
+    if 'patterns_json_file' in data:
+        patterns_file = data['patterns_json_file']
+        if hasattr(patterns_file, '__len__') and len(patterns_file) == 1:
+            patterns_file = patterns_file[0]
+        else:
+            patterns_file = str(patterns_file.item())
+        patterns_path = os.path.join(checkpoint_dir, patterns_file)
+        with open(patterns_path, 'r') as f:
+            rules = json.load(f)
+        print(f"Loaded {len(rules)} patterns from v4 external format")
+    elif 'grammar_rules_json' in data:
         rules_json = data['grammar_rules_json']
         if hasattr(rules_json, '__len__') and len(rules_json) == 1:
             rules = json.loads(str(rules_json[0]))

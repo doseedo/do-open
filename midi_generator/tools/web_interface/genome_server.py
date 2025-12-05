@@ -1381,6 +1381,9 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
     </div>
 
     <script>
+        // Detect API base path - handles both direct access (localhost:8080) and proxied (/genome)
+        const API_BASE = window.location.pathname.includes('/genome') ? '/genome/api' : '/api';
+
         let cy;
         let selectedPattern = null;
         let selectedEdge = null;
@@ -1559,7 +1562,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             document.getElementById('playback-status').textContent = 'Loading...';
 
             try {
-                const resp = await fetch(`/api/playback/${encodeURIComponent(currentPiece)}`);
+                const resp = await fetch(`${API_BASE}/playback/${encodeURIComponent(currentPiece)}`);
                 playbackData = await resp.json();
 
                 if (playbackData.error) {
@@ -1715,7 +1718,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             const newTransform = prompt('Edit transform (e.g., T5, I0, R, τ480):', currentTransform);
             if (!newTransform || newTransform === currentTransform) return;
 
-            const resp = await fetch('/api/edit', {
+            const resp = await fetch(`${API_BASE}/edit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ edge_id: selectedEdge, transform: newTransform })
@@ -1740,7 +1743,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             document.getElementById('save-status').style.color = '#888';
 
             try {
-                const resp = await fetch('/api/save', {
+                const resp = await fetch(`${API_BASE}/save`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({})
@@ -1871,7 +1874,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Load stats
         async function loadStats() {
-            const resp = await fetch('/api/stats');
+            const resp = await fetch(`${API_BASE}/stats`);
             const stats = await resp.json();
             document.getElementById('stat-patterns').textContent = stats.n_patterns.toLocaleString();
             document.getElementById('stat-edges').textContent = stats.n_edges.toLocaleString();
@@ -1881,7 +1884,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Load pieces list
         async function loadPieces() {
-            const resp = await fetch('/api/pieces');
+            const resp = await fetch(`${API_BASE}/pieces`);
             const data = await resp.json();
             const select = document.getElementById('piece-filter');
             data.pieces.forEach(p => {
@@ -1894,7 +1897,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Load graph data
         async function loadGraph(piece = null) {
-            const url = piece ? `/api/cytoscape/${encodeURIComponent(piece)}` : '/api/cytoscape';
+            const url = piece ? `${API_BASE}/cytoscape/${encodeURIComponent(piece)}` : `${API_BASE}/cytoscape`;
             const resp = await fetch(url);
             const data = await resp.json();
 
@@ -1906,7 +1909,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Show pattern detail
         async function showPatternDetail(pid) {
-            const resp = await fetch(`/api/pattern/${pid}`);
+            const resp = await fetch(`${API_BASE}/pattern/${pid}`);
             const pattern = await resp.json();
 
             document.getElementById('detail-id').textContent = `P${pid}`;
@@ -1943,7 +1946,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                     ).join('') + '</optgroup>' : '');
 
             // Load edges
-            const edgeResp = await fetch(`/api/edges/${pid}`);
+            const edgeResp = await fetch(`${API_BASE}/edges/${pid}`);
             const edges = await edgeResp.json();
 
             const edgeDiv = document.getElementById('detail-edges');
@@ -1963,7 +1966,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
             const sourceId = `P${selectedPattern}`;
 
-            const resp = await fetch('/api/swap_pattern', {
+            const resp = await fetch(`${API_BASE}/swap_pattern`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2018,7 +2021,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         // Factor edge
         async function factorEdge() {
             if (!selectedEdge) return;
-            const resp = await fetch(`/api/factor/${selectedEdge}`, { method: 'POST' });
+            const resp = await fetch(`${API_BASE}/factor/${selectedEdge}`, { method: 'POST' });
             const result = await resp.json();
             if (result.new_edge_ids) {
                 alert(`Factored into ${result.new_edge_ids.length} edges`);
@@ -2032,7 +2035,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             const transform = prompt('Enter transform (e.g., T5, I0, R, τ480):');
             if (!transform) return;
 
-            const resp = await fetch('/api/apply', {
+            const resp = await fetch(`${API_BASE}/apply`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ pattern_id: selectedPattern, transform })
@@ -2050,7 +2053,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             const transform = prompt('Enter transform to apply to cloned subgraph:');
             if (!transform) return;
 
-            const resp = await fetch('/api/clone', {
+            const resp = await fetch(`${API_BASE}/clone`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ root_id: selectedPattern, transform })
@@ -2412,7 +2415,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Load stats
         async function loadStats() {
-            const resp = await fetch('/api/dag/stats');
+            const resp = await fetch(`${API_BASE}/dag/stats`);
             const stats = await resp.json();
             document.getElementById('stat-nodes').textContent = stats.node_count?.toLocaleString() || '-';
             document.getElementById('stat-patterns').textContent = stats.by_type?.pattern?.toLocaleString() || '0';
@@ -2423,7 +2426,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Load graph
         async function loadGraph() {
-            const resp = await fetch('/api/dag/cytoscape?max_nodes=2000');
+            const resp = await fetch(`${API_BASE}/dag/cytoscape?max_nodes=2000`);
             const data = await resp.json();
             if (cy) cy.destroy();
             initGraph(data);
@@ -2432,7 +2435,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Show node detail
         async function showNodeDetail(nid) {
-            const resp = await fetch(`/api/dag/node/${nid}`);
+            const resp = await fetch(`${API_BASE}/dag/node/${nid}`);
             const node = await resp.json();
 
             document.getElementById('detail-id').textContent = nid;
@@ -2490,7 +2493,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         async function expandNode() {
             if (!selectedNode) return;
-            const resp = await fetch(`/api/dag/expand/${selectedNode}`);
+            const resp = await fetch(`${API_BASE}/dag/expand/${selectedNode}`);
             const data = await resp.json();
             alert(`Node ${selectedNode} expands to ${data.event_count} events\\n\\nFirst few: ${JSON.stringify(data.events.slice(0,5))}`);
         }
@@ -2956,7 +2959,7 @@ function render() {
 }
 
 async function loadPieces() {
-    const resp = await fetch('/api/pieces');
+    const resp = await fetch(`${API_BASE}/pieces`);
     const data = await resp.json();
     const select = document.getElementById('piece-select');
     data.pieces.forEach(p => {
@@ -2971,7 +2974,7 @@ async function loadPiece(piece) {
     if (!piece) return;
 
     currentPiece = piece;
-    const resp = await fetch(`/api/transform-space/${encodeURIComponent(piece)}`);
+    const resp = await fetch(`${API_BASE}/transform-space/${encodeURIComponent(piece)}`);
     const data = await resp.json();
 
     if (data.error) {
@@ -3196,7 +3199,7 @@ async function applyTransformEdit() {
 
     const newTransform = `T${pitch}:tau${tau}`;
 
-    const resp = await fetch('/api/edit', {
+    const resp = await fetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ edge_id: selectedEdge.id, transform: newTransform })
@@ -3225,7 +3228,7 @@ async function saveEdits() {
     document.getElementById('save-status').style.color = '#888';
 
     try {
-        const resp = await fetch('/api/save', {
+        const resp = await fetch(`${API_BASE}/save`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({})
@@ -3318,7 +3321,7 @@ async function playPiece() {
 
     try {
         // Fetch actual playback data from server (includes edited patterns)
-        const resp = await fetch(`/api/playback/${encodeURIComponent(currentPiece)}`);
+        const resp = await fetch(`${API_BASE}/playback/${encodeURIComponent(currentPiece)}`);
         const playbackData = await resp.json();
 
         if (playbackData.error) {
