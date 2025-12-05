@@ -116,22 +116,21 @@ def build_piece_sequences(rules: dict):
 
     print(f"  Collected {n_occs:,} occurrences from {len(piece_data)} pieces")
 
-    # Sort each track by onset, deduplicate
-    print("  Sorting and deduplicating...")
+    # Sort each track by onset, deduplicate only exact duplicates
+    print("  Sorting and deduplicating (preserving all patterns)...")
     for piece_id in piece_data:
         for track_id in piece_data[piece_id]:
             occs = piece_data[piece_id][track_id]
-            occs.sort(key=lambda x: x['onset_time'])
 
-            # Deduplicate: keep longest at each onset
-            by_onset = defaultdict(list)
-            for occ in occs:
-                by_onset[occ['onset_time']].append(occ)
-
+            # FIXED: Keep ALL patterns at each onset (preserves orchestration + primitives)
+            # Only deduplicate EXACT duplicates (same pattern_id at same onset)
+            seen = set()  # (onset, rule_id) -> seen
             filtered = []
-            for onset in sorted(by_onset.keys()):
-                best = max(by_onset[onset], key=lambda x: x['pattern_len'])
-                filtered.append(best)
+            for occ in sorted(occs, key=lambda x: (x['onset_time'], -x['pattern_len'])):
+                key = (occ['onset_time'], occ['rule_id'])
+                if key not in seen:
+                    seen.add(key)
+                    filtered.append(occ)
 
             piece_data[piece_id][track_id] = filtered
 

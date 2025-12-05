@@ -2950,9 +2950,11 @@ def extract_ground_truth_latents(audio_path: str, model: Pipeline, target_durati
         waveform = waveform / (waveform.abs().max() + 1e-8)
 
         # Move to device and add batch dimension
+        # Use the same dtype as the DCAE model (bfloat16) to avoid dtype mismatch
         device = next(model.parameters()).device
-        waveform = waveform.to(device)
-        audio_batch = waveform.unsqueeze(0).float()
+        dcae_dtype = next(model.dcae.parameters()).dtype if hasattr(model, 'dcae') else torch.float32
+        waveform = waveform.to(device=device, dtype=dcae_dtype)
+        audio_batch = waveform.unsqueeze(0)
         audio_lengths = torch.tensor([waveform.shape[-1]], device=device)
 
         # Extract latents using DCAE

@@ -59,8 +59,8 @@ server {
       client_header_timeout 300s;
 
 
-      # Serve CSS and JS files with correct MIME types
-      location ~ \.(css|js)$ {
+      # Serve CSS and JS files with correct MIME types (excluding /static/)
+      location ~ ^(?!/static/).*\.(css|js)$ {
           root /var/www/html;
           try_files $uri =404;
           types {
@@ -130,6 +130,12 @@ server {
           root /var/www/html/doseedo-react/build;
           expires 1y;
           add_header Cache-Control "public, immutable";
+      }
+
+      # Serve assets (icons, images, etc.)
+      location ^~ /assets/ {
+          root /var/www/html;
+          try_files $uri =404;
       }
 
     # Serve temp_videos with CORS headers
@@ -205,6 +211,29 @@ server {
           client_max_body_size 10M;
       }
 
+      # Audio labeling API
+      location /api/labels {
+          proxy_pass http://127.0.0.1:8095;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_connect_timeout 60s;
+          proxy_send_timeout 60s;
+          proxy_read_timeout 60s;
+      }
+
+      # Data monitor API
+      location /api/monitor {
+          proxy_pass http://127.0.0.1:8096;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_connect_timeout 60s;
+          proxy_send_timeout 120s;
+          proxy_read_timeout 120s;
+      }
 
       location /download-chord-midi/ {
           proxy_pass http://localhost:8070;
@@ -215,6 +244,60 @@ server {
           proxy_connect_timeout 60s;
           proxy_send_timeout 60s;
           proxy_read_timeout 60s;
+      }
+
+      # Generate-do endpoint and task polling
+      location /api/generate-do {
+          proxy_pass http://localhost:8070;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_connect_timeout 60s;
+          proxy_send_timeout 1000s;
+          proxy_read_timeout 1000s;
+          client_max_body_size 50M;
+      }
+
+      location ~ ^/api/generate-do/task/(.+)$ {
+          proxy_pass http://localhost:8070/api/generate-do/task/$1;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_connect_timeout 60s;
+          proxy_send_timeout 60s;
+          proxy_read_timeout 60s;
+      }
+
+      # Transform editor - static HTML page
+      location = /transform {
+          root /var/www/html;
+          try_files /transform_editor.html =404;
+      }
+
+      # Genome server - proxy to Python server on port 8080
+      location = /genome {
+          proxy_pass http://localhost:8080/;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_connect_timeout 60s;
+          proxy_send_timeout 300s;
+          proxy_read_timeout 300s;
+      }
+
+      # Genome API routes
+      location /genome/api/ {
+          proxy_pass http://localhost:8080/api/;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_connect_timeout 60s;
+          proxy_send_timeout 300s;
+          proxy_read_timeout 300s;
       }
 
       location / {
@@ -250,7 +333,64 @@ server {
         client_max_body_size 10M;
     }
 
+    # ACE-Step generation endpoint (text-to-music)
+    location = /api/generate-ace-step {
+        proxy_pass http://localhost:8070/api/generate-ace-step;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 1000s;
+        proxy_read_timeout 1000s;
+        client_max_body_size 50M;
+    }
 
+    # ACE-Step audio download
+    location ~ ^/download-ace-step/(.+)/(.+)$ {
+        proxy_pass http://localhost:8070/download-ace-step/$1/$2;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # ACE-Step task status polling
+    location ~ ^/api/generate-ace-step/task/(.+)$ {
+        proxy_pass http://localhost:8070/task/$1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # Stem separation endpoint
+    location /separate-stems {
+        proxy_pass http://localhost:8070;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
+        client_max_body_size 100M;
+    }
+
+    # Download separated stems
+    location ~ ^/download-stem/(.+)/(.+)$ {
+        proxy_pass http://localhost:8070/download-stem/$1/$2;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 
 location /media/audio/ {
     alias /home/arlo/ScoreAI/audiofiles/;
