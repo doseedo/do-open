@@ -93,6 +93,122 @@ class CompoundTransform:
 
 
 # =============================================================================
+# TrackDerive: Cross-Track Derivation Primitive
+# =============================================================================
+# This captures arrangement-level relationships:
+#   "Trombone@bar4 = Trumpet@bar4 × T(-7)"
+#   "SaxSection@A = BrassHorn@A × T(3) × τ(0.5)"
+#
+# Unlike aggregate_orchestration_rules which produces STATISTICS,
+# TrackDerive creates per-occurrence DERIVATION relationships that
+# become part of the pattern graph.
+
+@dataclass
+class TrackDerive:
+    """
+    Cross-track derivation: one occurrence derives from another.
+
+    This is the heart of arrangement knowledge. Instead of just:
+        "Trumpet→Trombone: T7 with 85% confidence" (summary statistic)
+
+    We capture:
+        "This trombone occurrence = this trumpet occurrence + T(-7)"
+
+    This enables the tokenizer to emit cross-track references and
+    allows discovery of arrangement-level patterns like:
+        "A section sax = A section brass + harmonized intervals"
+
+    Attributes:
+        source_piece: Piece ID where both occurrences live
+        source_track: Track ID of the SOURCE pattern (leader)
+        source_instrument: GM program of source (for semantic meaning)
+        source_time: Onset time of source occurrence
+        source_pattern_id: Pattern ID of source
+        target_track: Track ID of the TARGET pattern (follower/derived)
+        target_instrument: GM program of target
+        target_time: Onset time of target occurrence
+        target_pattern_id: Pattern ID of target
+        transform: The compound transform relating source→target
+        pitch_offset: Additional pitch offset between occurrences (0-11)
+        rhythm_scale: τ factor if rhythm differs (1.0 = same)
+        velocity_scale: v factor if velocity differs (1.0 = same)
+        confidence: How well the transform matches (1.0 = exact)
+    """
+    source_piece: str
+    source_track: int
+    source_instrument: int  # GM program (meaningful identity)
+    source_time: int
+    source_pattern_id: int
+    target_track: int
+    target_instrument: int
+    target_time: int
+    target_pattern_id: int
+    transform: 'CompoundTransform'
+    pitch_offset: int = 0  # Voicing offset (0-11)
+    rhythm_scale: float = 1.0  # τ factor
+    velocity_scale: float = 1.0  # v factor
+    confidence: float = 1.0
+
+    def __str__(self):
+        src_inst = self.source_instrument
+        tgt_inst = self.target_instrument
+        t_str = str(self.transform) if self.transform else "identity"
+
+        parts = [t_str]
+        if self.pitch_offset != 0:
+            parts.append(f"+O{self.pitch_offset}")
+        if self.rhythm_scale != 1.0:
+            parts.append(f"×τ{self.rhythm_scale:.2f}")
+        if self.velocity_scale != 1.0:
+            parts.append(f"×v{self.velocity_scale:.2f}")
+
+        transform_str = "".join(parts)
+        return f"Track{self.source_track}[{src_inst}]@{self.source_time} → Track{self.target_track}[{tgt_inst}]@{self.target_time}: {transform_str}"
+
+    def to_dict(self) -> dict:
+        """Serialize for JSON storage."""
+        return {
+            'source_piece': self.source_piece,
+            'source_track': self.source_track,
+            'source_instrument': self.source_instrument,
+            'source_time': self.source_time,
+            'source_pattern_id': self.source_pattern_id,
+            'target_track': self.target_track,
+            'target_instrument': self.target_instrument,
+            'target_time': self.target_time,
+            'target_pattern_id': self.target_pattern_id,
+            'transform': str(self.transform) if self.transform else 'identity',
+            'pitch_offset': self.pitch_offset,
+            'rhythm_scale': self.rhythm_scale,
+            'velocity_scale': self.velocity_scale,
+            'confidence': self.confidence,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict, transform_lookup: dict = None) -> 'TrackDerive':
+        """Deserialize from JSON."""
+        transform = None
+        if transform_lookup and d.get('transform') in transform_lookup:
+            transform = transform_lookup[d['transform']]
+        return cls(
+            source_piece=d['source_piece'],
+            source_track=d['source_track'],
+            source_instrument=d['source_instrument'],
+            source_time=d['source_time'],
+            source_pattern_id=d['source_pattern_id'],
+            target_track=d['target_track'],
+            target_instrument=d['target_instrument'],
+            target_time=d['target_time'],
+            target_pattern_id=d['target_pattern_id'],
+            transform=transform,
+            pitch_offset=d.get('pitch_offset', 0),
+            rhythm_scale=d.get('rhythm_scale', 1.0),
+            velocity_scale=d.get('velocity_scale', 1.0),
+            confidence=d.get('confidence', 1.0),
+        )
+
+
+# =============================================================================
 # Primitive Application Functions (Pitch-Class)
 # =============================================================================
 

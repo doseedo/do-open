@@ -67,6 +67,11 @@ from discovery.multi_factor_transforms import (
     FactorType,
 )
 
+# TrackDerive: Cross-track derivation (arrangement patterns)
+from discovery.track_derive import (
+    run_track_derive_discovery,
+)
+
 
 def convert_normalized_to_factored_patterns(
     normalized_rules: dict,
@@ -139,6 +144,7 @@ def save_normalized_checkpoint(
     transform_discovery: dict = None,
     meta_patterns: dict = None,
     multi_factor_discovery: dict = None,
+    track_derive_discovery: dict = None,
     verbose: bool = True
 ):
     """Save checkpoint with full normalized pattern data.
@@ -230,6 +236,23 @@ def save_normalized_checkpoint(
         data['n_rhythm_transforms'] = np.array([multi_factor_discovery.get('rhythm_transforms', 0)])
         data['n_velocity_transforms'] = np.array([multi_factor_discovery.get('velocity_transforms', 0)])
         data['n_duration_transforms'] = np.array([multi_factor_discovery.get('duration_transforms', 0)])
+
+    # Add TrackDerive discovery (cross-track arrangement derivations)
+    if track_derive_discovery and track_derive_discovery.get('n_derives', 0) > 0:
+        td_data = convert_numpy({
+            'derives_json': track_derive_discovery.get('derives_json', []),
+            'n_derives': track_derive_discovery.get('n_derives', 0),
+            'derives_by_transform': track_derive_discovery.get('derives_by_transform', {}),
+            'leader_instruments': track_derive_discovery.get('leader_instruments', {}),
+        })
+        track_derives_path = f'{base_path}_track_derives.json'
+        with open(track_derives_path, 'w') as f:
+            json.dump(td_data, f)
+        data['track_derives_json_file'] = np.array([os.path.basename(track_derives_path)])
+        data['n_track_derives'] = np.array([track_derive_discovery.get('n_derives', 0)])
+
+        if verbose:
+            print(f"  Saved {track_derive_discovery.get('n_derives', 0)} TrackDerive relations")
 
     # Add meta patterns if available (can also be large)
     if meta_patterns:
@@ -1016,6 +1039,66 @@ def run_normalized_pipeline(
     stats['phase5b_time'] = time.time() - phase_start
 
     # =========================================================================
+    # PHASE 5c: TrackDerive Discovery (Cross-Track Arrangement Patterns)
+    # =========================================================================
+    phase_start = time.time()
+    track_derive_discovery = {'derives': [], 'n_derives': 0}
+
+    if len(canonicals) > 5:
+        if verbose:
+            print(f"\n[Phase 5c] TrackDerive Discovery (Cross-Track Arrangements)...", flush=True)
+
+        try:
+            # Convert canonicals to dict format with occurrences
+            patterns_for_td = []
+            for p in canonicals:
+                p_dict = p.to_dict() if hasattr(p, 'to_dict') else {
+                    'pitch_classes': p.pitch_classes,
+                    'rhythm_ratios': getattr(p, '_rhythm_ratios', None) or p.rhythm_ratios,
+                    'velocity_ratios': getattr(p, '_velocity_ratios', None) or p.velocity_ratios,
+                    'duration_ratios': getattr(p, '_duration_ratios', None) or [1.0] * len(p.durations),
+                }
+                # Add occurrences from grammar result
+                if hasattr(p, 'occurrences'):
+                    p_dict['occurrences'] = p.occurrences
+                patterns_for_td.append(p_dict)
+
+            # Build track_instruments mapping from all_tracks
+            track_instruments = {}
+            for track in all_tracks:
+                piece_id = track.get('piece_id', track.get('source_file', 'unknown'))
+                track_id = track.get('track_id', 0)
+                program = track.get('program', track_id)  # GM program or fallback
+                track_instruments[(piece_id, track_id)] = program
+
+            track_derive_discovery = run_track_derive_discovery(
+                patterns_for_td,
+                track_instruments=track_instruments if track_instruments else None,
+                device='cuda',
+                add_to_occurrences=True,  # Adds 'derived_from' to occurrences
+                verbose=verbose
+            )
+
+            stats['n_track_derives'] = track_derive_discovery.get('n_derives', 0)
+            stats['track_derive_transforms'] = track_derive_discovery.get('derives_by_transform', {})
+
+            if verbose and stats['n_track_derives'] > 0:
+                print(f"  Added {stats['n_track_derives']} cross-track derivations to graph", flush=True)
+
+        except Exception as e:
+            if verbose:
+                print(f"  TrackDerive discovery failed: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            stats['n_track_derives'] = 0
+    else:
+        if verbose:
+            print(f"\n[Phase 5c] Skipping TrackDerive discovery (need >5 patterns)", flush=True)
+        stats['n_track_derives'] = 0
+
+    stats['phase5c_time'] = time.time() - phase_start
+
+    # =========================================================================
     # PHASE 6: Level 3 Meta-Pattern Discovery
     # =========================================================================
     phase_start = time.time()
@@ -1145,6 +1228,7 @@ def run_normalized_pipeline(
         transform_discovery=transform_discovery,
         meta_patterns=meta_patterns,
         multi_factor_discovery=multi_factor_discovery,
+        track_derive_discovery=track_derive_discovery,
         verbose=verbose
     )
 
@@ -1168,8 +1252,14 @@ def run_normalized_pipeline(
             print(f"    τ (rhythm): {stats.get('n_rhythm_transforms', 0)}")
             print(f"    v (velocity): {stats.get('n_velocity_transforms', 0)}")
             print(f"    d (duration): {stats.get('n_duration_transforms', 0)}")
+        if stats.get('n_track_derives', 0) > 0:
+            print(f"  TrackDerive relations: {stats.get('n_track_derives', 0)}")
+            if stats.get('track_derive_transforms'):
+                td_transforms = stats['track_derive_transforms']
+                parts = [f"{k}:{v}" for k, v in sorted(td_transforms.items(), key=lambda x: -x[1])[:4]]
+                print(f"    By transform: {', '.join(parts)}")
         if meta_patterns.get('n_orchestration_rules'):
-            print(f"  Orchestration rules: {meta_patterns['n_orchestration_rules']}")
+            print(f"  Orchestration rules (summary): {meta_patterns['n_orchestration_rules']}")
         print(f"  Total time: {stats['total_time']:.1f}s")
         print(f"\n  Output: {output_path}")
 
