@@ -283,6 +283,23 @@ def save_normalized_checkpoint(
             useful = feature_importance_discovery.get('useful_features', [])
             print(f"  Saved {len(useful)} useful features: {', '.join(useful)}")
 
+    # Add per-piece interval preferences (for context-aware generation)
+    piece_prefs = stats.get('piece_interval_preferences', {})
+    if piece_prefs:
+        prefs_path = f'{base_path}_interval_prefs.json'
+        with open(prefs_path, 'w') as f:
+            json.dump(convert_numpy(piece_prefs), f)
+        data['interval_prefs_json_file'] = np.array([os.path.basename(prefs_path)])
+        data['preferred_interval_repr'] = np.array([stats.get('preferred_interval_repr', 'chromatic')])
+
+        if verbose:
+            from collections import Counter
+            pref_counts = Counter(piece_prefs.values())
+            print(f"  Saved per-piece interval preferences: "
+                  f"magnitude={pref_counts.get('magnitude', 0)}, "
+                  f"chromatic={pref_counts.get('chromatic', 0)}, "
+                  f"both={pref_counts.get('both', 0)}")
+
     # Add meta patterns if available (can also be large)
     if meta_patterns:
         meta_data = convert_numpy(meta_patterns)
@@ -1159,6 +1176,10 @@ def run_normalized_pipeline(
             stats['chromatic_compression'] = comp.get('chromatic', {}).get('compression', 0.0)
             stats['magnitude_compression'] = comp.get('magnitude', {}).get('compression', 0.0)
 
+            # Per-piece preferences for context-aware generation
+            stats['piece_interval_preferences'] = interval_magnitude_discovery.get('piece_preferences', {})
+            stats['n_magnitude_added'] = interval_magnitude_discovery.get('n_magnitude_added', 0)
+
         except Exception as e:
             if verbose:
                 print(f"  Interval magnitude discovery failed: {e}", flush=True)
@@ -1421,11 +1442,19 @@ def run_normalized_pipeline(
             pref = stats['preferred_interval_repr']
             chrom = stats.get('chromatic_compression', 0)
             mag = stats.get('magnitude_compression', 0)
-            print(f"  Interval representation: {pref}")
+            print(f"  Interval representation (global): {pref}")
             print(f"    Chromatic compression: {chrom:.2f}x")
             print(f"    Magnitude compression: {mag:.2f}x")
             if pref == 'magnitude':
                 print(f"    → Corpus has diatonic structure (b3/3 treated as '3rds')")
+            # Show per-piece breakdown
+            piece_prefs = stats.get('piece_interval_preferences', {})
+            if piece_prefs:
+                from collections import Counter
+                pref_counts = Counter(piece_prefs.values())
+                print(f"    Per-piece: magnitude={pref_counts.get('magnitude', 0)}, "
+                      f"chromatic={pref_counts.get('chromatic', 0)}, "
+                      f"both={pref_counts.get('both', 0)}")
         if stats.get('useful_features'):
             useful = stats['useful_features']
             print(f"  Useful features (MDL): {', '.join(useful)}")
