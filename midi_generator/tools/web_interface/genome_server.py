@@ -7,19 +7,26 @@ REST API for genome graph visualization and editing.
 
 Endpoints:
     GET /                       - Serve web interface
-    GET /api/stats              - Graph statistics
+    GET /api/stats              - Graph statistics (includes v43 data)
     GET /api/cytoscape          - Full graph in Cytoscape format
     GET /api/cytoscape/<piece>  - Piece subgraph in Cytoscape format
     GET /api/pattern/<id>       - Pattern details
     GET /api/edges/<id>         - Edges from pattern
     GET /api/pieces             - List all pieces
+    GET /api/transforms         - Pitch transform vocabulary (T, I, R)
+    GET /api/playback/<piece>   - Reconstruct MIDI events for playback
     POST /api/factor/<edge_id>  - Factor a compound edge
     POST /api/entangle          - Entangle edges into compound
     POST /api/clone             - Clone subgraph with transform
     POST /api/apply             - Apply transform to pattern
 
+    v43+ Endpoints:
+    GET /api/multi_factor       - τ, v, d transform vocabulary
+    GET /api/track_derives      - Cross-track arrangement derivations
+    GET /api/feature_importance - MDL-discovered useful features
+
 Usage:
-    python genome_server.py checkpoint_v24_graph.npz [--port 8080]
+    python genome_server.py checkpoint_v43_1000files.npz [--port 8080]
 """
 
 import json
@@ -47,6 +54,11 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
     pattern_edits: dict = {}  # pattern_id -> modified pattern data (pitch_classes, octaves, etc.)
     v24_rules: dict = None  # grammar_rules from v24 checkpoint (for playback reconstruction)
     track_info: list = None  # track_info from checkpoint (for is_drum detection)
+    # v43 additions
+    multi_factor: dict = None  # τ, v, d transform vocabulary
+    track_derives: list = None  # Cross-track arrangement derivations
+    feature_importance: dict = None  # MDL-discovered useful features
+    checkpoint_stats: dict = None  # Stats from checkpoint (for /api/stats)
 
     def send_json(self, data, status=200):
         """Send JSON response."""
@@ -613,7 +625,23 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         if path == '/' or path == '/index.html':
             self.serve_editor()
         elif path == '/api/stats':
-            self.send_json(self.graph.stats())
+            stats = self.graph.stats()
+            # Merge in v43 checkpoint stats
+            if GenomeGraphHandler.checkpoint_stats:
+                stats.update(GenomeGraphHandler.checkpoint_stats)
+            # Add v43 feature importance summary
+            if GenomeGraphHandler.feature_importance:
+                stats['useful_features'] = GenomeGraphHandler.feature_importance.get('useful_features', [])
+                stats['keys_discovered'] = 'pitch_offset_relative' in stats.get('useful_features', [])
+            # Add v43 multi-factor summary
+            if GenomeGraphHandler.multi_factor:
+                stats['n_rhythm_transforms'] = len(GenomeGraphHandler.multi_factor.get('rhythm_transforms', []))
+                stats['n_velocity_transforms'] = len(GenomeGraphHandler.multi_factor.get('velocity_transforms', []))
+                stats['n_duration_transforms'] = len(GenomeGraphHandler.multi_factor.get('duration_transforms', []))
+            # Add track derives count
+            if GenomeGraphHandler.track_derives:
+                stats['n_track_derives'] = len(GenomeGraphHandler.track_derives)
+            self.send_json(stats)
         elif path == '/api/cytoscape':
             piece = query.get('piece', [None])[0]
             data = self.graph.to_cytoscape(piece)
@@ -666,6 +694,31 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             self.send_json(accuracy)
         elif path == '/api/transforms':
             self.send_json({'transforms': self.graph.transform_vocab})
+        # v43 API endpoints
+        elif path == '/api/multi_factor':
+            if GenomeGraphHandler.multi_factor:
+                self.send_json(GenomeGraphHandler.multi_factor)
+            else:
+                self.send_json({'error': 'No multi-factor transforms loaded (v43+ required)'}, 404)
+        elif path == '/api/track_derives':
+            if GenomeGraphHandler.track_derives:
+                # Return summary + paginated list
+                limit = int(query.get('limit', [100])[0])
+                offset = int(query.get('offset', [0])[0])
+                derives = GenomeGraphHandler.track_derives[offset:offset+limit]
+                self.send_json({
+                    'total': len(GenomeGraphHandler.track_derives),
+                    'offset': offset,
+                    'limit': limit,
+                    'derives': derives
+                })
+            else:
+                self.send_json({'error': 'No track derives loaded (v43+ required)'}, 404)
+        elif path == '/api/feature_importance':
+            if GenomeGraphHandler.feature_importance:
+                self.send_json(GenomeGraphHandler.feature_importance)
+            else:
+                self.send_json({'error': 'No feature importance loaded (v43+ required)'}, 404)
         elif path == '/transform-editor' or path == '/transform-editor/':
             self.serve_transform_editor()
         elif path.startswith('/api/transform-space/'):
@@ -3538,6 +3591,48 @@ def main():
                 GenomeGraphHandler.track_info = track_info
                 drum_count = sum(1 for ti in track_info if ti.get('is_drum', False))
                 print(f"Loaded track info: {len(track_info)} tracks ({drum_count} drums)")
+
+            # v43: Load multi-factor transforms (τ, v, d)
+            if 'multi_factor_json_file' in main_data:
+                mf_file = main_data['multi_factor_json_file'].item()
+                mf_path = os.path.join(checkpoint_dir, mf_file)
+                if os.path.exists(mf_path):
+                    with open(mf_path, 'r') as f:
+                        GenomeGraphHandler.multi_factor = json.load(f)
+                    n_tau = len(GenomeGraphHandler.multi_factor.get('rhythm_transforms', []))
+                    n_vel = len(GenomeGraphHandler.multi_factor.get('velocity_transforms', []))
+                    n_dur = len(GenomeGraphHandler.multi_factor.get('duration_transforms', []))
+                    print(f"Loaded multi-factor transforms: τ={n_tau}, v={n_vel}, d={n_dur}")
+
+            # v43: Load track derives (cross-track arrangements)
+            if 'track_derives_json_file' in main_data:
+                td_file = main_data['track_derives_json_file'].item()
+                td_path = os.path.join(checkpoint_dir, td_file)
+                if os.path.exists(td_path):
+                    with open(td_path, 'r') as f:
+                        GenomeGraphHandler.track_derives = json.load(f)
+                    print(f"Loaded {len(GenomeGraphHandler.track_derives)} track derive relations")
+
+            # v43: Load feature importance (MDL-discovered useful features)
+            if 'feature_importance_json_file' in main_data:
+                fi_file = main_data['feature_importance_json_file'].item()
+                fi_path = os.path.join(checkpoint_dir, fi_file)
+                if os.path.exists(fi_path):
+                    with open(fi_path, 'r') as f:
+                        GenomeGraphHandler.feature_importance = json.load(f)
+                    useful = GenomeGraphHandler.feature_importance.get('useful_features', [])
+                    print(f"Loaded feature importance: {', '.join(useful) if useful else 'none discovered'}")
+
+            # Load checkpoint stats for /api/stats
+            stats = {}
+            for key in ['n_files', 'n_tracks', 'n_notes', 'n_patterns', 'n_transform_vocabulary',
+                        'n_factor_vocabulary', 'n_rhythm_transforms', 'n_velocity_transforms',
+                        'n_duration_transforms', 'n_track_derives']:
+                if key in main_data:
+                    stats[key] = int(main_data[key].item())
+            if stats:
+                GenomeGraphHandler.checkpoint_stats = stats
+
         except Exception as e:
             import traceback
             traceback.print_exc()
