@@ -60,6 +60,13 @@ from scripts.level3_meta_patterns import (
     aggregate_orchestration_rules,
 )
 
+# Multi-factor transform discovery (τ, v, d)
+from discovery.multi_factor_transforms import (
+    run_multi_factor_discovery,
+    FactorTransform,
+    FactorType,
+)
+
 
 def convert_normalized_to_factored_patterns(
     normalized_rules: dict,
@@ -131,6 +138,7 @@ def save_normalized_checkpoint(
     stats: dict,
     transform_discovery: dict = None,
     meta_patterns: dict = None,
+    multi_factor_discovery: dict = None,
     verbose: bool = True
 ):
     """Save checkpoint with full normalized pattern data.
@@ -207,6 +215,21 @@ def save_normalized_checkpoint(
         with open(transforms_path, 'w') as f:
             json.dump(transform_data, f)
         data['transforms_json_file'] = np.array([os.path.basename(transforms_path)])
+
+    # Add multi-factor discovery (τ, v, d) if available
+    if multi_factor_discovery:
+        mf_data = convert_numpy({
+            k: v for k, v in multi_factor_discovery.items()
+            if k != 'vocabulary_objects'  # Remove non-serializable
+        })
+        multi_factor_path = f'{base_path}_multi_factor.json'
+        with open(multi_factor_path, 'w') as f:
+            json.dump(mf_data, f)
+        data['multi_factor_json_file'] = np.array([os.path.basename(multi_factor_path)])
+        data['n_factor_vocabulary'] = np.array([len(multi_factor_discovery.get('vocabulary', []))])
+        data['n_rhythm_transforms'] = np.array([multi_factor_discovery.get('rhythm_transforms', 0)])
+        data['n_velocity_transforms'] = np.array([multi_factor_discovery.get('velocity_transforms', 0)])
+        data['n_duration_transforms'] = np.array([multi_factor_discovery.get('duration_transforms', 0)])
 
     # Add meta patterns if available (can also be large)
     if meta_patterns:
@@ -942,6 +965,57 @@ def run_normalized_pipeline(
     stats['phase5_time'] = time.time() - phase_start
 
     # =========================================================================
+    # PHASE 5b: Multi-Factor Transform Discovery (τ, v, d)
+    # =========================================================================
+    phase_start = time.time()
+    multi_factor_discovery = {'vocabulary': [], 'rhythm_transforms': 0, 'velocity_transforms': 0, 'duration_transforms': 0}
+
+    if len(canonicals) > 10:
+        if verbose:
+            print(f"\n[Phase 5b] Multi-Factor Transform Discovery (τ, v, d)...", flush=True)
+
+        try:
+            # Convert canonicals to dict format for multi-factor discovery
+            patterns_for_mf = [p.to_dict() if hasattr(p, 'to_dict') else {
+                'pitch_classes': p.pitch_classes,
+                'rhythm_ratios': getattr(p, '_rhythm_ratios', None) or p.rhythm_ratios,
+                'velocity_ratios': getattr(p, '_velocity_ratios', None) or p.velocity_ratios,
+                'duration_ratios': getattr(p, '_duration_ratios', None) or [1.0] * len(p.durations),
+            } for p in canonicals]
+
+            multi_factor_discovery = run_multi_factor_discovery(
+                patterns_for_mf,
+                device='cuda',
+                tolerance=0.1,
+                min_frequency=3,
+                verbose=verbose
+            )
+
+            stats['n_rhythm_transforms'] = multi_factor_discovery.get('rhythm_transforms', 0)
+            stats['n_velocity_transforms'] = multi_factor_discovery.get('velocity_transforms', 0)
+            stats['n_duration_transforms'] = multi_factor_discovery.get('duration_transforms', 0)
+            stats['n_factor_vocabulary'] = len(multi_factor_discovery.get('vocabulary', []))
+
+            if verbose:
+                print(f"  Discovered {stats['n_factor_vocabulary']} factor transforms", flush=True)
+                print(f"    τ (rhythm): {stats['n_rhythm_transforms']}", flush=True)
+                print(f"    v (velocity): {stats['n_velocity_transforms']}", flush=True)
+                print(f"    d (duration): {stats['n_duration_transforms']}", flush=True)
+
+        except Exception as e:
+            if verbose:
+                print(f"  Multi-factor discovery failed: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            stats['n_factor_vocabulary'] = 0
+    else:
+        if verbose:
+            print(f"\n[Phase 5b] Skipping multi-factor discovery (need >10 patterns)", flush=True)
+        stats['n_factor_vocabulary'] = 0
+
+    stats['phase5b_time'] = time.time() - phase_start
+
+    # =========================================================================
     # PHASE 6: Level 3 Meta-Pattern Discovery
     # =========================================================================
     phase_start = time.time()
@@ -1070,6 +1144,7 @@ def run_normalized_pipeline(
         stats,
         transform_discovery=transform_discovery,
         meta_patterns=meta_patterns,
+        multi_factor_discovery=multi_factor_discovery,
         verbose=verbose
     )
 
@@ -1087,7 +1162,12 @@ def run_normalized_pipeline(
         print(f"  Patterns: {stats['n_patterns']}")
         print(f"  Total occurrences: {stats['total_occurrences']:,}")
         print(f"  Multi-piece patterns: {stats['multi_piece_patterns']}")
-        print(f"  Transform vocabulary: {stats.get('n_transform_vocabulary', 0)}")
+        print(f"  Transform vocabulary (pitch): {stats.get('n_transform_vocabulary', 0)}")
+        if stats.get('n_factor_vocabulary', 0) > 0:
+            print(f"  Factor vocabulary (τ,v,d): {stats.get('n_factor_vocabulary', 0)}")
+            print(f"    τ (rhythm): {stats.get('n_rhythm_transforms', 0)}")
+            print(f"    v (velocity): {stats.get('n_velocity_transforms', 0)}")
+            print(f"    d (duration): {stats.get('n_duration_transforms', 0)}")
         if meta_patterns.get('n_orchestration_rules'):
             print(f"  Orchestration rules: {meta_patterns['n_orchestration_rules']}")
         print(f"  Total time: {stats['total_time']:.1f}s")
