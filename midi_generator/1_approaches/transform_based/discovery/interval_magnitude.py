@@ -445,6 +445,109 @@ def analyze_magnitude_patterns(
     }
 
 
+def add_magnitude_to_occurrences(
+    patterns: List[Dict],
+    verbose: bool = True,
+) -> int:
+    """
+    Add magnitude_offset to each occurrence alongside pitch_offset.
+
+    This is O(1) per occurrence - just a lookup table.
+    Modifies patterns in-place.
+
+    Returns:
+        Number of occurrences updated
+    """
+    n_updated = 0
+
+    for p in patterns:
+        for occ in p.get('occurrences', []):
+            # Get chromatic offset (already stored as pitch_offset)
+            pitch_offset = occ.get('pitch_offset', 0)
+
+            # Add magnitude offset - O(1) lookup
+            occ['magnitude_offset'] = SEMITONE_TO_MAGNITUDE[pitch_offset % 12]
+            n_updated += 1
+
+    if verbose and n_updated > 0:
+        print(f"  Added magnitude_offset to {n_updated:,} occurrences")
+
+    return n_updated
+
+
+def compute_per_piece_preference(
+    patterns: List[Dict],
+    verbose: bool = True,
+) -> Dict[str, str]:
+    """
+    Compute which interval representation (chromatic vs magnitude) is better
+    for each piece, based on local entropy.
+
+    Uses entropy as proxy for compression:
+    - Lower entropy = more predictable = better compression
+    - If magnitude has lower entropy, diatonic patterns dominate
+    - If chromatic has lower entropy, chromatic precision matters
+
+    Returns:
+        Dict mapping piece_id -> 'chromatic' | 'magnitude' | 'both'
+    """
+    from collections import Counter
+    import math
+
+    # Group occurrences by piece with their transforms
+    piece_transforms = defaultdict(list)
+
+    for p in patterns:
+        for occ in p.get('occurrences', []):
+            piece_id = occ.get('piece_id', 'unknown')
+            pitch_offset = occ.get('pitch_offset', 0)
+            magnitude_offset = occ.get('magnitude_offset', SEMITONE_TO_MAGNITUDE[pitch_offset % 12])
+
+            piece_transforms[piece_id].append({
+                'chromatic': pitch_offset,
+                'magnitude': magnitude_offset,
+            })
+
+    def entropy(values):
+        """Compute Shannon entropy of a distribution."""
+        if not values:
+            return 0.0
+        counts = Counter(values)
+        total = len(values)
+        return -sum((c / total) * math.log2(c / total) for c in counts.values() if c > 0)
+
+    piece_preferences = {}
+
+    for piece_id, transforms in piece_transforms.items():
+        if len(transforms) < 5:  # Need enough data
+            piece_preferences[piece_id] = 'both'
+            continue
+
+        chrom_values = [t['chromatic'] for t in transforms]
+        mag_values = [t['magnitude'] for t in transforms]
+
+        chrom_entropy = entropy(chrom_values)
+        mag_entropy = entropy(mag_values)
+
+        # Lower entropy = better compression
+        # 5% threshold to avoid noise
+        if mag_entropy < chrom_entropy * 0.95:
+            piece_preferences[piece_id] = 'magnitude'
+        elif chrom_entropy < mag_entropy * 0.95:
+            piece_preferences[piece_id] = 'chromatic'
+        else:
+            piece_preferences[piece_id] = 'both'
+
+    if verbose:
+        pref_counts = Counter(piece_preferences.values())
+        print(f"  Per-piece preferences: "
+              f"magnitude={pref_counts.get('magnitude', 0)}, "
+              f"chromatic={pref_counts.get('chromatic', 0)}, "
+              f"both={pref_counts.get('both', 0)}")
+
+    return piece_preferences
+
+
 def run_interval_magnitude_discovery(
     patterns: List[Dict],
     device: str = 'cuda',
@@ -493,6 +596,12 @@ def run_interval_magnitude_discovery(
         patterns, device=device, verbose=verbose
     )
 
+    # Add magnitude_offset to every occurrence (O(1) per occurrence)
+    if verbose:
+        print(f"  Adding magnitude to occurrences...")
+
+    n_magnitude_added = add_magnitude_to_occurrences(patterns, verbose=verbose)
+
     # Extract dual sequences
     if verbose:
         print(f"  Extracting transform sequences...")
@@ -520,8 +629,6 @@ def run_interval_magnitude_discovery(
             magnitude_sequences, verbose=verbose
         )
 
-    elapsed = time.time() - t0
-
     # Determine which representation is better
     chrom_comp = compression_comparison['chromatic']['compression']
     mag_comp = compression_comparison['magnitude']['compression']
@@ -536,9 +643,18 @@ def run_interval_magnitude_discovery(
         preferred = 'both'
         reason = 'mixed content, use both'
 
+    # Compute per-piece preferences (for mixed corpora)
+    if verbose:
+        print(f"  Computing per-piece preferences...")
+
+    piece_preferences = compute_per_piece_preference(patterns, verbose=verbose)
+
+    elapsed = time.time() - t0
+
     if verbose:
         print(f"\n  Discovery complete in {elapsed:.1f}s")
-        print(f"  Preferred representation: {preferred} ({reason})")
+        print(f"  Global preference: {preferred} ({reason})")
+        print(f"  Per-piece: use piece_preferences dict for context-aware generation")
 
     return {
         'dual_vocab': dual_vocab,
@@ -549,6 +665,8 @@ def run_interval_magnitude_discovery(
         'chromatic_sequences': chromatic_sequences,
         'magnitude_sequences': magnitude_sequences,
         'preferred_representation': preferred,
+        'piece_preferences': piece_preferences,  # Per-piece context-aware selection
+        'n_magnitude_added': n_magnitude_added,  # Occurrences with magnitude_offset
         'elapsed_time': elapsed,
     }
 
