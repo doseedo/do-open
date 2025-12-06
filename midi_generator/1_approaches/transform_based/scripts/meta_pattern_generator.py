@@ -88,6 +88,7 @@ class MetaPatternGenerator:
         self.build_position_index()    # Level 3: P(pattern | position, gm)
         self.build_cooccurrence_index()  # Level 4: P(pattern | concurrent_patterns)
         self.build_form_template_index()  # For global repetition structure
+        self.build_instrument_role_index()  # Derive lead/follower from corpus
 
     def load_checkpoint(self, checkpoint_path: str):
         """Load all checkpoint components."""
@@ -727,13 +728,118 @@ class MetaPatternGenerator:
         Returns list like ['A', 'A', 'B', 'A'] indicating section repetition.
         """
         if not self.form_template_probs:
-            # Default: simple 4-section with some repetition
-            return ['A', 'B', 'A', 'C']
+            # Fallback: derive from observed section count distribution
+            # Don't impose AABA - sample number of unique sections from corpus
+            if hasattr(self, 'section_count_distribution') and self.section_count_distribution:
+                n_unique = random.choices(
+                    list(self.section_count_distribution.keys()),
+                    weights=list(self.section_count_distribution.values())
+                )[0]
+            else:
+                n_unique = random.randint(2, 4)
+
+            # Generate random template with n_unique distinct sections
+            labels = [chr(ord('A') + i) for i in range(n_unique)]
+            return [random.choice(labels) for _ in range(4)]
 
         templates = [t for t, c in self.form_template_probs]
         weights = [c for t, c in self.form_template_probs]
 
         return list(random.choices(templates, weights=weights)[0])
+
+    def build_instrument_role_index(self):
+        """Derive lead/follower instrument roles from TrackDerive corpus data.
+
+        REPLACES hardcoded HORN_SECTION and RHYTHM_SECTION with corpus-derived roles.
+
+        Lead instruments: Those most often copied FROM (source_gm in track_derives)
+        Follower instruments: Those most often copying from others (target_gm)
+
+        This ensures instrument roles reflect actual corpus behavior, not assumptions.
+        """
+        if self.verbose:
+            print("Building instrument role index from corpus...")
+
+        # Count how often each instrument is SOURCE (leader) vs TARGET (follower)
+        source_counts = defaultdict(int)  # gm -> count of times it's copied FROM
+        target_counts = defaultdict(int)  # gm -> count of times it copies FROM others
+
+        for derive in self.track_derives:
+            if isinstance(derive, dict):
+                source_gm = derive.get('source_instrument', derive.get('source_gm', derive.get('leader_gm', -1)))
+                target_gm = derive.get('target_instrument', derive.get('target_gm', derive.get('follower_gm', -1)))
+
+                if source_gm >= 0:
+                    source_counts[source_gm] += 1
+                if target_gm >= 0:
+                    target_counts[target_gm] += 1
+
+        # Calculate lead score: how much more often is this instrument a source than target?
+        # lead_score = source_count / (target_count + 1) - higher = more "leader-like"
+        self.instrument_lead_scores = {}
+        all_gms = set(source_counts.keys()) | set(target_counts.keys())
+
+        for gm in all_gms:
+            src = source_counts.get(gm, 0)
+            tgt = target_counts.get(gm, 0)
+            # Lead score: ratio of being copied vs copying
+            self.instrument_lead_scores[gm] = src / (tgt + 1)
+
+        # Sort instruments by lead score
+        sorted_by_lead = sorted(
+            self.instrument_lead_scores.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        # Top instruments (high lead score) are "leads"
+        # Bottom instruments (low lead score) are "followers/rhythm"
+        n_instruments = len(sorted_by_lead)
+        n_leads = max(1, n_instruments // 3)  # Top third are leads
+
+        self.corpus_lead_instruments = set(gm for gm, score in sorted_by_lead[:n_leads])
+        self.corpus_follower_instruments = set(gm for gm, score in sorted_by_lead[n_leads:])
+
+        # Also store activity scores from pattern counts (how often each instrument plays)
+        self.instrument_activity = defaultdict(int)
+        for pattern_id, pattern in self.patterns.items():
+            for occ in pattern.get('occurrences', []):
+                gm = occ.get('gm_program', 0)
+                self.instrument_activity[gm] += 1
+
+        if self.verbose:
+            print(f"  Lead instruments (top {n_leads}): {sorted(self.corpus_lead_instruments)}")
+            print(f"  Follower instruments: {len(self.corpus_follower_instruments)}")
+            if sorted_by_lead:
+                top_lead = sorted_by_lead[0]
+                print(f"  Top lead: GM {top_lead[0]} (score={top_lead[1]:.2f})")
+
+    def get_corpus_lead_instrument(self, instruments: List[int]) -> int:
+        """Get the most lead-like instrument from the given list, based on corpus data.
+
+        This replaces the hardcoded logic of "horn_instruments[0]".
+        """
+        if not instruments:
+            return 0
+
+        # Find instrument with highest lead score
+        best_gm = instruments[0]
+        best_score = self.instrument_lead_scores.get(best_gm, 0)
+
+        for gm in instruments:
+            score = self.instrument_lead_scores.get(gm, 0)
+            if score > best_score:
+                best_score = score
+                best_gm = gm
+
+        return best_gm
+
+    def get_corpus_follower_instruments(self, instruments: List[int], lead_gm: int) -> List[int]:
+        """Get follower instruments from the given list, excluding the lead.
+
+        This replaces the hardcoded RHYTHM_SECTION logic.
+        """
+        return [gm for gm in instruments if gm != lead_gm]
 
     def sample_next_pattern(
         self,
@@ -1049,10 +1155,14 @@ class MetaPatternGenerator:
         all_tracks = defaultdict(list)
         current_time = 0
 
-        # Determine lead instrument for pattern selection
-        HORN_SECTION = {56, 57, 58, 59, 60, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73}
-        horn_instruments = [gm for gm in instruments if gm in HORN_SECTION]
-        lead_gm = horn_instruments[0] if horn_instruments else instruments[0] if instruments else 0
+        # Determine lead instrument from CORPUS DATA (not hardcoded categories)
+        # Lead = instrument most often copied FROM in TrackDerive
+        lead_gm = self.get_corpus_lead_instrument(instruments)
+        follower_instruments = self.get_corpus_follower_instruments(instruments, lead_gm)
+
+        if self.verbose:
+            print(f"  Lead instrument (from corpus): GM {lead_gm}")
+            print(f"  Follower instruments: {follower_instruments}")
 
         # Estimate total duration for position normalization
         patterns_per_section = 4  # Estimate
@@ -1189,139 +1299,76 @@ class MetaPatternGenerator:
                 # Calculate phrase duration (how long this pattern takes)
                 phrase_duration = base_ioi * (len(intervals) + 1)
 
-                # Separate instruments by ROLE
-                HORN_SECTION = {56, 57, 58, 59, 60, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73}
-                RHYTHM_SECTION = {0, 1, 2, 3, 4, 5, 24, 25, 26, 27, 32, 33, 34, 35, 36, 37, 38, 39}
+                # Use CORPUS-DERIVED instrument roles (no hardcoded categories)
+                # lead_gm already determined from TrackDerive source counts
+                # follower_instruments already computed
 
-                horn_instruments = [gm for gm in instruments if gm in HORN_SECTION]
-                rhythm_instruments = [gm for gm in instruments if gm in RHYTHM_SECTION]
-                other_instruments = [gm for gm in instruments if gm not in HORN_SECTION and gm not in RHYTHM_SECTION]
+                # LEAD INSTRUMENT: Plays the main pattern
+                lead_pitch = self._sample_pitch_for_instrument(pattern, lead_gm)
+                lead_notes = self._expand_to_notes(
+                    intervals, lead_pitch, current_time, lead_gm, base_ioi
+                )
+                all_tracks[lead_gm].extend(lead_notes)
 
-                # HORN SECTION: Lead plays, background horns play based on CORPUS patterns
-                if horn_instruments:
-                    lead_gm = horn_instruments[0]
-                    lead_pitch = self._sample_pitch_for_instrument(pattern, lead_gm)
-
-                    lead_notes = self._expand_to_notes(
-                        intervals, lead_pitch, current_time, lead_gm, base_ioi
+                # FOLLOWER INSTRUMENTS: Use corpus-derived activity probability
+                for follower_gm in follower_instruments:
+                    # Get natural co-occurrence probability from checkpoint
+                    play_prob = self._get_cooccurrence_probability(
+                        lead_pattern_id=pattern_id,
+                        lead_gm=lead_gm,
+                        target_gm=follower_gm
                     )
-                    all_tracks[lead_gm].extend(lead_notes)
 
-                    # Background horns: Use CORPUS-DERIVED activity probability
-                    for follower_idx, follower_gm in enumerate(horn_instruments[1:]):
-                        # Get natural co-occurrence probability from checkpoint
-                        play_prob = self._get_cooccurrence_probability(
-                            lead_pattern_id=pattern_id,
-                            lead_gm=lead_gm,
-                            target_gm=follower_gm
-                        )
+                    if random.random() > play_prob:
+                        # REST - this instrument didn't usually play here
+                        continue
 
-                        if random.random() > play_prob:
-                            # REST - this instrument didn't usually play here
-                            # Sample rest duration from corpus if available
-                            rest_dur = self.sample_rest_duration(follower_gm)
-                            # Just skip this phrase (rest is implicit in timing)
-                            continue
+                    # Try to find orchestration rule for this instrument pair
+                    rule = self._find_orchestration_rule(lead_gm, follower_gm, pattern_id)
 
-                        rule = self._find_orchestration_rule(lead_gm, follower_gm, pattern_id)
+                    if rule:
+                        transform = rule.get('transform', 'identity')
+                        derived_pattern_id = rule.get('derived_pattern')
+                        if derived_pattern_id and derived_pattern_id in self.patterns:
+                            derived_pattern = self.patterns[derived_pattern_id]
+                            follower_intervals = derived_pattern.get('pitch_intervals', intervals)
+                            follower_pitch = self._sample_pitch_for_instrument(derived_pattern, follower_gm)
+                        else:
+                            follower_intervals = self._apply_transform(intervals, transform)
+                            follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
+                    else:
+                        # Use 4-level probabilistic sampling conditioned on lead
+                        if use_probabilistic:
+                            position = (section_idx * patterns_per_section + pattern_idx) / total_patterns
+                            concurrent = {lead_gm: pattern_id}
 
-                        if rule:
-                            transform = rule.get('transform', 'identity')
-                            derived_pattern_id = rule.get('derived_pattern')
-                            if derived_pattern_id and derived_pattern_id in self.patterns:
-                                derived_pattern = self.patterns[derived_pattern_id]
-                                follower_intervals = derived_pattern.get('pitch_intervals', intervals)
-                                follower_pitch = self._sample_pitch_for_instrument(derived_pattern, follower_gm)
+                            follower_pattern_id = self.sample_next_pattern(
+                                current_pattern=current_patterns.get(follower_gm),
+                                position=position,
+                                gm_program=follower_gm,
+                                concurrent_patterns=concurrent,
+                                cooccurrence_weight=0.4,  # Strong co-occurrence for followers
+                            )
+
+                            if follower_pattern_id:
+                                current_patterns[follower_gm] = follower_pattern_id
+                                follower_pattern = self.patterns.get(follower_pattern_id, {})
+                                follower_intervals = follower_pattern.get('pitch_intervals', intervals)
+                                follower_pitch = self._sample_pitch_for_instrument(follower_pattern, follower_gm)
                             else:
-                                follower_intervals = self._apply_transform(intervals, transform)
+                                follower_intervals = intervals
                                 follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
                         else:
                             follower_intervals = intervals
                             follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
 
-                        follower_notes = self._expand_to_notes(
-                            follower_intervals, follower_pitch, current_time, follower_gm, base_ioi
-                        )
-                        all_tracks[follower_gm].extend(follower_notes)
+                    follower_notes = self._expand_to_notes(
+                        follower_intervals, follower_pitch, current_time, follower_gm, base_ioi
+                    )
+                    all_tracks[follower_gm].extend(follower_notes)
 
-                # RHYTHM SECTION: Sample patterns using 4-level probabilistic or co-occurrence sampling
-                for rhythm_gm in rhythm_instruments:
-                    rhythm_time = current_time
-                    loop_count = 0
-                    max_loops = 16  # Safety limit
-
-                    while rhythm_time < current_time + phrase_duration and loop_count < max_loops:
-                        # Compute position for this rhythm pattern
-                        rhythm_position = (current_time + rhythm_time) / (total_patterns * 1920)  # Approx
-                        rhythm_position = min(rhythm_position, 0.999)
-
-                        if use_probabilistic:
-                            # Use 4-level probabilistic sampling for rhythm
-                            # Include lead pattern in concurrent_patterns for co-occurrence
-                            concurrent = dict(current_patterns)
-                            concurrent[lead_gm] = pattern_id  # Current lead pattern
-
-                            current_rhythm_pattern = current_patterns.get(rhythm_gm)
-                            rhythm_pattern_id = self.sample_next_pattern(
-                                current_pattern=current_rhythm_pattern,
-                                position=rhythm_position,
-                                gm_program=rhythm_gm,
-                                concurrent_patterns=concurrent,  # Level 4: co-occurrence with lead
-                                transition_weight=0.35,
-                                position_weight=0.2,
-                                frequency_weight=0.1,
-                                cooccurrence_weight=0.35,  # Strong co-occurrence for rhythm section
-                            )
-                            if rhythm_pattern_id:
-                                current_patterns[rhythm_gm] = rhythm_pattern_id
-                        else:
-                            # Original: co-occurrence based sampling
-                            rhythm_pattern_id = self._sample_cooccurring_pattern(
-                                lead_pattern_id=pattern_id,
-                                target_gm=rhythm_gm
-                            )
-
-                        if not rhythm_pattern_id:
-                            rhythm_pattern_id = self._sample_pattern_for_instrument(rhythm_gm)
-
-                        if rhythm_pattern_id:
-                            rhythm_pattern = self.patterns.get(rhythm_pattern_id, {})
-                            rhythm_intervals = rhythm_pattern.get('pitch_intervals', [0])
-                            rhythm_pitch = self._sample_pitch_for_instrument(rhythm_pattern, rhythm_gm)
-
-                            # Get timing from this pattern's occurrences
-                            rhythm_ioi = base_ioi
-                            for occ in rhythm_pattern.get('occurrences', []):
-                                if occ.get('gm_program') == rhythm_gm:
-                                    rhythm_ioi = occ.get('tau_offset', base_ioi)
-                                    break
-
-                            rhythm_notes = self._expand_to_notes(
-                                rhythm_intervals, rhythm_pitch, rhythm_time, rhythm_gm, rhythm_ioi,
-                                use_variations=True
-                            )
-                            all_tracks[rhythm_gm].extend(rhythm_notes)
-
-                            # Advance rhythm time by pattern duration
-                            pattern_dur = rhythm_ioi * (len(rhythm_intervals) + 1)
-                            rhythm_time += pattern_dur
-                        else:
-                            # No pattern found, advance time anyway to avoid infinite loop
-                            rhythm_time += base_ioi
-
-                        loop_count += 1
-
-                # OTHER INSTRUMENTS
-                for other_gm in other_instruments:
-                    other_pattern_id = self._sample_pattern_for_instrument(other_gm)
-                    if other_pattern_id:
-                        other_pattern = self.patterns.get(other_pattern_id, {})
-                        other_intervals = other_pattern.get('pitch_intervals', [0])
-                        other_pitch = self._sample_pitch_for_instrument(other_pattern, other_gm)
-                        other_notes = self._expand_to_notes(
-                            other_intervals, other_pitch, current_time, other_gm, base_ioi
-                        )
-                        all_tracks[other_gm].extend(other_notes)
+                # Update current_patterns for lead
+                current_patterns[lead_gm] = pattern_id
 
                 # Advance time by phrase duration
                 current_time += phrase_duration
