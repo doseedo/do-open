@@ -231,38 +231,51 @@ def decode_tokens(
         pattern_idx = token.get('pattern_idx', -1)
         transform_id = token.get('transform_id', 0)
 
-        pitch_classes = None
+        midi_pitches = None  # Use full MIDI pitches when available
 
         if token_type == 'INTRO':
             if 0 <= pattern_idx < len(canonicals):
-                pitch_classes = np.array(canonicals[pattern_idx]['pitch_classes'], dtype=np.int8)
-                emitted[token_idx] = pitch_classes.copy()
+                pattern = canonicals[pattern_idx]
+                # Prefer canonical_pitches (full MIDI) over pitch_classes
+                if 'canonical_pitches' in pattern and pattern['canonical_pitches']:
+                    midi_pitches = np.array(pattern['canonical_pitches'], dtype=np.int32)
+                else:
+                    # Fallback to pitch_classes with base octave
+                    pitch_classes = np.array(pattern['pitch_classes'], dtype=np.int8)
+                    midi_pitches = pitch_classes + (base_octave + 1) * 12
+                emitted[token_idx] = midi_pitches.copy()
 
         elif token_type == 'REPEAT':
             if pattern_idx in emitted:
-                pitch_classes = emitted[pattern_idx].copy()
-                emitted[token_idx] = pitch_classes
+                midi_pitches = emitted[pattern_idx].copy()
+                emitted[token_idx] = midi_pitches
 
         elif token_type == 'TRANSFORM':
             if pattern_idx in emitted:
                 source = emitted[pattern_idx]
                 if transform_id < 12:
-                    pitch_classes = (source + transform_id) % 12
+                    # Transposition: add semitones
+                    midi_pitches = source + transform_id
                 else:
+                    # Inversion: reflect around axis
                     n = transform_id - 12
-                    pitch_classes = (n - source) % 12
-                emitted[token_idx] = pitch_classes.copy()
+                    # Inversion around axis n: new_pitch = 2*n - old_pitch (mod 12 for pitch class)
+                    # For MIDI pitches, we need to preserve octave info
+                    pitch_classes = source % 12
+                    octaves = source // 12
+                    new_pc = (2 * n - pitch_classes) % 12
+                    midi_pitches = new_pc + octaves * 12
+                emitted[token_idx] = midi_pitches.copy()
 
-        if pitch_classes is not None:
-            for i, pc in enumerate(pitch_classes):
-                midi_pitch = int(pc) + (base_octave + 1) * 12
+        if midi_pitches is not None:
+            for i, pitch in enumerate(midi_pitches):
                 notes.append(Note(
-                    pitch=midi_pitch,
+                    pitch=int(pitch),
                     onset=current_time + i * default_duration,
                     duration=default_duration,
                     velocity=default_velocity,
                 ))
-            current_time += len(pitch_classes) * default_duration
+            current_time += len(midi_pitches) * default_duration
 
     return notes
 

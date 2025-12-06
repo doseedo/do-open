@@ -427,12 +427,18 @@ def run_server(checkpoint_path: str, port: int = 8765, directory: str = None):
         with open(patterns_path, 'r') as f:
             patterns = json.load(f)
         # Extract canonical pitches from patterns for encoding
-        canonicals = {}
-        for pid, pdata in patterns.items():
-            if 'canonical_pitches' in pdata:
-                canonicals[pid] = pdata['canonical_pitches']
+        # Convert to list format for compatibility with live_round_trip encoding functions
+        canonicals = []
+        for pid in sorted(patterns.keys(), key=lambda x: int(x) if x.isdigit() else float('inf')):
+            pdata = patterns[pid]
+            entry = {'id': pid}
+            if 'canonical_pitches' in pdata and pdata['canonical_pitches']:
+                entry['canonical_pitches'] = pdata['canonical_pitches']
+                # Also derive pitch_classes for pattern matching
+                entry['pitch_classes'] = [p % 12 for p in pdata['canonical_pitches']]
             elif 'pitch_classes' in pdata:
-                canonicals[pid] = pdata['pitch_classes']
+                entry['pitch_classes'] = pdata['pitch_classes']
+            canonicals.append(entry)
         print(f"Extracted {len(canonicals)} canonical patterns from patterns file")
     # Legacy: canonical_patterns_json inline
     elif 'canonical_patterns_json' in ckpt:
