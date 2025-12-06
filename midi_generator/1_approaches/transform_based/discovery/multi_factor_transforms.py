@@ -148,6 +148,26 @@ DURATION_SCALE_FACTORS = [
 ]
 
 
+def compute_intervals(pitch_classes: List[int]) -> Tuple[int, ...]:
+    """
+    Compute interval sequence (contour) from pitch classes.
+
+    Two patterns with same intervals have same melodic shape,
+    even if they start on different pitches.
+    """
+    if len(pitch_classes) < 2:
+        return ()
+    intervals = []
+    for i in range(len(pitch_classes) - 1):
+        # Signed interval mod 12 (treat ascending/descending distinctly)
+        interval = (pitch_classes[i + 1] - pitch_classes[i]) % 12
+        # Convert to signed (-6 to +5 range for proper direction)
+        if interval > 6:
+            interval -= 12
+        intervals.append(interval)
+    return tuple(intervals)
+
+
 def find_scale_factor(
     source: np.ndarray,
     target: np.ndarray,
@@ -250,19 +270,22 @@ def discover_rhythm_transforms_gpu(
     if verbose:
         print(f"  Discovering rhythm (τ) transforms on {len(patterns)} patterns...", flush=True)
 
-    # Group patterns by pitch content (same pitch = candidates for τ relation)
-    by_pitch = defaultdict(list)
+    # Group patterns by CONTOUR (intervals), not exact pitch
+    # This finds patterns with same melodic shape but different starting pitches
+    by_contour = defaultdict(list)
     for i, p in enumerate(patterns):
-        pc = tuple(p.get('pitch_classes', []))
+        pc = p.get('pitch_classes', [])
         rr = p.get('rhythm_ratios', [])
-        if pc and len(rr) >= 1:
-            by_pitch[pc].append((i, np.array(rr, dtype=np.float32)))
+        if len(pc) >= 2 and len(rr) >= 1:
+            # Use intervals (contour) as grouping key
+            contour = compute_intervals(pc)
+            by_contour[contour].append((i, np.array(rr, dtype=np.float32)))
 
     relations = defaultdict(list)
     total_pairs = 0
     total_found = 0
 
-    for pitch_sig, group in by_pitch.items():
+    for contour_sig, group in by_contour.items():
         if len(group) < 2:
             continue
 
@@ -297,7 +320,7 @@ def discover_rhythm_transforms_gpu(
                     total_found += 1
 
     if verbose:
-        print(f"    Checked {total_pairs} same-pitch pairs, found {total_found} τ relations")
+        print(f"    Checked {total_pairs} same-contour pairs, found {total_found} τ relations")
         print(f"    Unique τ transforms: {len(relations)}")
         for t, pairs in sorted(relations.items(), key=lambda x: -len(x[1]))[:5]:
             print(f"      {t}: {len(pairs)} pairs")
@@ -343,26 +366,28 @@ def discover_velocity_transforms_gpu(
     if verbose:
         print(f"  Discovering velocity (v) transforms on {len(patterns)} patterns...", flush=True)
 
-    # Group patterns by (pitch, rhythm) content
+    # Group patterns by (contour, rhythm) content
+    # Using intervals instead of exact pitch_classes
     def make_rhythm_key(rr):
         """Quantize rhythm ratios for grouping."""
         return tuple(round(r * 4) / 4 for r in rr)  # Quarter resolution
 
-    by_pitch_rhythm = defaultdict(list)
+    by_contour_rhythm = defaultdict(list)
     for i, p in enumerate(patterns):
-        pc = tuple(p.get('pitch_classes', []))
+        pc = p.get('pitch_classes', [])
         rr = p.get('rhythm_ratios', [])
         vr = p.get('velocity_ratios', [])
-        if pc and len(vr) >= 1:
+        if len(pc) >= 2 and len(vr) >= 1:
+            contour = compute_intervals(pc)
             rr_key = make_rhythm_key(rr) if rr else ()
-            key = (pc, rr_key)
-            by_pitch_rhythm[key].append((i, np.array(vr, dtype=np.float32)))
+            key = (contour, rr_key)
+            by_contour_rhythm[key].append((i, np.array(vr, dtype=np.float32)))
 
     relations = defaultdict(list)
     total_pairs = 0
     total_found = 0
 
-    for key, group in by_pitch_rhythm.items():
+    for key, group in by_contour_rhythm.items():
         if len(group) < 2:
             continue
 
@@ -389,7 +414,7 @@ def discover_velocity_transforms_gpu(
                     total_found += 1
 
     if verbose:
-        print(f"    Checked {total_pairs} same-pitch-rhythm pairs, found {total_found} v relations")
+        print(f"    Checked {total_pairs} same-contour-rhythm pairs, found {total_found} v relations")
         print(f"    Unique v transforms: {len(relations)}")
         for t, pairs in sorted(relations.items(), key=lambda x: -len(x[1]))[:5]:
             print(f"      {t}: {len(pairs)} pairs")
@@ -428,25 +453,27 @@ def discover_duration_transforms_gpu(
     if verbose:
         print(f"  Discovering duration (d) transforms on {len(patterns)} patterns...", flush=True)
 
-    # Group patterns by (pitch, rhythm) content
+    # Group patterns by (contour, rhythm) content
+    # Using intervals instead of exact pitch_classes
     def make_rhythm_key(rr):
         return tuple(round(r * 4) / 4 for r in rr)
 
-    by_pitch_rhythm = defaultdict(list)
+    by_contour_rhythm = defaultdict(list)
     for i, p in enumerate(patterns):
-        pc = tuple(p.get('pitch_classes', []))
+        pc = p.get('pitch_classes', [])
         rr = p.get('rhythm_ratios', [])
         dr = p.get('duration_ratios', [])
-        if pc and len(dr) >= 1:
+        if len(pc) >= 2 and len(dr) >= 1:
+            contour = compute_intervals(pc)
             rr_key = make_rhythm_key(rr) if rr else ()
-            key = (pc, rr_key)
-            by_pitch_rhythm[key].append((i, np.array(dr, dtype=np.float32)))
+            key = (contour, rr_key)
+            by_contour_rhythm[key].append((i, np.array(dr, dtype=np.float32)))
 
     relations = defaultdict(list)
     total_pairs = 0
     total_found = 0
 
-    for key, group in by_pitch_rhythm.items():
+    for key, group in by_contour_rhythm.items():
         if len(group) < 2:
             continue
 
@@ -473,7 +500,7 @@ def discover_duration_transforms_gpu(
                     total_found += 1
 
     if verbose:
-        print(f"    Checked {total_pairs} same-pitch-rhythm pairs, found {total_found} d relations")
+        print(f"    Checked {total_pairs} same-contour-rhythm pairs, found {total_found} d relations")
         print(f"    Unique d transforms: {len(relations)}")
         for t, pairs in sorted(relations.items(), key=lambda x: -len(x[1]))[:5]:
             print(f"      {t}: {len(pairs)} pairs")
@@ -525,12 +552,14 @@ def discover_cross_factor_relations(
             rr_key = quantize_rhythm(rr)
             by_rhythm[rr_key].append(i)
 
-    # Group by pitch (to find "same pitch, different rhythm")
-    by_pitch = defaultdict(list)
+    # Group by CONTOUR (to find "same contour, different rhythm")
+    # Using intervals instead of exact pitch_classes
+    by_contour = defaultdict(list)
     for i, p in enumerate(patterns):
-        pc = tuple(p.get('pitch_classes', []))
-        if pc:
-            by_pitch[pc].append(i)
+        pc = p.get('pitch_classes', [])
+        if len(pc) >= 2:
+            contour = compute_intervals(pc)
+            by_contour[contour].append(i)
 
     relations = []
 
@@ -558,10 +587,10 @@ def discover_cross_factor_relations(
                     relations.append(rel)
                     same_rhythm_different_pitch += 1
 
-    # Find "same pitch, different rhythm" relations
-    same_pitch_different_rhythm = 0
-    for pc_key, indices in by_pitch.items():
-        if len(indices) < 2 or len(pc_key) < 2:
+    # Find "same contour, different rhythm" relations
+    same_contour_different_rhythm = 0
+    for contour_key, indices in by_contour.items():
+        if len(indices) < 2 or len(contour_key) < 1:
             continue
 
         for i, idx_a in enumerate(indices):
@@ -570,7 +599,7 @@ def discover_cross_factor_relations(
                 rr_b = tuple(patterns[idx_b].get('rhythm_ratios', []))
 
                 if rr_a != rr_b and len(rr_a) == len(rr_b):
-                    # Same pitch, different rhythm
+                    # Same contour, different rhythm
                     rr_a_arr = np.array(rr_a, dtype=np.float32)
                     rr_b_arr = np.array(rr_b, dtype=np.float32)
 
@@ -580,15 +609,15 @@ def discover_cross_factor_relations(
                         rel = MultiFactorRelation(
                             source_id=str(idx_a),
                             target_id=str(idx_b),
-                            pitch_transform="identity",
+                            pitch_transform="identity",  # Same contour = identity in pitch space
                             rhythm_transform=FactorTransform(FactorType.RHYTHM, 'scale', k),
                         )
                         relations.append(rel)
-                        same_pitch_different_rhythm += 1
+                        same_contour_different_rhythm += 1
 
     if verbose:
         print(f"    Same rhythm, different pitch: {same_rhythm_different_pitch}")
-        print(f"    Same pitch, different rhythm: {same_pitch_different_rhythm}")
+        print(f"    Same contour, different rhythm: {same_contour_different_rhythm}")
         print(f"    Total cross-factor relations: {len(relations)}")
 
     return relations
