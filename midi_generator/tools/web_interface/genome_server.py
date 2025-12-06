@@ -239,14 +239,19 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 velocity_ratios = rule_data.get('velocity_ratios', [])
 
             # Get offsets from occurrence data (v33/v37) or use defaults
+            # IMPORTANT: Use 'or' to handle None values (not just missing keys)
             tau_offset = 480  # Default IOI
             duration_offset = 480  # Default duration
             v_offset_raw = 80  # Default velocity (MIDI)
 
             if occ_data:
-                tau_offset = occ_data.get('tau_offset', 480)
-                duration_offset = occ_data.get('duration_offset', 480)
-                v_offset_raw = occ_data.get('v_offset', 80)
+                tau_offset = occ_data.get('tau_offset') or 480  # Handle None
+                duration_offset = occ_data.get('duration_offset') or 480  # Handle None
+                v_offset_raw = occ_data.get('v_offset') or 80  # Handle None
+
+            # Sanity bounds - prevent extreme values from corrupted data
+            tau_offset = max(1, min(tau_offset, 48000))  # 1 tick to 100 quarter notes
+            duration_offset = max(1, min(duration_offset, 48000))
 
             # v37 format stores v_offset as a bucket (0-7), not MIDI velocity
             # Detect by checking if value is small (bucket) vs large (MIDI)
@@ -288,12 +293,16 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 # Compute duration
                 if duration_ratios and i < len(duration_ratios):
                     # v33/v37 format: use ratio * offset
-                    dur_ticks = int(duration_ratios[i] * duration_offset)
+                    # Cap ratio to prevent extremely long notes from corrupted data
+                    ratio = min(duration_ratios[i], 50.0)  # Max 50x the base duration
+                    dur_ticks = int(ratio * duration_offset)
                 elif i < len(durations):
                     # Fall back to bucket
                     dur_ticks = dur_bucket_to_ticks(durations[i])
                 else:
                     dur_ticks = duration_offset
+                # Sanity bounds on final duration (1 tick to 20 quarter notes)
+                dur_ticks = max(1, min(dur_ticks, 9600))
 
                 events.append({
                     'time': current_time * ticks_to_sec,
@@ -635,9 +644,12 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 stats['keys_discovered'] = 'pitch_offset_relative' in stats.get('useful_features', [])
             # Add v43 multi-factor summary
             if GenomeGraphHandler.multi_factor:
-                stats['n_rhythm_transforms'] = len(GenomeGraphHandler.multi_factor.get('rhythm_transforms', []))
-                stats['n_velocity_transforms'] = len(GenomeGraphHandler.multi_factor.get('velocity_transforms', []))
-                stats['n_duration_transforms'] = len(GenomeGraphHandler.multi_factor.get('duration_transforms', []))
+                def mf_count(key):
+                    v = GenomeGraphHandler.multi_factor.get(key, 0)
+                    return len(v) if isinstance(v, list) else (v if isinstance(v, int) else 0)
+                stats['n_rhythm_transforms'] = mf_count('rhythm_transforms')
+                stats['n_velocity_transforms'] = mf_count('velocity_transforms')
+                stats['n_duration_transforms'] = mf_count('duration_transforms')
             # Add track derives count
             if GenomeGraphHandler.track_derives:
                 stats['n_track_derives'] = len(GenomeGraphHandler.track_derives)
@@ -3599,9 +3611,13 @@ def main():
                 if os.path.exists(mf_path):
                     with open(mf_path, 'r') as f:
                         GenomeGraphHandler.multi_factor = json.load(f)
-                    n_tau = len(GenomeGraphHandler.multi_factor.get('rhythm_transforms', []))
-                    n_vel = len(GenomeGraphHandler.multi_factor.get('velocity_transforms', []))
-                    n_dur = len(GenomeGraphHandler.multi_factor.get('duration_transforms', []))
+                    # Handle both formats: list or int count
+                    def get_count(key):
+                        v = GenomeGraphHandler.multi_factor.get(key, 0)
+                        return len(v) if isinstance(v, list) else (v if isinstance(v, int) else 0)
+                    n_tau = get_count('rhythm_transforms')
+                    n_vel = get_count('velocity_transforms')
+                    n_dur = get_count('duration_transforms')
                     print(f"Loaded multi-factor transforms: τ={n_tau}, v={n_vel}, d={n_dur}")
 
             # v43: Load track derives (cross-track arrangements)
@@ -3610,7 +3626,12 @@ def main():
                 td_path = os.path.join(checkpoint_dir, td_file)
                 if os.path.exists(td_path):
                     with open(td_path, 'r') as f:
-                        GenomeGraphHandler.track_derives = json.load(f)
+                        td_data = json.load(f)
+                    # Handle both formats: list or {"derives_json": [...]}
+                    if isinstance(td_data, dict) and 'derives_json' in td_data:
+                        GenomeGraphHandler.track_derives = td_data['derives_json']
+                    else:
+                        GenomeGraphHandler.track_derives = td_data
                     print(f"Loaded {len(GenomeGraphHandler.track_derives)} track derive relations")
 
             # v43: Load feature importance (MDL-discovered useful features)
