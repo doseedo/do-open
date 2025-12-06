@@ -5,8 +5,8 @@ import numpy as np
 from typing import Dict, List, Optional
 from pathlib import Path
 
-from .sampler import PatternSampler, TransformSampler, Pattern
-from .orchestrator import Orchestrator, Track, TrackSegment, INSTRUMENT_TO_GM, BIG_BAND_INSTRUMENTS
+from .sampler import PatternSampler, TransformSampler, Pattern, INSTRUMENT_TO_GM
+from .orchestrator import Orchestrator, Track, TrackSegment, INSTRUMENT_OCTAVE_OFFSET
 from .timing import TimingAssigner
 from .midi_output import MIDIWriter
 
@@ -53,10 +53,13 @@ class ArrangementGenerator:
         use_meta_patterns: bool = True,
         variation: float = 0.0,
     ) -> Dict[str, Track]:
-        """Generate a multitrack arrangement.
+        """Generate a multitrack arrangement with per-instrument patterns.
+
+        Each instrument gets patterns from what that instrument actually plays
+        in the corpus (bass gets bass patterns, piano gets piano patterns, etc.)
 
         Args:
-            seed_pattern_id: Starting pattern ID (random if None)
+            seed_pattern_id: Starting pattern ID for first instrument (random if None)
             n_patterns: Number of patterns to chain horizontally
             instruments: List of instruments (default: big band section)
             base_pitch: Base MIDI pitch (60 = middle C)
@@ -67,35 +70,106 @@ class ArrangementGenerator:
             Dict mapping instrument name to Track
         """
         if instruments is None:
-            instruments = ['Trumpet', 'Trombone', 'Alto Sax', 'Tenor Sax', 'Piano']
+            instruments = ['Trumpet', 'Trombone', 'Alto Sax', 'Acoustic Bass', 'Piano']
 
-        if seed_pattern_id is not None:
-            seed_pattern = self.pattern_sampler.get_pattern(seed_pattern_id)
+        tracks = {}
+
+        for instrument in instruments:
+            # Sample a seed pattern appropriate for this instrument
+            seed_pattern = self.pattern_sampler.sample_for_instrument(instrument)
             if seed_pattern is None:
                 seed_pattern = self.pattern_sampler.sample()
-        else:
-            seed_pattern = self.pattern_sampler.sample()
 
-        transform_sequence = self.transform_sampler.sample_transform_sequence(
-            n_patterns, use_meta=use_meta_patterns
-        )
+            # Generate transform sequence for horizontal development
+            transform_sequence = self.transform_sampler.sample_transform_sequence(
+                n_patterns - 1, use_meta=use_meta_patterns
+            )
 
-        lead_track = self._develop_horizontal(seed_pattern, transform_sequence)
-        lead_track.instrument = instruments[0]
-        lead_track.gm_program = INSTRUMENT_TO_GM.get(instruments[0], 0)
+            # Build track with instrument-specific patterns
+            track = self._develop_horizontal_for_instrument(
+                seed_pattern, transform_sequence, instrument
+            )
 
-        self.timing.assign_timing(lead_track)
+            # Set instrument properties
+            track.instrument = instrument
+            track.gm_program = INSTRUMENT_TO_GM.get(instrument, 0)
+            track.octave_offset = INSTRUMENT_OCTAVE_OFFSET.get(instrument, 0)
 
-        tracks = self.orchestrator.orchestrate(
-            lead_track,
-            instruments[1:],
-            variation=variation
-        )
-
-        for name, track in tracks.items():
+            # Assign timing
             self.timing.assign_timing(track)
 
+            tracks[instrument] = track
+
         return tracks
+
+    def _develop_horizontal_for_instrument(
+        self,
+        seed_pattern: Pattern,
+        transform_sequence: List[str],
+        instrument: str
+    ) -> Track:
+        """Develop a track horizontally using patterns appropriate for the instrument."""
+        segments = []
+        current_pattern = seed_pattern
+        current_pitch_offset = 0
+
+        # First segment
+        segment = TrackSegment(
+            pattern_id=current_pattern.id,
+            pitch_intervals=current_pattern.pitch_intervals.copy(),
+            pitch_offset=current_pitch_offset,
+            rhythm_bucket=current_pattern.rhythm_bucket,
+            velocity_bucket=current_pattern.velocity_bucket,
+        )
+        segments.append(segment)
+
+        for transform in transform_sequence:
+            # For each step, try to find an actual pattern this instrument plays
+            # that matches the transformed intervals
+            new_intervals = self.transform_sampler.apply_transform_to_intervals(
+                current_pattern.pitch_intervals, transform
+            )
+            pitch_delta, is_inverted, is_retrograde = self.transform_sampler.get_transform_delta(transform)
+            current_pitch_offset = (current_pitch_offset + pitch_delta) % 12
+
+            # Try to find a matching pattern for this instrument
+            next_pattern = self._find_instrument_pattern(new_intervals, instrument)
+            if next_pattern is None:
+                # Fall back to sampling a new pattern for this instrument
+                next_pattern = self.pattern_sampler.sample_for_instrument(instrument)
+                if next_pattern is None:
+                    next_pattern = current_pattern
+                new_intervals = next_pattern.pitch_intervals.copy()
+
+            segment = TrackSegment(
+                pattern_id=next_pattern.id,
+                pitch_intervals=new_intervals,
+                pitch_offset=current_pitch_offset,
+                rhythm_bucket=next_pattern.rhythm_bucket,
+                velocity_bucket=next_pattern.velocity_bucket,
+            )
+            segments.append(segment)
+            current_pattern = next_pattern
+
+        return Track(
+            instrument=instrument,
+            gm_program=INSTRUMENT_TO_GM.get(instrument, 0),
+            segments=segments,
+        )
+
+    def _find_instrument_pattern(self, intervals: List[int], instrument: str) -> Optional[Pattern]:
+        """Find a pattern matching intervals that this instrument plays."""
+        gm = INSTRUMENT_TO_GM.get(instrument)
+        if gm is None:
+            return self._find_matching_pattern(intervals)
+
+        # Look for patterns that both match intervals AND are played by this instrument
+        for pattern in self.pattern_sampler.patterns.values():
+            if pattern.pitch_intervals == intervals and gm in pattern.gm_programs:
+                return pattern
+
+        # Fall back to any pattern with matching intervals
+        return self._find_matching_pattern(intervals)
 
     def _develop_horizontal(
         self,

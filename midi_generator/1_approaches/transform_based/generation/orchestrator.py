@@ -31,6 +31,19 @@ BIG_BAND_INSTRUMENTS = [
     'Piano', 'Acoustic Bass', 'Drums'
 ]
 
+# Octave offset by instrument register (semitones relative to middle C = 60)
+# This helps differentiate tracks even when they have identity transforms
+INSTRUMENT_OCTAVE_OFFSET = {
+    'Piccolo': 12, 'Flute': 0, 'Clarinet': 0, 'Oboe': 0,
+    'Alto Sax': 0, 'Soprano Sax': 0,
+    'Trumpet': 0, 'Muted Trumpet': 0,
+    'Tenor Sax': -12, 'French Horn': -12,
+    'Trombone': -12, 'Bassoon': -12,
+    'Baritone Sax': -12,
+    'Tuba': -24, 'Contrabass': -24, 'Acoustic Bass': -24, 'Electric Bass (finger)': -24,
+    'Piano': 0, 'Acoustic Grand Piano': 0,
+}
+
 
 @dataclass
 class OrchestrationRule:
@@ -61,6 +74,7 @@ class Track:
     gm_program: int
     segments: List[TrackSegment] = field(default_factory=list)
     is_drum: bool = False
+    octave_offset: int = 0  # Semitones to offset the entire track (for register)
 
 
 class Orchestrator:
@@ -76,11 +90,12 @@ class Orchestrator:
         raw_rules = meta_data.get('orchestration_rules', [])
 
         for rule in raw_rules:
-            leader = rule.get('leader', 'Piano')
-            follower = rule.get('follower', 'Piano')
+            # Support both old format (leader/follower) and new format (source_name/target_name)
+            leader = rule.get('source_name', rule.get('leader', 'Piano'))
+            follower = rule.get('target_name', rule.get('follower', 'Piano'))
             transform = rule.get('transform', 'identity')
             confidence = rule.get('confidence', 1.0)
-            count = rule.get('count', 0)
+            count = rule.get('frequency', rule.get('count', 0))
 
             key = (leader, follower)
             self.orchestration_rules[key] = OrchestrationRule(
@@ -115,6 +130,7 @@ class Orchestrator:
         """Derive a follower track from a leader track.
 
         Uses orchestration rules if available, otherwise uses identity transform.
+        Also applies register-appropriate octave offsets for differentiation.
         """
         rule = self.get_rule(lead_track.instrument, follower_instrument)
 
@@ -123,6 +139,11 @@ class Orchestrator:
         else:
             transform = 'identity'
 
+        # Calculate octave offset based on instrument registers
+        leader_octave = INSTRUMENT_OCTAVE_OFFSET.get(lead_track.instrument, 0)
+        follower_octave = INSTRUMENT_OCTAVE_OFFSET.get(follower_instrument, 0)
+        octave_offset = follower_octave - leader_octave
+
         derived_segments = []
         for segment in lead_track.segments:
             new_intervals = self.transform_sampler.apply_transform_to_intervals(
@@ -130,10 +151,13 @@ class Orchestrator:
             )
             pitch_delta, _, _ = self.transform_sampler.get_transform_delta(transform)
 
+            # Apply both transform pitch delta and octave offset
+            total_offset = pitch_delta + octave_offset
+
             derived_segment = TrackSegment(
                 pattern_id=segment.pattern_id,
                 pitch_intervals=new_intervals,
-                pitch_offset=(segment.pitch_offset + pitch_delta) % 12,
+                pitch_offset=(segment.pitch_offset + total_offset) % 12,
                 rhythm_bucket=segment.rhythm_bucket,
                 velocity_bucket=segment.velocity_bucket,
                 onset_time=segment.onset_time,
@@ -148,6 +172,7 @@ class Orchestrator:
             gm_program=gm,
             segments=derived_segments,
             is_drum=False,
+            octave_offset=octave_offset,  # Store for MIDI output
         )
 
     def orchestrate(

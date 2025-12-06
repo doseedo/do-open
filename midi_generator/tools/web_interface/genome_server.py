@@ -897,6 +897,19 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                     })
                 except (ValueError, KeyError) as e:
                     self.send_json({'error': str(e)}, 400)
+        # Piece comparison endpoints
+        elif path == '/compare' or path == '/compare/':
+            self.serve_compare()
+        elif path == '/api/compare':
+            piece1 = query.get('piece1', [None])[0]
+            piece2 = query.get('piece2', [None])[0]
+            if not piece1 or not piece2:
+                self.send_json({'error': 'Must provide piece1 and piece2 query parameters'}, 400)
+            else:
+                piece1 = unquote(piece1)
+                piece2 = unquote(piece2)
+                result = self.compare_pieces(piece1, piece2)
+                self.send_json(result)
         else:
             self.send_json({'error': 'Not found'}, 404)
 
@@ -1148,6 +1161,427 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         # Collect unique tracks for legend
         unique_tracks = sorted(set(n.get('data', {}).get('track_id', 0) or 0 for n in node_list))
         data['tracks'] = [{'track_id': t, 'color': TRACK_COLORS[t % len(TRACK_COLORS)]} for t in unique_tracks]
+
+    def get_piece_patterns(self, piece_id: str) -> set:
+        """Get set of pattern IDs used in a piece."""
+        edge_ids = self.graph._edges_by_piece.get(piece_id, [])
+        patterns = set()
+        for eid in edge_ids:
+            edge = self.graph.edges.get(eid)
+            if edge:
+                patterns.add(edge.source)
+                patterns.add(edge.target)
+        return patterns
+
+    def get_piece_transforms(self, piece_id: str) -> dict:
+        """Get frequency distribution of transforms used in a piece."""
+        edge_ids = self.graph._edges_by_piece.get(piece_id, [])
+        transforms = defaultdict(int)
+        for eid in edge_ids:
+            edge = self.graph.edges.get(eid)
+            if edge and edge.transform:
+                transforms[edge.transform] += 1
+        return dict(transforms)
+
+    def get_piece_intervals(self, piece_id: str) -> list:
+        """Get all pitch intervals used in a piece's patterns."""
+        patterns = self.get_piece_patterns(piece_id)
+        intervals = []
+        for pid in patterns:
+            pattern = self.graph.patterns.get(pid)
+            if pattern:
+                # Try pitch_intervals first (v53+), then intervals
+                pi = getattr(pattern, 'pitch_intervals', None)
+                if pi:
+                    intervals.extend(pi)
+                elif hasattr(pattern, 'intervals'):
+                    intervals.extend(pattern.intervals)
+        return intervals
+
+    def compare_pieces(self, piece1: str, piece2: str) -> dict:
+        """Compare two pieces using multiple similarity metrics."""
+        # Get pattern sets
+        patterns1 = self.get_piece_patterns(piece1)
+        patterns2 = self.get_piece_patterns(piece2)
+
+        # Get transform distributions
+        transforms1 = self.get_piece_transforms(piece1)
+        transforms2 = self.get_piece_transforms(piece2)
+
+        # Get interval distributions
+        intervals1 = self.get_piece_intervals(piece1)
+        intervals2 = self.get_piece_intervals(piece2)
+
+        # Compute similarity metrics
+        metrics = {}
+
+        # 1. Pattern Jaccard similarity (shared patterns / union of patterns)
+        shared_patterns = patterns1 & patterns2
+        union_patterns = patterns1 | patterns2
+        metrics['pattern_jaccard'] = len(shared_patterns) / len(union_patterns) if union_patterns else 0
+
+        # 2. Pattern overlap coefficient (shared / min)
+        metrics['pattern_overlap'] = len(shared_patterns) / min(len(patterns1), len(patterns2)) if min(len(patterns1), len(patterns2)) > 0 else 0
+
+        # 3. Transform Jaccard (shared transform types / union)
+        shared_transforms = set(transforms1.keys()) & set(transforms2.keys())
+        union_transforms = set(transforms1.keys()) | set(transforms2.keys())
+        metrics['transform_jaccard'] = len(shared_transforms) / len(union_transforms) if union_transforms else 0
+
+        # 4. Transform distribution cosine similarity
+        all_transforms = union_transforms
+        if all_transforms:
+            vec1 = [transforms1.get(t, 0) for t in all_transforms]
+            vec2 = [transforms2.get(t, 0) for t in all_transforms]
+            dot = sum(a * b for a, b in zip(vec1, vec2))
+            norm1 = sum(a * a for a in vec1) ** 0.5
+            norm2 = sum(b * b for b in vec2) ** 0.5
+            metrics['transform_cosine'] = dot / (norm1 * norm2) if norm1 * norm2 > 0 else 0
+        else:
+            metrics['transform_cosine'] = 0
+
+        # 5. Interval distribution similarity
+        from collections import Counter
+        int_counts1 = Counter(intervals1)
+        int_counts2 = Counter(intervals2)
+        all_intervals = set(int_counts1.keys()) | set(int_counts2.keys())
+        if all_intervals:
+            vec1 = [int_counts1.get(i, 0) for i in all_intervals]
+            vec2 = [int_counts2.get(i, 0) for i in all_intervals]
+            dot = sum(a * b for a, b in zip(vec1, vec2))
+            norm1 = sum(a * a for a in vec1) ** 0.5
+            norm2 = sum(b * b for b in vec2) ** 0.5
+            metrics['interval_cosine'] = dot / (norm1 * norm2) if norm1 * norm2 > 0 else 0
+        else:
+            metrics['interval_cosine'] = 0
+
+        # 6. Overall similarity (weighted average)
+        metrics['overall'] = (
+            0.3 * metrics['pattern_jaccard'] +
+            0.2 * metrics['pattern_overlap'] +
+            0.2 * metrics['transform_cosine'] +
+            0.3 * metrics['interval_cosine']
+        )
+
+        return {
+            'piece1': piece1,
+            'piece2': piece2,
+            'metrics': metrics,
+            'details': {
+                'piece1_patterns': len(patterns1),
+                'piece2_patterns': len(patterns2),
+                'shared_patterns': len(shared_patterns),
+                'shared_pattern_ids': list(shared_patterns)[:20],  # First 20
+                'piece1_transforms': len(transforms1),
+                'piece2_transforms': len(transforms2),
+                'shared_transforms': list(shared_transforms),
+                'piece1_intervals': len(intervals1),
+                'piece2_intervals': len(intervals2),
+            }
+        }
+
+    def serve_compare(self):
+        """Serve the piece comparison HTML page."""
+        html = '''<!DOCTYPE html>
+<html>
+<head>
+    <title>Piece Comparison</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #e94560; margin-bottom: 20px; }
+        h2 { color: #0f4c75; margin: 20px 0 10px; font-size: 16px; }
+        .selectors {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        .selector-group {
+            flex: 1;
+            min-width: 300px;
+        }
+        .selector-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #888;
+        }
+        select {
+            width: 100%;
+            padding: 10px;
+            background: #0f3460;
+            border: 1px solid #16213e;
+            color: #e0e0e0;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background: #e94560;
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        button:hover { background: #ff6b6b; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        .results {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .metric-card {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .metric-name {
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .metric-bar {
+            height: 6px;
+            background: #1a1a2e;
+            border-radius: 3px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .metric-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e94560, #4CAF50);
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+        .overall-score {
+            text-align: center;
+            padding: 30px;
+            background: #0f3460;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .overall-score .score {
+            font-size: 64px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #e94560, #4CAF50);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .overall-score .label {
+            color: #888;
+            margin-top: 5px;
+        }
+        .details {
+            margin-top: 20px;
+            padding: 15px;
+            background: #0f3460;
+            border-radius: 8px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #16213e;
+        }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-label { color: #888; }
+        .shared-patterns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 10px;
+        }
+        .pattern-chip {
+            background: #e94560;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        .loading { text-align: center; padding: 40px; color: #888; }
+        .back-link {
+            display: inline-block;
+            color: #e94560;
+            text-decoration: none;
+            margin-bottom: 20px;
+        }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">&larr; Back to Genome Editor</a>
+        <h1>Piece Comparison</h1>
+
+        <div class="selectors">
+            <div class="selector-group">
+                <label>Piece 1</label>
+                <select id="piece1">
+                    <option value="">Loading pieces...</option>
+                </select>
+            </div>
+            <div class="selector-group">
+                <label>Piece 2</label>
+                <select id="piece2">
+                    <option value="">Loading pieces...</option>
+                </select>
+            </div>
+        </div>
+        <button id="compare-btn" onclick="compare()" disabled>Compare Pieces</button>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        let pieces = [];
+
+        async function loadPieces() {
+            const response = await fetch('/api/pieces');
+            const data = await response.json();
+            pieces = data.pieces || [];
+
+            const select1 = document.getElementById('piece1');
+            const select2 = document.getElementById('piece2');
+
+            const options = pieces.map(p => `<option value="${p}">${p}</option>`).join('');
+            select1.innerHTML = '<option value="">Select a piece...</option>' + options;
+            select2.innerHTML = '<option value="">Select a piece...</option>' + options;
+
+            // Enable compare button when both selected
+            select1.onchange = select2.onchange = () => {
+                document.getElementById('compare-btn').disabled =
+                    !select1.value || !select2.value || select1.value === select2.value;
+            };
+        }
+
+        async function compare() {
+            const piece1 = document.getElementById('piece1').value;
+            const piece2 = document.getElementById('piece2').value;
+
+            if (!piece1 || !piece2) return;
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">Comparing pieces...</div>';
+
+            try {
+                const response = await fetch(`/api/compare?piece1=${encodeURIComponent(piece1)}&piece2=${encodeURIComponent(piece2)}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    resultsDiv.innerHTML = `<div class="results"><p style="color: #e94560;">Error: ${data.error}</p></div>`;
+                    return;
+                }
+
+                const m = data.metrics;
+                const d = data.details;
+
+                resultsDiv.innerHTML = `
+                    <div class="results">
+                        <div class="overall-score">
+                            <div class="score">${(m.overall * 100).toFixed(1)}%</div>
+                            <div class="label">Overall Similarity</div>
+                        </div>
+
+                        <h2>Similarity Metrics</h2>
+                        <div class="metric-grid">
+                            <div class="metric-card">
+                                <div class="metric-name">Pattern Jaccard</div>
+                                <div class="metric-value">${(m.pattern_jaccard * 100).toFixed(1)}%</div>
+                                <div class="metric-bar"><div class="metric-bar-fill" style="width: ${m.pattern_jaccard * 100}%"></div></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-name">Pattern Overlap</div>
+                                <div class="metric-value">${(m.pattern_overlap * 100).toFixed(1)}%</div>
+                                <div class="metric-bar"><div class="metric-bar-fill" style="width: ${m.pattern_overlap * 100}%"></div></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-name">Transform Jaccard</div>
+                                <div class="metric-value">${(m.transform_jaccard * 100).toFixed(1)}%</div>
+                                <div class="metric-bar"><div class="metric-bar-fill" style="width: ${m.transform_jaccard * 100}%"></div></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-name">Transform Cosine</div>
+                                <div class="metric-value">${(m.transform_cosine * 100).toFixed(1)}%</div>
+                                <div class="metric-bar"><div class="metric-bar-fill" style="width: ${m.transform_cosine * 100}%"></div></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-name">Interval Cosine</div>
+                                <div class="metric-value">${(m.interval_cosine * 100).toFixed(1)}%</div>
+                                <div class="metric-bar"><div class="metric-bar-fill" style="width: ${m.interval_cosine * 100}%"></div></div>
+                            </div>
+                        </div>
+
+                        <div class="details">
+                            <h2>Details</h2>
+                            <div class="detail-row">
+                                <span class="detail-label">${data.piece1} patterns</span>
+                                <span>${d.piece1_patterns}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${data.piece2} patterns</span>
+                                <span>${d.piece2_patterns}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Shared patterns</span>
+                                <span>${d.shared_patterns}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${data.piece1} transforms</span>
+                                <span>${d.piece1_transforms}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${data.piece2} transforms</span>
+                                <span>${d.piece2_transforms}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Shared transforms</span>
+                                <span>${d.shared_transforms.length}</span>
+                            </div>
+                        </div>
+
+                        ${d.shared_pattern_ids.length > 0 ? `
+                        <div class="details">
+                            <h2>Shared Pattern IDs (first 20)</h2>
+                            <div class="shared-patterns">
+                                ${d.shared_pattern_ids.map(p => `<span class="pattern-chip">P${p}</span>`).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="results"><p style="color: #e94560;">Error: ${error.message}</p></div>`;
+            }
+        }
+
+        // Load pieces on page load
+        loadPieces();
+    </script>
+</body>
+</html>'''
+        self.send_html(html)
 
     def serve_editor(self):
         """Serve the genome editor HTML."""

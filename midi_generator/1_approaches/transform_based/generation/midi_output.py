@@ -78,7 +78,9 @@ class MIDIWriter:
 
         midi_track.append(mido.Message('program_change', program=track.gm_program, time=0))
 
-        notes = self.segments_to_notes(track.segments, base_pitch)
+        # Apply track's octave offset for register differentiation
+        effective_base_pitch = base_pitch + track.octave_offset
+        notes = self.segments_to_notes(track.segments, effective_base_pitch)
 
         events = []
         for onset, pitch, duration, velocity in notes:
