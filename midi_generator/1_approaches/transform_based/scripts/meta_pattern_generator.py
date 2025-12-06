@@ -7,8 +7,10 @@ FULL CHECKPOINT UTILIZATION:
 1. Meta-patterns → Form structure (transform sequences)
 2. Transform graph → Pattern relationships
 3. Hierarchical patterns → Phrase structure
-4. Vertical slices → Harmonic coherence
+4. Vertical slices / Co-occurrence → Harmonic coherence
 5. Orchestration rules → Instrument relationships
+6. TrackDerive → Explicit cross-track derivations (72K+ relations)
+7. Multi-factor transforms → Rhythm/velocity/duration variation
 
 This generator uses ALL learned structure, not just pattern sampling.
 
@@ -54,6 +56,7 @@ class MetaPatternGenerator:
         self.load_checkpoint(checkpoint_path)
         self.build_transform_graph()
         self.build_hierarchical_index()
+        self.build_track_derive_index()
 
     def load_checkpoint(self, checkpoint_path: str):
         """Load all checkpoint components."""
@@ -95,15 +98,35 @@ class MetaPatternGenerator:
                     self.meta_patterns = meta_data.get('interpreted', [])
                     self.orchestration_rules = meta_data.get('orchestration_rules', [])
 
-        # 4. Load track derives
+        # 4. Load track derives (explicit cross-track derivations)
         track_derives_file = ckpt.get('track_derives_json_file', [None])[0]
         self.track_derives = []
+        self.track_derives_by_transform = {}
+        self.leader_instruments = {}
         if track_derives_file:
             td_path = os.path.join(os.path.dirname(checkpoint_path), track_derives_file)
             if os.path.exists(td_path):
                 with open(td_path) as f:
                     td_data = json.load(f)
-                    self.track_derives = td_data.get('derives', [])
+                    self.track_derives = td_data.get('derives_json', td_data.get('derives', []))
+                    self.track_derives_by_transform = td_data.get('derives_by_transform', {})
+                    self.leader_instruments = td_data.get('leader_instruments', {})
+
+        # 5. Load multi-factor transforms (rhythm, velocity, duration)
+        multi_factor_file = ckpt.get('multi_factor_json_file', [None])[0]
+        self.rhythm_transforms = []
+        self.velocity_transforms = []
+        self.duration_transforms = []
+        if multi_factor_file:
+            mf_path = os.path.join(os.path.dirname(checkpoint_path), multi_factor_file)
+            if os.path.exists(mf_path):
+                with open(mf_path) as f:
+                    mf_data = json.load(f)
+                    self.rhythm_transforms = mf_data.get('rhythm_vocabulary', [])
+                    self.velocity_transforms = mf_data.get('velocity_vocabulary', [])
+                    self.duration_transforms = mf_data.get('duration_vocabulary', [])
+                    # Also store full factor vocabulary for sampling
+                    self.factor_vocabulary = mf_data.get('vocabulary', [])
 
         if self.verbose:
             print(f"  Patterns: {len(self.patterns)}")
@@ -111,6 +134,9 @@ class MetaPatternGenerator:
             print(f"  Meta-patterns: {len(self.meta_patterns)}")
             print(f"  Orchestration rules: {len(getattr(self, 'orchestration_rules', []))}")
             print(f"  Track derives: {len(self.track_derives)}")
+            print(f"  Rhythm transforms: {len(self.rhythm_transforms)}")
+            print(f"  Velocity transforms: {len(self.velocity_transforms)}")
+            print(f"  Duration transforms: {len(self.duration_transforms)}")
 
     def build_transform_graph(self):
         """Build graph: pattern_id → {transform: [target_pattern_ids]}
@@ -172,6 +198,53 @@ class MetaPatternGenerator:
         if self.verbose:
             for depth in sorted(self.patterns_by_depth.keys())[:5]:
                 print(f"  Depth {depth}: {len(self.patterns_by_depth[depth])} patterns")
+
+    def build_track_derive_index(self):
+        """Build index from TrackDerive data for instrument-pair transforms.
+
+        TrackDerive contains explicit relationships like:
+        "Track 2 (Alto Sax) derives from Track 1 (Trumpet) via T7"
+
+        This is MORE SPECIFIC than orchestration rules because it captures
+        actual observed derivations, not just aggregated statistics.
+        """
+        if self.verbose:
+            print("Building TrackDerive index...")
+
+        # Index: (source_gm, target_gm) -> {transform: count}
+        self.gm_pair_transforms = defaultdict(lambda: defaultdict(int))
+
+        # Also index by pattern: pattern_id -> [(derived_pattern_id, transform, target_gm)]
+        self.pattern_derivations = defaultdict(list)
+
+        for derive in self.track_derives:
+            if isinstance(derive, dict):
+                # Get source and target info
+                source_gm = derive.get('source_gm', derive.get('leader_gm', -1))
+                target_gm = derive.get('target_gm', derive.get('follower_gm', -1))
+                transform = derive.get('transform', 'identity')
+                source_pattern = derive.get('source_pattern_id', derive.get('leader_pattern', ''))
+                target_pattern = derive.get('target_pattern_id', derive.get('follower_pattern', ''))
+
+                if source_gm >= 0 and target_gm >= 0:
+                    self.gm_pair_transforms[(source_gm, target_gm)][transform] += 1
+
+                if source_pattern and target_pattern:
+                    self.pattern_derivations[str(source_pattern)].append(
+                        (str(target_pattern), transform, target_gm)
+                    )
+
+        # Pre-compute dominant transform per instrument pair
+        self.dominant_gm_transforms = {}
+        for (src_gm, tgt_gm), transform_counts in self.gm_pair_transforms.items():
+            if transform_counts:
+                dominant = max(transform_counts.items(), key=lambda x: x[1])
+                self.dominant_gm_transforms[(src_gm, tgt_gm)] = dominant[0]
+
+        if self.verbose:
+            print(f"  GM pair transforms: {len(self.gm_pair_transforms)} pairs")
+            print(f"  Pattern derivations: {len(self.pattern_derivations)} source patterns")
+            print(f"  Dominant transforms: {len(self.dominant_gm_transforms)} pairs")
 
     def _estimate_depth(self, pattern_id: str, pattern: dict, memo: dict = None) -> int:
         """Estimate hierarchical depth of a pattern."""
@@ -408,20 +481,25 @@ class MetaPatternGenerator:
 
                     # Other horns: derive from lead (harmonize)
                     for follower_gm in horn_instruments[1:]:
-                        rule = self._find_orchestration_rule(lead_gm, follower_gm)
+                        # Use TrackDerive first (pattern-specific), then orchestration rules
+                        rule = self._find_orchestration_rule(lead_gm, follower_gm, pattern_id)
 
                         if rule:
                             transform = rule.get('transform', 'identity')
+                            # If we have a pattern-specific derived pattern, use it directly
+                            derived_pattern_id = rule.get('derived_pattern')
+                            if derived_pattern_id and derived_pattern_id in self.patterns:
+                                derived_pattern = self.patterns[derived_pattern_id]
+                                follower_intervals = derived_pattern.get('pitch_intervals', intervals)
+                                follower_pitch = self._sample_pitch_for_instrument(derived_pattern, follower_gm)
+                            else:
+                                # Apply transform to intervals
+                                follower_intervals = self._apply_transform(intervals, transform)
+                                follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
                         else:
                             transform = 'identity'
-
-                        follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
-
-                        follower_intervals = intervals
-                        if transform == 'R':
-                            follower_intervals = list(reversed(intervals))
-                        elif transform.startswith('I'):
-                            follower_intervals = [-i for i in intervals]
+                            follower_intervals = intervals
+                            follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
 
                         follower_notes = self._expand_to_notes(
                             follower_intervals, follower_pitch, current_time, follower_gm, base_ioi
@@ -483,13 +561,42 @@ class MetaPatternGenerator:
 
         return dict(all_tracks)
 
-    def _find_orchestration_rule(self, lead_gm: int, follower_gm: int) -> Optional[Dict]:
-        """Find learned orchestration rule for instrument pair."""
+    def _find_orchestration_rule(self, lead_gm: int, follower_gm: int, pattern_id: str = None) -> Optional[Dict]:
+        """Find learned orchestration rule for instrument pair.
+
+        Priority order:
+        1. Pattern-specific derivation from TrackDerive (most specific)
+        2. GM-pair dominant transform from TrackDerive (specific to instruments)
+        3. Orchestration rules (aggregated statistics)
+        """
+        # 1. Try pattern-specific derivation first
+        if pattern_id and hasattr(self, 'pattern_derivations'):
+            derivations = self.pattern_derivations.get(str(pattern_id), [])
+            for derived_pattern, transform, target_gm in derivations:
+                if target_gm == follower_gm:
+                    return {
+                        'transform': transform,
+                        'derived_pattern': derived_pattern,
+                        'source': 'pattern_derivation'
+                    }
+
+        # 2. Try GM-pair dominant transform from TrackDerive
+        if hasattr(self, 'dominant_gm_transforms'):
+            transform = self.dominant_gm_transforms.get((lead_gm, follower_gm))
+            if transform:
+                return {
+                    'transform': transform,
+                    'source': 'track_derive'
+                }
+
+        # 3. Fall back to orchestration rules
         for rule in getattr(self, 'orchestration_rules', []):
             src = rule.get('source_instrument', -1)
             tgt = rule.get('target_instrument', -1)
             if src == lead_gm and tgt == follower_gm:
+                rule['source'] = 'orchestration_rule'
                 return rule
+
         return None
 
     def _sample_pattern_for_instrument(self, gm_program: int) -> Optional[str]:
@@ -592,6 +699,96 @@ class MetaPatternGenerator:
         # Fallback: no co-occurrence data, return None (caller will use _sample_pattern_for_instrument)
         return None
 
+    def _apply_transform(self, intervals: List[int], transform: str) -> List[int]:
+        """Apply a pitch transform to intervals.
+
+        Supports:
+        - T0-T11: Transposition (no change to intervals, affects first_pitch)
+        - I0-I11: Inversion (negate intervals)
+        - R: Retrograde (reverse intervals)
+        - RI: Retrograde inversion
+        """
+        if not intervals:
+            return intervals
+
+        if transform == 'identity' or transform == 'T0':
+            return intervals
+        elif transform == 'R':
+            return list(reversed(intervals))
+        elif transform.startswith('I'):
+            return [-i for i in intervals]
+        elif transform == 'RI':
+            return [-i for i in reversed(intervals)]
+        elif transform.startswith('T'):
+            # Transposition doesn't change intervals, only first_pitch
+            return intervals
+        else:
+            return intervals
+
+    def _sample_rhythm_variation(self, base_ioi: int) -> int:
+        """Sample a rhythm variation using learned rhythm transforms.
+
+        Uses multi-factor rhythm vocabulary to vary timing expressively.
+        """
+        if not hasattr(self, 'rhythm_transforms') or not self.rhythm_transforms:
+            return base_ioi
+
+        # Rhythm transforms are typically ratios or multipliers
+        # Sample one and apply it
+        transform = random.choice(self.rhythm_transforms)
+
+        if isinstance(transform, dict):
+            ratio = transform.get('ratio', 1.0)
+        elif isinstance(transform, (int, float)):
+            ratio = transform
+        else:
+            ratio = 1.0
+
+        # Apply ratio but keep in reasonable range
+        varied_ioi = int(base_ioi * ratio)
+        return max(60, min(1920, varied_ioi))  # 32nd note to whole note
+
+    def _sample_velocity_variation(self, base_velocity: int = 80) -> int:
+        """Sample a velocity variation using learned velocity transforms.
+
+        Uses multi-factor velocity vocabulary for expressive dynamics.
+        """
+        if not hasattr(self, 'velocity_transforms') or not self.velocity_transforms:
+            return base_velocity
+
+        # Velocity transforms are typically offsets or multipliers
+        transform = random.choice(self.velocity_transforms)
+
+        if isinstance(transform, dict):
+            offset = transform.get('offset', 0)
+            varied = base_velocity + offset
+        elif isinstance(transform, (int, float)):
+            varied = base_velocity + int(transform)
+        else:
+            varied = base_velocity
+
+        return max(40, min(127, int(varied)))
+
+    def _sample_duration_variation(self, base_duration: int) -> int:
+        """Sample a duration variation using learned duration transforms.
+
+        Uses multi-factor duration vocabulary for articulation.
+        """
+        if not hasattr(self, 'duration_transforms') or not self.duration_transforms:
+            return base_duration
+
+        transform = random.choice(self.duration_transforms)
+
+        if isinstance(transform, dict):
+            ratio = transform.get('ratio', 1.0)
+        elif isinstance(transform, (int, float)):
+            ratio = transform
+        else:
+            ratio = 1.0
+
+        varied = int(base_duration * ratio)
+        return max(30, min(3840, varied))  # 64th note to 2 whole notes
+
     def _sample_pitch_for_instrument(self, pattern: dict, gm_program: int) -> int:
         """Sample an appropriate starting pitch for the instrument."""
         pitch_range = GM_RANGES.get(gm_program, DEFAULT_RANGE)
@@ -614,26 +811,44 @@ class MetaPatternGenerator:
         start_time: int,
         gm_program: int,
         base_ioi: int,
+        use_variations: bool = True,
     ) -> List[Dict]:
-        """Expand intervals to note events."""
+        """Expand intervals to note events.
+
+        If use_variations=True, applies learned rhythm/velocity/duration
+        transforms for expressive output.
+        """
         notes = []
         pitch_range = GM_RANGES.get(gm_program, DEFAULT_RANGE)
 
         current_pitch = first_pitch
         current_time = start_time
-        velocity = 80
+
+        # Sample base velocity with optional variation
+        base_velocity = 80
+        if use_variations:
+            base_velocity = self._sample_velocity_variation(base_velocity)
 
         # First note
+        note_duration = base_ioi
+        if use_variations:
+            note_duration = self._sample_duration_variation(base_ioi)
+
         notes.append({
             'pitch': max(pitch_range[0], min(pitch_range[1], current_pitch)),
-            'velocity': velocity,
+            'velocity': base_velocity,
             'time': current_time,
-            'duration': base_ioi,
+            'duration': note_duration,
         })
 
         # Remaining notes
-        for interval in intervals:
-            current_time += base_ioi
+        for i, interval in enumerate(intervals):
+            # Apply rhythm variation for timing
+            ioi = base_ioi
+            if use_variations:
+                ioi = self._sample_rhythm_variation(base_ioi)
+
+            current_time += ioi
             current_pitch += interval
 
             # Octave fold to stay in range
@@ -642,11 +857,19 @@ class MetaPatternGenerator:
             while current_pitch > pitch_range[1]:
                 current_pitch -= 12
 
+            # Apply velocity and duration variations
+            velocity = base_velocity
+            duration = ioi
+            if use_variations:
+                # Slight velocity variation per note for expression
+                velocity = self._sample_velocity_variation(base_velocity)
+                duration = self._sample_duration_variation(ioi)
+
             notes.append({
                 'pitch': current_pitch,
                 'velocity': velocity,
                 'time': current_time,
-                'duration': base_ioi,
+                'duration': duration,
             })
 
         return notes
