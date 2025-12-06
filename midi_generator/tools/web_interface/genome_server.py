@@ -3403,6 +3403,9 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
     </div>
 
 <script>
+// API base path - works for both /genome and /transform routes
+const API_BASE = window.location.pathname.includes('/genome') ? '/genome/api' : '/genome/api';
+
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const container = document.getElementById('canvas-container');

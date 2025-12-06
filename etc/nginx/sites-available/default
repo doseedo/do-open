@@ -270,10 +270,16 @@ server {
           proxy_read_timeout 60s;
       }
 
-      # Transform editor - static HTML page
+      # Transform editor - proxy to genome server's transform-editor
       location = /transform {
-          root /var/www/html;
-          try_files /transform_editor.html =404;
+          proxy_pass http://localhost:8080/transform-editor;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_connect_timeout 60s;
+          proxy_send_timeout 300s;
+          proxy_read_timeout 300s;
       }
 
       # Genome server - proxy to Python server on port 8080
