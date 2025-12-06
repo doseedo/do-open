@@ -1741,11 +1741,14 @@ class MetaPatternGenerator:
         """Generate using learned probabilistic models from corpus.
 
         Sampling Modes (in priority order):
-        1. use_probabilistic=True (DEFAULT): Use 4-level Markov sampling + form templates
+        1. use_probabilistic=True (DEFAULT): Use 6-level PCFG sampling + form templates
            - Level 1: Frequency weighting (pattern popularity)
            - Level 2: Transition probabilities (what follows what)
            - Level 3: Position conditioning (intro vs middle vs end patterns)
            - Level 4: Co-occurrence conditioning (what plays together across instruments)
+           - Level 5: Style conditioning (per-piece consistency via latent z)
+           - Level 6: Chord conditioning (harmonic context from skeleton)
+           - Short-Term Memory: Boost reuse at phrase boundaries
            - Form templates: Enforce repetition structure (AABA) from corpus
 
         2. use_form_structure=True: Use exact pattern sequences from corpus pieces
@@ -1755,8 +1758,7 @@ class MetaPatternGenerator:
            - Walks the transform graph following learned transform sequences
 
         The probabilistic mode (default) produces the most coherent output
-        because it respects both local (transitions), global (position), and
-        cross-instrument (co-occurrence) structure with forced repetition.
+        because it respects local, global, cross-instrument, style, and harmonic structure.
         """
         if seed is not None:
             random.seed(seed)
@@ -1766,7 +1768,7 @@ class MetaPatternGenerator:
 
         # Determine sampling mode string for logging
         if use_probabilistic:
-            mode = "probabilistic (4-level Markov + form templates)"
+            mode = "probabilistic (6-level PCFG + STM + form templates)"
         elif use_form_structure:
             mode = "form structure (corpus sequences)"
         else:
@@ -1777,11 +1779,32 @@ class MetaPatternGenerator:
             print(f"  Sections: {n_sections}")
             print(f"  Instruments: {instruments}")
 
+        # =====================================================================
+        # INITIALIZE GENERATION STATE
+        # =====================================================================
+
         all_tracks = defaultdict(list)
         current_time = 0
 
+        # Reset Short-Term Memory for new piece
+        if hasattr(self, 'stm'):
+            self.stm.reset()
+
+        # Sample style variable z at piece start (Compound PCFG)
+        style_id = self.sample_style() if hasattr(self, 'sample_style') else None
+        if self.verbose and style_id is not None:
+            print(f"  Style cluster: {style_id}")
+
+        # Generate chord skeleton for hierarchical generation
+        chord_skeleton = self.generate_chord_skeleton(n_sections * 2) if hasattr(self, 'generate_chord_skeleton') else None
+        if self.verbose and chord_skeleton:
+            chord_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+            print(f"  Chord skeleton: {[chord_names[c] for c in chord_skeleton[:8]]}...")
+
+        # Global pattern position counter for STM
+        global_pattern_position = 0
+
         # Determine lead instrument from CORPUS DATA (not hardcoded categories)
-        # Lead = instrument most often copied FROM in TrackDerive
         lead_gm = self.get_corpus_lead_instrument(instruments)
         follower_instruments = self.get_corpus_follower_instruments(instruments, lead_gm)
 
@@ -1795,12 +1818,12 @@ class MetaPatternGenerator:
 
         # If using form structure, sample a full form pattern from corpus
         form_pattern_ids = []
-        if use_form_structure and self.form_patterns:
+        if use_form_structure and hasattr(self, 'form_patterns') and self.form_patterns:
             form_pattern_ids = self.sample_form_pattern(lead_gm=lead_gm)
             if self.verbose and form_pattern_ids:
                 print(f"  Using corpus form pattern with {len(form_pattern_ids)} patterns")
 
-        # NEW: Sample a form template for global repetition structure (e.g., AABA)
+        # Sample a form template for global repetition structure (e.g., AABA)
         form_template = self.sample_form_template()
         if self.verbose:
             print(f"  Form template: {'-'.join(form_template)}")
@@ -1816,8 +1839,18 @@ class MetaPatternGenerator:
         # Track current pattern per instrument for transitions
         current_patterns = {}  # gm -> current_pattern_id
 
+        # =====================================================================
+        # MAIN GENERATION LOOP
+        # =====================================================================
+
         for section_idx in range(n_sections):
             section_label = form_template[section_idx]
+
+            # Get chord root for this section from skeleton
+            chord_root = None
+            if chord_skeleton:
+                chord_idx = min(section_idx * 2, len(chord_skeleton) - 1)
+                chord_root = chord_skeleton[chord_idx]
 
             # DETERMINE PATTERN CHAIN FOR THIS SECTION
 
@@ -1831,7 +1864,7 @@ class MetaPatternGenerator:
                         print(f"  Section {section_idx} ({section_label}): reusing cached patterns")
                 else:
                     # Generate new patterns for this section label
-                    # 4-LEVEL PROBABILISTIC SAMPLING with co-occurrence
+                    # 6-LEVEL PROBABILISTIC SAMPLING with all conditioning
 
                     # Sample 2-6 patterns for this section (based on corpus statistics)
                     n_patterns_in_section = random.randint(2, 6)
@@ -1845,21 +1878,21 @@ class MetaPatternGenerator:
                         # Get current pattern for this instrument (for transitions)
                         current_pattern = current_patterns.get(lead_gm)
 
-                        # Sample next pattern using all 4 levels
+                        # Sample next pattern using all 6 levels + STM
                         next_pattern = self.sample_next_pattern(
                             current_pattern=current_pattern,
                             position=position,
                             gm_program=lead_gm,
-                            concurrent_patterns=current_patterns,  # Level 4: co-occurrence
-                            transition_weight=0.4,   # Transitions
-                            position_weight=0.25,    # Position in piece
-                            frequency_weight=0.1,    # Base frequency
-                            cooccurrence_weight=0.25,  # Co-occurrence with other instruments
+                            concurrent_patterns=current_patterns,  # Level 4
+                            style_id=style_id,                     # Level 5: style consistency
+                            chord_root=chord_root,                 # Level 6: harmonic context
+                            pattern_position=global_pattern_position,  # STM tracking
                         )
 
                         if next_pattern:
                             pattern_chain.append(next_pattern)
                             current_patterns[lead_gm] = next_pattern
+                            global_pattern_position += 1
 
                     if not pattern_chain:
                         # Fallback
@@ -1962,7 +1995,7 @@ class MetaPatternGenerator:
                             follower_intervals = self._apply_transform(intervals, transform)
                             follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
                     else:
-                        # Use 4-level probabilistic sampling conditioned on lead
+                        # Use 6-level probabilistic sampling conditioned on lead
                         if use_probabilistic:
                             position = (section_idx * patterns_per_section + pattern_idx) / total_patterns
                             concurrent = {lead_gm: pattern_id}
@@ -1972,7 +2005,10 @@ class MetaPatternGenerator:
                                 position=position,
                                 gm_program=follower_gm,
                                 concurrent_patterns=concurrent,
-                                cooccurrence_weight=0.4,  # Strong co-occurrence for followers
+                                style_id=style_id,                     # Level 5: same style as lead
+                                chord_root=chord_root,                 # Level 6: same harmonic context
+                                pattern_position=global_pattern_position,  # STM tracking
+                                cooccurrence_weight=0.35,  # Strong co-occurrence for followers
                             )
 
                             if follower_pattern_id:
