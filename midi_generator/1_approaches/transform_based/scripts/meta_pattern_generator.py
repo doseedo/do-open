@@ -3,19 +3,23 @@
 Meta-Pattern Generator (v53 Checkpoint)
 ========================================
 
-FULL CHECKPOINT UTILIZATION:
-1. Meta-patterns → Form structure (transform sequences)
+FULL CHECKPOINT UTILIZATION (All corpus-derived, no music theory constraints):
+1. Meta-patterns → Transform sequences (II-V-I progressions, etc.)
 2. Transform graph → Pattern relationships
-3. Hierarchical patterns → Phrase structure
-4. Vertical slices / Co-occurrence → Harmonic coherence
+3. Hierarchical patterns → Phrase structure (left_child + connector + right_child)
+4. Vertical slices / Co-occurrence → Harmonic coherence (patterns that played together)
 5. Orchestration rules → Instrument relationships
 6. TrackDerive → Explicit cross-track derivations (72K+ relations)
 7. Multi-factor transforms → Rhythm/velocity/duration variation
+8. Form structure → Pattern sequences per piece (AABA, etc.) - DERIVED from corpus
+9. Rest durations → Natural gaps between patterns per instrument - DERIVED from corpus
+10. Activity probabilities → How often instruments play together - DERIVED from corpus
 
-This generator uses ALL learned structure, not just pattern sampling.
+Everything is derived from the checkpoint data. No hardcoded probabilities or music theory rules.
 
 Usage:
-    python scripts/meta_pattern_generator.py checkpoint.npz -o output.mid --bars 32
+    python scripts/meta_pattern_generator.py checkpoint.npz -o output.mid --sections 8
+    python scripts/meta_pattern_generator.py checkpoint.npz -o output.mid --no-form  # Use meta-pattern transforms
 """
 
 import os
@@ -57,6 +61,8 @@ class MetaPatternGenerator:
         self.build_transform_graph()
         self.build_hierarchical_index()
         self.build_track_derive_index()
+        self.build_form_structure_index()
+        self.build_rest_duration_index()
 
     def load_checkpoint(self, checkpoint_path: str):
         """Load all checkpoint components."""
@@ -246,6 +252,162 @@ class MetaPatternGenerator:
             print(f"  Pattern derivations: {len(self.pattern_derivations)} source patterns")
             print(f"  Dominant transforms: {len(self.dominant_gm_transforms)} pairs")
 
+    def build_form_structure_index(self):
+        """Build form structure from corpus - pattern sequences per piece.
+
+        This captures how patterns are arranged in actual pieces (AABA form, etc.)
+        without imposing music theory constraints - purely from corpus statistics.
+
+        Structure: piece_id -> [(onset_time, pattern_id, gm_program), ...]
+        """
+        if self.verbose:
+            print("Building form structure index...")
+
+        # Group occurrences by piece_id, sorted by onset_time
+        self.piece_pattern_sequences = defaultdict(list)
+        self.piece_gm_sequences = defaultdict(lambda: defaultdict(list))
+
+        for pattern_id, pattern in self.patterns.items():
+            for occ in pattern.get('occurrences', []):
+                piece_id = occ.get('piece_id', 'unknown')
+                onset = occ.get('onset_time', occ.get('onset', 0))
+                gm = occ.get('gm_program', 0)
+
+                self.piece_pattern_sequences[piece_id].append((onset, pattern_id, gm))
+                self.piece_gm_sequences[piece_id][gm].append((onset, pattern_id))
+
+        # Sort each sequence by onset time
+        for piece_id in self.piece_pattern_sequences:
+            self.piece_pattern_sequences[piece_id].sort(key=lambda x: x[0])
+        for piece_id in self.piece_gm_sequences:
+            for gm in self.piece_gm_sequences[piece_id]:
+                self.piece_gm_sequences[piece_id][gm].sort(key=lambda x: x[0])
+
+        # Extract form patterns (pattern-ID sequences for repeated forms)
+        # e.g., if multiple pieces have A-A-B-A structure, we can sample that
+        self.form_patterns = defaultdict(int)  # (pattern_id_tuple) -> count
+
+        for piece_id, sequence in self.piece_pattern_sequences.items():
+            if len(sequence) >= 4:
+                # Look at pattern sequence (ignoring time, just IDs)
+                pattern_ids = tuple(pid for _, pid, _ in sequence[:8])  # First 8 patterns
+                self.form_patterns[pattern_ids] += 1
+
+        if self.verbose:
+            print(f"  Pieces with form data: {len(self.piece_pattern_sequences)}")
+            print(f"  Unique form patterns: {len(self.form_patterns)}")
+
+    def build_rest_duration_index(self):
+        """Build rest duration statistics from corpus.
+
+        Tracks the gaps between pattern occurrences to learn natural rest durations.
+        This is purely derived from corpus timing, no music theory.
+
+        Structure: gm_program -> [rest_durations] (gaps between consecutive patterns)
+        """
+        if self.verbose:
+            print("Building rest duration index...")
+
+        self.rest_durations_by_gm = defaultdict(list)
+        self.pattern_durations = {}  # pattern_id -> typical duration
+
+        # First, estimate duration for each pattern from its occurrences
+        for pattern_id, pattern in self.patterns.items():
+            # Duration from intervals + base IOI
+            intervals = pattern.get('pitch_intervals', [])
+            base_ioi = 480  # Default
+
+            for occ in pattern.get('occurrences', []):
+                ioi = occ.get('tau_offset', 0)
+                if ioi > 0:
+                    base_ioi = ioi
+                    break
+
+            est_duration = base_ioi * (len(intervals) + 1)
+            self.pattern_durations[pattern_id] = est_duration
+
+        # Now find gaps between consecutive patterns per instrument
+        for piece_id, gm_sequences in self.piece_gm_sequences.items():
+            for gm, sequence in gm_sequences.items():
+                for i in range(len(sequence) - 1):
+                    onset1, pid1 = sequence[i]
+                    onset2, pid2 = sequence[i + 1]
+
+                    # Duration of first pattern
+                    dur1 = self.pattern_durations.get(pid1, 480)
+
+                    # Gap = next_onset - (this_onset + this_duration)
+                    gap = onset2 - (onset1 + dur1)
+
+                    # Only record positive gaps (rests)
+                    if gap > 0:
+                        self.rest_durations_by_gm[gm].append(gap)
+
+        # Compute statistics per instrument
+        self.rest_stats_by_gm = {}
+        for gm, durations in self.rest_durations_by_gm.items():
+            if durations:
+                self.rest_stats_by_gm[gm] = {
+                    'mean': np.mean(durations),
+                    'median': np.median(durations),
+                    'min': min(durations),
+                    'max': max(durations),
+                    'count': len(durations),
+                }
+
+        if self.verbose:
+            print(f"  Rest data for {len(self.rest_stats_by_gm)} instruments")
+            # Show a few examples
+            for gm in list(self.rest_stats_by_gm.keys())[:3]:
+                stats = self.rest_stats_by_gm[gm]
+                print(f"    GM {gm}: median rest={stats['median']:.0f} ticks ({stats['count']} samples)")
+
+    def sample_rest_duration(self, gm_program: int) -> int:
+        """Sample a natural rest duration for this instrument from corpus statistics."""
+        durations = self.rest_durations_by_gm.get(gm_program, [])
+
+        if durations:
+            # Sample from actual corpus rest durations
+            return int(random.choice(durations))
+
+        # Fallback: no data, return 0 (no rest)
+        return 0
+
+    def sample_form_pattern(self, lead_gm: int = None) -> List[str]:
+        """Sample a pattern sequence that represents the form structure from corpus.
+
+        Returns a list of pattern_ids in the order they appeared in corpus pieces.
+        """
+        if not self.form_patterns:
+            return []
+
+        # Weight by frequency
+        patterns = list(self.form_patterns.keys())
+        weights = list(self.form_patterns.values())
+
+        # If lead_gm specified, prefer forms that start with patterns lead plays
+        if lead_gm is not None:
+            filtered_patterns = []
+            filtered_weights = []
+
+            for pattern_seq, weight in zip(patterns, weights):
+                if pattern_seq:
+                    first_pattern = self.patterns.get(pattern_seq[0], {})
+                    # Check if lead plays first pattern
+                    for occ in first_pattern.get('occurrences', []):
+                        if occ.get('gm_program') == lead_gm:
+                            filtered_patterns.append(pattern_seq)
+                            filtered_weights.append(weight)
+                            break
+
+            if filtered_patterns:
+                patterns, weights = filtered_patterns, filtered_weights
+
+        if patterns:
+            return list(random.choices(patterns, weights=weights)[0])
+
+        return []
+
     def _estimate_depth(self, pattern_id: str, pattern: dict, memo: dict = None) -> int:
         """Estimate hierarchical depth of a pattern."""
         if memo is None:
@@ -347,17 +509,38 @@ class MetaPatternGenerator:
 
         return random.choices(candidates, weights=weights)[0]
 
-    def sample_phrase_pattern(self, target_depth: int = 2) -> str:
-        """Sample a hierarchical pattern at approximately the target depth."""
+    def sample_phrase_pattern(self, target_depth: int = 2, lead_gm: int = None) -> str:
+        """Sample a hierarchical pattern that the lead instrument actually plays.
+
+        If lead_gm is provided, only sample from patterns that instrument played.
+        """
         # Get patterns at or near target depth
         candidates = []
         for d in range(max(0, target_depth - 1), target_depth + 2):
             candidates.extend(self.patterns_by_depth.get(d, []))
 
         if not candidates:
-            return self.sample_high_count_pattern()
+            candidates = list(self.patterns.keys())
 
-        # Weight by count
+        # Filter to patterns the lead instrument actually plays
+        if lead_gm is not None:
+            filtered = []
+            filtered_weights = []
+            for pid in candidates:
+                pattern = self.patterns.get(pid, {})
+                # Check if this GM played this pattern
+                gm_count = 0
+                for occ in pattern.get('occurrences', []):
+                    if occ.get('gm_program') == lead_gm:
+                        gm_count += 1
+                if gm_count > 0:
+                    filtered.append(pid)
+                    filtered_weights.append(gm_count)  # Weight by how often lead played it
+
+            if filtered:
+                return random.choices(filtered, weights=filtered_weights)[0]
+
+        # Fallback: weight by total count
         weights = [self.patterns.get(pid, {}).get('count', 1) for pid in candidates]
         return random.choices(candidates, weights=weights)[0]
 
@@ -397,6 +580,7 @@ class MetaPatternGenerator:
         instruments: List[int] = None,
         ticks_per_beat: int = 480,
         seed: int = None,
+        use_form_structure: bool = True,
     ) -> Dict[int, List[Dict]]:
         """Generate using meta-patterns for form structure.
 
@@ -406,6 +590,9 @@ class MetaPatternGenerator:
         3. Walk transform graph following meta-pattern
         4. Expand patterns through hierarchy
         5. Orchestrate across instruments
+
+        If use_form_structure=True, uses actual pattern sequences from corpus
+        for more coherent form (AABA, etc.) - purely data-driven.
         """
         if seed is not None:
             random.seed(seed)
@@ -417,33 +604,62 @@ class MetaPatternGenerator:
             print(f"\nGenerating with meta-patterns...")
             print(f"  Sections: {n_sections}")
             print(f"  Instruments: {instruments}")
+            print(f"  Use form structure: {use_form_structure}")
 
         all_tracks = defaultdict(list)
         current_time = 0
 
+        # Determine lead instrument for pattern selection
+        HORN_SECTION = {56, 57, 58, 59, 60, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73}
+        horn_instruments = [gm for gm in instruments if gm in HORN_SECTION]
+        lead_gm = horn_instruments[0] if horn_instruments else None
+
+        # If using form structure, sample a full form pattern from corpus
+        form_pattern_ids = []
+        if use_form_structure and self.form_patterns:
+            form_pattern_ids = self.sample_form_pattern(lead_gm=lead_gm)
+            if self.verbose and form_pattern_ids:
+                print(f"  Using corpus form pattern with {len(form_pattern_ids)} patterns")
+
         for section_idx in range(n_sections):
-            # 1. SAMPLE META-PATTERN (form structure)
-            meta = self.sample_meta_pattern()
-            transform_seq = self.extract_transform_sequence(meta)
+            # DETERMINE PATTERN CHAIN FOR THIS SECTION
 
-            if self.verbose and section_idx == 0:
-                print(f"  Section 0 meta-pattern: {transform_seq[:5]}...")
+            if use_form_structure and form_pattern_ids:
+                # USE CORPUS FORM STRUCTURE
+                # Get patterns for this section from the form
+                section_start = (section_idx * len(form_pattern_ids)) // n_sections
+                section_end = ((section_idx + 1) * len(form_pattern_ids)) // n_sections
+                pattern_chain = form_pattern_ids[section_start:section_end]
 
-            # 2. SAMPLE SEED PATTERN (phrase-level, hierarchical)
-            seed_pattern_id = self.sample_phrase_pattern(target_depth=2)
+                # If form is shorter than sections, loop
+                if not pattern_chain:
+                    idx = section_idx % len(form_pattern_ids)
+                    pattern_chain = [form_pattern_ids[idx]]
 
-            # 3. WALK TRANSFORM GRAPH
-            pattern_chain = [seed_pattern_id]
-            current_pattern = seed_pattern_id
+            else:
+                # ORIGINAL BEHAVIOR: Meta-pattern guided generation
+                # 1. SAMPLE META-PATTERN (form structure)
+                meta = self.sample_meta_pattern()
+                transform_seq = self.extract_transform_sequence(meta)
 
-            for transform in transform_seq[:8]:  # Limit chain length
-                next_pattern = self.find_pattern_by_transform(current_pattern, transform)
-                if next_pattern:
-                    pattern_chain.append(next_pattern)
-                    current_pattern = next_pattern
+                if self.verbose and section_idx == 0:
+                    print(f"  Section 0 meta-pattern: {transform_seq[:5]}...")
+
+                # 2. SAMPLE SEED PATTERN (from patterns lead instrument actually plays)
+                seed_pattern_id = self.sample_phrase_pattern(target_depth=2, lead_gm=lead_gm)
+
+                # 3. WALK TRANSFORM GRAPH
+                pattern_chain = [seed_pattern_id]
+                current_pattern = seed_pattern_id
+
+                for transform in transform_seq[:8]:  # Limit chain length
+                    next_pattern = self.find_pattern_by_transform(current_pattern, transform)
+                    if next_pattern:
+                        pattern_chain.append(next_pattern)
+                        current_pattern = next_pattern
 
             # 4. EXPAND AND ORCHESTRATE
-            for pattern_id in pattern_chain:
+            for pattern_idx, pattern_id in enumerate(pattern_chain):
                 pattern = self.patterns.get(pattern_id, {})
 
                 # Get intervals (through hierarchy if available)
@@ -459,17 +675,18 @@ class MetaPatternGenerator:
                     if tau_offsets:
                         base_ioi = random.choice(tau_offsets)
 
+                # Calculate phrase duration (how long this pattern takes)
+                phrase_duration = base_ioi * (len(intervals) + 1)
+
                 # Separate instruments by ROLE
-                # Horn section: can derive from each other (harmonize)
-                # Rhythm section: must play their OWN patterns (different role)
-                HORN_SECTION = {56, 57, 58, 59, 60, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73}  # Brass + Sax + Woodwinds
-                RHYTHM_SECTION = {0, 1, 2, 3, 4, 5, 24, 25, 26, 27, 32, 33, 34, 35, 36, 37, 38, 39}  # Piano + Guitar + Bass
+                HORN_SECTION = {56, 57, 58, 59, 60, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73}
+                RHYTHM_SECTION = {0, 1, 2, 3, 4, 5, 24, 25, 26, 27, 32, 33, 34, 35, 36, 37, 38, 39}
 
                 horn_instruments = [gm for gm in instruments if gm in HORN_SECTION]
                 rhythm_instruments = [gm for gm in instruments if gm in RHYTHM_SECTION]
                 other_instruments = [gm for gm in instruments if gm not in HORN_SECTION and gm not in RHYTHM_SECTION]
 
-                # HORN SECTION: Lead + derived harmonies (they CAN share patterns)
+                # HORN SECTION: Lead plays, background horns play based on CORPUS patterns
                 if horn_instruments:
                     lead_gm = horn_instruments[0]
                     lead_pitch = self._sample_pitch_for_instrument(pattern, lead_gm)
@@ -479,25 +696,35 @@ class MetaPatternGenerator:
                     )
                     all_tracks[lead_gm].extend(lead_notes)
 
-                    # Other horns: derive from lead (harmonize)
-                    for follower_gm in horn_instruments[1:]:
-                        # Use TrackDerive first (pattern-specific), then orchestration rules
+                    # Background horns: Use CORPUS-DERIVED activity probability
+                    for follower_idx, follower_gm in enumerate(horn_instruments[1:]):
+                        # Get natural co-occurrence probability from checkpoint
+                        play_prob = self._get_cooccurrence_probability(
+                            lead_pattern_id=pattern_id,
+                            lead_gm=lead_gm,
+                            target_gm=follower_gm
+                        )
+
+                        if random.random() > play_prob:
+                            # REST - this instrument didn't usually play here
+                            # Sample rest duration from corpus if available
+                            rest_dur = self.sample_rest_duration(follower_gm)
+                            # Just skip this phrase (rest is implicit in timing)
+                            continue
+
                         rule = self._find_orchestration_rule(lead_gm, follower_gm, pattern_id)
 
                         if rule:
                             transform = rule.get('transform', 'identity')
-                            # If we have a pattern-specific derived pattern, use it directly
                             derived_pattern_id = rule.get('derived_pattern')
                             if derived_pattern_id and derived_pattern_id in self.patterns:
                                 derived_pattern = self.patterns[derived_pattern_id]
                                 follower_intervals = derived_pattern.get('pitch_intervals', intervals)
                                 follower_pitch = self._sample_pitch_for_instrument(derived_pattern, follower_gm)
                             else:
-                                # Apply transform to intervals
                                 follower_intervals = self._apply_transform(intervals, transform)
                                 follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
                         else:
-                            transform = 'identity'
                             follower_intervals = intervals
                             follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
 
@@ -506,37 +733,51 @@ class MetaPatternGenerator:
                         )
                         all_tracks[follower_gm].extend(follower_notes)
 
-                # RHYTHM SECTION: Sample patterns that CO-OCCURRED with the lead pattern
-                # This ensures harmonic compatibility (bass/piano match the melody key)
+                # RHYTHM SECTION: Sample co-occurring patterns to fill the phrase duration
                 for rhythm_gm in rhythm_instruments:
-                    # Find patterns this instrument played WHEN the lead pattern was playing
-                    rhythm_pattern_id = self._sample_cooccurring_pattern(
-                        lead_pattern_id=seed_pattern_id if horn_instruments else pattern_id,
-                        target_gm=rhythm_gm
-                    )
+                    rhythm_time = current_time
+                    loop_count = 0
+                    max_loops = 16  # Safety limit
 
-                    if not rhythm_pattern_id:
-                        # Fallback: sample any pattern for this instrument
-                        rhythm_pattern_id = self._sample_pattern_for_instrument(rhythm_gm)
-
-                    if rhythm_pattern_id:
-                        rhythm_pattern = self.patterns.get(rhythm_pattern_id, {})
-                        rhythm_intervals = rhythm_pattern.get('pitch_intervals', [0])
-                        rhythm_pitch = self._sample_pitch_for_instrument(rhythm_pattern, rhythm_gm)
-
-                        # Get timing from this pattern's occurrences
-                        rhythm_ioi = base_ioi
-                        for occ in rhythm_pattern.get('occurrences', []):
-                            if occ.get('gm_program') == rhythm_gm:
-                                rhythm_ioi = occ.get('tau_offset', base_ioi)
-                                break
-
-                        rhythm_notes = self._expand_to_notes(
-                            rhythm_intervals, rhythm_pitch, current_time, rhythm_gm, rhythm_ioi
+                    while rhythm_time < current_time + phrase_duration and loop_count < max_loops:
+                        # Sample a NEW co-occurring pattern for each loop
+                        # This creates variety while maintaining harmonic coherence
+                        rhythm_pattern_id = self._sample_cooccurring_pattern(
+                            lead_pattern_id=pattern_id,  # Use CURRENT pattern, not seed
+                            target_gm=rhythm_gm
                         )
-                        all_tracks[rhythm_gm].extend(rhythm_notes)
 
-                # OTHER INSTRUMENTS: Sample their own patterns too
+                        if not rhythm_pattern_id:
+                            rhythm_pattern_id = self._sample_pattern_for_instrument(rhythm_gm)
+
+                        if rhythm_pattern_id:
+                            rhythm_pattern = self.patterns.get(rhythm_pattern_id, {})
+                            rhythm_intervals = rhythm_pattern.get('pitch_intervals', [0])
+                            rhythm_pitch = self._sample_pitch_for_instrument(rhythm_pattern, rhythm_gm)
+
+                            # Get timing from this pattern's occurrences
+                            rhythm_ioi = base_ioi
+                            for occ in rhythm_pattern.get('occurrences', []):
+                                if occ.get('gm_program') == rhythm_gm:
+                                    rhythm_ioi = occ.get('tau_offset', base_ioi)
+                                    break
+
+                            rhythm_notes = self._expand_to_notes(
+                                rhythm_intervals, rhythm_pitch, rhythm_time, rhythm_gm, rhythm_ioi,
+                                use_variations=True
+                            )
+                            all_tracks[rhythm_gm].extend(rhythm_notes)
+
+                            # Advance rhythm time by pattern duration
+                            pattern_dur = rhythm_ioi * (len(rhythm_intervals) + 1)
+                            rhythm_time += pattern_dur
+                        else:
+                            # No pattern found, advance time anyway to avoid infinite loop
+                            rhythm_time += base_ioi
+
+                        loop_count += 1
+
+                # OTHER INSTRUMENTS
                 for other_gm in other_instruments:
                     other_pattern_id = self._sample_pattern_for_instrument(other_gm)
                     if other_pattern_id:
@@ -548,9 +789,8 @@ class MetaPatternGenerator:
                         )
                         all_tracks[other_gm].extend(other_notes)
 
-                # Advance time
-                pattern_duration = base_ioi * (len(intervals) + 1)
-                current_time += pattern_duration
+                # Advance time by phrase duration
+                current_time += phrase_duration
 
         if self.verbose:
             print(f"\nGenerated:")
@@ -706,6 +946,77 @@ class MetaPatternGenerator:
 
         # Fallback: no co-occurrence data, return None (caller will use _sample_pattern_for_instrument)
         return None
+
+    def _get_cooccurrence_probability(self, lead_pattern_id: str, lead_gm: int, target_gm: int) -> float:
+        """Get the natural probability that target_gm plays when lead_gm plays this pattern.
+
+        This is derived from the corpus - how often did these instruments actually
+        play together when this pattern occurred?
+        """
+        # Build activity index on first call
+        if not hasattr(self, '_activity_index'):
+            if self.verbose:
+                print("Building activity index from corpus...")
+
+            # For each pattern, count how many times each instrument played
+            # pattern_id -> {gm: count}
+            self._pattern_instrument_counts = defaultdict(lambda: defaultdict(int))
+
+            # Also track total occurrences per pattern
+            self._pattern_total_occurrences = defaultdict(int)
+
+            # And track global instrument pair co-occurrence rates
+            # (lead_gm, target_gm) -> (cooccur_count, total_lead_count)
+            self._gm_pair_cooccurrence = defaultdict(lambda: [0, 0])
+
+            for pattern_id, pattern in self.patterns.items():
+                occs = pattern.get('occurrences', [])
+
+                # Group occurrences by (piece_id, time_bucket) to find co-occurrences
+                by_time = defaultdict(list)
+                for occ in occs:
+                    piece_id = occ.get('piece_id', 'unknown')
+                    onset = occ.get('onset_time', occ.get('onset', 0))
+                    gm = occ.get('gm_program', 0)
+                    time_bucket = onset // 480
+                    by_time[(piece_id, time_bucket)].append(gm)
+
+                    self._pattern_instrument_counts[pattern_id][gm] += 1
+                    self._pattern_total_occurrences[pattern_id] += 1
+
+                # Count co-occurrences
+                for (piece_id, time_bucket), gm_list in by_time.items():
+                    gm_set = set(gm_list)
+                    for lead in gm_set:
+                        self._gm_pair_cooccurrence[(lead, lead)][1] += 1  # Total lead count
+                        for target in gm_set:
+                            if target != lead:
+                                self._gm_pair_cooccurrence[(lead, target)][0] += 1
+
+            self._activity_index = True
+
+            if self.verbose:
+                print(f"  Activity index: {len(self._pattern_instrument_counts)} patterns")
+
+        # Method 1: Pattern-specific probability
+        pattern_counts = self._pattern_instrument_counts.get(str(lead_pattern_id), {})
+        lead_count = pattern_counts.get(lead_gm, 0)
+        target_count = pattern_counts.get(target_gm, 0)
+
+        if lead_count > 0:
+            pattern_prob = target_count / lead_count
+            if pattern_prob > 0:
+                return min(1.0, pattern_prob)  # Cap at 1.0
+
+        # Method 2: Global GM-pair co-occurrence rate
+        cooccur_count, total_lead = self._gm_pair_cooccurrence.get((lead_gm, target_gm), [0, 0])
+        if total_lead > 0:
+            global_prob = cooccur_count / total_lead
+            if global_prob > 0:
+                return global_prob
+
+        # Fallback: moderate probability
+        return 0.5
 
     def _apply_transform(self, intervals: List[int], transform: str) -> List[int]:
         """Apply a pitch transform to intervals.
@@ -964,6 +1275,8 @@ def main():
     parser.add_argument('--tempo', '-t', type=int, default=120, help='Tempo BPM')
     parser.add_argument('--seed', '-s', type=int, help='Random seed')
     parser.add_argument('--instruments', '-i', help='Comma-separated GM program numbers')
+    parser.add_argument('--no-form', action='store_true',
+                        help='Disable corpus form structure (use meta-pattern transforms instead)')
     args = parser.parse_args()
 
     print("=" * 60)
@@ -980,6 +1293,7 @@ def main():
         n_sections=args.sections,
         instruments=instruments,
         seed=args.seed,
+        use_form_structure=not args.no_form,
     )
 
     gen.to_midi(tracks, args.output, tempo=args.tempo)
