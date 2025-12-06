@@ -443,7 +443,7 @@ class MetaPatternGenerator:
                     current_pattern = next_pattern
 
             # 4. EXPAND AND ORCHESTRATE
-            for pattern_id in pattern_chain:
+            for pattern_idx, pattern_id in enumerate(pattern_chain):
                 pattern = self.patterns.get(pattern_id, {})
 
                 # Get intervals (through hierarchy if available)
@@ -459,17 +459,18 @@ class MetaPatternGenerator:
                     if tau_offsets:
                         base_ioi = random.choice(tau_offsets)
 
+                # Calculate phrase duration (how long this pattern takes)
+                phrase_duration = base_ioi * (len(intervals) + 1)
+
                 # Separate instruments by ROLE
-                # Horn section: can derive from each other (harmonize)
-                # Rhythm section: must play their OWN patterns (different role)
-                HORN_SECTION = {56, 57, 58, 59, 60, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73}  # Brass + Sax + Woodwinds
-                RHYTHM_SECTION = {0, 1, 2, 3, 4, 5, 24, 25, 26, 27, 32, 33, 34, 35, 36, 37, 38, 39}  # Piano + Guitar + Bass
+                HORN_SECTION = {56, 57, 58, 59, 60, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73}
+                RHYTHM_SECTION = {0, 1, 2, 3, 4, 5, 24, 25, 26, 27, 32, 33, 34, 35, 36, 37, 38, 39}
 
                 horn_instruments = [gm for gm in instruments if gm in HORN_SECTION]
                 rhythm_instruments = [gm for gm in instruments if gm in RHYTHM_SECTION]
                 other_instruments = [gm for gm in instruments if gm not in HORN_SECTION and gm not in RHYTHM_SECTION]
 
-                # HORN SECTION: Lead + derived harmonies (they CAN share patterns)
+                # HORN SECTION: Lead plays, background horns have RESTS
                 if horn_instruments:
                     lead_gm = horn_instruments[0]
                     lead_pitch = self._sample_pitch_for_instrument(pattern, lead_gm)
@@ -479,25 +480,30 @@ class MetaPatternGenerator:
                     )
                     all_tracks[lead_gm].extend(lead_notes)
 
-                    # Other horns: derive from lead (harmonize)
-                    for follower_gm in horn_instruments[1:]:
-                        # Use TrackDerive first (pattern-specific), then orchestration rules
+                    # Background horns: NOT ALWAYS PLAYING
+                    # In real arrangements, backgrounds drop in/out
+                    for follower_idx, follower_gm in enumerate(horn_instruments[1:]):
+                        # Probability of playing based on position in section
+                        # First/last patterns more likely to have full ensemble
+                        is_boundary = pattern_idx == 0 or pattern_idx == len(pattern_chain) - 1
+                        play_prob = 0.7 if is_boundary else 0.4
+
+                        if random.random() > play_prob:
+                            continue  # REST - skip this instrument for this pattern
+
                         rule = self._find_orchestration_rule(lead_gm, follower_gm, pattern_id)
 
                         if rule:
                             transform = rule.get('transform', 'identity')
-                            # If we have a pattern-specific derived pattern, use it directly
                             derived_pattern_id = rule.get('derived_pattern')
                             if derived_pattern_id and derived_pattern_id in self.patterns:
                                 derived_pattern = self.patterns[derived_pattern_id]
                                 follower_intervals = derived_pattern.get('pitch_intervals', intervals)
                                 follower_pitch = self._sample_pitch_for_instrument(derived_pattern, follower_gm)
                             else:
-                                # Apply transform to intervals
                                 follower_intervals = self._apply_transform(intervals, transform)
                                 follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
                         else:
-                            transform = 'identity'
                             follower_intervals = intervals
                             follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
 
@@ -506,17 +512,14 @@ class MetaPatternGenerator:
                         )
                         all_tracks[follower_gm].extend(follower_notes)
 
-                # RHYTHM SECTION: Sample patterns that CO-OCCURRED with the lead pattern
-                # This ensures harmonic compatibility (bass/piano match the melody key)
+                # RHYTHM SECTION: LOOP patterns to fill the phrase duration
                 for rhythm_gm in rhythm_instruments:
-                    # Find patterns this instrument played WHEN the lead pattern was playing
                     rhythm_pattern_id = self._sample_cooccurring_pattern(
                         lead_pattern_id=seed_pattern_id if horn_instruments else pattern_id,
                         target_gm=rhythm_gm
                     )
 
                     if not rhythm_pattern_id:
-                        # Fallback: sample any pattern for this instrument
                         rhythm_pattern_id = self._sample_pattern_for_instrument(rhythm_gm)
 
                     if rhythm_pattern_id:
@@ -531,12 +534,29 @@ class MetaPatternGenerator:
                                 rhythm_ioi = occ.get('tau_offset', base_ioi)
                                 break
 
-                        rhythm_notes = self._expand_to_notes(
-                            rhythm_intervals, rhythm_pitch, current_time, rhythm_gm, rhythm_ioi
-                        )
-                        all_tracks[rhythm_gm].extend(rhythm_notes)
+                        # LOOP rhythm pattern to fill the phrase duration
+                        rhythm_time = current_time
+                        loop_count = 0
+                        max_loops = 16  # Safety limit
 
-                # OTHER INSTRUMENTS: Sample their own patterns too
+                        while rhythm_time < current_time + phrase_duration and loop_count < max_loops:
+                            # Vary pitch slightly on each loop for interest
+                            loop_pitch = rhythm_pitch
+                            if loop_count > 0:
+                                loop_pitch = rhythm_pitch + random.choice([0, 0, 0, -12, 12])  # Occasional octave
+
+                            rhythm_notes = self._expand_to_notes(
+                                rhythm_intervals, loop_pitch, rhythm_time, rhythm_gm, rhythm_ioi,
+                                use_variations=True
+                            )
+                            all_tracks[rhythm_gm].extend(rhythm_notes)
+
+                            # Advance rhythm time by pattern duration
+                            pattern_dur = rhythm_ioi * (len(rhythm_intervals) + 1)
+                            rhythm_time += pattern_dur
+                            loop_count += 1
+
+                # OTHER INSTRUMENTS
                 for other_gm in other_instruments:
                     other_pattern_id = self._sample_pattern_for_instrument(other_gm)
                     if other_pattern_id:
@@ -548,9 +568,8 @@ class MetaPatternGenerator:
                         )
                         all_tracks[other_gm].extend(other_notes)
 
-                # Advance time
-                pattern_duration = base_ioi * (len(intervals) + 1)
-                current_time += pattern_duration
+                # Advance time by phrase duration
+                current_time += phrase_duration
 
         if self.verbose:
             print(f"\nGenerated:")
