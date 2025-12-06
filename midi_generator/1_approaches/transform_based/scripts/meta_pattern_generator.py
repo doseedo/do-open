@@ -470,7 +470,7 @@ class MetaPatternGenerator:
                 rhythm_instruments = [gm for gm in instruments if gm in RHYTHM_SECTION]
                 other_instruments = [gm for gm in instruments if gm not in HORN_SECTION and gm not in RHYTHM_SECTION]
 
-                # HORN SECTION: Lead plays, background horns have RESTS
+                # HORN SECTION: Lead plays, background horns play based on CORPUS patterns
                 if horn_instruments:
                     lead_gm = horn_instruments[0]
                     lead_pitch = self._sample_pitch_for_instrument(pattern, lead_gm)
@@ -480,16 +480,17 @@ class MetaPatternGenerator:
                     )
                     all_tracks[lead_gm].extend(lead_notes)
 
-                    # Background horns: NOT ALWAYS PLAYING
-                    # In real arrangements, backgrounds drop in/out
+                    # Background horns: Use CORPUS-DERIVED activity probability
                     for follower_idx, follower_gm in enumerate(horn_instruments[1:]):
-                        # Probability of playing based on position in section
-                        # First/last patterns more likely to have full ensemble
-                        is_boundary = pattern_idx == 0 or pattern_idx == len(pattern_chain) - 1
-                        play_prob = 0.7 if is_boundary else 0.4
+                        # Get natural co-occurrence probability from checkpoint
+                        play_prob = self._get_cooccurrence_probability(
+                            lead_pattern_id=pattern_id,
+                            lead_gm=lead_gm,
+                            target_gm=follower_gm
+                        )
 
                         if random.random() > play_prob:
-                            continue  # REST - skip this instrument for this pattern
+                            continue  # REST - this instrument didn't usually play here
 
                         rule = self._find_orchestration_rule(lead_gm, follower_gm, pattern_id)
 
@@ -725,6 +726,77 @@ class MetaPatternGenerator:
 
         # Fallback: no co-occurrence data, return None (caller will use _sample_pattern_for_instrument)
         return None
+
+    def _get_cooccurrence_probability(self, lead_pattern_id: str, lead_gm: int, target_gm: int) -> float:
+        """Get the natural probability that target_gm plays when lead_gm plays this pattern.
+
+        This is derived from the corpus - how often did these instruments actually
+        play together when this pattern occurred?
+        """
+        # Build activity index on first call
+        if not hasattr(self, '_activity_index'):
+            if self.verbose:
+                print("Building activity index from corpus...")
+
+            # For each pattern, count how many times each instrument played
+            # pattern_id -> {gm: count}
+            self._pattern_instrument_counts = defaultdict(lambda: defaultdict(int))
+
+            # Also track total occurrences per pattern
+            self._pattern_total_occurrences = defaultdict(int)
+
+            # And track global instrument pair co-occurrence rates
+            # (lead_gm, target_gm) -> (cooccur_count, total_lead_count)
+            self._gm_pair_cooccurrence = defaultdict(lambda: [0, 0])
+
+            for pattern_id, pattern in self.patterns.items():
+                occs = pattern.get('occurrences', [])
+
+                # Group occurrences by (piece_id, time_bucket) to find co-occurrences
+                by_time = defaultdict(list)
+                for occ in occs:
+                    piece_id = occ.get('piece_id', 'unknown')
+                    onset = occ.get('onset_time', occ.get('onset', 0))
+                    gm = occ.get('gm_program', 0)
+                    time_bucket = onset // 480
+                    by_time[(piece_id, time_bucket)].append(gm)
+
+                    self._pattern_instrument_counts[pattern_id][gm] += 1
+                    self._pattern_total_occurrences[pattern_id] += 1
+
+                # Count co-occurrences
+                for (piece_id, time_bucket), gm_list in by_time.items():
+                    gm_set = set(gm_list)
+                    for lead in gm_set:
+                        self._gm_pair_cooccurrence[(lead, lead)][1] += 1  # Total lead count
+                        for target in gm_set:
+                            if target != lead:
+                                self._gm_pair_cooccurrence[(lead, target)][0] += 1
+
+            self._activity_index = True
+
+            if self.verbose:
+                print(f"  Activity index: {len(self._pattern_instrument_counts)} patterns")
+
+        # Method 1: Pattern-specific probability
+        pattern_counts = self._pattern_instrument_counts.get(str(lead_pattern_id), {})
+        lead_count = pattern_counts.get(lead_gm, 0)
+        target_count = pattern_counts.get(target_gm, 0)
+
+        if lead_count > 0:
+            pattern_prob = target_count / lead_count
+            if pattern_prob > 0:
+                return min(1.0, pattern_prob)  # Cap at 1.0
+
+        # Method 2: Global GM-pair co-occurrence rate
+        cooccur_count, total_lead = self._gm_pair_cooccurrence.get((lead_gm, target_gm), [0, 0])
+        if total_lead > 0:
+            global_prob = cooccur_count / total_lead
+            if global_prob > 0:
+                return global_prob
+
+        # Fallback: moderate probability
+        return 0.5
 
     def _apply_transform(self, intervals: List[int], transform: str) -> List[int]:
         """Apply a pitch transform to intervals.
