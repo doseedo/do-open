@@ -570,8 +570,7 @@ class MetaPatternGenerator:
         if self.verbose:
             print(f"  Position buckets: {N_BUCKETS}")
             # Show distribution across positions
-            for bucket in [0, N_BUCKETS // 2, N_BUCKETS - 1]:
-                pos_name = ["start", "middle", "end"][bucket // (N_BUCKETS // 3)]
+            for bucket, pos_name in [(0, "start"), (N_BUCKETS // 2, "middle"), (N_BUCKETS - 1, "end")]:
                 n_gms = len(self.position_probs.get(bucket, {}))
                 print(f"    Bucket {bucket} ({pos_name}): {n_gms} instruments")
 
