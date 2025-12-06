@@ -87,7 +87,9 @@ class InstrumentVocabulary:
     patterns: List[Dict] = field(default_factory=list)
     weights: List[float] = field(default_factory=list)
     pitch_distribution: Dict[int, int] = field(default_factory=dict)  # pitch -> count
+    tau_distribution: Dict[int, int] = field(default_factory=dict)    # IOI -> count
     avg_pitch: float = 60.0
+    avg_tau: float = 480.0  # Average IOI (quarter note default)
     pitch_range: Tuple[int, int] = (48, 84)
 
     def sample_pattern(self) -> Optional[Dict]:
@@ -103,6 +105,14 @@ class InstrumentVocabulary:
         pitches = list(self.pitch_distribution.keys())
         weights = list(self.pitch_distribution.values())
         return random.choices(pitches, weights=weights)[0]
+
+    def sample_tau(self) -> int:
+        """Sample an IOI (timing) from the instrument's distribution."""
+        if not self.tau_distribution:
+            return int(self.avg_tau)
+        taus = list(self.tau_distribution.keys())
+        weights = list(self.tau_distribution.values())
+        return random.choices(taus, weights=weights)[0]
 
 
 class ParallelGenerator:
@@ -152,7 +162,8 @@ class ParallelGenerator:
         instrument_patterns = defaultdict(lambda: {
             'patterns': [],
             'counts': [],
-            'pitches': defaultdict(int)
+            'pitches': defaultdict(int),
+            'taus': defaultdict(int),  # IOI distribution from tau_offset
         })
 
         for pattern_id, pattern in self.patterns.items():
@@ -181,10 +192,16 @@ class ParallelGenerator:
                 })
                 instrument_patterns[gm]['counts'].append(count)
 
-                # Collect pitch distribution
+                # Collect pitch and tau distributions
                 for occ in occs:
                     first_pitch = occ.get('first_pitch', 60)
                     instrument_patterns[gm]['pitches'][first_pitch] += 1
+                    # Collect tau_offset for timing distribution
+                    tau = occ.get('tau_offset', 480)
+                    if tau > 0:
+                        # Quantize tau to reasonable buckets (30, 60, 120, 240, 480, 960, etc.)
+                        quantized_tau = max(30, min(1920, tau))
+                        instrument_patterns[gm]['taus'][quantized_tau] += 1
 
         # Create InstrumentVocabulary objects
         self.vocabularies = {}
@@ -201,6 +218,11 @@ class ParallelGenerator:
             total_count = sum(data['pitches'].values())
             avg_pitch = total_pitch / total_count if total_count > 0 else 60
 
+            # Compute average tau (IOI)
+            total_tau = sum(t * c for t, c in data['taus'].items())
+            tau_count = sum(data['taus'].values())
+            avg_tau = total_tau / tau_count if tau_count > 0 else 480
+
             # Get instrument range
             pitch_range = GM_RANGES.get(gm, DEFAULT_RANGE)
 
@@ -209,7 +231,9 @@ class ParallelGenerator:
                 patterns=data['patterns'],
                 weights=weights,
                 pitch_distribution=dict(data['pitches']),
+                tau_distribution=dict(data['taus']),
                 avg_pitch=avg_pitch,
+                avg_tau=avg_tau,
                 pitch_range=pitch_range,
             )
             self.vocabularies[gm] = vocab
@@ -244,9 +268,17 @@ class ParallelGenerator:
         first_pitch: int,
         start_time: int,
         gm_program: int,
-        ticks_per_beat: int = 480,
+        base_ioi: int = 480,
     ) -> List[Dict]:
-        """Expand a pattern to notes."""
+        """Expand a pattern to notes.
+
+        Args:
+            pattern: Pattern dict with pitch_intervals, rhythm_bucket, etc.
+            first_pitch: Starting MIDI pitch (0-127)
+            start_time: Start time in ticks
+            gm_program: GM program number for range clamping
+            base_ioi: Base inter-onset interval from corpus tau_offset
+        """
         notes = []
 
         # Get intervals
@@ -263,10 +295,6 @@ class ParallelGenerator:
                 if diff > 6:
                     diff -= 12
                 intervals.append(diff)
-
-        # Get timing
-        rhythm_bucket = pattern.get('rhythm_bucket', 8)
-        base_ioi = self.rhythm_bucket_to_ioi(rhythm_bucket, ticks_per_beat)
 
         # Get velocity
         velocity_bucket = pattern.get('velocity_bucket', 4)
@@ -331,13 +359,16 @@ class ParallelGenerator:
             # Sample starting pitch from instrument's distribution
             first_pitch = vocab.sample_pitch()
 
+            # Sample tau (IOI) from instrument's distribution for accurate timing
+            base_tau = vocab.sample_tau()
+
             # Expand pattern to notes
             pattern_notes = self.expand_pattern(
                 pattern=pattern,
                 first_pitch=first_pitch,
                 start_time=current_time,
                 gm_program=gm_program,
-                ticks_per_beat=ticks_per_beat,
+                base_ioi=base_tau,  # Use corpus-sampled timing
             )
 
             if not pattern_notes:

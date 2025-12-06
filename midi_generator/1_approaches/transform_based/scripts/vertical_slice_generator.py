@@ -179,6 +179,7 @@ class VerticalSliceGenerator:
                             'first_pitch': occ['first_pitch'],
                             'is_drum': occ['is_drum'],
                             'pattern': occ['pattern'],
+                            'tau_offset': occ.get('tau_offset', 480),  # Use corpus timing
                         }
 
             # Add final slice
@@ -232,9 +233,17 @@ class VerticalSliceGenerator:
         first_pitch: int,
         start_time: int,
         gm_program: int,
-        ticks_per_beat: int = 480,
+        base_ioi: int = 480,
     ) -> List[Dict]:
-        """Expand a pattern to notes."""
+        """Expand a pattern to notes.
+
+        Args:
+            pattern: Pattern dict with pitch_intervals, rhythm_bucket, etc.
+            first_pitch: Starting MIDI pitch (0-127)
+            start_time: Start time in ticks
+            gm_program: GM program number for range clamping
+            base_ioi: Base inter-onset interval from corpus tau_offset
+        """
         notes = []
 
         # Get intervals
@@ -249,9 +258,6 @@ class VerticalSliceGenerator:
                 if diff > 6:
                     diff -= 12
                 intervals.append(diff)
-
-        rhythm_bucket = pattern.get('rhythm_bucket', 8)
-        base_ioi = self.rhythm_bucket_to_ioi(rhythm_bucket, ticks_per_beat)
 
         velocity_bucket = pattern.get('velocity_bucket', 4)
         velocity = 60 + velocity_bucket * 10
@@ -301,13 +307,14 @@ class VerticalSliceGenerator:
         for gm, occ_data in slice_.instruments.items():
             pattern = occ_data['pattern']
             first_pitch = occ_data['first_pitch']
+            tau_offset = occ_data.get('tau_offset', 480)  # Use corpus timing
 
             notes = self.expand_pattern(
                 pattern=pattern,
                 first_pitch=first_pitch,
                 start_time=start_time,
                 gm_program=gm,
-                ticks_per_beat=ticks_per_beat,
+                base_ioi=tau_offset,  # Use actual corpus IOI
             )
 
             tracks[gm].extend(notes)
