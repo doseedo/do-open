@@ -652,7 +652,8 @@ class MetaPatternGenerator:
             for pattern_id, pattern in self.patterns.items():
                 for occ in pattern.get('occurrences', []):
                     piece_id = occ.get('piece_id', 'unknown')
-                    onset = occ.get('onset', 0)
+                    # Handle both 'onset_time' and 'onset' field names
+                    onset = occ.get('onset_time', occ.get('onset', 0))
                     gm = occ.get('gm_program', 0)
 
                     # Bucket time to 1 beat (480 ticks) for co-occurrence
@@ -660,9 +661,9 @@ class MetaPatternGenerator:
 
                     time_slices[(piece_id, time_bucket)].append((pattern_id, gm))
 
-            # Build index: lead_pattern -> target_gm -> [cooccurring_patterns]
-            self._cooccurrence_index = defaultdict(lambda: defaultdict(list))
-            self._cooccurrence_weights = defaultdict(lambda: defaultdict(list))
+            # Build index: lead_pattern -> target_gm -> {cooccurring_pattern: count}
+            # Using dict to aggregate counts (deduplicated)
+            cooc_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
             for (piece_id, time_bucket), pattern_gm_list in time_slices.items():
                 if len(pattern_gm_list) < 2:
@@ -672,12 +673,19 @@ class MetaPatternGenerator:
                 for i, (pattern_id, gm) in enumerate(pattern_gm_list):
                     for j, (other_pattern_id, other_gm) in enumerate(pattern_gm_list):
                         if i != j:
-                            # pattern_id co-occurred with other_pattern_id (played by other_gm)
-                            self._cooccurrence_index[pattern_id][other_gm].append(other_pattern_id)
-                            # Weight by pattern count
-                            other_pattern = self.patterns.get(other_pattern_id, {})
-                            weight = other_pattern.get('count', 1)
-                            self._cooccurrence_weights[pattern_id][other_gm].append(weight)
+                            # Count how many times pattern_id co-occurred with other_pattern_id
+                            cooc_counts[pattern_id][other_gm][other_pattern_id] += 1
+
+            # Convert to lists for sampling
+            self._cooccurrence_index = defaultdict(lambda: defaultdict(list))
+            self._cooccurrence_weights = defaultdict(lambda: defaultdict(list))
+
+            for pattern_id, gm_map in cooc_counts.items():
+                for target_gm, pattern_counts in gm_map.items():
+                    for other_pattern_id, count in pattern_counts.items():
+                        self._cooccurrence_index[pattern_id][target_gm].append(other_pattern_id)
+                        # Weight by co-occurrence count (how often they played together)
+                        self._cooccurrence_weights[pattern_id][target_gm].append(count)
 
             if self.verbose:
                 n_leads = len(self._cooccurrence_index)
