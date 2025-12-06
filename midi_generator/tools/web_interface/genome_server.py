@@ -123,6 +123,34 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         def vel_bucket_to_midi(bucket):
             return min(127, bucket * 16 + 8)
 
+        def rhythm_bucket_to_ratio(bucket: int) -> float:
+            """Convert v53 rhythm bucket (0-15) to IOI ratio.
+
+            Buckets 0-7 represent subdivision ratios (< 1.0)
+            Buckets 8-15 represent multiplication ratios (>= 1.0)
+            Bucket 7 and 8 are both ~1.0 (equal rhythm).
+            """
+            # Inverse of compute_rhythm_bucket from grammar/v4/repair_pure_contour.py
+            ratios = [
+                0.125,   # 0: very short subdivision
+                0.2375,  # 1: short subdivision
+                0.355,   # 2
+                0.5025,  # 3: ~half
+                0.6475,  # 4
+                0.7625,  # 5
+                0.875,   # 6
+                1.0,     # 7: equal
+                1.0,     # 8: equal
+                1.5,     # 9
+                2.125,   # 10: ~double
+                3.0,     # 11
+                4.25,    # 12
+                6.0,     # 13
+                7.75,    # 14
+                10.0,    # 15: very long
+            ]
+            return ratios[min(bucket, 15)]
+
         def emit_pattern_events(pattern, time_ticks):
             """Generate note events for a pattern at a given time."""
             events = []
@@ -176,6 +204,56 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             if not edge_ids:
                 return {'error': f'Piece not found: {piece_id}', 'tracks': [], 'duration': 0}
 
+        # Filter overlapping occurrences for hierarchical patterns
+        # When pattern R21 contains R13, both will have occurrences at overlapping positions.
+        # We must keep only the top-level (largest) pattern at each position to avoid duplicates.
+        def filter_overlapping_occurrences(occ_list):
+            """Filter to keep only non-overlapping occurrences.
+
+            For each position range, keep the largest pattern (most notes).
+            Uses 'position' (note index) to identify overlaps.
+            """
+            if not occ_list:
+                return occ_list
+
+            # Build list with position info: (rid, onset_time, rule, occ, position, length)
+            items_with_pos = []
+            for item in occ_list:
+                rid, onset_time, rule, occ = item
+                position = occ.get('position', 0) if occ else 0
+                # Get pattern length from rule data
+                length = 2  # default for atomic patterns
+                if rule:
+                    # Use canonical_pitches or pitch_classes length
+                    cp = rule.get('canonical_pitches', [])
+                    pc = rule.get('pitch_classes', [])
+                    length = len(cp) if cp else len(pc) if pc else 2
+                items_with_pos.append((rid, onset_time, rule, occ, position, length))
+
+            # Sort by position, then by length descending (larger patterns first)
+            items_with_pos.sort(key=lambda x: (x[4], -x[5]))
+
+            # Greedy selection: keep patterns that don't overlap with already-selected ones
+            selected = []
+            covered_positions = set()
+
+            for rid, onset_time, rule, occ, position, length in items_with_pos:
+                # Check if any position in this pattern's range is already covered
+                pattern_range = set(range(position, position + length))
+                if pattern_range & covered_positions:
+                    # This pattern overlaps with an already-selected one - skip it
+                    continue
+
+                # No overlap - select this pattern
+                selected.append((rid, onset_time, rule, occ))
+                covered_positions.update(pattern_range)
+
+            return selected
+
+        # Apply overlap filtering to each track
+        for track_id in tracks_occs:
+            tracks_occs[track_id] = filter_overlapping_occurrences(tracks_occs[track_id])
+
         def emit_v24_rule_events(rule_data, time_ticks, occ_data=None, rule_id=None):
             """Generate note events from v24/v33/v37 rule data.
 
@@ -206,15 +284,24 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 pitch_classes = rule_data.get('pitch_classes', [])
 
             # v41+ transformational approach: canonical_pitches + octave_transform
+            # v50+ contour-normalized: also adds pitch_offset (0-11) for full transposition
             # v40 and earlier: octaves array (per-pattern or per-occurrence)
             if edited_data and 'canonical_pitches' in edited_data:
                 canonical_pitches = edited_data.get('canonical_pitches', [])
             else:
                 canonical_pitches = rule_data.get('canonical_pitches', [])
 
+            # v50+/v53 contour-normalized: use first_pitch + pitch_intervals
+            # v53 (pure contour) stores first_pitch as absolute MIDI pitch (0-127)
+            pitch_intervals = rule_data.get('pitch_intervals', [])
+            first_pitch = occ_data.get('first_pitch') if occ_data and 'first_pitch' in occ_data else None
+
             octave_transform = 0
+            pitch_offset = 0  # v50+: pitch class offset (0-11) for contour-normalized patterns
             if occ_data and 'octave_transform' in occ_data:
                 octave_transform = occ_data.get('octave_transform', 0)
+            if occ_data and 'pitch_offset' in occ_data:
+                pitch_offset = occ_data.get('pitch_offset', 0)
 
             # Fallback for older checkpoints: use octaves array
             if edited_data and 'octaves' in edited_data:
@@ -237,6 +324,10 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 velocity_ratios = edited_data.get('velocity_ratios', [])
             else:
                 velocity_ratios = rule_data.get('velocity_ratios', [])
+
+            # v53 pure contour: check if pattern uses contour-based representation
+            is_pure_contour = rule_data.get('is_pure_contour', False)
+            rhythm_bucket = rule_data.get('rhythm_bucket', 7)  # Default to 1.0 ratio (bucket 7)
 
             # Get offsets from occurrence data (v33/v37) or use defaults
             # IMPORTANT: Use 'or' to handle None values (not just missing keys)
@@ -270,10 +361,20 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             current_time = time_ticks
 
             for i, pc in enumerate(pitch_classes):
-                # v41+ transformational approach: canonical_pitches + octave_transform
-                if canonical_pitches and i < len(canonical_pitches):
-                    # Transformational: derive pitch from canonical + transform
-                    midi_pitch = canonical_pitches[i] + octave_transform
+                # v53 pure contour: first_pitch + pitch_intervals takes priority
+                # Each occurrence has its own first_pitch (absolute MIDI 0-127)
+                if first_pitch is not None and pitch_intervals and i <= len(pitch_intervals):
+                    # v50+/v53 contour: use first_pitch + intervals (works for first_pitch=0 too)
+                    if i == 0:
+                        midi_pitch = first_pitch
+                    else:
+                        # Compute pitch from first_pitch + sum of intervals up to this note
+                        midi_pitch = first_pitch + sum(pitch_intervals[:i])
+                elif canonical_pitches and i < len(canonical_pitches):
+                    # v41+/v50 transformational approach: canonical_pitches + octave_transform + pitch_offset
+                    # v50 contour-normalized: pitch_offset is the pitch class offset (0-11)
+                    # The full transposition is octave_transform (multiple of 12) + pitch_offset (0-11)
+                    midi_pitch = canonical_pitches[i] + octave_transform + pitch_offset
                 else:
                     # Fallback for older checkpoints: use octaves array
                     # octave is stored as pitch // 12, so midi_pitch = pc + oct * 12
@@ -317,6 +418,12 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                     # v33/v37 format: use ratio * tau_offset
                     ioi = int(rhythm_ratios[i] * tau_offset)
                     current_time += ioi
+                elif is_pure_contour and i < len(pitch_classes) - 1:
+                    # v53 pure contour: use rhythm_bucket for uniform IOI advancement
+                    # Rhythm bucket encodes the ratio between consecutive notes
+                    rhythm_ratio = rhythm_bucket_to_ratio(rhythm_bucket)
+                    ioi = int(tau_offset * rhythm_ratio)
+                    current_time += ioi
 
             return events
 
@@ -348,30 +455,27 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
             # Determine if drum track - prefer stored metadata from checkpoint
             is_drum = False
-            if self.track_info:
+
+            # Method 1: Check occurrence data (v53+ stores is_drum per occurrence)
+            # This is the most accurate method since it comes from MIDI channel 9
+            for item in occ_list:
+                pid, onset_time, rule_data, occ_data = item
+                if occ_data and occ_data.get('is_drum', False):
+                    is_drum = True
+                    break  # Any occurrence marked as drum means the track is drum
+
+            # Method 2: Fall back to track_info (for older checkpoints)
+            if not is_drum and self.track_info:
                 # Look up is_drum from stored track_info
                 # track_id here is the global track index from the grammar (matches index in track_info)
                 if track_id < len(self.track_info):
                     is_drum = self.track_info[track_id].get('is_drum', False)
 
-            # Fallback to pitch-based heuristic if track_info not available
-            if not is_drum and events:
-                pitches = [e['pitch'] for e in events]
-                if pitches:
-                    min_pitch = min(pitches)
-                    max_pitch = max(pitches)
-                    avg_pitch = sum(pitches) / len(pitches)
-                    # Drum heuristic: pitches in typical drum range (27-87),
-                    # low pitch spread (<= 30 semitones), many notes, low average pitch
-                    pitch_spread = max_pitch - min_pitch
-                    in_drum_range = 27 <= min_pitch <= 60 and max_pitch <= 87
-                    # Also check: drums often have many repeated pitches (low unique ratio)
-                    unique_ratio = len(set(pitches)) / len(pitches) if pitches else 1
-                    is_drum = (in_drum_range and
-                               pitch_spread <= 40 and
-                               avg_pitch < 60 and
-                               len(pitches) > 20 and
-                               unique_ratio < 0.3)
+            # NOTE: Pitch-based drum detection heuristic is DISABLED.
+            # Without channel information (channel 9 = drums in MIDI), we cannot reliably
+            # distinguish drums from bass, baritone vocals, or other low-pitched instruments.
+            # Bass notes (e.g., D1 = MIDI 38) collide with GM drum pitches (snare = 38).
+            # The occurrence/track_info approach above is the only reliable method.
 
             tracks.append({
                 'track_id': track_id,
@@ -674,8 +778,10 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                     if GenomeGraphHandler.v24_rules and str(pid) in GenomeGraphHandler.v24_rules:
                         rule = GenomeGraphHandler.v24_rules[str(pid)]
                         # Copy fields from rule that may have been swapped
+                        # v52+: include pitch_intervals for contour-normalized patterns
                         for field in ['pitch_classes', 'octaves', 'durations', 'intervals',
-                                      'canonical_pitches', 'rhythm_ratios', 'duration_ratios', 'velocity_ratios']:
+                                      'canonical_pitches', 'pitch_intervals',
+                                      'rhythm_ratios', 'duration_ratios', 'velocity_ratios']:
                             if field in rule:
                                 result[field] = rule[field]
                     self.send_json(result)
@@ -907,8 +1013,9 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 source_rule = GenomeGraphHandler.v24_rules[source_key]
                 target_rule = GenomeGraphHandler.v24_rules[target_key]
                 # Copy pitch content from target to source
+                # v52+: include pitch_intervals for contour-normalized patterns
                 for field in ['pitch_classes', 'octaves', 'durations', 'intervals', 'canonical_pitches',
-                              'rhythm_ratios', 'duration_ratios', 'velocity_ratios']:
+                              'pitch_intervals', 'rhythm_ratios', 'duration_ratios', 'velocity_ratios']:
                     if field in target_rule:
                         source_rule[field] = target_rule[field].copy() if isinstance(target_rule[field], list) else target_rule[field]
                 print(f"Applied swap immediately: {source_key} now has content of {target_key}")

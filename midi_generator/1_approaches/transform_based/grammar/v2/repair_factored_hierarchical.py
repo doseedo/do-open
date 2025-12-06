@@ -10,13 +10,15 @@ Extends T-norm Re-Pair to normalize by all three factors:
 Each pair is characterized by its normalized triple: (signed_interval, rhythm_bucket, velocity_bucket)
 All transpositions, tempo scalings, and dynamic scalings are treated as the same pattern.
 
-SIGNED INTERVAL ENCODING (0-23):
-- 0-11: Descending intervals (0 = -12 octave, 11 = -1 semitone)
-- 12: Unison (same pitch class)
-- 13-23: Ascending intervals (13 = +1 semitone, 23 = +11 = M7)
+SIGNED INTERVAL STORAGE:
+- Stored as actual signed integers (int16)
+- Range: -127 to +127 (covers all possible MIDI intervals)
+- No encoding/decoding transformation needed
+- +15 means ascending minor 10th
+- -9 means descending major 6th
 
-This preserves melodic direction: ascending m7 (+10 = interval 22) is DIFFERENT from
-descending M2 (-2 = interval 10). They are related by inversion, but not identical.
+Preserves melodic direction: ascending m7 (+10) is DIFFERENT from
+descending M2 (-2). They are related by inversion, but not identical.
 
 Example of factored hierarchical patterns:
 - R12 = (interval=15, rhythm=1.0, velocity=same) - ascending minor 3rd at same tempo
@@ -106,7 +108,7 @@ class FactoredHierarchicalGrammar:
     rule_counts: torch.Tensor  # Shape: [n_rules]
 
     # Normalized factors for each rule
-    rule_pitch_intervals: torch.Tensor  # Shape: [n_rules] - signed pitch interval (0-23)
+    rule_pitch_intervals: torch.Tensor  # Shape: [n_rules] - signed pitch interval (int16, actual semitones)
     rule_rhythm_buckets: torch.Tensor   # Shape: [n_rules] - rhythm bucket (0-15)
     rule_velocity_buckets: torch.Tensor # Shape: [n_rules] - velocity bucket (0-7)
 
@@ -165,10 +167,9 @@ class RePairFactoredHierarchical:
     T+τ+v Factored Hierarchical GPU Re-Pair.
 
     Normalizes pairs by:
-    1. Signed pitch interval (0-23) - T-normalization with direction
-       - 0 = unison
-       - 1-12 = ascending intervals (m2 to octave)
-       - 13-23 = descending intervals (octave down to m2 down)
+    1. Signed pitch interval (int16) - T-normalization with direction
+       - Stored as actual signed integers (-127 to +127)
+       - Positive = ascending, Negative = descending, 0 = unison
     2. Rhythm ratio bucket (0-15) - τ-normalization
     3. Velocity ratio bucket (0-7) - v-normalization
 
@@ -301,6 +302,21 @@ class RePairFactoredHierarchical:
         symbol_base_pitch = torch.zeros(max_symbols, dtype=torch.int64, device=self.device)
         symbol_base_pitch[:n_terminals] = torch.arange(n_terminals, device=self.device)
 
+        # === FIX for signed intervals: track ACTUAL pitches (0-127) per sequence position ===
+        # seq_pitch is just pitch class (0-11), we need actual MIDI pitch for direction
+        # For SIGNED intervals, we need:
+        # - seq_first_pitch: first note's actual MIDI pitch (for computing intervals TO this symbol)
+        # - seq_last_pitch: last note's actual MIDI pitch (for computing intervals FROM this symbol)
+        # For terminals, first_pitch == last_pitch == pitch_class + octave * 12
+
+        seq_first_pitch = seq_pitch.clone()
+        seq_last_pitch = seq_pitch.clone()
+        terminal_mask = seq_pitch < n_terminals
+        seq_first_pitch[terminal_mask] = seq_pitch[terminal_mask] + seq_octave[terminal_mask] * 12
+        seq_last_pitch[terminal_mask] = seq_pitch[terminal_mask] + seq_octave[terminal_mask] * 12
+
+        # Note: symbol_actual_pitch is no longer needed since we track per-position
+
         # Also track base IOI and velocity for compound patterns
         symbol_base_ioi = torch.full((max_symbols,), 480, dtype=torch.int64, device=self.device)
         symbol_base_velocity = torch.full((max_symbols,), 64, dtype=torch.int64, device=self.device)
@@ -334,20 +350,19 @@ class RePairFactoredHierarchical:
             left_v = left_vel[valid]
             right_v = right_vel[valid]
 
-            # Get base pitches for T-normalization
-            left_base_p = symbol_base_pitch[left_p]
-            right_base_p = symbol_base_pitch[right_p]
+            # Get ACTUAL pitches at each position for interval computation
+            # For correct melodic intervals, we use:
+            # - Left symbol's LAST pitch (end of the left pattern)
+            # - Right symbol's FIRST pitch (start of the right pattern)
+            left_last_pitch = seq_last_pitch[:-1][valid]
+            right_first_pitch = seq_first_pitch[1:][valid]
 
-            # Compute SIGNED pitch interval (preserves melodic direction)
-            # Mapping: raw_diff + 12 gives us 0-23 range
-            # - raw_diff = -11 -> interval = 1 (descending M7)
-            # - raw_diff = -1  -> interval = 11 (descending m2)
-            # - raw_diff = 0   -> interval = 12 (unison - but we skip these)
-            # - raw_diff = +1  -> interval = 13 (ascending m2)
-            # - raw_diff = +11 -> interval = 23 (ascending M7)
-            raw_diff = right_base_p - left_base_p
-            pitch_intervals = raw_diff + 12
-            pitch_intervals = torch.clamp(pitch_intervals, 0, 23)
+            # Compute SIGNED pitch interval from ACTUAL pitches (preserves melodic direction)
+            # Unlike pitch class subtraction, this correctly handles octave spans
+            # Store as actual signed integers - no encoding, no clamping
+            # +15 = ascending minor 10th, -9 = descending major 6th, 0 = unison
+            raw_diff = right_first_pitch - left_last_pitch
+            pitch_intervals = raw_diff  # Store actual signed interval, no transformation
 
             # Compute rhythm buckets (τ-normalization) - CPU for now
             left_base_ioi = symbol_base_ioi[left_p]
@@ -386,8 +401,11 @@ class RePairFactoredHierarchical:
                 break
 
             # Encode normalized triple as single value for counting
-            # triple_id = pitch * 16 * 8 + rhythm * 8 + velocity
-            triple_ids = (pitch_intervals_f * self.rhythm_buckets * self.velocity_buckets +
+            # Offset intervals by 128 to make them positive for hashing (range: -127 to +127 -> 1 to 255)
+            # triple_id = (pitch+128) * 16 * 8 + rhythm * 8 + velocity
+            INTERVAL_OFFSET = 128
+            pitch_intervals_offset = pitch_intervals_f + INTERVAL_OFFSET
+            triple_ids = (pitch_intervals_offset * self.rhythm_buckets * self.velocity_buckets +
                          rhythm_buckets_f * self.velocity_buckets +
                          velocity_buckets_f)
 
@@ -400,8 +418,9 @@ class RePairFactoredHierarchical:
             if max_triple_count < self.min_pair_count:
                 break
 
-            # Decode best triple
-            best_pitch_interval = best_triple // (self.rhythm_buckets * self.velocity_buckets)
+            # Decode best triple (subtract offset to get actual signed interval)
+            best_pitch_interval_offset = best_triple // (self.rhythm_buckets * self.velocity_buckets)
+            best_pitch_interval = best_pitch_interval_offset - INTERVAL_OFFSET  # Back to signed
             remainder = best_triple % (self.rhythm_buckets * self.velocity_buckets)
             best_rhythm_bucket = remainder // self.velocity_buckets
             best_velocity_bucket = remainder % self.velocity_buckets
@@ -442,9 +461,9 @@ class RePairFactoredHierarchical:
 
             # ===== STEP 3: Replace all occurrences and capture timing data =====
             (seq_pitch, seq_ioi, seq_velocity, seq_duration, seq_onset, seq_octave,
-             seq_track_idx, seq_orig_pos, occurrences) = self._replace_pair_gpu_with_tracking(
+             seq_track_idx, seq_orig_pos, seq_first_pitch, seq_last_pitch, occurrences) = self._replace_pair_gpu_with_tracking(
                 seq_pitch, seq_ioi, seq_velocity, seq_duration, seq_onset, seq_octave,
-                seq_track_idx, seq_orig_pos,
+                seq_track_idx, seq_orig_pos, seq_first_pitch, seq_last_pitch,
                 best_left, best_right, rule_id, separator
             )
 
@@ -606,12 +625,15 @@ class RePairFactoredHierarchical:
         seq_octave: torch.Tensor,
         seq_track_idx: torch.Tensor,
         seq_orig_pos: torch.Tensor,
+        seq_first_pitch: torch.Tensor,  # First note's MIDI pitch at each position
+        seq_last_pitch: torch.Tensor,   # Last note's MIDI pitch at each position
         left: int,
         right: int,
         new_symbol: int,
         separator: int,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
-               torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, List[Dict]]:
+               torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,
+               torch.Tensor, torch.Tensor, List[Dict]]:
         """
         Replace all (left, right) pairs with new_symbol, tracking occurrences.
 
@@ -621,7 +643,7 @@ class RePairFactoredHierarchical:
         n = len(seq_pitch)
         if n < 2:
             return (seq_pitch, seq_ioi, seq_velocity, seq_duration, seq_onset, seq_octave,
-                    seq_track_idx, seq_orig_pos, [])
+                    seq_track_idx, seq_orig_pos, seq_first_pitch, seq_last_pitch, [])
 
         # Find pair positions
         is_left = seq_pitch[:-1] == left
@@ -634,7 +656,7 @@ class RePairFactoredHierarchical:
 
         if len(pair_indices) == 0:
             return (seq_pitch, seq_ioi, seq_velocity, seq_duration, seq_onset, seq_octave,
-                    seq_track_idx, seq_orig_pos, [])
+                    seq_track_idx, seq_orig_pos, seq_first_pitch, seq_last_pitch, [])
 
         # Remove overlapping: greedy left-to-right
         if len(pair_indices) > 1:
@@ -691,26 +713,41 @@ class RePairFactoredHierarchical:
         result_track_idx = seq_track_idx.clone()
         result_orig_pos = seq_orig_pos.clone()
 
+        # Update pitch tracking for the new symbol:
+        # - first_pitch: left's first_pitch (pattern starts with left's first note)
+        # - last_pitch: right's last_pitch (pattern ends with right's last note)
+        result_first_pitch = seq_first_pitch.clone()
+        result_last_pitch = seq_last_pitch.clone()
+        # The left position's first_pitch stays the same (no change needed)
+        # But we need to update the left position's last_pitch to be the right's last_pitch
+        result_last_pitch[pair_indices] = seq_last_pitch[pair_indices + 1]
+
         return (result_pitch[keep_mask], result_ioi[keep_mask], result_velocity[keep_mask],
                 result_duration[keep_mask], result_onset[keep_mask], result_octave[keep_mask],
-                result_track_idx[keep_mask], result_orig_pos[keep_mask], occurrences)
+                result_track_idx[keep_mask], result_orig_pos[keep_mask],
+                result_first_pitch[keep_mask], result_last_pitch[keep_mask], occurrences)
 
     def _interval_name(self, interval: int) -> str:
-        """Convert signed interval (0-23) to musical name with direction."""
-        # Interval 12 = unison, <12 = descending, >12 = ascending
-        base_names = {
-            0: "unison", 1: "m2", 2: "M2", 3: "m3", 4: "M3",
-            5: "P4", 6: "tritone", 7: "P5", 8: "m6", 9: "M6",
-            10: "m7", 11: "M7"
-        }
-        if interval == 12:
+        """Convert signed interval to musical name."""
+        if interval == 0:
             return "unison"
-        elif interval > 12:
-            # Ascending interval
-            return f"+{base_names.get(interval - 12, str(interval - 12))}"
+
+        direction = "+" if interval > 0 else "-"
+        semitones = abs(interval)
+
+        # Octave component
+        octaves = semitones // 12
+        remainder = semitones % 12
+
+        interval_names = ['unison', 'm2', 'M2', 'm3', 'M3', 'P4',
+                          'tritone', 'P5', 'm6', 'M6', 'm7', 'M7']
+
+        if octaves == 0:
+            return f"{direction}{interval_names[remainder]}"
+        elif remainder == 0:
+            return f"{direction}{octaves}oct"
         else:
-            # Descending interval
-            return f"-{base_names.get(12 - interval, str(12 - interval))}"
+            return f"{direction}{interval_names[remainder]}+{octaves}oct"
 
 
 def build_factored_hierarchical_grammar(

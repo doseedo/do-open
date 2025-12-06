@@ -611,36 +611,68 @@ def aggregate_orchestration_rules_gpu(
     src_pitch_offsets = pairs_tensor[:, 7]  # NEW: voicing offsets
     tgt_pitch_offsets = pairs_tensor[:, 8]  # NEW
 
+    n_pairs = len(pairs_list)
     if verbose:
-        print(f"  Processing {len(pairs_list)} cross-track pattern pairs on GPU")
+        print(f"  Processing {n_pairs} cross-track pattern pairs on GPU")
 
-    # Step 5: Batch compute transforms on GPU
+    # Step 5: Batch compute transforms on GPU (with memory-efficient batching)
     # For each pair, check all 12 transpositions and 12 inversions
-    src_pcs = pc_tensor[src_patterns]  # (n_pairs, max_len)
-    tgt_pcs = pc_tensor[tgt_patterns]  # (n_pairs, max_len)
 
-    # Create length mask
-    len_range = torch.arange(max_len, device=device).unsqueeze(0)  # (1, max_len)
-    mask = len_range < pair_lens.unsqueeze(1)  # (n_pairs, max_len)
+    # Determine batch size based on available GPU memory
+    # Each pair needs 2 * max_len * 8 bytes for src/tgt pitch classes
+    # Plus mask and intermediate results
+    # Target: use at most ~2GB for the batch computation
+    bytes_per_pair = max_len * 8 * 4  # src_pcs, tgt_pcs, mask, transposed (conservative)
+    max_batch_memory = 2 * 1024 * 1024 * 1024  # 2 GB
+    batch_size = max(1000, min(500000, max_batch_memory // max(bytes_per_pair, 1)))
 
-    # Check transpositions T0-T11
-    # For each t in 0..11: check if (src + t) % 12 == tgt for all positions
-    pattern_transform_results = torch.full((len(pairs_list),), -1, dtype=torch.long, device=device)
+    if verbose and n_pairs > batch_size:
+        print(f"    Using batched processing: {batch_size} pairs per batch ({(n_pairs + batch_size - 1) // batch_size} batches)")
 
-    for t in range(12):
-        transposed = (src_pcs + t) % 12
-        matches = ((transposed == tgt_pcs) | ~mask).all(dim=1)
-        # Only update where we haven't found a match yet
-        update_mask = matches & (pattern_transform_results == -1)
-        pattern_transform_results[update_mask] = t  # T0=0, T1=1, ..., T11=11
+    # Initialize results tensor
+    pattern_transform_results = torch.full((n_pairs,), -1, dtype=torch.long, device=device)
 
-    # Check inversions I0-I11 (only for pairs not yet matched)
-    unmatched = pattern_transform_results == -1
-    for axis in range(12):
-        inverted = (axis - src_pcs) % 12
-        matches = ((inverted == tgt_pcs) | ~mask).all(dim=1)
-        update_mask = matches & unmatched
-        pattern_transform_results[update_mask] = 12 + axis  # I0=12, I1=13, ..., I11=23
+    # Process in batches
+    for batch_start in range(0, n_pairs, batch_size):
+        batch_end = min(batch_start + batch_size, n_pairs)
+
+        # Extract batch
+        batch_src_patterns = src_patterns[batch_start:batch_end]
+        batch_tgt_patterns = tgt_patterns[batch_start:batch_end]
+        batch_pair_lens = pair_lens[batch_start:batch_end]
+
+        # Fetch pitch classes for this batch only
+        src_pcs = pc_tensor[batch_src_patterns]  # (batch_size, max_len)
+        tgt_pcs = pc_tensor[batch_tgt_patterns]  # (batch_size, max_len)
+
+        # Create length mask for batch
+        len_range = torch.arange(max_len, device=device).unsqueeze(0)  # (1, max_len)
+        mask = len_range < batch_pair_lens.unsqueeze(1)  # (batch_size, max_len)
+
+        # Check transpositions T0-T11
+        batch_results = torch.full((batch_end - batch_start,), -1, dtype=torch.long, device=device)
+
+        for t in range(12):
+            transposed = (src_pcs + t) % 12
+            matches = ((transposed == tgt_pcs) | ~mask).all(dim=1)
+            update_mask = matches & (batch_results == -1)
+            batch_results[update_mask] = t  # T0=0, T1=1, ..., T11=11
+
+        # Check inversions I0-I11 (only for pairs not yet matched)
+        unmatched = batch_results == -1
+        for axis in range(12):
+            inverted = (axis - src_pcs) % 12
+            matches = ((inverted == tgt_pcs) | ~mask).all(dim=1)
+            update_mask = matches & unmatched
+            batch_results[update_mask] = 12 + axis  # I0=12, I1=13, ..., I11=23
+
+        # Store batch results
+        pattern_transform_results[batch_start:batch_end] = batch_results
+
+        # Free batch memory
+        del src_pcs, tgt_pcs, mask, batch_results
+        if device == 'cuda':
+            torch.cuda.empty_cache()
 
     # ===== KEY FIX: Combine pattern transform with pitch_offset difference =====
     # The REAL voicing transform = pattern_transform + (tgt_pitch_offset - src_pitch_offset)
