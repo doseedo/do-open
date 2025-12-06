@@ -144,6 +144,22 @@ class MetaPatternGenerator:
             print(f"  Velocity transforms: {len(self.velocity_transforms)}")
             print(f"  Duration transforms: {len(self.duration_transforms)}")
 
+    def _parse_transform(self, transform_raw) -> str:
+        """Parse transform field which can be string OR dict with 'primitives' list.
+
+        Track derives from v53 store transforms as {'primitives': ['T7', 'I0']}
+        rather than simple strings like 'T7'.
+        """
+        if isinstance(transform_raw, dict):
+            # Handle {'primitives': ['T7', 'I0']} format
+            primitives = transform_raw.get('primitives', [])
+            if primitives:
+                return primitives[0] if len(primitives) == 1 else '_'.join(primitives)
+            return 'identity'
+        elif isinstance(transform_raw, str):
+            return transform_raw
+        return 'identity'
+
     def build_transform_graph(self):
         """Build graph: pattern_id → {transform: [target_pattern_ids]}
 
@@ -172,6 +188,16 @@ class MetaPatternGenerator:
                     transform = derived.get('transform', 'identity')
                     if src_pattern:
                         self.transform_graph[str(src_pattern)][transform].append(pattern_id)
+
+        # Also build from track_derives (if relations is empty)
+        for derive in self.track_derives:
+            if isinstance(derive, dict):
+                src_pattern = derive.get('source_pattern_id', '')
+                tgt_pattern = derive.get('target_pattern_id', '')
+                transform = self._parse_transform(derive.get('transform', 'identity'))
+
+                if src_pattern and tgt_pattern and transform:
+                    self.transform_graph[str(src_pattern)][transform].append(str(tgt_pattern))
 
         n_edges = sum(
             len(targets)
@@ -226,13 +252,15 @@ class MetaPatternGenerator:
         for derive in self.track_derives:
             if isinstance(derive, dict):
                 # Get source and target info
-                source_gm = derive.get('source_gm', derive.get('leader_gm', -1))
-                target_gm = derive.get('target_gm', derive.get('follower_gm', -1))
-                transform = derive.get('transform', 'identity')
+                source_gm = derive.get('source_instrument', derive.get('source_gm', derive.get('leader_gm', -1)))
+                target_gm = derive.get('target_instrument', derive.get('target_gm', derive.get('follower_gm', -1)))
                 source_pattern = derive.get('source_pattern_id', derive.get('leader_pattern', ''))
                 target_pattern = derive.get('target_pattern_id', derive.get('follower_pattern', ''))
 
-                if source_gm >= 0 and target_gm >= 0:
+                # Parse transform - can be string OR dict with 'primitives' list
+                transform = self._parse_transform(derive.get('transform', 'identity'))
+
+                if source_gm >= 0 and target_gm >= 0 and transform:
                     self.gm_pair_transforms[(source_gm, target_gm)][transform] += 1
 
                 if source_pattern and target_pattern:
