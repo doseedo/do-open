@@ -1,46 +1,36 @@
 #!/usr/bin/env python3
 """
-Meta-Pattern Generator (v53 Checkpoint) - Probabilistic PCFG Sampling
-======================================================================
+Meta-Pattern Generator (v53 Checkpoint) - GPU-Accelerated PCFG Sampling
+========================================================================
 
 Converts a deterministic Re-Pair grammar (Straight-Line Program) into a
-probabilistic generative model using 4-level Markov sampling + form templates:
+probabilistic generative model. This addresses the compression-to-generation gap:
+Re-Pair finds structure, but generation needs probabilities OVER structures.
+
+GPU EFFICIENCY PRINCIPLE:
+  - BUILD phase: GPU-accelerated batch operations (clustering, matrix ops)
+  - GENERATE phase: CPU with O(1) dictionary lookups (no Python loops)
+  - All heavy compute happens ONCE during initialization
 
 PROBABILISTIC SAMPLING LEVELS:
   Level 1: Frequency weighting     P(pattern) from occurrence counts
   Level 2: Transition probability  P(pattern_B | pattern_A, instrument)
   Level 3: Position conditioning   P(pattern | position_in_piece, instrument)
   Level 4: Co-occurrence           P(pattern | concurrent_patterns_on_other_instruments)
+  Level 5: Style conditioning      P(pattern | style_cluster_z) - per-piece consistency
+  Level 6: Equivalence classes     P(pattern | substitution_class) - branching non-terminals
+
+ADDRESSING THE SLP → PCFG GAP:
+  1. Pattern Equivalence Classes: Group patterns by substitutability (GPU K-means)
+  2. Style Variable z: Per-piece latent that conditions all choices (GPU clustering)
+  3. Short-Term Memory: Track reuse at phrase boundaries (O(1) CPU lookups)
+  4. Hierarchical Skeleton: Generate form → chords → melody → accompaniment
 
 FORM TEMPLATES:
   Learn repetition structures (AABA, ABAB, etc.) from corpus and enforce them
   during generation to prevent "globally random" output.
 
-This addresses the core problem: Re-Pair creates a DETERMINISTIC grammar
-(perfect reconstruction, poor generation). We add PROBABILISTIC sampling
-to enable generation while respecting learned structure.
-
-FULL CHECKPOINT UTILIZATION (All corpus-derived, no music theory constraints):
-1. Transition index → What patterns follow what (bigram Markov chains)
-2. Position index → What patterns appear where (start/middle/end of piece)
-3. Co-occurrence → Patterns that played together (harmonic coherence)
-4. TrackDerive → Cross-track derivations (72K+ relations)
-5. Form structure → Pattern sequences per piece (AABA, etc.)
-6. Rest durations → Natural gaps between patterns per instrument
-7. Hierarchical patterns → Phrase structure (left_child + connector + right_child)
-8. Multi-factor transforms → Rhythm/velocity/duration variation
-
 Everything is derived from checkpoint data. No hardcoded probabilities or music theory rules.
-
-Usage:
-    # Default: 3-level probabilistic Markov sampling
-    python scripts/meta_pattern_generator.py checkpoint.npz -o output.mid
-
-    # Use corpus form structure (exact pattern sequences)
-    python scripts/meta_pattern_generator.py checkpoint.npz -o output.mid --form
-
-    # Use meta-pattern transform graph walking
-    python scripts/meta_pattern_generator.py checkpoint.npz -o output.mid --meta-pattern
 """
 
 import os
@@ -50,9 +40,21 @@ import random
 import argparse
 import numpy as np
 from pathlib import Path
-from collections import defaultdict
-from typing import List, Dict, Tuple, Optional, Set
+from collections import defaultdict, Counter
+from typing import List, Dict, Tuple, Optional, Set, Any
 from dataclasses import dataclass, field
+
+# Optional GPU support - falls back to CPU if unavailable
+try:
+    import torch
+    HAS_TORCH = True
+    if torch.cuda.is_available():
+        DEVICE = torch.device('cuda')
+    else:
+        DEVICE = torch.device('cpu')
+except ImportError:
+    HAS_TORCH = False
+    DEVICE = None
 
 # GM instrument ranges
 GM_RANGES = {
@@ -65,6 +67,58 @@ DEFAULT_RANGE = (48, 84)
 
 
 @dataclass
+class ShortTermMemory:
+    """Track patterns used for reuse boosting. O(1) operations only.
+
+    This implements the IDyOM-style Short-Term Model that captures
+    within-piece motif repetition the Long-Term Model misses.
+    """
+    phrase_length: int = 8
+    patterns_by_position: Dict[int, Set[str]] = field(default_factory=lambda: defaultdict(set))
+    pattern_last_used: Dict[str, int] = field(default_factory=dict)
+    pattern_use_count: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
+
+    def record(self, pattern_id: str, position: int):
+        """Record pattern usage. O(1)."""
+        pos_mod = position % self.phrase_length
+        self.patterns_by_position[pos_mod].add(pattern_id)
+        self.pattern_last_used[pattern_id] = position
+        self.pattern_use_count[pattern_id] += 1
+
+    def get_reuse_boost(self, pattern_id: str, position: int) -> float:
+        """Return boost factor for patterns used at equivalent phrase positions. O(1)."""
+        pos_mod = position % self.phrase_length
+
+        # Strong boost for exact phrase position match
+        if pattern_id in self.patterns_by_position[pos_mod]:
+            return 2.0
+
+        # Medium boost for common repetition distances (8, 16, 32 bars)
+        if pattern_id in self.pattern_last_used:
+            distance = position - self.pattern_last_used[pattern_id]
+            if distance in {8, 16, 32}:
+                return 1.5
+            elif distance in {4, 12, 24}:
+                return 1.25
+
+        return 1.0
+
+    def get_familiarity_boost(self, pattern_id: str) -> float:
+        """Boost patterns already used in this piece. O(1)."""
+        count = self.pattern_use_count.get(pattern_id, 0)
+        if count > 0:
+            # Diminishing returns: 1.3 for 1 use, ~1.5 for many uses
+            return 1.0 + 0.3 * (1 - 1 / (count + 1))
+        return 1.0
+
+    def reset(self):
+        """Reset for new piece generation."""
+        self.patterns_by_position = defaultdict(set)
+        self.pattern_last_used = {}
+        self.pattern_use_count = defaultdict(int)
+
+
+@dataclass
 class TransformRelation:
     """A learned transform relationship between patterns."""
     source_id: str
@@ -74,21 +128,47 @@ class TransformRelation:
 
 
 class MetaPatternGenerator:
-    """Generate using full checkpoint structure: meta-patterns, hierarchy, slices."""
+    """Generate using full checkpoint structure with GPU-accelerated PCFG sampling.
 
-    def __init__(self, checkpoint_path: str, verbose: bool = True):
+    Implements the compression-to-generation bridge:
+    - SLP (Straight-Line Program) → PCFG (Probabilistic CFG)
+    - Pattern equivalence classes for branching non-terminals
+    - Style variable z for per-piece consistency
+    - Short-term memory for within-piece repetition
+    - Hierarchical skeleton-first generation
+    """
+
+    def __init__(self, checkpoint_path: str, verbose: bool = True, use_gpu: bool = True):
         self.verbose = verbose
+        self.use_gpu = use_gpu and HAS_TORCH and DEVICE.type == 'cuda'
+
+        if self.verbose:
+            print(f"GPU acceleration: {'ENABLED' if self.use_gpu else 'DISABLED (CPU fallback)'}")
+
+        # Load checkpoint data
         self.load_checkpoint(checkpoint_path)
+
+        # Build base indices (CPU)
         self.build_transform_graph()
         self.build_hierarchical_index()
         self.build_track_derive_index()
         self.build_form_structure_index()
         self.build_rest_duration_index()
-        self.build_transition_index()  # Level 2: P(next | current, gm)
-        self.build_position_index()    # Level 3: P(pattern | position, gm)
-        self.build_cooccurrence_index()  # Level 4: P(pattern | concurrent_patterns)
-        self.build_form_template_index()  # For global repetition structure
+
+        # Build probabilistic sampling indices
+        self.build_transition_index()       # Level 2: P(next | current, gm)
+        self.build_position_index()         # Level 3: P(pattern | position, gm)
+        self.build_cooccurrence_index()     # Level 4: P(pattern | concurrent_patterns)
+        self.build_form_template_index()    # For global repetition structure
         self.build_instrument_role_index()  # Derive lead/follower from corpus
+
+        # NEW: GPU-accelerated PCFG conversion (SLP → PCFG)
+        self.build_pattern_equivalence_classes()   # Branching non-terminals
+        self.build_style_clusters()                # Per-piece style variable z
+        self.build_chord_skeleton_model()          # Hierarchical generation
+
+        # Initialize short-term memory (reset per piece)
+        self.stm = ShortTermMemory(phrase_length=8)
 
     def load_checkpoint(self, checkpoint_path: str):
         """Load all checkpoint components."""
@@ -840,47 +920,560 @@ class MetaPatternGenerator:
         """
         return [gm for gm in instruments if gm != lead_gm]
 
+    # =========================================================================
+    # GPU-ACCELERATED PCFG CONVERSION (SLP → PCFG)
+    # =========================================================================
+
+    def build_pattern_equivalence_classes(self):
+        """GPU-accelerated pattern clustering for substitutability.
+
+        This is the KEY fix for the SLP → PCFG conversion:
+        - SLP has one production per non-terminal (deterministic)
+        - PCFG has MULTIPLE productions per non-terminal (probabilistic)
+
+        We create "equivalence classes" of patterns that can substitute for each other
+        based on: similar intervals, similar length, appear in similar contexts.
+
+        GPU: Batch cosine similarity + K-means clustering
+        CPU: O(1) lookups during generation
+        """
+        if self.verbose:
+            print("Building pattern equivalence classes (GPU-accelerated)...")
+
+        pattern_ids = list(self.patterns.keys())
+        n_patterns = len(pattern_ids)
+
+        if n_patterns == 0:
+            self.pattern_to_class = {}
+            self.class_to_patterns = {}
+            self.class_pattern_probs = {}
+            return
+
+        # 1. Build feature matrix for all patterns
+        # Features: interval signature (padded), length, position stats, frequency
+        INTERVAL_DIM = 8  # Pad/truncate intervals to this length
+        features = []
+
+        # Precompute position stats per pattern (vectorized)
+        pattern_position_means = {}
+        for pid in pattern_ids:
+            positions = []
+            for occ in self.patterns[pid].get('occurrences', []):
+                onset = occ.get('onset_time', occ.get('onset', 0))
+                positions.append(onset)
+            pattern_position_means[pid] = np.mean(positions) if positions else 0
+
+        # Build feature vectors
+        for pid in pattern_ids:
+            p = self.patterns[pid]
+            intervals = p.get('pitch_intervals', [0])
+
+            # Interval signature (padded/truncated)
+            padded_intervals = intervals[:INTERVAL_DIM] + [0] * (INTERVAL_DIM - len(intervals))
+
+            # Contour signature (direction of motion)
+            contour = [1 if i > 0 else (-1 if i < 0 else 0) for i in padded_intervals]
+
+            feat = [
+                *padded_intervals,                                  # Raw intervals
+                *contour,                                           # Contour
+                len(intervals),                                     # Pattern length
+                sum(abs(i) for i in intervals) / max(1, len(intervals)),  # Avg interval magnitude
+                pattern_position_means.get(pid, 0.5) / 100000,      # Normalized position
+                len(p.get('occurrences', [])),                      # Frequency (log-scaled later)
+            ]
+            features.append(feat)
+
+        # Convert to numpy array
+        X = np.array(features, dtype=np.float32)
+
+        # Normalize features (z-score per column)
+        X_mean = X.mean(axis=0, keepdims=True)
+        X_std = X.std(axis=0, keepdims=True) + 1e-8
+        X_normalized = (X - X_mean) / X_std
+
+        # 2. Cluster patterns into equivalence classes
+        # Use GPU if available, otherwise CPU K-means
+        n_clusters = min(500, max(10, n_patterns // 20))  # ~20 patterns per class
+
+        if self.use_gpu and HAS_TORCH:
+            labels = self._kmeans_gpu(X_normalized, n_clusters)
+        else:
+            labels = self._kmeans_cpu(X_normalized, n_clusters)
+
+        # 3. Build CPU lookup tables for O(1) generation
+        self.pattern_to_class = {pid: int(labels[i]) for i, pid in enumerate(pattern_ids)}
+
+        self.class_to_patterns = defaultdict(list)
+        for pid, cls in self.pattern_to_class.items():
+            self.class_to_patterns[cls].append(pid)
+
+        # 4. Precompute P(pattern | class) for each equivalence class
+        # This gives us BRANCHING: when we need pattern of class C, sample from distribution
+        self.class_pattern_probs = {}
+        for cls, pids in self.class_to_patterns.items():
+            # Weight by occurrence count (frequency in corpus)
+            counts = []
+            for pid in pids:
+                counts.append(len(self.patterns[pid].get('occurrences', [])) + 1)
+            total = sum(counts)
+            self.class_pattern_probs[cls] = {
+                pid: c / total for pid, c in zip(pids, counts)
+            }
+
+        # 5. Build transition matrix between equivalence classes
+        # P(class_B | class_A) - which classes follow which
+        self._build_class_transitions(pattern_ids, labels)
+
+        if self.verbose:
+            print(f"  Equivalence classes: {n_clusters}")
+            print(f"  Avg patterns per class: {n_patterns / n_clusters:.1f}")
+            class_sizes = [len(pids) for pids in self.class_to_patterns.values()]
+            print(f"  Class size range: {min(class_sizes)} - {max(class_sizes)}")
+
+    def _kmeans_gpu(self, X: np.ndarray, n_clusters: int, max_iters: int = 100) -> np.ndarray:
+        """GPU-accelerated K-means clustering using PyTorch."""
+        X_torch = torch.tensor(X, device=DEVICE, dtype=torch.float32)
+        n_samples = X_torch.shape[0]
+
+        # Initialize centroids using k-means++
+        centroids_idx = [random.randint(0, n_samples - 1)]
+        for _ in range(1, n_clusters):
+            # Compute distance to nearest centroid (vectorized)
+            dists = torch.cdist(X_torch, X_torch[centroids_idx])
+            min_dists = dists.min(dim=1).values
+            probs = min_dists ** 2
+            probs = probs / probs.sum()
+            new_idx = torch.multinomial(probs, 1).item()
+            centroids_idx.append(new_idx)
+
+        centroids = X_torch[centroids_idx].clone()
+
+        # K-means iterations (all on GPU)
+        for _ in range(max_iters):
+            # Assign to nearest centroid (batch matrix op)
+            dists = torch.cdist(X_torch, centroids)  # [N x K]
+            labels = dists.argmin(dim=1)  # [N]
+
+            # Update centroids (scatter_add for GPU efficiency)
+            new_centroids = torch.zeros_like(centroids)
+            counts = torch.zeros(n_clusters, device=DEVICE)
+
+            for k in range(n_clusters):
+                mask = labels == k
+                if mask.sum() > 0:
+                    new_centroids[k] = X_torch[mask].mean(dim=0)
+                    counts[k] = mask.sum()
+
+            # Check convergence
+            if torch.allclose(centroids, new_centroids, atol=1e-4):
+                break
+            centroids = new_centroids
+
+        return labels.cpu().numpy()
+
+    def _kmeans_cpu(self, X: np.ndarray, n_clusters: int, max_iters: int = 100) -> np.ndarray:
+        """CPU fallback K-means using numpy vectorized operations."""
+        n_samples = X.shape[0]
+
+        # Initialize centroids randomly
+        idx = np.random.choice(n_samples, n_clusters, replace=False)
+        centroids = X[idx].copy()
+
+        for _ in range(max_iters):
+            # Compute distances (vectorized)
+            dists = np.linalg.norm(X[:, np.newaxis] - centroids, axis=2)
+            labels = dists.argmin(axis=1)
+
+            # Update centroids
+            new_centroids = np.zeros_like(centroids)
+            for k in range(n_clusters):
+                mask = labels == k
+                if mask.sum() > 0:
+                    new_centroids[k] = X[mask].mean(axis=0)
+                else:
+                    new_centroids[k] = centroids[k]
+
+            if np.allclose(centroids, new_centroids, atol=1e-4):
+                break
+            centroids = new_centroids
+
+        return labels
+
+    def _build_class_transitions(self, pattern_ids: List[str], labels: np.ndarray):
+        """Build transition probabilities between equivalence classes.
+
+        This creates a PCFG-style transition model:
+        P(next_class | current_class, instrument)
+        """
+        n_clusters = int(labels.max()) + 1
+        pid_to_label = {pid: labels[i] for i, pid in enumerate(pattern_ids)}
+
+        # Count transitions per instrument
+        class_transitions = defaultdict(lambda: np.zeros((n_clusters, n_clusters)))
+
+        for piece_id, gm_sequences in self.piece_gm_sequences.items():
+            for gm, sequence in gm_sequences.items():
+                for i in range(len(sequence) - 1):
+                    _, current_pid = sequence[i]
+                    _, next_pid = sequence[i + 1]
+
+                    current_cls = pid_to_label.get(current_pid, 0)
+                    next_cls = pid_to_label.get(next_pid, 0)
+
+                    class_transitions[gm][current_cls, next_cls] += 1
+
+        # Normalize to probabilities
+        self.class_transition_probs = {}
+        for gm, trans_matrix in class_transitions.items():
+            row_sums = trans_matrix.sum(axis=1, keepdims=True) + 1e-8
+            self.class_transition_probs[gm] = trans_matrix / row_sums
+
+    def sample_from_equivalence_class(self, equivalence_class: int, gm_program: int = None) -> Optional[str]:
+        """Sample a pattern from an equivalence class. O(1) lookup + weighted sample.
+
+        This implements BRANCHING in the PCFG: given a non-terminal (class),
+        probabilistically choose which production (pattern) to expand.
+        """
+        if equivalence_class not in self.class_pattern_probs:
+            return None
+
+        probs_dict = self.class_pattern_probs[equivalence_class]
+
+        # If instrument specified, filter to patterns that instrument plays
+        if gm_program is not None:
+            filtered = {}
+            for pid, prob in probs_dict.items():
+                for occ in self.patterns[pid].get('occurrences', []):
+                    if occ.get('gm_program') == gm_program:
+                        filtered[pid] = prob
+                        break
+            if filtered:
+                probs_dict = filtered
+                # Renormalize
+                total = sum(probs_dict.values())
+                probs_dict = {k: v / total for k, v in probs_dict.items()}
+
+        pids = list(probs_dict.keys())
+        probs = list(probs_dict.values())
+
+        return random.choices(pids, weights=probs)[0] if pids else None
+
+    def build_style_clusters(self):
+        """GPU-accelerated piece clustering for style variable z.
+
+        This implements the "shared latent variable" from Compound PCFGs:
+        - Sample z ~ P(z) at generation start
+        - All rule probabilities conditioned on z
+        - Ensures stylistic consistency without explicit coupling at every step
+
+        GPU: Batch feature extraction + K-means on piece features
+        CPU: O(1) lookups for P(pattern | style_z)
+        """
+        if self.verbose:
+            print("Building style clusters (GPU-accelerated)...")
+
+        piece_ids = list(self.piece_gm_sequences.keys())
+        n_pieces = len(piece_ids)
+
+        if n_pieces == 0:
+            self.piece_to_style = {}
+            self.style_pattern_probs = {}
+            self.style_weights = [1.0]
+            return
+
+        # 1. Extract piece-level features (vectorized)
+        piece_features = []
+        for pid in piece_ids:
+            gm_seqs = self.piece_gm_sequences[pid]
+
+            # Feature: number of instruments
+            n_instruments = len(gm_seqs)
+
+            # Feature: total patterns (density proxy)
+            total_patterns = sum(len(seq) for seq in gm_seqs.values())
+
+            # Feature: pattern diversity (unique / total)
+            unique_patterns = set()
+            for seq in gm_seqs.values():
+                for _, pat_id in seq:
+                    unique_patterns.add(pat_id)
+            diversity = len(unique_patterns) / max(1, total_patterns)
+
+            # Feature: average interval magnitude (activity level)
+            avg_interval = 0
+            count = 0
+            for seq in gm_seqs.values():
+                for _, pat_id in seq:
+                    pat = self.patterns.get(pat_id, {})
+                    intervals = pat.get('pitch_intervals', [])
+                    if intervals:
+                        avg_interval += sum(abs(i) for i in intervals) / len(intervals)
+                        count += 1
+            avg_interval = avg_interval / max(1, count)
+
+            # Feature: instrument distribution (which GM families present)
+            gm_families = set(gm // 8 for gm in gm_seqs.keys())
+            has_brass = 1 if 7 in gm_families else 0  # GM 56-63
+            has_keys = 1 if 0 in gm_families else 0   # GM 0-7
+            has_bass = 1 if 4 in gm_families else 0   # GM 32-39
+            has_sax = 1 if 8 in gm_families else 0    # GM 64-71
+
+            feat = [
+                n_instruments,
+                total_patterns / 100,  # Scale down
+                diversity,
+                avg_interval / 5,  # Scale down
+                has_brass,
+                has_keys,
+                has_bass,
+                has_sax,
+            ]
+            piece_features.append(feat)
+
+        X = np.array(piece_features, dtype=np.float32)
+
+        # Normalize
+        X_mean = X.mean(axis=0, keepdims=True)
+        X_std = X.std(axis=0, keepdims=True) + 1e-8
+        X_normalized = (X - X_mean) / X_std
+
+        # 2. Cluster pieces into style categories
+        n_styles = min(20, max(3, n_pieces // 50))
+
+        if self.use_gpu and HAS_TORCH:
+            style_labels = self._kmeans_gpu(X_normalized, n_styles)
+        else:
+            style_labels = self._kmeans_cpu(X_normalized, n_styles)
+
+        # 3. Build lookup tables
+        self.piece_to_style = {pid: int(style_labels[i]) for i, pid in enumerate(piece_ids)}
+
+        # 4. For each style, precompute pattern distributions
+        # P(pattern | style_z)
+        self.style_pattern_probs = {}
+        for style_id in range(n_styles):
+            pieces_in_style = [pid for pid, s in self.piece_to_style.items() if s == style_id]
+
+            pattern_counts = Counter()
+            for pid in pieces_in_style:
+                for gm, seq in self.piece_gm_sequences[pid].items():
+                    for _, pat_id in seq:
+                        pattern_counts[pat_id] += 1
+
+            total = sum(pattern_counts.values())
+            if total > 0:
+                self.style_pattern_probs[style_id] = {
+                    p: c / total for p, c in pattern_counts.items()
+                }
+            else:
+                self.style_pattern_probs[style_id] = {}
+
+        # 5. Store style weights for sampling (proportional to piece count)
+        style_counts = Counter(style_labels)
+        total_pieces = sum(style_counts.values())
+        self.style_weights = [style_counts.get(i, 1) / total_pieces for i in range(n_styles)]
+
+        if self.verbose:
+            print(f"  Style clusters: {n_styles}")
+            print(f"  Pieces per style: {[style_counts.get(i, 0) for i in range(n_styles)]}")
+
+    def sample_style(self) -> int:
+        """Sample a style at generation start. O(1)."""
+        if not self.style_weights:
+            return 0
+        return random.choices(range(len(self.style_weights)), weights=self.style_weights)[0]
+
+    def get_style_weight(self, pattern_id: str, style_id: int) -> float:
+        """Get style-conditioned weight for a pattern. O(1)."""
+        if style_id not in self.style_pattern_probs:
+            return 1.0
+        return self.style_pattern_probs[style_id].get(pattern_id, 0.01)  # Small non-zero for smoothing
+
+    def build_chord_skeleton_model(self):
+        """Build hierarchical skeleton model for form → chords → melody generation.
+
+        This implements the "generate structure first, details second" principle:
+        1. Generate high-level form (AABA)
+        2. Generate chord progression per section
+        3. Generate melody conditioned on chords
+        4. Generate accompaniment conditioned on melody + chords
+
+        We infer chord progressions from bass patterns (root motion).
+
+        GPU: Transition matrix computation
+        CPU: O(1) lookups during generation
+        """
+        if self.verbose:
+            print("Building chord skeleton model...")
+
+        # 1. Extract chord roots from bass patterns
+        # Bass GM programs: 32-39
+        BASS_GMS = set(range(32, 40))
+
+        # Build chord transition matrix from bass motion
+        n_chords = 12  # Pitch classes
+        chord_transitions = np.zeros((n_chords, n_chords))
+        chord_counts = np.zeros(n_chords)
+
+        for piece_id, gm_sequences in self.piece_gm_sequences.items():
+            for gm, sequence in gm_sequences.items():
+                if gm not in BASS_GMS:
+                    continue
+
+                prev_root = None
+                for _, pattern_id in sequence:
+                    pattern = self.patterns.get(pattern_id, {})
+
+                    # Get first pitch as chord root proxy
+                    for occ in pattern.get('occurrences', []):
+                        if occ.get('gm_program') == gm:
+                            pitch = occ.get('pitch', 48)
+                            root = pitch % 12
+                            chord_counts[root] += 1
+
+                            if prev_root is not None:
+                                chord_transitions[prev_root, root] += 1
+
+                            prev_root = root
+                            break
+
+        # Normalize to probabilities (with Laplace smoothing)
+        self.chord_transitions = (chord_transitions + 0.1) / (
+            chord_transitions.sum(axis=1, keepdims=True) + 1.2
+        )
+
+        # Prior over starting chords
+        self.chord_prior = (chord_counts + 1) / (chord_counts.sum() + 12)
+
+        # 2. Build pattern distributions per chord
+        # P(pattern | chord_root, instrument)
+        self.chord_pattern_probs = defaultdict(lambda: defaultdict(Counter))
+
+        for piece_id, gm_sequences in self.piece_gm_sequences.items():
+            # Get bass progression for this piece
+            bass_roots = []
+            for gm, sequence in gm_sequences.items():
+                if gm in BASS_GMS:
+                    for _, pattern_id in sequence:
+                        pattern = self.patterns.get(pattern_id, {})
+                        for occ in pattern.get('occurrences', []):
+                            if occ.get('gm_program') == gm:
+                                pitch = occ.get('pitch', 48)
+                                bass_roots.append(pitch % 12)
+                                break
+                    break
+
+            if not bass_roots:
+                continue
+
+            # For each instrument, associate patterns with chord contexts
+            for gm, sequence in gm_sequences.items():
+                for i, (_, pattern_id) in enumerate(sequence):
+                    # Map pattern to chord context (simplified: use bass root at same index)
+                    chord_idx = min(i, len(bass_roots) - 1) if bass_roots else 0
+                    chord_root = bass_roots[chord_idx] if bass_roots else 0
+
+                    self.chord_pattern_probs[chord_root][gm][pattern_id] += 1
+
+        # Normalize
+        self.chord_pattern_distributions = {}
+        for chord_root, gm_counts in self.chord_pattern_probs.items():
+            self.chord_pattern_distributions[chord_root] = {}
+            for gm, pattern_counts in gm_counts.items():
+                total = sum(pattern_counts.values())
+                self.chord_pattern_distributions[chord_root][gm] = {
+                    pid: c / total for pid, c in pattern_counts.items()
+                }
+
+        if self.verbose:
+            print(f"  Chord transition matrix: {n_chords}x{n_chords}")
+            print(f"  Chord-pattern associations: {len(self.chord_pattern_distributions)} chords")
+
+    def generate_chord_skeleton(self, n_chords: int = 8) -> List[int]:
+        """Generate a chord progression skeleton. O(n_chords) operations."""
+        if not hasattr(self, 'chord_prior') or self.chord_prior is None:
+            # Fallback: simple ii-V-I type progression
+            return [2, 7, 0, 5] * (n_chords // 4 + 1)[:n_chords]
+
+        chords = []
+
+        # Sample first chord from prior
+        current = random.choices(range(12), weights=self.chord_prior.tolist())[0]
+        chords.append(current)
+
+        # Sample remaining chords from transition matrix
+        for _ in range(n_chords - 1):
+            probs = self.chord_transitions[current].tolist()
+            current = random.choices(range(12), weights=probs)[0]
+            chords.append(current)
+
+        return chords
+
+    def get_chord_pattern_weight(self, pattern_id: str, chord_root: int, gm_program: int) -> float:
+        """Get weight for pattern given chord context. O(1)."""
+        if chord_root not in self.chord_pattern_distributions:
+            return 1.0
+        gm_dist = self.chord_pattern_distributions[chord_root].get(gm_program, {})
+        return gm_dist.get(pattern_id, 0.01)  # Small non-zero for smoothing
+
     def sample_next_pattern(
         self,
         current_pattern: str,
         position: float,
         gm_program: int,
         concurrent_patterns: Dict[int, str] = None,
-        transition_weight: float = 0.4,
-        position_weight: float = 0.2,
-        frequency_weight: float = 0.1,
-        cooccurrence_weight: float = 0.3,
+        style_id: int = None,
+        chord_root: int = None,
+        pattern_position: int = 0,
+        transition_weight: float = 0.25,
+        position_weight: float = 0.15,
+        frequency_weight: float = 0.05,
+        cooccurrence_weight: float = 0.20,
+        style_weight: float = 0.15,
+        stm_weight: float = 0.10,
+        chord_weight: float = 0.10,
     ) -> Optional[str]:
-        """Sample next pattern using all four levels of probabilistic sampling.
+        """Sample next pattern using 6-level probabilistic PCFG sampling.
 
-        Combines:
-        - Level 1: Frequency-weighted (pattern popularity)
-        - Level 2: Transition probability (what follows current pattern)
-        - Level 3: Position conditioning (what's typical at this point in piece)
-        - Level 4: Co-occurrence (what plays with concurrent patterns on other instruments)
+        This is the core of the SLP → PCFG conversion. Combines:
+
+        CORPUS-DERIVED LEVELS (Long-Term Model):
+        - Level 1: Frequency weighting P(pattern) - base popularity
+        - Level 2: Transition probability P(pattern | prev_pattern, instrument)
+        - Level 3: Position conditioning P(pattern | position_in_piece, instrument)
+        - Level 4: Co-occurrence P(pattern | concurrent_patterns_on_other_instruments)
+        - Level 5: Style conditioning P(pattern | style_z) - per-piece consistency
+        - Level 6: Chord conditioning P(pattern | chord_root, instrument) - harmonic context
+
+        WITHIN-PIECE (Short-Term Model):
+        - STM reuse boost: Patterns used at equivalent phrase positions get boost
+
+        All weights are configurable but default to balanced contribution.
+        All lookups are O(1) from precomputed indices.
 
         Args:
             current_pattern: Current pattern ID (for transitions)
             position: Normalized position in piece [0, 1]
             gm_program: Instrument GM program
-            concurrent_patterns: Dict of {other_gm: pattern_id} for co-occurrence conditioning
-            transition_weight: Weight for transition probabilities
-            position_weight: Weight for position conditioning
-            frequency_weight: Weight for base frequency
-            cooccurrence_weight: Weight for co-occurrence with other instruments
+            concurrent_patterns: Dict of {other_gm: pattern_id} for co-occurrence
+            style_id: Style cluster ID (sampled at piece start)
+            chord_root: Current chord root (0-11) for harmonic conditioning
+            pattern_position: Integer position for STM (phrase position tracking)
+            *_weight: Contribution weights for each level (should sum to ~1.0)
 
         Returns:
             Sampled pattern ID, or None if no data available
         """
         candidates = {}  # pattern_id -> combined score
 
-        # Level 1: Base frequency (unigram)
+        # Level 1: Base frequency (unigram) - O(N) but N is small per instrument
         if gm_program in self.pattern_counts_by_gm:
             total = sum(self.pattern_counts_by_gm[gm_program].values())
             for pattern_id, count in self.pattern_counts_by_gm[gm_program].items():
                 candidates[pattern_id] = frequency_weight * (count / total)
 
-        # Level 2: Transition probability
+        # Level 2: Transition probability - O(K) where K is patterns following current
         if gm_program in self.transition_probs and current_pattern:
             current_key = str(current_pattern)
             if current_key in self.transition_probs[gm_program]:
@@ -891,7 +1484,7 @@ class MetaPatternGenerator:
                     else:
                         candidates[pattern_id] = transition_weight * prob
 
-        # Level 3: Position conditioning
+        # Level 3: Position conditioning - O(K) where K is patterns at this position
         bucket = int(min(position, 0.999) * self.n_position_buckets)
         if bucket in self.position_probs and gm_program in self.position_probs[bucket]:
             patterns, probs = self.position_probs[bucket][gm_program]
@@ -901,19 +1494,17 @@ class MetaPatternGenerator:
                 else:
                     candidates[pattern_id] = position_weight * prob
 
-        # Level 4: Co-occurrence conditioning (NEW)
-        # If other instruments are playing, boost patterns that co-occurred with them
+        # Level 4: Co-occurrence conditioning - O(K * M) where M is concurrent instruments
         if concurrent_patterns and hasattr(self, 'cooccurrence_probs'):
             for other_gm, other_pattern in concurrent_patterns.items():
                 if other_gm == gm_program:
-                    continue  # Skip self
+                    continue
 
                 other_key = str(other_pattern)
                 if other_key in self.cooccurrence_probs:
                     gm_probs = self.cooccurrence_probs[other_key].get(gm_program)
                     if gm_probs:
                         patterns, probs = gm_probs
-                        # Weight contribution by number of concurrent instruments
                         weight_per_inst = cooccurrence_weight / max(1, len(concurrent_patterns))
                         for pattern_id, prob in zip(patterns, probs):
                             if pattern_id in candidates:
@@ -921,8 +1512,36 @@ class MetaPatternGenerator:
                             else:
                                 candidates[pattern_id] = weight_per_inst * prob
 
+        # Level 5: Style conditioning - O(1) per candidate
+        if style_id is not None and hasattr(self, 'style_pattern_probs'):
+            style_probs = self.style_pattern_probs.get(style_id, {})
+            for pattern_id in candidates:
+                style_prob = style_probs.get(pattern_id, 0.01)  # Smoothed
+                candidates[pattern_id] += style_weight * style_prob
+
+        # Level 6: Chord conditioning - O(1) per candidate
+        if chord_root is not None and hasattr(self, 'chord_pattern_distributions'):
+            chord_dist = self.chord_pattern_distributions.get(chord_root, {})
+            gm_chord_probs = chord_dist.get(gm_program, {})
+            for pattern_id in candidates:
+                chord_prob = gm_chord_probs.get(pattern_id, 0.01)  # Smoothed
+                candidates[pattern_id] += chord_weight * chord_prob
+
+        # Short-Term Memory: Boost patterns already used at equivalent positions
+        if hasattr(self, 'stm'):
+            for pattern_id in candidates:
+                reuse_boost = self.stm.get_reuse_boost(pattern_id, pattern_position)
+                familiarity_boost = self.stm.get_familiarity_boost(pattern_id)
+                # Multiplicative boost (not additive) to preserve relative probabilities
+                candidates[pattern_id] *= (1 + stm_weight * (reuse_boost - 1))
+                candidates[pattern_id] *= (1 + stm_weight * (familiarity_boost - 1))
+
         if not candidates:
-            # Fallback to any pattern for this instrument
+            # Fallback: sample from equivalence class if we have current pattern's class
+            if current_pattern and hasattr(self, 'pattern_to_class'):
+                current_class = self.pattern_to_class.get(current_pattern)
+                if current_class is not None:
+                    return self.sample_from_equivalence_class(current_class, gm_program)
             return self._sample_pattern_for_instrument(gm_program)
 
         # Sample from combined distribution
@@ -933,7 +1552,13 @@ class MetaPatternGenerator:
         total_score = sum(scores)
         if total_score > 0:
             probs = [s / total_score for s in scores]
-            return random.choices(pattern_ids, weights=probs)[0]
+            sampled = random.choices(pattern_ids, weights=probs)[0]
+
+            # Record in STM for future reuse boosting
+            if hasattr(self, 'stm'):
+                self.stm.record(sampled, pattern_position)
+
+            return sampled
 
         return pattern_ids[0] if pattern_ids else None
 
@@ -1115,11 +1740,14 @@ class MetaPatternGenerator:
         """Generate using learned probabilistic models from corpus.
 
         Sampling Modes (in priority order):
-        1. use_probabilistic=True (DEFAULT): Use 4-level Markov sampling + form templates
+        1. use_probabilistic=True (DEFAULT): Use 6-level PCFG sampling + form templates
            - Level 1: Frequency weighting (pattern popularity)
            - Level 2: Transition probabilities (what follows what)
            - Level 3: Position conditioning (intro vs middle vs end patterns)
            - Level 4: Co-occurrence conditioning (what plays together across instruments)
+           - Level 5: Style conditioning (per-piece consistency via latent z)
+           - Level 6: Chord conditioning (harmonic context from skeleton)
+           - Short-Term Memory: Boost reuse at phrase boundaries
            - Form templates: Enforce repetition structure (AABA) from corpus
 
         2. use_form_structure=True: Use exact pattern sequences from corpus pieces
@@ -1129,8 +1757,7 @@ class MetaPatternGenerator:
            - Walks the transform graph following learned transform sequences
 
         The probabilistic mode (default) produces the most coherent output
-        because it respects both local (transitions), global (position), and
-        cross-instrument (co-occurrence) structure with forced repetition.
+        because it respects local, global, cross-instrument, style, and harmonic structure.
         """
         if seed is not None:
             random.seed(seed)
@@ -1140,7 +1767,7 @@ class MetaPatternGenerator:
 
         # Determine sampling mode string for logging
         if use_probabilistic:
-            mode = "probabilistic (4-level Markov + form templates)"
+            mode = "probabilistic (6-level PCFG + STM + form templates)"
         elif use_form_structure:
             mode = "form structure (corpus sequences)"
         else:
@@ -1151,11 +1778,32 @@ class MetaPatternGenerator:
             print(f"  Sections: {n_sections}")
             print(f"  Instruments: {instruments}")
 
+        # =====================================================================
+        # INITIALIZE GENERATION STATE
+        # =====================================================================
+
         all_tracks = defaultdict(list)
         current_time = 0
 
+        # Reset Short-Term Memory for new piece
+        if hasattr(self, 'stm'):
+            self.stm.reset()
+
+        # Sample style variable z at piece start (Compound PCFG)
+        style_id = self.sample_style() if hasattr(self, 'sample_style') else None
+        if self.verbose and style_id is not None:
+            print(f"  Style cluster: {style_id}")
+
+        # Generate chord skeleton for hierarchical generation
+        chord_skeleton = self.generate_chord_skeleton(n_sections * 2) if hasattr(self, 'generate_chord_skeleton') else None
+        if self.verbose and chord_skeleton:
+            chord_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+            print(f"  Chord skeleton: {[chord_names[c] for c in chord_skeleton[:8]]}...")
+
+        # Global pattern position counter for STM
+        global_pattern_position = 0
+
         # Determine lead instrument from CORPUS DATA (not hardcoded categories)
-        # Lead = instrument most often copied FROM in TrackDerive
         lead_gm = self.get_corpus_lead_instrument(instruments)
         follower_instruments = self.get_corpus_follower_instruments(instruments, lead_gm)
 
@@ -1169,12 +1817,12 @@ class MetaPatternGenerator:
 
         # If using form structure, sample a full form pattern from corpus
         form_pattern_ids = []
-        if use_form_structure and self.form_patterns:
+        if use_form_structure and hasattr(self, 'form_patterns') and self.form_patterns:
             form_pattern_ids = self.sample_form_pattern(lead_gm=lead_gm)
             if self.verbose and form_pattern_ids:
                 print(f"  Using corpus form pattern with {len(form_pattern_ids)} patterns")
 
-        # NEW: Sample a form template for global repetition structure (e.g., AABA)
+        # Sample a form template for global repetition structure (e.g., AABA)
         form_template = self.sample_form_template()
         if self.verbose:
             print(f"  Form template: {'-'.join(form_template)}")
@@ -1190,8 +1838,18 @@ class MetaPatternGenerator:
         # Track current pattern per instrument for transitions
         current_patterns = {}  # gm -> current_pattern_id
 
+        # =====================================================================
+        # MAIN GENERATION LOOP
+        # =====================================================================
+
         for section_idx in range(n_sections):
             section_label = form_template[section_idx]
+
+            # Get chord root for this section from skeleton
+            chord_root = None
+            if chord_skeleton:
+                chord_idx = min(section_idx * 2, len(chord_skeleton) - 1)
+                chord_root = chord_skeleton[chord_idx]
 
             # DETERMINE PATTERN CHAIN FOR THIS SECTION
 
@@ -1205,7 +1863,7 @@ class MetaPatternGenerator:
                         print(f"  Section {section_idx} ({section_label}): reusing cached patterns")
                 else:
                     # Generate new patterns for this section label
-                    # 4-LEVEL PROBABILISTIC SAMPLING with co-occurrence
+                    # 6-LEVEL PROBABILISTIC SAMPLING with all conditioning
 
                     # Sample 2-6 patterns for this section (based on corpus statistics)
                     n_patterns_in_section = random.randint(2, 6)
@@ -1219,21 +1877,21 @@ class MetaPatternGenerator:
                         # Get current pattern for this instrument (for transitions)
                         current_pattern = current_patterns.get(lead_gm)
 
-                        # Sample next pattern using all 4 levels
+                        # Sample next pattern using all 6 levels + STM
                         next_pattern = self.sample_next_pattern(
                             current_pattern=current_pattern,
                             position=position,
                             gm_program=lead_gm,
-                            concurrent_patterns=current_patterns,  # Level 4: co-occurrence
-                            transition_weight=0.4,   # Transitions
-                            position_weight=0.25,    # Position in piece
-                            frequency_weight=0.1,    # Base frequency
-                            cooccurrence_weight=0.25,  # Co-occurrence with other instruments
+                            concurrent_patterns=current_patterns,  # Level 4
+                            style_id=style_id,                     # Level 5: style consistency
+                            chord_root=chord_root,                 # Level 6: harmonic context
+                            pattern_position=global_pattern_position,  # STM tracking
                         )
 
                         if next_pattern:
                             pattern_chain.append(next_pattern)
                             current_patterns[lead_gm] = next_pattern
+                            global_pattern_position += 1
 
                     if not pattern_chain:
                         # Fallback
@@ -1336,7 +1994,7 @@ class MetaPatternGenerator:
                             follower_intervals = self._apply_transform(intervals, transform)
                             follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
                     else:
-                        # Use 4-level probabilistic sampling conditioned on lead
+                        # Use 6-level probabilistic sampling conditioned on lead
                         if use_probabilistic:
                             position = (section_idx * patterns_per_section + pattern_idx) / total_patterns
                             concurrent = {lead_gm: pattern_id}
@@ -1346,7 +2004,10 @@ class MetaPatternGenerator:
                                 position=position,
                                 gm_program=follower_gm,
                                 concurrent_patterns=concurrent,
-                                cooccurrence_weight=0.4,  # Strong co-occurrence for followers
+                                style_id=style_id,                     # Level 5: same style as lead
+                                chord_root=chord_root,                 # Level 6: same harmonic context
+                                pattern_position=global_pattern_position,  # STM tracking
+                                cooccurrence_weight=0.35,  # Strong co-occurrence for followers
                             )
 
                             if follower_pattern_id:
