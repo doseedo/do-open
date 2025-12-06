@@ -3,20 +3,28 @@ T+τ+v Factored Hierarchical GPU Re-Pair Implementation
 =======================================================
 
 Extends T-norm Re-Pair to normalize by all three factors:
-- T (Transposition): Pitch interval between consecutive notes
+- T (Transposition): SIGNED pitch interval between consecutive notes (preserves direction)
 - τ (Tempo): Rhythm ratio between consecutive IOIs
 - v (Velocity): Velocity ratio between consecutive notes
 
-Each pair is characterized by its normalized triple: (pitch_interval, rhythm_bucket, velocity_bucket)
+Each pair is characterized by its normalized triple: (signed_interval, rhythm_bucket, velocity_bucket)
 All transpositions, tempo scalings, and dynamic scalings are treated as the same pattern.
 
+SIGNED INTERVAL ENCODING (0-23):
+- 0-11: Descending intervals (0 = -12 octave, 11 = -1 semitone)
+- 12: Unison (same pitch class)
+- 13-23: Ascending intervals (13 = +1 semitone, 23 = +11 = M7)
+
+This preserves melodic direction: ascending m7 (+10 = interval 22) is DIFFERENT from
+descending M2 (-2 = interval 10). They are related by inversion, but not identical.
+
 Example of factored hierarchical patterns:
-- R12 = (interval=3, rhythm=1.0, velocity=same) - minor 3rd at same tempo
-- R13 = (interval=4, rhythm=0.5, velocity=louder) - major 3rd accelerating and crescendo
-- R14 = (R12, R13) - compound pattern matching ANY transposition/tempo/velocity
+- R12 = (interval=15, rhythm=1.0, velocity=same) - ascending minor 3rd at same tempo
+- R13 = (interval=9, rhythm=0.5, velocity=louder) - DESCENDING minor 3rd, accelerating
+- R14 = (R12, R13) - compound pattern with specific contour
 
 This enables discovering:
-- Melodic motifs at any transposition AND any tempo
+- Melodic motifs with EXACT contour (direction matters)
 - Rhythmic patterns at any tempo AND any pitch
 - Dynamic shapes at any velocity level
 """
@@ -98,7 +106,7 @@ class FactoredHierarchicalGrammar:
     rule_counts: torch.Tensor  # Shape: [n_rules]
 
     # Normalized factors for each rule
-    rule_pitch_intervals: torch.Tensor  # Shape: [n_rules] - pitch interval (0-11)
+    rule_pitch_intervals: torch.Tensor  # Shape: [n_rules] - signed pitch interval (0-23)
     rule_rhythm_buckets: torch.Tensor   # Shape: [n_rules] - rhythm bucket (0-15)
     rule_velocity_buckets: torch.Tensor # Shape: [n_rules] - velocity bucket (0-7)
 
@@ -157,11 +165,15 @@ class RePairFactoredHierarchical:
     T+τ+v Factored Hierarchical GPU Re-Pair.
 
     Normalizes pairs by:
-    1. Pitch interval (0-11) - T-normalization
+    1. Signed pitch interval (0-23) - T-normalization with direction
+       - 0 = unison
+       - 1-12 = ascending intervals (m2 to octave)
+       - 13-23 = descending intervals (octave down to m2 down)
     2. Rhythm ratio bucket (0-15) - τ-normalization
     3. Velocity ratio bucket (0-7) - v-normalization
 
     Pairs are counted and matched by their normalized triple.
+    Direction is preserved: ascending m7 (+10) ≠ descending M2 (-2).
     """
 
     def __init__(
@@ -169,7 +181,7 @@ class RePairFactoredHierarchical:
         device: str = 'cuda',
         min_pair_count: int = 2,
         max_rules: int = 10000,
-        pitch_range: int = 12,
+        pitch_range: int = 24,  # 24 signed interval classes (was 12)
         rhythm_buckets: int = RHYTHM_BUCKETS,
         velocity_buckets: int = VELOCITY_BUCKETS,
         verbose: bool = True,
@@ -178,7 +190,7 @@ class RePairFactoredHierarchical:
         self.device = device if torch.cuda.is_available() else 'cpu'
         self.min_pair_count = min_pair_count
         self.max_rules = max_rules
-        self.pitch_range = pitch_range
+        self.pitch_range = pitch_range  # Now 24 for signed intervals
         self.rhythm_buckets = rhythm_buckets
         self.velocity_buckets = velocity_buckets
         self.verbose = verbose
@@ -326,8 +338,16 @@ class RePairFactoredHierarchical:
             left_base_p = symbol_base_pitch[left_p]
             right_base_p = symbol_base_pitch[right_p]
 
-            # Compute normalized pitch interval
-            pitch_intervals = (right_base_p - left_base_p) % n_terminals
+            # Compute SIGNED pitch interval (preserves melodic direction)
+            # Mapping: raw_diff + 12 gives us 0-23 range
+            # - raw_diff = -11 -> interval = 1 (descending M7)
+            # - raw_diff = -1  -> interval = 11 (descending m2)
+            # - raw_diff = 0   -> interval = 12 (unison - but we skip these)
+            # - raw_diff = +1  -> interval = 13 (ascending m2)
+            # - raw_diff = +11 -> interval = 23 (ascending M7)
+            raw_diff = right_base_p - left_base_p
+            pitch_intervals = raw_diff + 12
+            pitch_intervals = torch.clamp(pitch_intervals, 0, 23)
 
             # Compute rhythm buckets (τ-normalization) - CPU for now
             left_base_ioi = symbol_base_ioi[left_p]
@@ -347,8 +367,8 @@ class RePairFactoredHierarchical:
                 left_base_v, right_base_v
             )
 
-            # Skip unison pitch intervals (interval=0)
-            non_unison = pitch_intervals != 0
+            # Skip unison pitch intervals (interval=12 in signed system)
+            non_unison = pitch_intervals != 12
             if non_unison.any():
                 pitch_intervals_f = pitch_intervals[non_unison]
                 rhythm_buckets_f = rhythm_buckets_tensor[non_unison]
@@ -676,13 +696,21 @@ class RePairFactoredHierarchical:
                 result_track_idx[keep_mask], result_orig_pos[keep_mask], occurrences)
 
     def _interval_name(self, interval: int) -> str:
-        """Convert interval to musical name."""
-        names = {
+        """Convert signed interval (0-23) to musical name with direction."""
+        # Interval 12 = unison, <12 = descending, >12 = ascending
+        base_names = {
             0: "unison", 1: "m2", 2: "M2", 3: "m3", 4: "M3",
             5: "P4", 6: "tritone", 7: "P5", 8: "m6", 9: "M6",
             10: "m7", 11: "M7"
         }
-        return names.get(interval % 12, f"{interval}")
+        if interval == 12:
+            return "unison"
+        elif interval > 12:
+            # Ascending interval
+            return f"+{base_names.get(interval - 12, str(interval - 12))}"
+        else:
+            # Descending interval
+            return f"-{base_names.get(12 - interval, str(12 - interval))}"
 
 
 def build_factored_hierarchical_grammar(
