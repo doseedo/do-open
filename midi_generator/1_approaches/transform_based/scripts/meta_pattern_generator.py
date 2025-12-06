@@ -4,12 +4,17 @@ Meta-Pattern Generator (v53 Checkpoint) - Probabilistic PCFG Sampling
 ======================================================================
 
 Converts a deterministic Re-Pair grammar (Straight-Line Program) into a
-probabilistic generative model using 3-level Markov sampling:
+probabilistic generative model using 4-level Markov sampling + form templates:
 
 PROBABILISTIC SAMPLING LEVELS:
   Level 1: Frequency weighting     P(pattern) from occurrence counts
   Level 2: Transition probability  P(pattern_B | pattern_A, instrument)
   Level 3: Position conditioning   P(pattern | position_in_piece, instrument)
+  Level 4: Co-occurrence           P(pattern | concurrent_patterns_on_other_instruments)
+
+FORM TEMPLATES:
+  Learn repetition structures (AABA, ABAB, etc.) from corpus and enforce them
+  during generation to prevent "globally random" output.
 
 This addresses the core problem: Re-Pair creates a DETERMINISTIC grammar
 (perfect reconstruction, poor generation). We add PROBABILISTIC sampling
@@ -81,6 +86,8 @@ class MetaPatternGenerator:
         self.build_rest_duration_index()
         self.build_transition_index()  # Level 2: P(next | current, gm)
         self.build_position_index()    # Level 3: P(pattern | position, gm)
+        self.build_cooccurrence_index()  # Level 4: P(pattern | concurrent_patterns)
+        self.build_form_template_index()  # For global repetition structure
 
     def load_checkpoint(self, checkpoint_path: str):
         """Load all checkpoint components."""
@@ -575,29 +582,187 @@ class MetaPatternGenerator:
                 n_gms = len(self.position_probs.get(bucket, {}))
                 print(f"    Bucket {bucket} ({pos_name}): {n_gms} instruments")
 
+    def build_cooccurrence_index(self):
+        """Build co-occurrence index: P(pattern | concurrent_patterns_by_other_instruments).
+
+        LEVEL 4 of probabilistic sampling - Cross-instrument coordination.
+
+        This captures which patterns PLAYED TOGETHER in the corpus, so when trumpet
+        plays pattern A, we know which bass patterns typically accompanied it.
+
+        Structure: (lead_pattern, target_gm) -> [(pattern_id, weight), ...]
+        """
+        if self.verbose:
+            print("Building co-occurrence index (Level 4)...")
+
+        # Group occurrences by (piece_id, time_bucket) to find what played together
+        # time_bucket = onset // 960 (2 beats = 1 bar in 4/4)
+        TIME_BUCKET_TICKS = 960  # 2 beats
+
+        time_slices = defaultdict(list)  # (piece_id, bucket) -> [(pattern_id, gm), ...]
+
+        for pattern_id, pattern in self.patterns.items():
+            for occ in pattern.get('occurrences', []):
+                piece_id = occ.get('piece_id', 'unknown')
+                onset = occ.get('onset_time', occ.get('onset', 0))
+                gm = occ.get('gm_program', 0)
+
+                time_bucket = onset // TIME_BUCKET_TICKS
+                time_slices[(piece_id, time_bucket)].append((pattern_id, gm))
+
+        # Build co-occurrence counts: (lead_pattern, target_gm) -> {target_pattern: count}
+        cooc_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+
+        for (piece_id, bucket), patterns_gms in time_slices.items():
+            if len(patterns_gms) < 2:
+                continue
+
+            # For each pattern, record what other instruments played
+            for i, (pattern_id, gm) in enumerate(patterns_gms):
+                for j, (other_pattern, other_gm) in enumerate(patterns_gms):
+                    if i != j and gm != other_gm:
+                        # When pattern_id played, other_pattern played on other_gm
+                        cooc_counts[pattern_id][other_gm][other_pattern] += 1
+
+        # Convert to probability distributions for sampling
+        self.cooccurrence_probs = {}  # lead_pattern -> target_gm -> ([patterns], [probs])
+
+        for lead_pattern, gm_map in cooc_counts.items():
+            self.cooccurrence_probs[lead_pattern] = {}
+            for target_gm, pattern_counts in gm_map.items():
+                patterns = list(pattern_counts.keys())
+                counts = list(pattern_counts.values())
+                total = sum(counts)
+                probs = [c / total for c in counts]
+                self.cooccurrence_probs[lead_pattern][target_gm] = (patterns, probs)
+
+        if self.verbose:
+            n_leads = len(self.cooccurrence_probs)
+            avg_targets = np.mean([len(gm_map) for gm_map in self.cooccurrence_probs.values()]) if self.cooccurrence_probs else 0
+            print(f"  Co-occurrence: {n_leads} lead patterns, avg {avg_targets:.1f} target instruments each")
+
+    def build_form_template_index(self):
+        """Build form templates from corpus - learn repetition structures like AABA.
+
+        This addresses "globally random" by identifying which sections REPEAT in pieces.
+
+        Form templates are abstract structures like:
+        - [A, A, B, A] - 32-bar jazz standard
+        - [A, B, A, B] - simple alternation
+        - [A, A, A, A] - continuous development
+
+        We extract these by looking at which pattern groups repeat within pieces.
+        """
+        if self.verbose:
+            print("Building form template index...")
+
+        # Analyze each piece's pattern sequence for repetition
+        self.form_templates = []  # List of (template, count) - e.g., (['A','A','B','A'], 5)
+
+        # Group by section similarity
+        for piece_id, sequence in self.piece_pattern_sequences.items():
+            if len(sequence) < 8:
+                continue
+
+            # Divide piece into N_SECTIONS sections
+            N_SECTIONS = 4
+            section_size = len(sequence) // N_SECTIONS
+            if section_size < 2:
+                continue
+
+            # Extract pattern sets for each section
+            section_patterns = []
+            for i in range(N_SECTIONS):
+                start = i * section_size
+                end = start + section_size
+                section_pids = frozenset(pid for _, pid, _ in sequence[start:end])
+                section_patterns.append(section_pids)
+
+            # Label sections by similarity (A, B, C, ...)
+            # Sections with >50% overlap get same label
+            labels = []
+            label_map = {}  # frozenset -> label
+
+            for section_set in section_patterns:
+                best_match = None
+                best_overlap = 0
+
+                for existing_set, label in label_map.items():
+                    overlap = len(section_set & existing_set) / max(1, len(section_set | existing_set))
+                    if overlap > best_overlap:
+                        best_overlap = overlap
+                        best_match = label
+
+                if best_match and best_overlap > 0.4:
+                    labels.append(best_match)
+                else:
+                    new_label = chr(ord('A') + len(set(labels)))
+                    labels.append(new_label)
+                    label_map[section_set] = new_label
+
+            # Record this form template
+            template = tuple(labels)
+            self.form_templates.append(template)
+
+        # Count template frequencies
+        template_counts = defaultdict(int)
+        for template in self.form_templates:
+            template_counts[template] += 1
+
+        # Store as list of (template, count) sorted by frequency
+        self.form_template_probs = sorted(
+            template_counts.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        if self.verbose:
+            print(f"  Form templates: {len(self.form_template_probs)} unique")
+            for template, count in self.form_template_probs[:5]:
+                print(f"    {'-'.join(template)}: {count} pieces")
+
+    def sample_form_template(self) -> List[str]:
+        """Sample a form template weighted by corpus frequency.
+
+        Returns list like ['A', 'A', 'B', 'A'] indicating section repetition.
+        """
+        if not self.form_template_probs:
+            # Default: simple 4-section with some repetition
+            return ['A', 'B', 'A', 'C']
+
+        templates = [t for t, c in self.form_template_probs]
+        weights = [c for t, c in self.form_template_probs]
+
+        return list(random.choices(templates, weights=weights)[0])
+
     def sample_next_pattern(
         self,
         current_pattern: str,
         position: float,
         gm_program: int,
-        transition_weight: float = 0.6,
-        position_weight: float = 0.3,
+        concurrent_patterns: Dict[int, str] = None,
+        transition_weight: float = 0.4,
+        position_weight: float = 0.2,
         frequency_weight: float = 0.1,
+        cooccurrence_weight: float = 0.3,
     ) -> Optional[str]:
-        """Sample next pattern using all three levels of probabilistic sampling.
+        """Sample next pattern using all four levels of probabilistic sampling.
 
         Combines:
         - Level 1: Frequency-weighted (pattern popularity)
         - Level 2: Transition probability (what follows current pattern)
         - Level 3: Position conditioning (what's typical at this point in piece)
+        - Level 4: Co-occurrence (what plays with concurrent patterns on other instruments)
 
         Args:
             current_pattern: Current pattern ID (for transitions)
             position: Normalized position in piece [0, 1]
             gm_program: Instrument GM program
+            concurrent_patterns: Dict of {other_gm: pattern_id} for co-occurrence conditioning
             transition_weight: Weight for transition probabilities
             position_weight: Weight for position conditioning
             frequency_weight: Weight for base frequency
+            cooccurrence_weight: Weight for co-occurrence with other instruments
 
         Returns:
             Sampled pattern ID, or None if no data available
@@ -630,6 +795,26 @@ class MetaPatternGenerator:
                     candidates[pattern_id] += position_weight * prob
                 else:
                     candidates[pattern_id] = position_weight * prob
+
+        # Level 4: Co-occurrence conditioning (NEW)
+        # If other instruments are playing, boost patterns that co-occurred with them
+        if concurrent_patterns and hasattr(self, 'cooccurrence_probs'):
+            for other_gm, other_pattern in concurrent_patterns.items():
+                if other_gm == gm_program:
+                    continue  # Skip self
+
+                other_key = str(other_pattern)
+                if other_key in self.cooccurrence_probs:
+                    gm_probs = self.cooccurrence_probs[other_key].get(gm_program)
+                    if gm_probs:
+                        patterns, probs = gm_probs
+                        # Weight contribution by number of concurrent instruments
+                        weight_per_inst = cooccurrence_weight / max(1, len(concurrent_patterns))
+                        for pattern_id, prob in zip(patterns, probs):
+                            if pattern_id in candidates:
+                                candidates[pattern_id] += weight_per_inst * prob
+                            else:
+                                candidates[pattern_id] = weight_per_inst * prob
 
         if not candidates:
             # Fallback to any pattern for this instrument
@@ -825,10 +1010,12 @@ class MetaPatternGenerator:
         """Generate using learned probabilistic models from corpus.
 
         Sampling Modes (in priority order):
-        1. use_probabilistic=True (DEFAULT): Use 3-level Markov sampling
+        1. use_probabilistic=True (DEFAULT): Use 4-level Markov sampling + form templates
            - Level 1: Frequency weighting (pattern popularity)
            - Level 2: Transition probabilities (what follows what)
            - Level 3: Position conditioning (intro vs middle vs end patterns)
+           - Level 4: Co-occurrence conditioning (what plays together across instruments)
+           - Form templates: Enforce repetition structure (AABA) from corpus
 
         2. use_form_structure=True: Use exact pattern sequences from corpus pieces
            - Samples an actual pattern sequence that appeared in training
@@ -837,7 +1024,8 @@ class MetaPatternGenerator:
            - Walks the transform graph following learned transform sequences
 
         The probabilistic mode (default) produces the most coherent output
-        because it respects both local (transitions) and global (position) structure.
+        because it respects both local (transitions), global (position), and
+        cross-instrument (co-occurrence) structure with forced repetition.
         """
         if seed is not None:
             random.seed(seed)
@@ -847,7 +1035,7 @@ class MetaPatternGenerator:
 
         # Determine sampling mode string for logging
         if use_probabilistic:
-            mode = "probabilistic (3-level Markov)"
+            mode = "probabilistic (4-level Markov + form templates)"
         elif use_form_structure:
             mode = "form structure (corpus sequences)"
         else:
@@ -877,45 +1065,75 @@ class MetaPatternGenerator:
             if self.verbose and form_pattern_ids:
                 print(f"  Using corpus form pattern with {len(form_pattern_ids)} patterns")
 
+        # NEW: Sample a form template for global repetition structure (e.g., AABA)
+        form_template = self.sample_form_template()
+        if self.verbose:
+            print(f"  Form template: {'-'.join(form_template)}")
+
+        # Expand form template to n_sections by repeating if needed
+        while len(form_template) < n_sections:
+            form_template = form_template + form_template
+        form_template = form_template[:n_sections]
+
+        # Store pattern chains per section label for repetition
+        section_pattern_cache = {}  # 'A' -> pattern_chain, timing info, etc.
+
         # Track current pattern per instrument for transitions
         current_patterns = {}  # gm -> current_pattern_id
 
         for section_idx in range(n_sections):
+            section_label = form_template[section_idx]
+
             # DETERMINE PATTERN CHAIN FOR THIS SECTION
 
             if use_probabilistic:
-                # NEW: PROBABILISTIC 3-LEVEL SAMPLING
-                # Sample patterns using transitions + position conditioning
+                # Check if this section label was already generated (for repetition)
+                if section_label in section_pattern_cache:
+                    # REUSE previous section's patterns (AABA repetition)
+                    cached = section_pattern_cache[section_label]
+                    pattern_chain = cached['pattern_chain']
+                    if self.verbose and section_idx > 0:
+                        print(f"  Section {section_idx} ({section_label}): reusing cached patterns")
+                else:
+                    # Generate new patterns for this section label
+                    # 4-LEVEL PROBABILISTIC SAMPLING with co-occurrence
 
-                # Sample 2-6 patterns for this section (based on corpus statistics)
-                n_patterns_in_section = random.randint(2, 6)
-                pattern_chain = []
+                    # Sample 2-6 patterns for this section (based on corpus statistics)
+                    n_patterns_in_section = random.randint(2, 6)
+                    pattern_chain = []
 
-                for pattern_idx in range(n_patterns_in_section):
-                    # Compute position in piece (0 to 1)
-                    global_pattern_idx = section_idx * patterns_per_section + pattern_idx
-                    position = global_pattern_idx / total_patterns
+                    for pattern_idx in range(n_patterns_in_section):
+                        # Compute position in piece (0 to 1)
+                        global_pattern_idx = section_idx * patterns_per_section + pattern_idx
+                        position = global_pattern_idx / total_patterns
 
-                    # Get current pattern for this instrument (for transitions)
-                    current_pattern = current_patterns.get(lead_gm)
+                        # Get current pattern for this instrument (for transitions)
+                        current_pattern = current_patterns.get(lead_gm)
 
-                    # Sample next pattern using all 3 levels
-                    next_pattern = self.sample_next_pattern(
-                        current_pattern=current_pattern,
-                        position=position,
-                        gm_program=lead_gm,
-                        transition_weight=0.5,  # Strong influence from transitions
-                        position_weight=0.35,   # Medium influence from position
-                        frequency_weight=0.15,  # Light influence from base frequency
-                    )
+                        # Sample next pattern using all 4 levels
+                        next_pattern = self.sample_next_pattern(
+                            current_pattern=current_pattern,
+                            position=position,
+                            gm_program=lead_gm,
+                            concurrent_patterns=current_patterns,  # Level 4: co-occurrence
+                            transition_weight=0.4,   # Transitions
+                            position_weight=0.25,    # Position in piece
+                            frequency_weight=0.1,    # Base frequency
+                            cooccurrence_weight=0.25,  # Co-occurrence with other instruments
+                        )
 
-                    if next_pattern:
-                        pattern_chain.append(next_pattern)
-                        current_patterns[lead_gm] = next_pattern
+                        if next_pattern:
+                            pattern_chain.append(next_pattern)
+                            current_patterns[lead_gm] = next_pattern
 
-                if not pattern_chain:
-                    # Fallback
-                    pattern_chain = [self.sample_phrase_pattern(target_depth=2, lead_gm=lead_gm)]
+                    if not pattern_chain:
+                        # Fallback
+                        pattern_chain = [self.sample_phrase_pattern(target_depth=2, lead_gm=lead_gm)]
+
+                    # Cache this section for potential reuse
+                    section_pattern_cache[section_label] = {
+                        'pattern_chain': pattern_chain,
+                    }
 
             elif use_form_structure and form_pattern_ids:
                 # USE CORPUS FORM STRUCTURE
@@ -1026,7 +1244,7 @@ class MetaPatternGenerator:
                         )
                         all_tracks[follower_gm].extend(follower_notes)
 
-                # RHYTHM SECTION: Sample patterns using probabilistic or co-occurrence sampling
+                # RHYTHM SECTION: Sample patterns using 4-level probabilistic or co-occurrence sampling
                 for rhythm_gm in rhythm_instruments:
                     rhythm_time = current_time
                     loop_count = 0
@@ -1038,15 +1256,21 @@ class MetaPatternGenerator:
                         rhythm_position = min(rhythm_position, 0.999)
 
                         if use_probabilistic:
-                            # Use 3-level probabilistic sampling for rhythm too
+                            # Use 4-level probabilistic sampling for rhythm
+                            # Include lead pattern in concurrent_patterns for co-occurrence
+                            concurrent = dict(current_patterns)
+                            concurrent[lead_gm] = pattern_id  # Current lead pattern
+
                             current_rhythm_pattern = current_patterns.get(rhythm_gm)
                             rhythm_pattern_id = self.sample_next_pattern(
                                 current_pattern=current_rhythm_pattern,
                                 position=rhythm_position,
                                 gm_program=rhythm_gm,
-                                transition_weight=0.5,
-                                position_weight=0.3,
-                                frequency_weight=0.2,
+                                concurrent_patterns=concurrent,  # Level 4: co-occurrence with lead
+                                transition_weight=0.35,
+                                position_weight=0.2,
+                                frequency_weight=0.1,
+                                cooccurrence_weight=0.35,  # Strong co-occurrence for rhythm section
                             )
                             if rhythm_pattern_id:
                                 current_patterns[rhythm_gm] = rhythm_pattern_id
