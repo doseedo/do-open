@@ -428,10 +428,19 @@ class MetaPatternGenerator:
                         )
                         all_tracks[follower_gm].extend(follower_notes)
 
-                # RHYTHM SECTION: Each plays its OWN patterns (different roles)
+                # RHYTHM SECTION: Sample patterns that CO-OCCURRED with the lead pattern
+                # This ensures harmonic compatibility (bass/piano match the melody key)
                 for rhythm_gm in rhythm_instruments:
-                    # Sample a pattern that THIS instrument actually plays
-                    rhythm_pattern_id = self._sample_pattern_for_instrument(rhythm_gm)
+                    # Find patterns this instrument played WHEN the lead pattern was playing
+                    rhythm_pattern_id = self._sample_cooccurring_pattern(
+                        lead_pattern_id=seed_pattern_id if horn_instruments else pattern_id,
+                        target_gm=rhythm_gm
+                    )
+
+                    if not rhythm_pattern_id:
+                        # Fallback: sample any pattern for this instrument
+                        rhythm_pattern_id = self._sample_pattern_for_instrument(rhythm_gm)
+
                     if rhythm_pattern_id:
                         rhythm_pattern = self.patterns.get(rhythm_pattern_id, {})
                         rhythm_intervals = rhythm_pattern.get('pitch_intervals', [0])
@@ -516,6 +525,72 @@ class MetaPatternGenerator:
             return None
 
         return random.choices(patterns, weights=weights)[0]
+
+    def _sample_cooccurring_pattern(self, lead_pattern_id: str, target_gm: int) -> Optional[str]:
+        """Sample a pattern that CO-OCCURRED with the lead pattern in the corpus.
+
+        This ensures rhythm section (bass, piano) harmonically matches the melody
+        by sampling from patterns that ACTUALLY played together in the training data.
+
+        The co-occurrence index is built from occurrences grouped by (piece_id, onset_time).
+        """
+        # Build co-occurrence index on first call
+        if not hasattr(self, '_cooccurrence_index'):
+            if self.verbose:
+                print("Building co-occurrence index...")
+
+            # Group occurrences by (piece_id, time_bucket) -> list of (pattern_id, gm)
+            time_slices = defaultdict(list)
+
+            for pattern_id, pattern in self.patterns.items():
+                for occ in pattern.get('occurrences', []):
+                    piece_id = occ.get('piece_id', 'unknown')
+                    onset = occ.get('onset', 0)
+                    gm = occ.get('gm_program', 0)
+
+                    # Bucket time to 1 beat (480 ticks) for co-occurrence
+                    time_bucket = onset // 480
+
+                    time_slices[(piece_id, time_bucket)].append((pattern_id, gm))
+
+            # Build index: lead_pattern -> target_gm -> [cooccurring_patterns]
+            self._cooccurrence_index = defaultdict(lambda: defaultdict(list))
+            self._cooccurrence_weights = defaultdict(lambda: defaultdict(list))
+
+            for (piece_id, time_bucket), pattern_gm_list in time_slices.items():
+                if len(pattern_gm_list) < 2:
+                    continue  # Need at least 2 patterns for co-occurrence
+
+                # For each pattern in this time slice, record co-occurrences
+                for i, (pattern_id, gm) in enumerate(pattern_gm_list):
+                    for j, (other_pattern_id, other_gm) in enumerate(pattern_gm_list):
+                        if i != j:
+                            # pattern_id co-occurred with other_pattern_id (played by other_gm)
+                            self._cooccurrence_index[pattern_id][other_gm].append(other_pattern_id)
+                            # Weight by pattern count
+                            other_pattern = self.patterns.get(other_pattern_id, {})
+                            weight = other_pattern.get('count', 1)
+                            self._cooccurrence_weights[pattern_id][other_gm].append(weight)
+
+            if self.verbose:
+                n_leads = len(self._cooccurrence_index)
+                total_cooc = sum(
+                    len(pids)
+                    for gm_map in self._cooccurrence_index.values()
+                    for pids in gm_map.values()
+                )
+                print(f"  Co-occurrence index: {n_leads} lead patterns, {total_cooc} co-occurrences")
+
+        # Look up co-occurring patterns for this lead + target instrument
+        lead_key = str(lead_pattern_id)
+        cooccurring = self._cooccurrence_index.get(lead_key, {}).get(target_gm, [])
+        weights = self._cooccurrence_weights.get(lead_key, {}).get(target_gm, [])
+
+        if cooccurring and weights:
+            return random.choices(cooccurring, weights=weights)[0]
+
+        # Fallback: no co-occurrence data, return None (caller will use _sample_pattern_for_instrument)
+        return None
 
     def _sample_pitch_for_instrument(self, pattern: dict, gm_program: int) -> int:
         """Sample an appropriate starting pitch for the instrument."""
