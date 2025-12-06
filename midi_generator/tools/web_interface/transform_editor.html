@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Grammar Hierarchy Editor - V32/V33</title>
+    <title>Grammar Hierarchy Editor - V53</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -443,13 +443,13 @@
         <!-- Header -->
         <header>
             <h1>Grammar Hierarchy Editor</h1>
-            <span style="color: rgba(255,255,255,0.7)">V32/V33 - 12 Depth Levels</span>
+            <span style="color: rgba(255,255,255,0.7)">V53 - Pure Contour</span>
             <div class="header-controls">
                 <div class="server-status">
                     <div class="status-dot" id="statusDot"></div>
                     <span id="statusText">Disconnected</span>
                 </div>
-                <input type="text" id="serverUrl" value="http://localhost:8765"
+                <input type="text" id="serverUrl" value="https://doseedo.com/genome"
                        style="padding: 6px 12px; border-radius: 4px; border: none; background: rgba(255,255,255,0.2); color: white; width: 180px;">
                 <button class="btn btn-primary" id="connectBtn">Connect</button>
                 <button class="btn btn-primary" id="roundTripBtn">Round-Trip Test</button>
@@ -619,7 +619,7 @@
 
     class HierarchyEditor {
         constructor() {
-            this.serverUrl = 'http://localhost:8765';
+            this.serverUrl = 'https://doseedo.com/genome';
             this.connected = false;
             this.stats = null;
             this.selectedRule = null;
