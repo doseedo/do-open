@@ -411,6 +411,18 @@ def convert_grammar_to_rules(
         right_child = grammar.rule_table[rule_idx, 1].item()
         is_hierarchical = (left_child >= n_terminals or right_child >= n_terminals)
 
+        # Compute the REAL connector interval between children
+        # For hierarchical patterns: connector is between left's last note and right's first note
+        # This is pitch_intervals[left_length - 1]
+        connector_interval = 0
+        if is_hierarchical:
+            # Get left child's length
+            left_expanded = grammar.expand_rule(left_child, memo) if left_child >= n_terminals else [left_child]
+            left_length = len(left_expanded)
+            # The connector interval is at position (left_length - 1) in pitch_intervals
+            if left_length > 0 and left_length - 1 < len(pitch_intervals):
+                connector_interval = pitch_intervals[left_length - 1]
+
         rules[str(rule_id)] = {
             'pitch_classes': expanded,
             'pitch_intervals': pitch_intervals,
@@ -428,7 +440,8 @@ def convert_grammar_to_rules(
             'left_child': left_child,
             'right_child': right_child,
             # Connector interval: pitch offset from left's last note to right's first note
-            'connector_interval': pitch_interval,  # This is the interval between children
+            # This is the SIGNED interval, computed from the actual pitch classes
+            'connector_interval': connector_interval,
         }
 
     # === KEY FIX: Use rule_occurrences captured during compression ===
@@ -712,10 +725,8 @@ def convert_grammar_to_rules(
         right_pitches = expand_canonical_pitches(str(right_child), memo)
 
         # Connector interval determines how right_pitches attach to left_pitches
-        # connector_interval is the pitch class delta (0-11), need to interpret as signed
+        # connector_interval is already a signed interval (computed from pitch_intervals)
         connector = rule.get('connector_interval', 0)
-        if connector > 6:
-            connector -= 12  # Treat as descending
 
         # Adjust right_pitches so that:
         # right_pitches[0] = left_pitches[-1] + connector

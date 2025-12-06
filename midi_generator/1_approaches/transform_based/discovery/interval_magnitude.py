@@ -470,12 +470,16 @@ def add_magnitude_to_occurrences(
     n_updated = 0
 
     for p in patterns:
-        for occ in p.get('occurrences', []):
-            # Get chromatic offset (already stored as pitch_offset)
-            pitch_offset = occ.get('pitch_offset', 0)
-
-            # Add magnitude offset - O(1) lookup
-            occ['magnitude_offset'] = SEMITONE_TO_MAGNITUDE[pitch_offset % 12]
+        occurrences = p.get('occurrences', []) if isinstance(p, dict) else getattr(p, 'occurrences', [])
+        for occ in occurrences:
+            # Handle both dict and object occurrences
+            if isinstance(occ, dict):
+                pitch_offset = occ.get('pitch_offset', 0)
+                occ['magnitude_offset'] = SEMITONE_TO_MAGNITUDE[pitch_offset % 12]
+            else:
+                # Object with attributes
+                pitch_offset = getattr(occ, 'pitch_offset', 0)
+                occ.magnitude_offset = SEMITONE_TO_MAGNITUDE[pitch_offset % 12]
             n_updated += 1
 
     if verbose and n_updated > 0:
@@ -507,10 +511,17 @@ def compute_per_piece_preference(
     piece_transforms = defaultdict(list)
 
     for p in patterns:
-        for occ in p.get('occurrences', []):
-            piece_id = occ.get('piece_id', 'unknown')
-            pitch_offset = occ.get('pitch_offset', 0)
-            magnitude_offset = occ.get('magnitude_offset', SEMITONE_TO_MAGNITUDE[pitch_offset % 12])
+        occurrences = p.get('occurrences', []) if isinstance(p, dict) else getattr(p, 'occurrences', [])
+        for occ in occurrences:
+            # Handle both dict and object occurrences
+            if isinstance(occ, dict):
+                piece_id = occ.get('piece_id', 'unknown')
+                pitch_offset = occ.get('pitch_offset', 0)
+                magnitude_offset = occ.get('magnitude_offset', SEMITONE_TO_MAGNITUDE[pitch_offset % 12])
+            else:
+                piece_id = getattr(occ, 'piece_id', 'unknown')
+                pitch_offset = getattr(occ, 'pitch_offset', 0)
+                magnitude_offset = getattr(occ, 'magnitude_offset', SEMITONE_TO_MAGNITUDE[pitch_offset % 12])
 
             piece_transforms[piece_id].append({
                 'chromatic': pitch_offset,
