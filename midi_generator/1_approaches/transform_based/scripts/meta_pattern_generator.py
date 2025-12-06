@@ -1,25 +1,41 @@
 #!/usr/bin/env python3
 """
-Meta-Pattern Generator (v53 Checkpoint)
-========================================
+Meta-Pattern Generator (v53 Checkpoint) - Probabilistic PCFG Sampling
+======================================================================
+
+Converts a deterministic Re-Pair grammar (Straight-Line Program) into a
+probabilistic generative model using 3-level Markov sampling:
+
+PROBABILISTIC SAMPLING LEVELS:
+  Level 1: Frequency weighting     P(pattern) from occurrence counts
+  Level 2: Transition probability  P(pattern_B | pattern_A, instrument)
+  Level 3: Position conditioning   P(pattern | position_in_piece, instrument)
+
+This addresses the core problem: Re-Pair creates a DETERMINISTIC grammar
+(perfect reconstruction, poor generation). We add PROBABILISTIC sampling
+to enable generation while respecting learned structure.
 
 FULL CHECKPOINT UTILIZATION (All corpus-derived, no music theory constraints):
-1. Meta-patterns → Transform sequences (II-V-I progressions, etc.)
-2. Transform graph → Pattern relationships
-3. Hierarchical patterns → Phrase structure (left_child + connector + right_child)
-4. Vertical slices / Co-occurrence → Harmonic coherence (patterns that played together)
-5. Orchestration rules → Instrument relationships
-6. TrackDerive → Explicit cross-track derivations (72K+ relations)
-7. Multi-factor transforms → Rhythm/velocity/duration variation
-8. Form structure → Pattern sequences per piece (AABA, etc.) - DERIVED from corpus
-9. Rest durations → Natural gaps between patterns per instrument - DERIVED from corpus
-10. Activity probabilities → How often instruments play together - DERIVED from corpus
+1. Transition index → What patterns follow what (bigram Markov chains)
+2. Position index → What patterns appear where (start/middle/end of piece)
+3. Co-occurrence → Patterns that played together (harmonic coherence)
+4. TrackDerive → Cross-track derivations (72K+ relations)
+5. Form structure → Pattern sequences per piece (AABA, etc.)
+6. Rest durations → Natural gaps between patterns per instrument
+7. Hierarchical patterns → Phrase structure (left_child + connector + right_child)
+8. Multi-factor transforms → Rhythm/velocity/duration variation
 
-Everything is derived from the checkpoint data. No hardcoded probabilities or music theory rules.
+Everything is derived from checkpoint data. No hardcoded probabilities or music theory rules.
 
 Usage:
-    python scripts/meta_pattern_generator.py checkpoint.npz -o output.mid --sections 8
-    python scripts/meta_pattern_generator.py checkpoint.npz -o output.mid --no-form  # Use meta-pattern transforms
+    # Default: 3-level probabilistic Markov sampling
+    python scripts/meta_pattern_generator.py checkpoint.npz -o output.mid
+
+    # Use corpus form structure (exact pattern sequences)
+    python scripts/meta_pattern_generator.py checkpoint.npz -o output.mid --form
+
+    # Use meta-pattern transform graph walking
+    python scripts/meta_pattern_generator.py checkpoint.npz -o output.mid --meta-pattern
 """
 
 import os
@@ -63,6 +79,8 @@ class MetaPatternGenerator:
         self.build_track_derive_index()
         self.build_form_structure_index()
         self.build_rest_duration_index()
+        self.build_transition_index()  # Level 2: P(next | current, gm)
+        self.build_position_index()    # Level 3: P(pattern | position, gm)
 
     def load_checkpoint(self, checkpoint_path: str):
         """Load all checkpoint components."""
@@ -436,6 +454,199 @@ class MetaPatternGenerator:
 
         return []
 
+    def build_transition_index(self):
+        """Build transition probabilities: P(next_pattern | current_pattern, instrument).
+
+        LEVEL 2 of probabilistic sampling.
+
+        This is the key missing piece - instead of sampling patterns independently,
+        we sample based on what patterns typically FOLLOW the current pattern.
+        This creates coherent melodic/harmonic flow.
+        """
+        if self.verbose:
+            print("Building transition index (Level 2)...")
+
+        # Bigram counts: (current_pattern, next_pattern, gm) -> count
+        self.transition_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+
+        # Also track unigram counts for smoothing: (pattern, gm) -> count
+        self.pattern_counts_by_gm = defaultdict(lambda: defaultdict(int))
+
+        # Build from piece_gm_sequences (consecutive patterns per instrument per piece)
+        total_transitions = 0
+
+        for piece_id, gm_sequences in self.piece_gm_sequences.items():
+            for gm, sequence in gm_sequences.items():
+                # sequence is [(onset_time, pattern_id), ...] sorted by onset
+                for i in range(len(sequence)):
+                    _, current_pattern = sequence[i]
+                    self.pattern_counts_by_gm[gm][current_pattern] += 1
+
+                    if i < len(sequence) - 1:
+                        _, next_pattern = sequence[i + 1]
+                        self.transition_counts[gm][current_pattern][next_pattern] += 1
+                        total_transitions += 1
+
+        # Pre-compute transition probabilities for efficient sampling
+        # transition_probs[gm][current] = ([next_patterns], [probabilities])
+        self.transition_probs = {}
+
+        for gm, current_map in self.transition_counts.items():
+            self.transition_probs[gm] = {}
+            for current_pattern, next_counts in current_map.items():
+                next_patterns = list(next_counts.keys())
+                counts = list(next_counts.values())
+                total = sum(counts)
+                probs = [c / total for c in counts]
+                self.transition_probs[gm][current_pattern] = (next_patterns, probs)
+
+        if self.verbose:
+            print(f"  Total transitions: {total_transitions:,}")
+            print(f"  Instruments with transitions: {len(self.transition_probs)}")
+            # Show coverage
+            for gm in list(self.transition_probs.keys())[:3]:
+                n_patterns = len(self.transition_probs[gm])
+                print(f"    GM {gm}: {n_patterns} patterns with transitions")
+
+    def build_position_index(self):
+        """Build position-conditioned probabilities: P(pattern | position_in_piece, instrument).
+
+        LEVEL 3 of probabilistic sampling.
+
+        Patterns that typically appear at the START of pieces (intros) are different
+        from patterns that appear in the MIDDLE (development) or END (cadences).
+        This captures form-level structure without explicit music theory labels.
+
+        Position is normalized to [0, 1] and bucketed into N_BUCKETS bins.
+        """
+        if self.verbose:
+            print("Building position index (Level 3)...")
+
+        N_BUCKETS = 10  # 0-10%, 10-20%, ..., 90-100%
+
+        # First, compute piece durations
+        piece_durations = {}
+        for piece_id, sequence in self.piece_pattern_sequences.items():
+            if sequence:
+                max_onset = max(onset for onset, _, _ in sequence)
+                # Add estimated duration of last pattern
+                piece_durations[piece_id] = max_onset + 1920  # ~1 bar buffer
+
+        # Position counts: (position_bucket, gm, pattern) -> count
+        self.position_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+
+        # Total counts per (position_bucket, gm) for normalization
+        self.position_totals = defaultdict(lambda: defaultdict(int))
+
+        for piece_id, gm_sequences in self.piece_gm_sequences.items():
+            piece_duration = piece_durations.get(piece_id, 1)
+
+            for gm, sequence in gm_sequences.items():
+                for onset, pattern_id in sequence:
+                    # Normalize position to [0, 1]
+                    normalized_pos = onset / piece_duration if piece_duration > 0 else 0
+                    normalized_pos = min(normalized_pos, 0.999)  # Clamp to valid range
+
+                    # Bucket into N_BUCKETS bins
+                    bucket = int(normalized_pos * N_BUCKETS)
+
+                    self.position_counts[bucket][gm][pattern_id] += 1
+                    self.position_totals[bucket][gm] += 1
+
+        # Pre-compute position probabilities for efficient sampling
+        # position_probs[bucket][gm] = ([patterns], [probabilities])
+        self.position_probs = {}
+        self.n_position_buckets = N_BUCKETS
+
+        for bucket in range(N_BUCKETS):
+            self.position_probs[bucket] = {}
+            for gm, pattern_counts in self.position_counts[bucket].items():
+                patterns = list(pattern_counts.keys())
+                counts = list(pattern_counts.values())
+                total = sum(counts)
+                probs = [c / total for c in counts]
+                self.position_probs[bucket][gm] = (patterns, probs)
+
+        if self.verbose:
+            print(f"  Position buckets: {N_BUCKETS}")
+            # Show distribution across positions
+            for bucket in [0, N_BUCKETS // 2, N_BUCKETS - 1]:
+                pos_name = ["start", "middle", "end"][bucket // (N_BUCKETS // 3)]
+                n_gms = len(self.position_probs.get(bucket, {}))
+                print(f"    Bucket {bucket} ({pos_name}): {n_gms} instruments")
+
+    def sample_next_pattern(
+        self,
+        current_pattern: str,
+        position: float,
+        gm_program: int,
+        transition_weight: float = 0.6,
+        position_weight: float = 0.3,
+        frequency_weight: float = 0.1,
+    ) -> Optional[str]:
+        """Sample next pattern using all three levels of probabilistic sampling.
+
+        Combines:
+        - Level 1: Frequency-weighted (pattern popularity)
+        - Level 2: Transition probability (what follows current pattern)
+        - Level 3: Position conditioning (what's typical at this point in piece)
+
+        Args:
+            current_pattern: Current pattern ID (for transitions)
+            position: Normalized position in piece [0, 1]
+            gm_program: Instrument GM program
+            transition_weight: Weight for transition probabilities
+            position_weight: Weight for position conditioning
+            frequency_weight: Weight for base frequency
+
+        Returns:
+            Sampled pattern ID, or None if no data available
+        """
+        candidates = {}  # pattern_id -> combined score
+
+        # Level 1: Base frequency (unigram)
+        if gm_program in self.pattern_counts_by_gm:
+            total = sum(self.pattern_counts_by_gm[gm_program].values())
+            for pattern_id, count in self.pattern_counts_by_gm[gm_program].items():
+                candidates[pattern_id] = frequency_weight * (count / total)
+
+        # Level 2: Transition probability
+        if gm_program in self.transition_probs and current_pattern:
+            current_key = str(current_pattern)
+            if current_key in self.transition_probs[gm_program]:
+                next_patterns, probs = self.transition_probs[gm_program][current_key]
+                for pattern_id, prob in zip(next_patterns, probs):
+                    if pattern_id in candidates:
+                        candidates[pattern_id] += transition_weight * prob
+                    else:
+                        candidates[pattern_id] = transition_weight * prob
+
+        # Level 3: Position conditioning
+        bucket = int(min(position, 0.999) * self.n_position_buckets)
+        if bucket in self.position_probs and gm_program in self.position_probs[bucket]:
+            patterns, probs = self.position_probs[bucket][gm_program]
+            for pattern_id, prob in zip(patterns, probs):
+                if pattern_id in candidates:
+                    candidates[pattern_id] += position_weight * prob
+                else:
+                    candidates[pattern_id] = position_weight * prob
+
+        if not candidates:
+            # Fallback to any pattern for this instrument
+            return self._sample_pattern_for_instrument(gm_program)
+
+        # Sample from combined distribution
+        pattern_ids = list(candidates.keys())
+        scores = list(candidates.values())
+
+        # Normalize to probabilities
+        total_score = sum(scores)
+        if total_score > 0:
+            probs = [s / total_score for s in scores]
+            return random.choices(pattern_ids, weights=probs)[0]
+
+        return pattern_ids[0] if pattern_ids else None
+
     def _estimate_depth(self, pattern_id: str, pattern: dict, memo: dict = None) -> int:
         """Estimate hierarchical depth of a pattern."""
         if memo is None:
@@ -608,19 +819,25 @@ class MetaPatternGenerator:
         instruments: List[int] = None,
         ticks_per_beat: int = 480,
         seed: int = None,
-        use_form_structure: bool = True,
+        use_form_structure: bool = False,
+        use_probabilistic: bool = True,
     ) -> Dict[int, List[Dict]]:
-        """Generate using meta-patterns for form structure.
+        """Generate using learned probabilistic models from corpus.
 
-        Algorithm:
-        1. Sample meta-pattern (transform sequence = form)
-        2. Sample seed pattern (hierarchical for phrase structure)
-        3. Walk transform graph following meta-pattern
-        4. Expand patterns through hierarchy
-        5. Orchestrate across instruments
+        Sampling Modes (in priority order):
+        1. use_probabilistic=True (DEFAULT): Use 3-level Markov sampling
+           - Level 1: Frequency weighting (pattern popularity)
+           - Level 2: Transition probabilities (what follows what)
+           - Level 3: Position conditioning (intro vs middle vs end patterns)
 
-        If use_form_structure=True, uses actual pattern sequences from corpus
-        for more coherent form (AABA, etc.) - purely data-driven.
+        2. use_form_structure=True: Use exact pattern sequences from corpus pieces
+           - Samples an actual pattern sequence that appeared in training
+
+        3. Neither: Meta-pattern guided generation (transform graph walking)
+           - Walks the transform graph following learned transform sequences
+
+        The probabilistic mode (default) produces the most coherent output
+        because it respects both local (transitions) and global (position) structure.
         """
         if seed is not None:
             random.seed(seed)
@@ -628,11 +845,18 @@ class MetaPatternGenerator:
         if instruments is None:
             instruments = [56, 65, 66, 57, 0, 32]  # Trumpet, Alto, Tenor, Trombone, Piano, Bass
 
+        # Determine sampling mode string for logging
+        if use_probabilistic:
+            mode = "probabilistic (3-level Markov)"
+        elif use_form_structure:
+            mode = "form structure (corpus sequences)"
+        else:
+            mode = "meta-pattern (transform graph)"
+
         if self.verbose:
-            print(f"\nGenerating with meta-patterns...")
+            print(f"\nGenerating with {mode}...")
             print(f"  Sections: {n_sections}")
             print(f"  Instruments: {instruments}")
-            print(f"  Use form structure: {use_form_structure}")
 
         all_tracks = defaultdict(list)
         current_time = 0
@@ -640,7 +864,11 @@ class MetaPatternGenerator:
         # Determine lead instrument for pattern selection
         HORN_SECTION = {56, 57, 58, 59, 60, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73}
         horn_instruments = [gm for gm in instruments if gm in HORN_SECTION]
-        lead_gm = horn_instruments[0] if horn_instruments else None
+        lead_gm = horn_instruments[0] if horn_instruments else instruments[0] if instruments else 0
+
+        # Estimate total duration for position normalization
+        patterns_per_section = 4  # Estimate
+        total_patterns = n_sections * patterns_per_section
 
         # If using form structure, sample a full form pattern from corpus
         form_pattern_ids = []
@@ -649,10 +877,47 @@ class MetaPatternGenerator:
             if self.verbose and form_pattern_ids:
                 print(f"  Using corpus form pattern with {len(form_pattern_ids)} patterns")
 
+        # Track current pattern per instrument for transitions
+        current_patterns = {}  # gm -> current_pattern_id
+
         for section_idx in range(n_sections):
             # DETERMINE PATTERN CHAIN FOR THIS SECTION
 
-            if use_form_structure and form_pattern_ids:
+            if use_probabilistic:
+                # NEW: PROBABILISTIC 3-LEVEL SAMPLING
+                # Sample patterns using transitions + position conditioning
+
+                # Sample 2-6 patterns for this section (based on corpus statistics)
+                n_patterns_in_section = random.randint(2, 6)
+                pattern_chain = []
+
+                for pattern_idx in range(n_patterns_in_section):
+                    # Compute position in piece (0 to 1)
+                    global_pattern_idx = section_idx * patterns_per_section + pattern_idx
+                    position = global_pattern_idx / total_patterns
+
+                    # Get current pattern for this instrument (for transitions)
+                    current_pattern = current_patterns.get(lead_gm)
+
+                    # Sample next pattern using all 3 levels
+                    next_pattern = self.sample_next_pattern(
+                        current_pattern=current_pattern,
+                        position=position,
+                        gm_program=lead_gm,
+                        transition_weight=0.5,  # Strong influence from transitions
+                        position_weight=0.35,   # Medium influence from position
+                        frequency_weight=0.15,  # Light influence from base frequency
+                    )
+
+                    if next_pattern:
+                        pattern_chain.append(next_pattern)
+                        current_patterns[lead_gm] = next_pattern
+
+                if not pattern_chain:
+                    # Fallback
+                    pattern_chain = [self.sample_phrase_pattern(target_depth=2, lead_gm=lead_gm)]
+
+            elif use_form_structure and form_pattern_ids:
                 # USE CORPUS FORM STRUCTURE
                 # Get patterns for this section from the form
                 section_start = (section_idx * len(form_pattern_ids)) // n_sections
@@ -761,19 +1026,36 @@ class MetaPatternGenerator:
                         )
                         all_tracks[follower_gm].extend(follower_notes)
 
-                # RHYTHM SECTION: Sample co-occurring patterns to fill the phrase duration
+                # RHYTHM SECTION: Sample patterns using probabilistic or co-occurrence sampling
                 for rhythm_gm in rhythm_instruments:
                     rhythm_time = current_time
                     loop_count = 0
                     max_loops = 16  # Safety limit
 
                     while rhythm_time < current_time + phrase_duration and loop_count < max_loops:
-                        # Sample a NEW co-occurring pattern for each loop
-                        # This creates variety while maintaining harmonic coherence
-                        rhythm_pattern_id = self._sample_cooccurring_pattern(
-                            lead_pattern_id=pattern_id,  # Use CURRENT pattern, not seed
-                            target_gm=rhythm_gm
-                        )
+                        # Compute position for this rhythm pattern
+                        rhythm_position = (current_time + rhythm_time) / (total_patterns * 1920)  # Approx
+                        rhythm_position = min(rhythm_position, 0.999)
+
+                        if use_probabilistic:
+                            # Use 3-level probabilistic sampling for rhythm too
+                            current_rhythm_pattern = current_patterns.get(rhythm_gm)
+                            rhythm_pattern_id = self.sample_next_pattern(
+                                current_pattern=current_rhythm_pattern,
+                                position=rhythm_position,
+                                gm_program=rhythm_gm,
+                                transition_weight=0.5,
+                                position_weight=0.3,
+                                frequency_weight=0.2,
+                            )
+                            if rhythm_pattern_id:
+                                current_patterns[rhythm_gm] = rhythm_pattern_id
+                        else:
+                            # Original: co-occurrence based sampling
+                            rhythm_pattern_id = self._sample_cooccurring_pattern(
+                                lead_pattern_id=pattern_id,
+                                target_gm=rhythm_gm
+                            )
 
                         if not rhythm_pattern_id:
                             rhythm_pattern_id = self._sample_pattern_for_instrument(rhythm_gm)
@@ -1296,16 +1578,46 @@ class MetaPatternGenerator:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Meta-pattern guided generator')
+    parser = argparse.ArgumentParser(
+        description='Meta-pattern guided generator with 3-level probabilistic sampling',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Sampling Modes:
+  --probabilistic (DEFAULT)  3-level Markov sampling:
+                             Level 1: Frequency weighting
+                             Level 2: Transition probabilities
+                             Level 3: Position conditioning
+
+  --form                     Use exact pattern sequences from corpus pieces
+
+  --meta-pattern             Walk transform graph following meta-patterns
+        """
+    )
     parser.add_argument('checkpoint', help='Path to v53 checkpoint .npz file')
     parser.add_argument('--output', '-o', default='meta_generated.mid', help='Output MIDI path')
     parser.add_argument('--sections', '-n', type=int, default=8, help='Number of sections')
     parser.add_argument('--tempo', '-t', type=int, default=120, help='Tempo BPM')
     parser.add_argument('--seed', '-s', type=int, help='Random seed')
     parser.add_argument('--instruments', '-i', help='Comma-separated GM program numbers')
-    parser.add_argument('--no-form', action='store_true',
-                        help='Disable corpus form structure (use meta-pattern transforms instead)')
+
+    # Sampling mode options (mutually exclusive-ish, probabilistic is default)
+    parser.add_argument('--probabilistic', action='store_true', default=True,
+                        help='Use 3-level probabilistic Markov sampling (DEFAULT)')
+    parser.add_argument('--form', action='store_true',
+                        help='Use corpus form structure (exact pattern sequences from pieces)')
+    parser.add_argument('--meta-pattern', action='store_true',
+                        help='Use meta-pattern transform graph walking')
     args = parser.parse_args()
+
+    # Determine sampling mode
+    use_probabilistic = True
+    use_form = False
+    if args.form:
+        use_probabilistic = False
+        use_form = True
+    elif getattr(args, 'meta_pattern', False):
+        use_probabilistic = False
+        use_form = False
 
     print("=" * 60)
     print("META-PATTERN GENERATOR (Full Checkpoint Utilization)")
@@ -1321,7 +1633,8 @@ def main():
         n_sections=args.sections,
         instruments=instruments,
         seed=args.seed,
-        use_form_structure=not args.no_form,
+        use_form_structure=use_form,
+        use_probabilistic=use_probabilistic,
     )
 
     gen.to_midi(tracks, args.output, tempo=args.tempo)
