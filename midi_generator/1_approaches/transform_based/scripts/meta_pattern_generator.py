@@ -565,6 +565,210 @@ class MetaPatternGenerator:
             print(f"  Pattern derivations: {len(self.pattern_derivations)} source patterns")
             print(f"  Dominant transforms: {len(self.dominant_gm_transforms)} pairs")
 
+        # Pre-compute pitch offsets for GPU-efficient generation
+        self._precompute_pitch_offsets()
+
+    def _precompute_pitch_offsets(self):
+        """Pre-compute pitch offsets from TrackDerive transforms.
+
+        GPU EFFICIENCY: Batch-compute all transform->offset mappings once.
+        Generation uses O(1) dict lookup instead of parsing strings.
+
+        TrackDerive transforms indicate HARMONIC RELATIONSHIP between instruments,
+        not melodic copying. We use them only for pitch grounding.
+        """
+        # Parse all transforms to semitone offsets (done once at build time)
+        self.pitch_offsets_by_gm_pair: Dict[Tuple[int, int], int] = {}
+
+        for (src_gm, tgt_gm), transform in self.dominant_gm_transforms.items():
+            offset = self._parse_pitch_offset(transform)
+            self.pitch_offsets_by_gm_pair[(src_gm, tgt_gm)] = offset
+
+        if self.verbose:
+            print(f"  Pitch offsets: {len(self.pitch_offsets_by_gm_pair)} GM pairs")
+
+    def _parse_pitch_offset(self, transform: str) -> int:
+        """Parse pitch offset from transform string. O(1) after precompute.
+
+        Supports:
+        - T-7, T7, T+7 -> semitone offset
+        - identity, I, R, RI -> 0 (no pitch change)
+        """
+        if not transform or transform == 'identity':
+            return 0
+
+        if transform.startswith('T'):
+            try:
+                # Handle T-7, T7, T+7 formats
+                offset_str = transform[1:].replace('+', '')
+                return int(offset_str)
+            except ValueError:
+                return 0
+
+        # Inversion/Retrograde don't affect starting pitch relationship
+        return 0
+
+    def generate_follower_pattern(
+        self,
+        lead_pattern_id: str,
+        lead_gm: int,
+        follower_gm: int,
+        lead_pitch: int,
+        position: float,
+        current_patterns: Dict[int, str] = None,
+        style_id: int = None,
+        chord_root: int = None,
+        pattern_position: int = 0,
+    ) -> Tuple[str, List[int], int]:
+        """Generate a follower instrument's pattern using ROLE-SPECIFIC sampling.
+
+        THE KEY FIX: Instead of copying lead's intervals with transposition,
+        we sample from the follower's OWN vocabulary (via PPM*) and only use
+        TrackDerive for pitch grounding.
+
+        This ensures:
+        - Bass plays bass-like patterns (sparser, stepwise)
+        - Horns play horn-like patterns (melodic, wider intervals)
+        - Each instrument maintains its learned role from the corpus
+
+        Args:
+            lead_pattern_id: Pattern the lead instrument is playing
+            lead_gm: GM program of lead instrument
+            follower_gm: GM program of follower instrument
+            lead_pitch: Starting pitch of lead (for grounding)
+            position: Position in piece [0, 1]
+            current_patterns: Current pattern per instrument (for PPM context)
+            style_id: Style cluster for consistency
+            chord_root: Current chord root
+            pattern_position: For STM tracking
+
+        Returns:
+            Tuple of (pattern_id, intervals, first_pitch)
+        """
+        if current_patterns is None:
+            current_patterns = {}
+
+        # 1. SAMPLE FOLLOWER'S OWN PATTERN from its PPM* vocabulary
+        #    This is the key change - follower gets its own contour/role
+        follower_pattern_id = self.sample_next_pattern(
+            current_pattern=current_patterns.get(follower_gm),
+            position=position,
+            gm_program=follower_gm,  # <- Follower's own vocabulary!
+            concurrent_patterns=None,  # Don't use co-occurrence for pattern selection
+            style_id=style_id,
+            chord_root=chord_root,
+            pattern_position=pattern_position,
+            # Reduce co-occurrence weight - we want role diversity, not similarity
+            cooccurrence_weight=0.05,
+        )
+
+        # 2. GET FOLLOWER'S INTERVALS (its own learned contours)
+        if follower_pattern_id:
+            follower_pattern = self.patterns.get(follower_pattern_id, {})
+            follower_intervals = follower_pattern.get('pitch_intervals', [0])
+        else:
+            # Fallback: sample directly from instrument vocabulary
+            follower_pattern_id = self._sample_pattern_for_instrument(follower_gm)
+            if follower_pattern_id:
+                follower_pattern = self.patterns.get(follower_pattern_id, {})
+                follower_intervals = follower_pattern.get('pitch_intervals', [0])
+            else:
+                follower_intervals = [0]
+
+        # 3. COMPUTE PITCH GROUNDING from TrackDerive (O(1) lookup)
+        #    TrackDerive tells us harmonic relationship, not melodic copying
+        pitch_offset = self.pitch_offsets_by_gm_pair.get((lead_gm, follower_gm), 0)
+
+        # Apply offset to lead pitch, then clamp to follower's range
+        pitch_range = GM_RANGES.get(follower_gm, DEFAULT_RANGE)
+        grounded_pitch = lead_pitch + pitch_offset
+
+        # Octave adjustment if out of range
+        while grounded_pitch < pitch_range[0]:
+            grounded_pitch += 12
+        while grounded_pitch > pitch_range[1]:
+            grounded_pitch -= 12
+
+        # Final clamp
+        follower_pitch = max(pitch_range[0], min(pitch_range[1], grounded_pitch))
+
+        return follower_pattern_id, follower_intervals, follower_pitch
+
+    def generate_follower_patterns_batch(
+        self,
+        lead_pattern_id: str,
+        lead_gm: int,
+        lead_pitch: int,
+        follower_instruments: List[int],
+        position: float,
+        current_patterns: Dict[int, str] = None,
+        style_id: int = None,
+        chord_root: int = None,
+        pattern_position: int = 0,
+    ) -> Dict[int, Tuple[str, List[int], int]]:
+        """Batch generate patterns for all followers. GPU-efficient.
+
+        Samples all followers in one pass, avoiding repeated dictionary lookups.
+        Uses vectorized pitch offset computation when possible.
+
+        Args:
+            lead_pattern_id: Pattern the lead is playing
+            lead_gm: GM program of lead
+            lead_pitch: Lead's starting pitch
+            follower_instruments: List of follower GM programs
+            position: Position in piece [0, 1]
+            current_patterns: Current pattern per instrument (for PPM context)
+            style_id: Style cluster
+            chord_root: Chord root
+            pattern_position: STM position
+
+        Returns:
+            Dict of {follower_gm: (pattern_id, intervals, pitch)}
+        """
+        if current_patterns is None:
+            current_patterns = {}
+
+        results = {}
+
+        # Batch pitch offset computation (vectorized if many followers)
+        if HAS_TORCH and len(follower_instruments) > 2:
+            # GPU-accelerated batch offset lookup
+            offsets = torch.tensor([
+                self.pitch_offsets_by_gm_pair.get((lead_gm, f_gm), 0)
+                for f_gm in follower_instruments
+            ], device=DEVICE)
+
+            base_pitches = lead_pitch + offsets
+
+            # Batch range clamping
+            for i, follower_gm in enumerate(follower_instruments):
+                pitch_range = GM_RANGES.get(follower_gm, DEFAULT_RANGE)
+                pitch = int(base_pitches[i].item())
+
+                # Octave adjustment
+                while pitch < pitch_range[0]:
+                    pitch += 12
+                while pitch > pitch_range[1]:
+                    pitch -= 12
+                pitch = max(pitch_range[0], min(pitch_range[1], pitch))
+
+                # Sample pattern (CPU - dictionary lookups)
+                pattern_id, intervals, _ = self.generate_follower_pattern(
+                    lead_pattern_id, lead_gm, follower_gm, lead_pitch,
+                    position, current_patterns, style_id, chord_root, pattern_position
+                )
+                # Override pitch with batch-computed value
+                results[follower_gm] = (pattern_id, intervals, pitch)
+        else:
+            # CPU path for small batches (avoid GPU overhead)
+            for follower_gm in follower_instruments:
+                results[follower_gm] = self.generate_follower_pattern(
+                    lead_pattern_id, lead_gm, follower_gm, lead_pitch,
+                    position, current_patterns, style_id, chord_root, pattern_position
+                )
+
+        return results
+
     def build_form_structure_index(self):
         """Build form structure from corpus - pattern sequences per piece.
 
@@ -2197,9 +2401,27 @@ class MetaPatternGenerator:
                 )
                 all_tracks[lead_gm].extend(lead_notes)
 
-                # FOLLOWER INSTRUMENTS: Use corpus-derived activity probability
+                # FOLLOWER INSTRUMENTS: Role-specific sampling with pitch grounding
+                # KEY FIX: Each follower samples from its OWN vocabulary (via PPM*)
+                # TrackDerive only affects pitch grounding, not melodic contour
+                position = (section_idx * patterns_per_section + pattern_idx) / total_patterns
+
+                # Batch generate all follower patterns (GPU-efficient)
+                follower_results = self.generate_follower_patterns_batch(
+                    lead_pattern_id=pattern_id,
+                    lead_gm=lead_gm,
+                    lead_pitch=lead_pitch,
+                    follower_instruments=follower_instruments,
+                    position=position,
+                    current_patterns=current_patterns,
+                    style_id=style_id,
+                    chord_root=chord_root,
+                    pattern_position=global_pattern_position,
+                )
+
                 for follower_gm in follower_instruments:
                     # Get natural co-occurrence probability from checkpoint
+                    # This controls WHEN instruments play, not WHAT they play
                     play_prob = self._get_cooccurrence_probability(
                         lead_pattern_id=pattern_id,
                         lead_gm=lead_gm,
@@ -2210,47 +2432,12 @@ class MetaPatternGenerator:
                         # REST - this instrument didn't usually play here
                         continue
 
-                    # Try to find orchestration rule for this instrument pair
-                    rule = self._find_orchestration_rule(lead_gm, follower_gm, pattern_id)
+                    # Get role-specific pattern from batch results
+                    follower_pattern_id, follower_intervals, follower_pitch = follower_results[follower_gm]
 
-                    if rule:
-                        transform = rule.get('transform', 'identity')
-                        derived_pattern_id = rule.get('derived_pattern')
-                        if derived_pattern_id and derived_pattern_id in self.patterns:
-                            derived_pattern = self.patterns[derived_pattern_id]
-                            follower_intervals = derived_pattern.get('pitch_intervals', intervals)
-                            follower_pitch = self._sample_pitch_for_instrument(derived_pattern, follower_gm)
-                        else:
-                            follower_intervals = self._apply_transform(intervals, transform)
-                            follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
-                    else:
-                        # Use 6-level probabilistic sampling conditioned on lead
-                        if use_probabilistic:
-                            position = (section_idx * patterns_per_section + pattern_idx) / total_patterns
-                            concurrent = {lead_gm: pattern_id}
-
-                            follower_pattern_id = self.sample_next_pattern(
-                                current_pattern=current_patterns.get(follower_gm),
-                                position=position,
-                                gm_program=follower_gm,
-                                concurrent_patterns=concurrent,
-                                style_id=style_id,                     # Level 5: same style as lead
-                                chord_root=chord_root,                 # Level 6: same harmonic context
-                                pattern_position=global_pattern_position,  # STM tracking
-                                cooccurrence_weight=0.35,  # Strong co-occurrence for followers
-                            )
-
-                            if follower_pattern_id:
-                                current_patterns[follower_gm] = follower_pattern_id
-                                follower_pattern = self.patterns.get(follower_pattern_id, {})
-                                follower_intervals = follower_pattern.get('pitch_intervals', intervals)
-                                follower_pitch = self._sample_pitch_for_instrument(follower_pattern, follower_gm)
-                            else:
-                                follower_intervals = intervals
-                                follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
-                        else:
-                            follower_intervals = intervals
-                            follower_pitch = self._sample_pitch_for_instrument(pattern, follower_gm)
+                    # Update current_patterns for this follower
+                    if follower_pattern_id:
+                        current_patterns[follower_gm] = follower_pattern_id
 
                     follower_notes = self._expand_to_notes(
                         follower_intervals, follower_pitch, current_time, follower_gm, base_ioi
