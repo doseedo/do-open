@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import midiPlayer from '../utils/midiPlayer';
-import tunaFX from '../services/tunaFX';
+import pluginFX from '../services/pluginFX';
 
 // Global audio buffer cache (shared across all instances)
 const audioBufferCache = new Map();
@@ -22,34 +22,38 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
   const isPlayingRef = useRef(isPlaying); // Track isPlaying in ref for animation loop
   const tracksRef = useRef(tracks); // Store tracks in ref to avoid recreating play callback
 
-  // Initialize audio context, Tuna FX, and MIDI player
+  // Initialize audio context, Plugin FX, and MIDI player
   useEffect(() => {
-    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    const initAudio = async () => {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
 
-    // Initialize Tuna FX chain
-    tunaFX.initialize(audioContextRef.current);
+      // Initialize Plugin FX chain (async for worklet loading)
+      await pluginFX.initialize(audioContextRef.current);
 
-    // Create master gain node and connect FX output to it
-    masterGainNodeRef.current = audioContextRef.current.createGain();
-    masterGainNodeRef.current.gain.value = masterGain;
+      // Create master gain node and connect FX output to it
+      masterGainNodeRef.current = audioContextRef.current.createGain();
+      masterGainNodeRef.current.gain.value = masterGain;
 
-    // Signal chain: tracks → FX bus input → [effects] → FX bus output → master gain → destination
-    tunaFX.getFXBusOutput().connect(masterGainNodeRef.current);
-    masterGainNodeRef.current.connect(audioContextRef.current.destination);
+      // Signal chain: tracks → FX bus input → [8 plugin slots] → FX bus output → master gain → destination
+      pluginFX.getFXBusOutput().connect(masterGainNodeRef.current);
+      masterGainNodeRef.current.connect(audioContextRef.current.destination);
 
-    console.log(`🎚️ Master gain initialized: ${(masterGain * 100).toFixed(0)}%`);
-    console.log('🎛️ Signal chain: Tracks → FX Bus → Reverb → Delay → Chorus → Compressor → Filter → Phaser → Master → Output');
+      console.log(`🎚️ Master gain initialized: ${(masterGain * 100).toFixed(0)}%`);
+      console.log('🎛️ Signal chain: Tracks → FX Bus → [8 Plugin Slots] → Master → Output');
 
-    // Initialize MIDI player
-    midiPlayer.initialize().catch(err => {
-      console.error('Failed to initialize MIDI player:', err);
-    });
+      // Initialize MIDI player
+      midiPlayer.initialize().catch(err => {
+        console.error('Failed to initialize MIDI player:', err);
+      });
+    };
+
+    initAudio();
 
     return () => {
       if (audioContextRef.current) {
         audioContextRef.current.close();
       }
-      tunaFX.destroy();
+      pluginFX.destroy();
       midiPlayer.stopAll();
     };
   }, []);
@@ -658,11 +662,13 @@ function scheduleTrack(
     gainNode.gain.value = gain;
 
     source.connect(gainNode);
-    // TEMPORARY: Bypass FX chain for testing - connect directly to master
-    // Signal chain: source → gainNode → master gain → destination
-    gainNode.connect(masterGainNode);
-    // Original FX routing (disabled for testing):
-    // gainNode.connect(tunaFX.getFXBusInput());
+    // Route through FX chain: source → gainNode → FX bus input → [effects] → FX bus output → master
+    if (pluginFX.initialized && pluginFX.getFXBusInput()) {
+      gainNode.connect(pluginFX.getFXBusInput());
+    } else {
+      // Fallback: direct connection if FX not ready
+      gainNode.connect(masterGainNode);
+    }
 
     // Calculate when to start playback in AudioContext time
     // If playhead is before track start, schedule for future
