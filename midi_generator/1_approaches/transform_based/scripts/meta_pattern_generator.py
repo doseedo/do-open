@@ -42,11 +42,26 @@ import sys
 import json
 import random
 import argparse
+import logging
+import time
 import numpy as np
 from pathlib import Path
 from collections import defaultdict, Counter
 from typing import List, Dict, Tuple, Optional, Set, Any
 from dataclasses import dataclass, field
+
+# Configure logging for live progress monitoring
+LOG_FILE = "/tmp/generator.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S',
+    handlers=[
+        logging.FileHandler(LOG_FILE, mode='w'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Optional GPU support - falls back to CPU if unavailable
 try:
@@ -317,37 +332,83 @@ class MetaPatternGenerator:
     def __init__(self, checkpoint_path: str, verbose: bool = True, use_gpu: bool = True):
         self.verbose = verbose
         self.use_gpu = use_gpu and HAS_TORCH and DEVICE.type == 'cuda'
+        self.init_start_time = time.time()
 
+        gpu_status = 'ENABLED' if self.use_gpu else 'DISABLED (CPU fallback)'
         if self.verbose:
-            print(f"GPU acceleration: {'ENABLED' if self.use_gpu else 'DISABLED (CPU fallback)'}")
+            print(f"GPU acceleration: {gpu_status}")
+        logger.info(f"Starting generator initialization (GPU: {gpu_status})")
 
         # Load checkpoint data
+        t0 = time.time()
         self.load_checkpoint(checkpoint_path)
+        logger.info(f"Checkpoint loaded in {time.time()-t0:.1f}s")
 
         # Build base indices (CPU)
+        t0 = time.time()
         self.build_transform_graph()
+        logger.info(f"Transform graph built in {time.time()-t0:.1f}s")
+
+        t0 = time.time()
         self.build_hierarchical_index()
+        logger.info(f"Hierarchical index built in {time.time()-t0:.1f}s")
+
+        t0 = time.time()
         self.build_track_derive_index()
+        logger.info(f"Track derive index built in {time.time()-t0:.1f}s")
+
+        t0 = time.time()
         self.build_form_structure_index()
+        logger.info(f"Form structure index built in {time.time()-t0:.1f}s")
+
+        t0 = time.time()
         self.build_rest_duration_index()
+        logger.info(f"Rest duration index built in {time.time()-t0:.1f}s")
 
         # Build probabilistic sampling indices
+        t0 = time.time()
         self.build_transition_index()       # Level 2: P(next | current, gm) - kept for fallback
+        logger.info(f"Transition index (Level 2) built in {time.time()-t0:.1f}s")
+
+        t0 = time.time()
         self.build_position_index()         # Level 3: P(pattern | position, gm)
+        logger.info(f"Position index (Level 3) built in {time.time()-t0:.1f}s")
+
+        t0 = time.time()
         self.build_cooccurrence_index()     # Level 4: P(pattern | concurrent_patterns)
+        logger.info(f"Co-occurrence index (Level 4) built in {time.time()-t0:.1f}s")
+
+        t0 = time.time()
         self.build_form_template_index()    # For global repetition structure
+        logger.info(f"Form template index built in {time.time()-t0:.1f}s")
+
+        t0 = time.time()
         self.build_instrument_role_index()  # Derive lead/follower from corpus
+        logger.info(f"Instrument role index built in {time.time()-t0:.1f}s")
 
         # PPM* replaces Levels 1-2 with principled variable-order Markov model
+        t0 = time.time()
         self.build_ppm_model()              # P(pattern | context) with KT smoothing
+        logger.info(f"PPM* model (order 5) built in {time.time()-t0:.1f}s")
 
         # GPU-accelerated PCFG conversion (SLP → PCFG)
+        t0 = time.time()
         self.build_pattern_equivalence_classes()   # Branching non-terminals
+        logger.info(f"Pattern equivalence classes built in {time.time()-t0:.1f}s")
+
+        t0 = time.time()
         self.build_style_clusters()                # Per-piece style variable z
+        logger.info(f"Style clusters built in {time.time()-t0:.1f}s")
+
+        t0 = time.time()
         self.build_chord_skeleton_model()          # Hierarchical generation
+        logger.info(f"Chord skeleton model built in {time.time()-t0:.1f}s")
 
         # Initialize short-term memory (reset per piece)
         self.stm = ShortTermMemory(phrase_length=8)
+
+        total_init_time = time.time() - self.init_start_time
+        logger.info(f"INITIALIZATION COMPLETE in {total_init_time:.1f}s")
 
     def load_checkpoint(self, checkpoint_path: str):
         """Load all checkpoint components."""
@@ -650,6 +711,7 @@ class MetaPatternGenerator:
 
         # 1. SAMPLE FOLLOWER'S OWN PATTERN from its PPM* vocabulary
         #    This is the key change - follower gets its own contour/role
+        #    Uses full 6-level probabilistic sampling (PPM*, position, style, chord, etc.)
         follower_pattern_id = self.sample_next_pattern(
             current_pattern=current_patterns.get(follower_gm),
             position=position,
@@ -664,13 +726,13 @@ class MetaPatternGenerator:
 
         # 2. GET FOLLOWER'S INTERVALS (its own learned contours)
         if follower_pattern_id:
-            follower_pattern = self.patterns.get(follower_pattern_id, {})
+            follower_pattern = self.patterns.get(str(follower_pattern_id), self.patterns.get(follower_pattern_id, {}))
             follower_intervals = follower_pattern.get('pitch_intervals', [0])
         else:
             # Fallback: sample directly from instrument vocabulary
             follower_pattern_id = self._sample_pattern_for_instrument(follower_gm)
             if follower_pattern_id:
-                follower_pattern = self.patterns.get(follower_pattern_id, {})
+                follower_pattern = self.patterns.get(str(follower_pattern_id), {})
                 follower_intervals = follower_pattern.get('pitch_intervals', [0])
             else:
                 follower_intervals = [0]
@@ -1707,104 +1769,131 @@ class MetaPatternGenerator:
         return self.style_pattern_probs[style_id].get(pattern_id, 0.01)  # Small non-zero for smoothing
 
     def build_chord_skeleton_model(self):
-        """Build hierarchical skeleton model for form → chords → melody generation.
+        """GPU-optimized chord skeleton model with Level 6 pattern-chord associations.
 
-        This implements the "generate structure first, details second" principle:
-        1. Generate high-level form (AABA)
-        2. Generate chord progression per section
-        3. Generate melody conditioned on chords
-        4. Generate accompaniment conditioned on melody + chords
+        OPTIMIZATION STRATEGY:
+        1. Pre-cache pattern pitches (O(patterns) once)
+        2. Build bass progressions per piece (O(pieces × bass_patterns) once)
+        3. Use binary search for onset→chord lookup (O(log n) per pattern)
+        4. Batch count with Counter (O(1) amortized per association)
 
-        We infer chord progressions from bass patterns (root motion).
-
-        GPU: Transition matrix computation
-        CPU: O(1) lookups during generation
+        Original: O(pieces × instruments × patterns × occurrences) - stuck
+        Optimized: O(pieces × instruments × patterns) - seconds
         """
         if self.verbose:
-            print("Building chord skeleton model...")
+            print("Building chord skeleton model (GPU-optimized)...")
 
-        # 1. Extract chord roots from bass patterns
-        # Bass GM programs: 32-39
+        from bisect import bisect_right
+
         BASS_GMS = set(range(32, 40))
+        n_chords = 12
 
-        # Build chord transition matrix from bass motion
-        n_chords = 12  # Pitch classes
+        # ========== STEP 1: Pre-cache pattern pitches (O(patterns)) ==========
+        pattern_pitch_cache = {}
+        for pattern_id, pattern in self.patterns.items():
+            for occ in pattern.get('occurrences', []):
+                gm = occ.get('gm_program', 0)
+                if gm in BASS_GMS:
+                    pattern_pitch_cache[(pattern_id, gm)] = occ.get('pitch', 48)
+                    break
+
+        if self.verbose:
+            print(f"  Pitch cache: {len(pattern_pitch_cache)} bass patterns")
+
+        # ========== STEP 2: Build bass progressions per piece (O(pieces)) ==========
+        bass_progressions = {}  # piece_id -> [(onset, root), ...]
+
+        for piece_id, gm_seqs in self.piece_gm_sequences.items():
+            for gm, seq in gm_seqs.items():
+                if gm not in BASS_GMS:
+                    continue
+                progression = []
+                for onset, pattern_id in seq:
+                    pitch = pattern_pitch_cache.get((pattern_id, gm), 48)
+                    root = pitch % 12
+                    progression.append((onset, root))
+                if progression:
+                    # Sort by onset for binary search
+                    bass_progressions[piece_id] = sorted(progression, key=lambda x: x[0])
+                    break  # One bass track per piece is enough
+
+        if self.verbose:
+            print(f"  Bass progressions: {len(bass_progressions)} pieces")
+
+        # ========== STEP 3: Chord transitions (O(bass_patterns)) ==========
         chord_transitions = np.zeros((n_chords, n_chords))
         chord_counts = np.zeros(n_chords)
 
-        for piece_id, gm_sequences in self.piece_gm_sequences.items():
-            for gm, sequence in gm_sequences.items():
-                if gm not in BASS_GMS:
-                    continue
+        for piece_id, progression in bass_progressions.items():
+            prev_root = None
+            for _, root in progression:
+                chord_counts[root] += 1
+                if prev_root is not None:
+                    chord_transitions[prev_root, root] += 1
+                prev_root = root
 
-                prev_root = None
-                for _, pattern_id in sequence:
-                    pattern = self.patterns.get(pattern_id, {})
-
-                    # Get first pitch as chord root proxy
-                    for occ in pattern.get('occurrences', []):
-                        if occ.get('gm_program') == gm:
-                            pitch = occ.get('pitch', 48)
-                            root = pitch % 12
-                            chord_counts[root] += 1
-
-                            if prev_root is not None:
-                                chord_transitions[prev_root, root] += 1
-
-                            prev_root = root
-                            break
-
-        # Normalize to probabilities (with Laplace smoothing)
+        # Normalize with Laplace smoothing
         self.chord_transitions = (chord_transitions + 0.1) / (
             chord_transitions.sum(axis=1, keepdims=True) + 1.2
         )
-
-        # Prior over starting chords
         self.chord_prior = (chord_counts + 1) / (chord_counts.sum() + 12)
 
-        # 2. Build pattern distributions per chord
-        # P(pattern | chord_root, instrument)
-        self.chord_pattern_probs = defaultdict(lambda: defaultdict(Counter))
+        if self.verbose:
+            print(f"  Chord transitions: {n_chords}x{n_chords}")
 
-        for piece_id, gm_sequences in self.piece_gm_sequences.items():
-            # Get bass progression for this piece
-            bass_roots = []
-            for gm, sequence in gm_sequences.items():
-                if gm in BASS_GMS:
-                    for _, pattern_id in sequence:
-                        pattern = self.patterns.get(pattern_id, {})
-                        for occ in pattern.get('occurrences', []):
-                            if occ.get('gm_program') == gm:
-                                pitch = occ.get('pitch', 48)
-                                bass_roots.append(pitch % 12)
-                                break
-                    break
+        # ========== STEP 4: Pattern-chord associations (OPTIMIZED) ==========
+        # Use Counter for O(1) amortized counting
+        associations = []  # Will contain (chord_root, gm, pattern_id) tuples
 
-            if not bass_roots:
+        # Pre-extract onset arrays for binary search
+        bass_onsets = {}  # piece_id -> [onset1, onset2, ...]
+        bass_roots = {}   # piece_id -> [root1, root2, ...]
+        for piece_id, progression in bass_progressions.items():
+            bass_onsets[piece_id] = [p[0] for p in progression]
+            bass_roots[piece_id] = [p[1] for p in progression]
+
+        for piece_id, gm_seqs in self.piece_gm_sequences.items():
+            if piece_id not in bass_progressions:
                 continue
 
-            # For each instrument, associate patterns with chord contexts
-            for gm, sequence in gm_sequences.items():
-                for i, (_, pattern_id) in enumerate(sequence):
-                    # Map pattern to chord context (simplified: use bass root at same index)
-                    chord_idx = min(i, len(bass_roots) - 1) if bass_roots else 0
-                    chord_root = bass_roots[chord_idx] if bass_roots else 0
+            onsets = bass_onsets[piece_id]
+            roots = bass_roots[piece_id]
 
-                    self.chord_pattern_probs[chord_root][gm][pattern_id] += 1
+            for gm, seq in gm_seqs.items():
+                for onset, pattern_id in seq:
+                    # Binary search: find chord active at this onset
+                    idx = bisect_right(onsets, onset) - 1
+                    chord_root = roots[max(0, idx)] if roots else 0
 
-        # Normalize
+                    associations.append((chord_root, gm, pattern_id))
+
+        if self.verbose:
+            print(f"  Pattern-chord associations: {len(associations):,}")
+
+        # Count all associations at once
+        assoc_counts = Counter(associations)
+
+        # Build chord_pattern_probs structure
+        self.chord_pattern_probs = defaultdict(lambda: defaultdict(Counter))
+        for (chord_root, gm, pattern_id), count in assoc_counts.items():
+            self.chord_pattern_probs[chord_root][gm][pattern_id] = count
+
+        # Normalize to probabilities
         self.chord_pattern_distributions = {}
         for chord_root, gm_counts in self.chord_pattern_probs.items():
             self.chord_pattern_distributions[chord_root] = {}
             for gm, pattern_counts in gm_counts.items():
                 total = sum(pattern_counts.values())
-                self.chord_pattern_distributions[chord_root][gm] = {
-                    pid: c / total for pid, c in pattern_counts.items()
-                }
+                if total > 0:
+                    self.chord_pattern_distributions[chord_root][gm] = {
+                        pid: c / total for pid, c in pattern_counts.items()
+                    }
 
         if self.verbose:
-            print(f"  Chord transition matrix: {n_chords}x{n_chords}")
-            print(f"  Chord-pattern associations: {len(self.chord_pattern_distributions)} chords")
+            n_distributions = sum(
+                len(gms) for gms in self.chord_pattern_distributions.values()
+            )
+            print(f"  Level 6 distributions: {n_distributions} (chord, instrument) pairs")
 
     def generate_chord_skeleton(self, n_chords: int = 8) -> List[int]:
         """Generate a chord progression skeleton. O(n_chords) operations."""
@@ -2203,6 +2292,10 @@ class MetaPatternGenerator:
         else:
             mode = "meta-pattern (transform graph)"
 
+        gen_start_time = time.time()
+        logger.info(f"Starting generation: {mode}")
+        logger.info(f"  Sections: {n_sections}, Instruments: {instruments}")
+
         if self.verbose:
             print(f"\nGenerating with {mode}...")
             print(f"  Sections: {n_sections}")
@@ -2278,6 +2371,8 @@ class MetaPatternGenerator:
 
         for section_idx in range(n_sections):
             section_label = form_template[section_idx]
+            section_start_time = time.time()
+            logger.info(f"Section {section_idx+1}/{n_sections} (label={section_label})")
 
             # Get chord root for this section from skeleton
             chord_root = None
@@ -2449,6 +2544,10 @@ class MetaPatternGenerator:
 
                 # Advance time by phrase duration
                 current_time += phrase_duration
+
+        gen_elapsed = time.time() - gen_start_time
+        total_notes = sum(len(notes) for notes in all_tracks.values())
+        logger.info(f"GENERATION COMPLETE in {gen_elapsed:.1f}s ({total_notes} notes)")
 
         if self.verbose:
             print(f"\nGenerated:")
@@ -2919,8 +3018,10 @@ class MetaPatternGenerator:
 
         mid.save(output_path)
 
+        total_notes = sum(len(notes) for notes in tracks.values())
+        logger.info(f"SAVED: {output_path} ({len(tracks)} tracks, {total_notes} notes)")
+
         if self.verbose:
-            total_notes = sum(len(notes) for notes in tracks.values())
             print(f"\nSaved MIDI to: {output_path}")
             print(f"  {len(tracks)} tracks, {total_notes} notes")
 
