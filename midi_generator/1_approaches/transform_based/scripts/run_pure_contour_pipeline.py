@@ -1,24 +1,29 @@
 #!/usr/bin/env python3
 """
-Pure Contour Re-Pair Pipeline (v53)
-====================================
+Pure Contour Re-Pair Pipeline (v54 - Per-Instrument)
+=====================================================
 
-TRUE pitch-agnostic normalization: terminals have NO pitch information.
+Per-instrument pattern discovery for role-specific generation.
 
-Key difference from v50/v52:
-- v50/v52: Terminal = pitch_class (0-11), intervals normalized
-           Hierarchical patterns inherit pitch-class specificity
-- v53: Terminal = (rhythm_bucket, velocity_bucket) ONLY
-       Every pattern is purely contour-based, even hierarchical ones
-       Pitch is stored per-occurrence as first_pitch
+Key change from v53:
+- v53: All instruments share one pattern vocabulary (merged)
+       Bass [+2,+1,-1] = Trumpet [+2,+1,-1] = same pattern
+- v54: Each instrument has its OWN vocabulary (separated)
+       Bass has GM32_P42, Trumpet has GM56_P42 (different patterns!)
 
-This achieves optimal compression because pitch is purely a transform parameter.
+This enables:
+- Role-specific generation (bass plays bass patterns, not melody patterns)
+- Chord preservation (piano patterns stay as chords, not arpeggios)
+- Better TrackDerive discovery (cross-vocabulary relationships)
 
-Equation:
-  M = Pattern(contour) × T(first_pitch)
+Architecture (3-layer):
+  Layer 1: Per-instrument grammar (this file)
+  Layer 2: Temporal alignment (onset_time for simultaneity)
+  Layer 3: Cross-track relationships (TrackDerive, after grammar)
 
 Usage:
-    python scripts/run_pure_contour_pipeline.py /path/to/midi/corpus --output checkpoint_v53.npz
+    python scripts/run_pure_contour_pipeline.py /path/to/midi/corpus \\
+        --output checkpoint_v54_per_instrument.npz --per-instrument
 """
 
 import os
@@ -91,6 +96,261 @@ from discovery.feature_importance import (
 from discovery.octave_equivalence import (
     run_octave_equivalence_discovery,
 )
+
+
+# =============================================================================
+# PER-INSTRUMENT PATTERN DISCOVERY (v54)
+# =============================================================================
+
+def group_tracks_by_instrument(tracks: list) -> Dict[int, list]:
+    """Group tracks by GM program (instrument).
+
+    This is the foundation of per-instrument pattern discovery.
+    Each instrument gets its own vocabulary.
+
+    Args:
+        tracks: List of FactoredTrack objects
+
+    Returns:
+        Dict mapping GM program -> list of tracks for that instrument
+    """
+    by_gm = defaultdict(list)
+    for track in tracks:
+        gm = getattr(track, 'gm_program', 0)
+        by_gm[gm].append(track)
+    return dict(by_gm)
+
+
+def build_per_instrument_grammars(
+    tracks: list,
+    device: str = 'cuda',
+    min_pair_count: int = 2,
+    max_rules_per_instrument: int = 2000,
+    verbose: bool = True,
+) -> Dict[int, 'PureContourGrammar']:
+    """Build separate Re-Pair grammar for each instrument.
+
+    KEY CHANGE FROM v53:
+    Instead of one grammar for all tracks, we build one per GM program.
+    This ensures:
+    - Bass patterns are ONLY from bass tracks
+    - Piano patterns preserve chord structure
+    - Melody patterns are instrument-specific
+
+    Args:
+        tracks: List of FactoredTrack objects
+        device: 'cuda' or 'cpu'
+        min_pair_count: Minimum pair frequency for rule creation
+        max_rules_per_instrument: Max rules per instrument
+        verbose: Print progress
+
+    Returns:
+        Dict mapping GM program -> PureContourGrammar for that instrument
+    """
+    grammars_by_gm = {}
+    tracks_by_gm = group_tracks_by_instrument(tracks)
+
+    if verbose:
+        print(f"  Building per-instrument grammars for {len(tracks_by_gm)} instruments...")
+
+    for gm, gm_tracks in sorted(tracks_by_gm.items()):
+        if len(gm_tracks) < 2:
+            if verbose:
+                print(f"    GM {gm}: Skipping (only {len(gm_tracks)} track)")
+            continue
+
+        n_notes = sum(len(t.pitch_classes) for t in gm_tracks)
+        if n_notes < 10:
+            if verbose:
+                print(f"    GM {gm}: Skipping (only {n_notes} notes)")
+            continue
+
+        if verbose:
+            print(f"    GM {gm}: {len(gm_tracks)} tracks, {n_notes:,} notes...", end=' ', flush=True)
+
+        try:
+            grammar = build_pure_contour_grammar(
+                gm_tracks,
+                device=device,
+                min_pair_count=min_pair_count,
+                max_rules=max_rules_per_instrument,
+                verbose=False,  # Quiet per-instrument
+            )
+            grammars_by_gm[gm] = grammar
+
+            if verbose:
+                print(f"→ {grammar.n_rules} patterns, {grammar.compression_ratio():.1f}x compression")
+
+        except Exception as e:
+            if verbose:
+                print(f"→ FAILED: {e}")
+
+    return grammars_by_gm
+
+
+def convert_per_instrument_grammars_to_rules(
+    grammars_by_gm: Dict[int, 'PureContourGrammar'],
+    tracks_by_gm: Dict[int, list],
+    verbose: bool = True,
+) -> dict:
+    """Convert per-instrument grammars to unified rules dict with GM-prefixed IDs.
+
+    Each pattern ID is prefixed with its GM program to ensure uniqueness:
+    - GM32_129 = bass pattern 129
+    - GM56_129 = trumpet pattern 129 (DIFFERENT pattern!)
+
+    Also stores:
+    - onset_time for simultaneity reconstruction
+    - rhythm_ratios, velocity_ratios, duration_ratios for full expression
+    - gm_program to identify which instrument owns this pattern
+
+    Args:
+        grammars_by_gm: Dict of GM -> PureContourGrammar
+        tracks_by_gm: Dict of GM -> list of tracks
+        verbose: Print progress
+
+    Returns:
+        Dict with 'rules' containing all patterns with GM-prefixed IDs
+    """
+    all_rules = {}
+
+    for gm, grammar in grammars_by_gm.items():
+        gm_tracks = tracks_by_gm.get(gm, [])
+
+        # Build track lookups for this instrument
+        track_to_piece = {}
+        track_to_midi_id = {}
+        for i, info in enumerate(grammar.track_info):
+            track_to_piece[i] = info.get('piece_id', f'track_{i}')
+            track_to_midi_id[i] = info.get('track_id', i)
+
+        n_terminals = grammar.n_terminals
+        memo = {}
+
+        for rule_idx in range(grammar.n_rules):
+            rule_id = n_terminals + 1 + rule_idx
+
+            # Create GM-prefixed pattern ID
+            prefixed_id = f"GM{gm}_{rule_id}"
+
+            # Get contour definition
+            interval, rhythm_bucket, velocity_bucket = grammar.get_rule_contour(rule_id)
+            count = grammar.rule_counts[rule_idx].item()
+
+            # Get children for hierarchical (also prefix them)
+            left_child, right_child = grammar.get_rule_children(rule_id)
+            is_hierarchical = left_child >= 0
+
+            prefixed_left = f"GM{gm}_{left_child}" if left_child >= 0 else -1
+            prefixed_right = f"GM{gm}_{right_child}" if right_child >= 0 else -1
+
+            # Expand to get interval sequence
+            intervals = grammar.expand_rule(rule_id, memo)
+
+            # Build pitch_intervals
+            if is_hierarchical:
+                left_key = f"GM{gm}_{left_child}"
+                right_key = f"GM{gm}_{right_child}"
+                left_intervals = all_rules.get(left_key, {}).get('pitch_intervals', [])
+                right_intervals = all_rules.get(right_key, {}).get('pitch_intervals', [])
+                pitch_intervals = list(left_intervals) + [interval] + list(right_intervals)
+            else:
+                pitch_intervals = [interval]
+
+            # Compute canonical_pitches from first occurrence
+            canonical_pitches = []
+            rhythm_ratios = []
+            velocity_ratios = []
+            duration_ratios = []
+
+            if grammar.rule_occurrences and rule_id in grammar.rule_occurrences:
+                occurrences = grammar.rule_occurrences[rule_id]
+                if occurrences:
+                    first_occ = occurrences[0]
+                    first_pitch = first_occ.get('first_pitch', 60)
+                    pitches = [first_pitch]
+                    for iv in pitch_intervals:
+                        pitches.append(pitches[-1] + iv)
+                    canonical_pitches = pitches
+
+                    # Extract rhythm/velocity/duration ratios from first occurrence
+                    rhythm_ratios = first_occ.get('rhythm_ratios', [])
+                    velocity_ratios = first_occ.get('velocity_ratios', [])
+                    duration_ratios = first_occ.get('duration_ratios', [])
+
+            pitch_classes = [p % 12 for p in canonical_pitches] if canonical_pitches else []
+
+            all_rules[prefixed_id] = {
+                'pitch_classes': pitch_classes,
+                'pitch_intervals': pitch_intervals,
+                'canonical_pitches': canonical_pitches,
+                'rhythm_bucket': rhythm_bucket,
+                'velocity_bucket': velocity_bucket,
+                'rhythm_ratios': rhythm_ratios,
+                'duration_ratios': duration_ratios,
+                'velocity_ratios': velocity_ratios,
+                'count': count,
+                'occurrences': [],
+                'is_hierarchical': is_hierarchical,
+                'left_child': prefixed_left,
+                'right_child': prefixed_right,
+                'connector_interval': interval if is_hierarchical else 0,
+                'contour': (interval, rhythm_bucket, velocity_bucket),
+                'is_pure_contour': True,
+                'is_per_instrument': True,  # v54 marker
+                'gm_program': gm,  # Which instrument owns this pattern
+            }
+
+        # Add occurrences with full timing data
+        if grammar.rule_occurrences:
+            for rule_id, occurrences in grammar.rule_occurrences.items():
+                prefixed_id = f"GM{gm}_{rule_id}"
+                if prefixed_id not in all_rules:
+                    continue
+
+                for occ in occurrences:
+                    track_idx = occ.get('track_idx', -1)
+                    orig_pos = occ.get('orig_pos', -1)
+
+                    if track_idx < 0 or orig_pos < 0:
+                        continue
+
+                    piece_id = track_to_piece.get(track_idx, f'track_{track_idx}')
+                    midi_track_id = track_to_midi_id.get(track_idx, track_idx)
+
+                    occ_data = {
+                        'piece_id': piece_id,
+                        'track_id': midi_track_id,
+                        'gm_program': gm,
+                        'is_drum': False,
+                        'position': orig_pos,
+                        'last_position': occ.get('last_orig_pos', orig_pos),
+                        'first_pitch': occ.get('first_pitch', 60),
+                        'last_pitch': occ.get('last_pitch', 60),
+                        'onset_time': occ.get('onset_time', 0),  # For simultaneity
+                        'tau_offset': occ.get('first_ioi', 480),
+                        'pitch_offset': occ.get('first_pitch', 60) % 12,
+                        # Store per-note timing for full expression
+                        'rhythm_ratios': occ.get('rhythm_ratios', []),
+                        'velocity_ratios': occ.get('velocity_ratios', []),
+                        'duration_ratios': occ.get('duration_ratios', []),
+                    }
+                    all_rules[prefixed_id]['occurrences'].append(occ_data)
+
+    if verbose:
+        total_occurrences = sum(len(r['occurrences']) for r in all_rules.values())
+        hier_count = sum(1 for r in all_rules.values() if r['is_hierarchical'])
+        print(f"  Converted {len(all_rules)} patterns ({hier_count} hierarchical)")
+        print(f"    Total occurrences: {total_occurrences:,}")
+
+        # Show per-instrument breakdown
+        by_gm = defaultdict(int)
+        for r in all_rules.values():
+            by_gm[r['gm_program']] += 1
+        for gm, count in sorted(by_gm.items()):
+            print(f"    GM {gm}: {count} patterns")
+
+    return {'rules': all_rules, 'n_rules': len(all_rules)}
 
 
 def convert_pure_contour_grammar_to_rules(
@@ -278,7 +538,20 @@ def save_checkpoint(
     feature_importance_discovery: dict = None,
     verbose: bool = True
 ):
-    """Save checkpoint with full data."""
+    """Save checkpoint with full data.
+
+    For per-instrument mode (v54):
+    - Version is 'v54_per_instrument'
+    - Pattern IDs are GM-prefixed (e.g., GM32_129)
+    - Each pattern has gm_program field
+    - Patterns have is_per_instrument=True marker
+
+    For unified mode (v53):
+    - Version is 'v53_pure_contour'
+    - Pattern IDs are numeric (e.g., 129)
+    - All instruments share same pattern vocabulary
+    """
+    is_per_instrument = stats.get('per_instrument', False)
 
     def convert_numpy(obj):
         if isinstance(obj, dict):
@@ -322,18 +595,30 @@ def save_checkpoint(
     with open(patterns_path, 'w') as f:
         json.dump(rules_data, f, indent=2)
 
-    # Convert tensors to numpy
-    final_sequence = grammar.final_sequence.cpu().numpy() if hasattr(grammar.final_sequence, 'cpu') else np.array(grammar.final_sequence)
-    rule_contours = grammar.rule_contours.cpu().numpy() if hasattr(grammar.rule_contours, 'cpu') else np.array(grammar.rule_contours)
-    rule_children = grammar.rule_children.cpu().numpy() if hasattr(grammar.rule_children, 'cpu') else np.array(grammar.rule_children)
-    rule_counts = grammar.rule_counts.cpu().numpy() if hasattr(grammar.rule_counts, 'cpu') else np.array(grammar.rule_counts)
+    # Convert tensors to numpy (handle None grammar for per-instrument mode)
+    if grammar is not None:
+        final_sequence = grammar.final_sequence.cpu().numpy() if hasattr(grammar.final_sequence, 'cpu') else np.array(grammar.final_sequence)
+        rule_contours = grammar.rule_contours.cpu().numpy() if hasattr(grammar.rule_contours, 'cpu') else np.array(grammar.rule_contours)
+        rule_children = grammar.rule_children.cpu().numpy() if hasattr(grammar.rule_children, 'cpu') else np.array(grammar.rule_children)
+        rule_counts = grammar.rule_counts.cpu().numpy() if hasattr(grammar.rule_counts, 'cpu') else np.array(grammar.rule_counts)
+    else:
+        # For per-instrument mode, we don't have a single unified grammar
+        # Store empty arrays - the actual data is in the patterns JSON
+        final_sequence = np.array([])
+        rule_contours = np.array([])
+        rule_children = np.array([])
+        rule_counts = np.array([])
+
+    # Set version based on mode
+    version = 'v54_per_instrument' if is_per_instrument else 'v53_pure_contour'
 
     data = {
-        'version': np.array(['v53_pure_contour']),
-        'n_terminals': np.array([grammar.n_terminals]),
-        'n_rules': np.array([grammar.n_rules]),
-        'original_length': np.array([grammar.original_length]),
-        'compressed_length': np.array([grammar.compressed_length]),
+        'version': np.array([version]),
+        'is_per_instrument': np.array([is_per_instrument]),
+        'n_terminals': np.array([grammar.n_terminals if grammar else 128]),
+        'n_rules': np.array([grammar.n_rules if grammar else grammar_result['n_rules']]),
+        'original_length': np.array([grammar.original_length if grammar else 0]),
+        'compressed_length': np.array([grammar.compressed_length if grammar else 0]),
         'final_sequence': final_sequence,
         'rule_contours': rule_contours,
         'rule_children': rule_children,
@@ -390,28 +675,45 @@ def save_checkpoint(
 
 def run_pure_contour_pipeline(
     corpus_path: str,
-    output_path: str = 'checkpoint_v53_pure_contour.npz',
+    output_path: str = 'checkpoint_v54_per_instrument.npz',
     max_files: int = 100,
     min_count: int = 2,
     max_rules: int = 5000,
     device: str = 'cuda',
     workers: int = 4,
+    per_instrument: bool = True,  # v54: Per-instrument pattern discovery
     verbose: bool = True
 ) -> dict:
-    """Run the full pure contour pipeline with all phases."""
+    """Run the full pure contour pipeline with all phases.
+
+    Args:
+        corpus_path: Path to MIDI corpus directory
+        output_path: Output checkpoint path
+        max_files: Maximum number of files to process
+        min_count: Minimum pair count for rule creation
+        max_rules: Maximum number of rules (total or per-instrument)
+        device: 'cuda' or 'cpu'
+        workers: Number of parallel workers for loading
+        per_instrument: If True, run Re-Pair separately per GM program (v54)
+                       If False, run unified Re-Pair on all tracks (v53)
+        verbose: Print progress
+    """
 
     total_start = time.time()
     stats = {}
 
+    version = "v54 (Per-Instrument)" if per_instrument else "v53 (Unified)"
+
     if verbose:
         print("=" * 70)
-        print("Pure Contour Re-Pair Pipeline (v53)")
+        print(f"Pure Contour Re-Pair Pipeline {version}")
         print("=" * 70)
         print(f"Corpus: {corpus_path}")
         print(f"Output: {output_path}")
         print(f"Max files: {max_files}")
-        print(f"Max rules: {max_rules}")
+        print(f"Max rules: {max_rules} {'per instrument' if per_instrument else 'total'}")
         print(f"Device: {device}")
+        print(f"Per-instrument: {per_instrument}")
         print()
 
     # =========================================================================
@@ -449,31 +751,76 @@ def run_pure_contour_pipeline(
         print(f"  Loaded {len(all_tracks)} tracks with {stats['n_notes']:,} notes in {stats['phase1_time']:.1f}s")
 
     # =========================================================================
-    # PHASE 2: Build pure contour grammar
+    # PHASE 2: Build pure contour grammar (per-instrument or unified)
     # =========================================================================
     phase_start = time.time()
-    if verbose:
-        print("\n[Phase 2] Building pure contour grammar...", flush=True)
 
-    grammar = build_pure_contour_grammar(
-        all_tracks,
-        device=device,
-        min_pair_count=min_count,
-        max_rules=max_rules,
-        verbose=verbose,
-    )
+    if per_instrument:
+        # v54: Per-instrument pattern discovery
+        if verbose:
+            print("\n[Phase 2] Building per-instrument grammars (v54)...", flush=True)
 
-    grammar_result = convert_pure_contour_grammar_to_rules(grammar, all_tracks, verbose)
+        tracks_by_gm = group_tracks_by_instrument(all_tracks)
+        grammars_by_gm = build_per_instrument_grammars(
+            all_tracks,
+            device=device,
+            min_pair_count=min_count,
+            max_rules_per_instrument=max_rules,
+            verbose=verbose,
+        )
 
-    stats['n_patterns'] = grammar_result['n_rules']
-    stats['compression'] = grammar.compression_ratio()
+        grammar_result = convert_per_instrument_grammars_to_rules(
+            grammars_by_gm, tracks_by_gm, verbose
+        )
+
+        # Store grammars for later use (e.g., checkpoint saving)
+        # Use the first grammar for compatibility, but mark as multi-grammar
+        grammar = list(grammars_by_gm.values())[0] if grammars_by_gm else None
+        stats['n_instruments'] = len(grammars_by_gm)
+        stats['per_instrument'] = True
+
+        # Compute aggregate compression
+        total_original = sum(g.original_length for g in grammars_by_gm.values())
+        total_compressed = sum(g.compressed_length for g in grammars_by_gm.values())
+        stats['compression'] = total_original / max(1, total_compressed)
+        stats['n_patterns'] = grammar_result['n_rules']
+
+        if verbose:
+            print(f"\n  Per-instrument grammar stats:")
+            print(f"    Instruments: {len(grammars_by_gm)}")
+            print(f"    Total patterns: {grammar_result['n_rules']}")
+            print(f"    Aggregate compression: {stats['compression']:.2f}x")
+            for gm, g in sorted(grammars_by_gm.items()):
+                print(f"    GM {gm}: {g.n_rules} patterns, {g.compression_ratio():.1f}x")
+
+    else:
+        # v53: Unified grammar (original behavior)
+        if verbose:
+            print("\n[Phase 2] Building unified grammar (v53)...", flush=True)
+
+        grammar = build_pure_contour_grammar(
+            all_tracks,
+            device=device,
+            min_pair_count=min_count,
+            max_rules=max_rules,
+            verbose=verbose,
+        )
+
+        grammar_result = convert_pure_contour_grammar_to_rules(grammar, all_tracks, verbose)
+        grammars_by_gm = None
+        tracks_by_gm = None
+
+        stats['n_patterns'] = grammar_result['n_rules']
+        stats['compression'] = grammar.compression_ratio()
+        stats['per_instrument'] = False
+
+        if verbose:
+            print(f"\n  Grammar stats:")
+            print(f"    Terminals: {grammar.n_terminals} (rhythm × velocity buckets)")
+            print(f"    Rules: {grammar.n_rules}")
+            print(f"    Compression: {grammar.compression_ratio():.2f}x")
+
     stats['phase2_time'] = time.time() - phase_start
-
-    if verbose:
-        print(f"\n  Grammar stats:")
-        print(f"    Terminals: {grammar.n_terminals} (rhythm × velocity buckets)")
-        print(f"    Rules: {grammar.n_rules}")
-        print(f"    Compression: {grammar.compression_ratio():.2f}x")
 
     # =========================================================================
     # PHASE 3: Analyze patterns
@@ -936,20 +1283,34 @@ def run_pure_contour_pipeline(
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Pure Contour Re-Pair Pipeline (v53)')
+    parser = argparse.ArgumentParser(
+        description='Pure Contour Re-Pair Pipeline (v54 - Per-Instrument)',
+        epilog='''
+Examples:
+  # Per-instrument mode (recommended for generation)
+  python run_pure_contour_pipeline.py /path/to/corpus --per-instrument -o checkpoint_v54.npz
+
+  # Unified mode (original v53 behavior, for analysis)
+  python run_pure_contour_pipeline.py /path/to/corpus --no-per-instrument -o checkpoint_v53.npz
+        '''
+    )
     parser.add_argument('corpus_path', help='Path to MIDI corpus directory')
-    parser.add_argument('--output', '-o', default='checkpoint_v53_pure_contour.npz',
+    parser.add_argument('--output', '-o', default='checkpoint_v54_per_instrument.npz',
                        help='Output checkpoint path')
     parser.add_argument('--max-files', type=int, default=100,
                        help='Maximum number of files to process')
     parser.add_argument('--max-rules', type=int, default=5000,
-                       help='Maximum number of rules to discover')
+                       help='Maximum number of rules (per instrument if --per-instrument)')
     parser.add_argument('--min-count', type=int, default=2,
                        help='Minimum pair count for rule creation')
     parser.add_argument('--device', default='cuda',
                        help='Device for computation (cuda/cpu)')
     parser.add_argument('--workers', type=int, default=4,
                        help='Number of parallel workers for loading')
+    parser.add_argument('--per-instrument', action='store_true', default=True,
+                       help='Run Re-Pair separately per instrument (v54, default)')
+    parser.add_argument('--no-per-instrument', dest='per_instrument', action='store_false',
+                       help='Run unified Re-Pair on all tracks (v53 behavior)')
     args = parser.parse_args()
 
     run_pure_contour_pipeline(
@@ -960,6 +1321,7 @@ def main():
         max_rules=args.max_rules,
         device=args.device,
         workers=args.workers,
+        per_instrument=args.per_instrument,
         verbose=True,
     )
 
