@@ -258,6 +258,17 @@ class RePairPureContour:
         n_terminals = self.n_terminals  # 128 = 16 * 8
         separator = n_terminals  # Use 128 as track separator
 
+        # Store original track data for per-note ratio computation in occurrences
+        self.original_tracks = {}
+        for track_idx, (pitches, iois, vels) in enumerate(zip(pitch_sequences, ioi_sequences, velocity_sequences)):
+            durs = duration_sequences[track_idx] if duration_sequences else [480] * len(pitches)
+            self.original_tracks[track_idx] = {
+                'pitches': list(pitches),
+                'iois': list(iois),
+                'velocities': list(vels),
+                'durations': list(durs),
+            }
+
         # Concatenate all sequences with separators
         all_terminal = []      # Terminal = (rhythm_bucket, velocity_bucket) encoded
         all_pitch = []         # MIDI pitch for reconstruction
@@ -590,18 +601,61 @@ class RePairPureContour:
 
         final_positions = match_positions[keep_mask]
 
-        # Collect occurrences with first_pitch and timing data
+        # Collect occurrences with first_pitch, timing data, and per-note ratios
         occurrences = []
         for pos in final_positions.cpu().numpy():
+            track_idx = seq_track_idx[pos].item()
+            orig_pos_start = seq_orig_pos[pos].item()
+            orig_pos_end = seq_last_orig_pos[pos + 1].item()
+
             occ = {
-                'track_idx': seq_track_idx[pos].item(),
-                'orig_pos': seq_orig_pos[pos].item(),
-                'last_orig_pos': seq_last_orig_pos[pos + 1].item(),
+                'track_idx': track_idx,
+                'orig_pos': orig_pos_start,
+                'last_orig_pos': orig_pos_end,
                 'first_pitch': seq_first_pitch[pos].item(),  # MIDI pitch 0-127
                 'last_pitch': seq_last_pitch[pos + 1].item(),
                 'onset_time': seq_onset[pos].item(),
                 'first_ioi': seq_ioi[pos].item(),  # IOI of first note (for playback)
             }
+
+            # Compute per-note ratios from original track data if available
+            if hasattr(self, 'original_tracks') and track_idx >= 0:
+                track_data = self.original_tracks.get(track_idx, {})
+                if track_data and orig_pos_start >= 0 and orig_pos_end >= orig_pos_start:
+                    # Extract the note range for this pattern
+                    n_notes = orig_pos_end - orig_pos_start + 1
+
+                    # Get original IOIs, velocities, durations for this range
+                    track_iois = track_data.get('iois', [])
+                    track_vels = track_data.get('velocities', [])
+                    track_durs = track_data.get('durations', [])
+
+                    # Compute rhythm ratios (IOI[i+1] / IOI[i])
+                    if len(track_iois) > orig_pos_end:
+                        iois_slice = track_iois[orig_pos_start:orig_pos_end + 1]
+                        if len(iois_slice) > 1:
+                            rhythm_ratios = []
+                            for i in range(len(iois_slice) - 1):
+                                if iois_slice[i] > 0:
+                                    rhythm_ratios.append(iois_slice[i + 1] / iois_slice[i])
+                                else:
+                                    rhythm_ratios.append(1.0)
+                            occ['rhythm_ratios'] = rhythm_ratios
+
+                    # Compute velocity ratios (relative to first note)
+                    if len(track_vels) > orig_pos_end:
+                        vels_slice = track_vels[orig_pos_start:orig_pos_end + 1]
+                        if len(vels_slice) > 0 and vels_slice[0] > 0:
+                            velocity_ratios = [v / vels_slice[0] for v in vels_slice]
+                            occ['velocity_ratios'] = velocity_ratios
+
+                    # Compute duration ratios (relative to first note)
+                    if len(track_durs) > orig_pos_end:
+                        durs_slice = track_durs[orig_pos_start:orig_pos_end + 1]
+                        if len(durs_slice) > 0 and durs_slice[0] > 0:
+                            duration_ratios = [d / durs_slice[0] for d in durs_slice]
+                            occ['duration_ratios'] = duration_ratios
+
             occurrences.append(occ)
 
         # Create new sequence with replacements
