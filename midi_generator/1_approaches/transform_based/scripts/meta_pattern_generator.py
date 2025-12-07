@@ -12,13 +12,17 @@ GPU EFFICIENCY PRINCIPLE:
   - GENERATE phase: CPU with O(1) dictionary lookups (no Python loops)
   - All heavy compute happens ONCE during initialization
 
-PROBABILISTIC SAMPLING LEVELS:
-  Level 1: Frequency weighting     P(pattern) from occurrence counts
-  Level 2: Transition probability  P(pattern_B | pattern_A, instrument)
-  Level 3: Position conditioning   P(pattern | position_in_piece, instrument)
-  Level 4: Co-occurrence           P(pattern | concurrent_patterns_on_other_instruments)
-  Level 5: Style conditioning      P(pattern | style_cluster_z) - per-piece consistency
-  Level 6: Equivalence classes     P(pattern | substitution_class) - branching non-terminals
+PROBABILISTIC SAMPLING ARCHITECTURE:
+  PPM* (replaces Levels 1-2):
+    - Variable-order Markov model P(pattern | context_1..5, instrument)
+    - Uses longest matching context with KT smoothing
+    - Information-theoretic foundation (same as IDyOM)
+
+  Musical Conditioning (Levels 3-6):
+    Level 3: Position conditioning   P(pattern | position_in_piece, instrument)
+    Level 4: Co-occurrence           P(pattern | concurrent_patterns_on_other_instruments)
+    Level 5: Style conditioning      P(pattern | style_cluster_z) - per-piece consistency
+    Level 6: Chord conditioning      P(pattern | chord_root, instrument) - harmonic context
 
 ADDRESSING THE SLP → PCFG GAP:
   1. Pattern Equivalence Classes: Group patterns by substitutability (GPU K-means)
@@ -118,6 +122,178 @@ class ShortTermMemory:
         self.pattern_use_count = defaultdict(int)
 
 
+class PatternPPM:
+    """Prediction by Partial Matching over pattern sequences.
+
+    Implements variable-order Markov model with KT (Krichevsky-Trofimov) smoothing.
+    This replaces ad-hoc frequency (Level 1) and transition (Level 2) weights with
+    a principled information-theoretic model.
+
+    Key advantages over fixed bigram:
+    - Uses longest matching context (up to max_order)
+    - Graceful fallback via escape mechanism (PPM*)
+    - KT smoothing handles unseen transitions properly
+    - Single hyperparameter (max_order) vs multiple weights
+
+    References:
+    - Cleary & Witten (1984) "Data Compression Using Adaptive Coding and Partial String Matching"
+    - IDyOM (Pearce 2005) uses PPM for melodic expectation
+    """
+
+    def __init__(self, max_order: int = 5):
+        """Initialize PPM model.
+
+        Args:
+            max_order: Maximum context length (5 = looks back 5 patterns)
+        """
+        self.max_order = max_order
+        # counts[gm][context_tuple][next_pattern] = count
+        self.counts: Dict[int, Dict[Tuple[str, ...], Dict[str, int]]] = defaultdict(
+            lambda: defaultdict(lambda: defaultdict(int))
+        )
+        # total[gm][context_tuple] = total count for that context
+        self.totals: Dict[int, Dict[Tuple[str, ...], int]] = defaultdict(
+            lambda: defaultdict(int)
+        )
+        # vocabulary per instrument for KT smoothing
+        self.vocab_size: Dict[int, int] = defaultdict(int)
+        self.vocab: Dict[int, Set[str]] = defaultdict(set)
+
+    def train(self, piece_gm_sequences: Dict[str, Dict[int, List[Tuple[float, str]]]]):
+        """Train PPM model on pattern sequences from corpus.
+
+        Args:
+            piece_gm_sequences: {piece_id: {gm: [(onset, pattern_id), ...]}}
+        """
+        # First pass: collect vocabulary per instrument
+        for piece_id, gm_seqs in piece_gm_sequences.items():
+            for gm, seq in gm_seqs.items():
+                for _, pattern_id in seq:
+                    self.vocab[gm].add(pattern_id)
+
+        for gm, patterns in self.vocab.items():
+            self.vocab_size[gm] = len(patterns)
+
+        # Second pass: count n-grams for all orders
+        for piece_id, gm_seqs in piece_gm_sequences.items():
+            for gm, seq in gm_seqs.items():
+                # Extract pattern sequence (sorted by onset)
+                sorted_seq = sorted(seq, key=lambda x: x[0])
+                patterns = [p[1] for p in sorted_seq]
+
+                # Count for all orders (0 to max_order)
+                for i in range(len(patterns)):
+                    next_pattern = patterns[i]
+
+                    for order in range(self.max_order + 1):
+                        if i >= order:
+                            if order == 0:
+                                context = ()  # Unigram
+                            else:
+                                context = tuple(patterns[i - order:i])
+
+                            self.counts[gm][context][next_pattern] += 1
+                            self.totals[gm][context] += 1
+
+    def get_distribution(
+        self,
+        context: List[str],
+        gm: int,
+        escape_prob: float = 0.1
+    ) -> Dict[str, float]:
+        """Get probability distribution over next pattern using PPM* escape.
+
+        Uses longest matching context, with escape to shorter contexts for
+        patterns not seen in that context.
+
+        Args:
+            context: Recent pattern history (most recent last)
+            gm: Instrument GM program
+            escape_prob: Base escape probability (lower = trust longer context more)
+
+        Returns:
+            Dict mapping pattern_id -> probability
+        """
+        if gm not in self.counts:
+            return {}
+
+        distribution = {}
+        remaining_prob = 1.0
+
+        # Try each order from longest to shortest (PPM* Method D)
+        for order in range(min(self.max_order, len(context)), -1, -1):
+            if order == 0:
+                ctx = ()
+            else:
+                ctx = tuple(context[-order:])
+
+            if ctx in self.counts[gm]:
+                ctx_counts = self.counts[gm][ctx]
+                ctx_total = self.totals[gm][ctx]
+
+                # KT estimator: (count + 0.5) / (total + vocab_size * 0.5)
+                vocab_sz = max(1, self.vocab_size[gm])
+                denominator = ctx_total + vocab_sz * 0.5
+
+                # Patterns seen in this context get probability
+                for pattern, count in ctx_counts.items():
+                    if pattern not in distribution:
+                        kt_prob = (count + 0.5) / denominator
+                        distribution[pattern] = remaining_prob * kt_prob
+
+                # Escape probability for unseen patterns
+                escape_mass = remaining_prob * escape_prob
+                remaining_prob = escape_mass
+
+        # Distribute remaining mass uniformly over vocabulary (smoothing)
+        if remaining_prob > 0 and gm in self.vocab:
+            unseen_patterns = self.vocab[gm] - set(distribution.keys())
+            if unseen_patterns:
+                prob_per_unseen = remaining_prob / len(unseen_patterns)
+                for pattern in unseen_patterns:
+                    distribution[pattern] = prob_per_unseen
+
+        # Normalize
+        total = sum(distribution.values())
+        if total > 0:
+            distribution = {p: prob / total for p, prob in distribution.items()}
+
+        return distribution
+
+    def sample_next(self, context: List[str], gm: int) -> Optional[str]:
+        """Sample next pattern from PPM distribution.
+
+        Args:
+            context: Recent pattern history
+            gm: Instrument GM program
+
+        Returns:
+            Sampled pattern ID
+        """
+        dist = self.get_distribution(context, gm)
+        if not dist:
+            return None
+
+        patterns = list(dist.keys())
+        probs = list(dist.values())
+        return random.choices(patterns, weights=probs)[0]
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Return training statistics."""
+        stats = {
+            'max_order': self.max_order,
+            'n_instruments': len(self.counts),
+            'contexts_per_order': defaultdict(int),
+        }
+
+        for gm in self.counts:
+            for ctx in self.counts[gm]:
+                stats['contexts_per_order'][len(ctx)] += 1
+
+        stats['contexts_per_order'] = dict(stats['contexts_per_order'])
+        return stats
+
+
 @dataclass
 class TransformRelation:
     """A learned transform relationship between patterns."""
@@ -156,13 +332,16 @@ class MetaPatternGenerator:
         self.build_rest_duration_index()
 
         # Build probabilistic sampling indices
-        self.build_transition_index()       # Level 2: P(next | current, gm)
+        self.build_transition_index()       # Level 2: P(next | current, gm) - kept for fallback
         self.build_position_index()         # Level 3: P(pattern | position, gm)
         self.build_cooccurrence_index()     # Level 4: P(pattern | concurrent_patterns)
         self.build_form_template_index()    # For global repetition structure
         self.build_instrument_role_index()  # Derive lead/follower from corpus
 
-        # NEW: GPU-accelerated PCFG conversion (SLP → PCFG)
+        # PPM* replaces Levels 1-2 with principled variable-order Markov model
+        self.build_ppm_model()              # P(pattern | context) with KT smoothing
+
+        # GPU-accelerated PCFG conversion (SLP → PCFG)
         self.build_pattern_equivalence_classes()   # Branching non-terminals
         self.build_style_clusters()                # Per-piece style variable z
         self.build_chord_skeleton_model()          # Hierarchical generation
@@ -595,6 +774,39 @@ class MetaPatternGenerator:
             for gm in list(self.transition_probs.keys())[:3]:
                 n_patterns = len(self.transition_probs[gm])
                 print(f"    GM {gm}: {n_patterns} patterns with transitions")
+
+    def build_ppm_model(self, max_order: int = 5):
+        """Build PPM* (Prediction by Partial Matching) model over pattern sequences.
+
+        REPLACES Levels 1-2 with principled variable-order Markov model.
+
+        PPM* advantages over fixed bigram:
+        - Uses longest matching context (order 5 looks back 5 patterns)
+        - Graceful fallback via escape mechanism for unseen contexts
+        - KT smoothing handles unseen transitions properly
+        - Information-theoretic foundation (same as IDyOM)
+        - Single hyperparameter (max_order) vs multiple ad-hoc weights
+
+        This is THE key improvement for addressing "locally good, globally random":
+        longer context = better global coherence.
+
+        Args:
+            max_order: Maximum context length (default 5 = looks back 5 patterns)
+        """
+        if self.verbose:
+            print(f"Building PPM* model (max_order={max_order})...")
+
+        self.ppm = PatternPPM(max_order=max_order)
+        self.ppm.train(self.piece_gm_sequences)
+
+        # Store pattern context for generation (per instrument)
+        self.pattern_context: Dict[int, List[str]] = defaultdict(list)
+
+        if self.verbose:
+            stats = self.ppm.get_stats()
+            print(f"  Instruments: {stats['n_instruments']}")
+            for order, count in sorted(stats['contexts_per_order'].items()):
+                print(f"    Order {order}: {count:,} unique contexts")
 
     def build_position_index(self):
         """Build position-conditioned probabilities: P(pattern | position_in_piece, instrument).
@@ -1426,21 +1638,23 @@ class MetaPatternGenerator:
         style_id: int = None,
         chord_root: int = None,
         pattern_position: int = 0,
-        transition_weight: float = 0.25,
+        ppm_weight: float = 0.40,
         position_weight: float = 0.15,
-        frequency_weight: float = 0.05,
         cooccurrence_weight: float = 0.20,
-        style_weight: float = 0.15,
-        stm_weight: float = 0.10,
+        style_weight: float = 0.10,
+        stm_weight: float = 0.05,
         chord_weight: float = 0.10,
     ) -> Optional[str]:
-        """Sample next pattern using 6-level probabilistic PCFG sampling.
+        """Sample next pattern using PPM* + musical conditioning.
 
         This is the core of the SLP → PCFG conversion. Combines:
 
-        CORPUS-DERIVED LEVELS (Long-Term Model):
-        - Level 1: Frequency weighting P(pattern) - base popularity
-        - Level 2: Transition probability P(pattern | prev_pattern, instrument)
+        PPM* (replaces Levels 1-2):
+        - Variable-order Markov model P(pattern | context_1..5, instrument)
+        - Uses longest matching context with KT smoothing
+        - Information-theoretic foundation (same as IDyOM)
+
+        MUSICAL CONDITIONING (Levels 3-6):
         - Level 3: Position conditioning P(pattern | position_in_piece, instrument)
         - Level 4: Co-occurrence P(pattern | concurrent_patterns_on_other_instruments)
         - Level 5: Style conditioning P(pattern | style_z) - per-piece consistency
@@ -1449,40 +1663,44 @@ class MetaPatternGenerator:
         WITHIN-PIECE (Short-Term Model):
         - STM reuse boost: Patterns used at equivalent phrase positions get boost
 
-        All weights are configurable but default to balanced contribution.
-        All lookups are O(1) from precomputed indices.
-
         Args:
-            current_pattern: Current pattern ID (for transitions)
+            current_pattern: Current pattern ID (for context)
             position: Normalized position in piece [0, 1]
             gm_program: Instrument GM program
             concurrent_patterns: Dict of {other_gm: pattern_id} for co-occurrence
             style_id: Style cluster ID (sampled at piece start)
             chord_root: Current chord root (0-11) for harmonic conditioning
             pattern_position: Integer position for STM (phrase position tracking)
-            *_weight: Contribution weights for each level (should sum to ~1.0)
+            ppm_weight: Weight for PPM* sequential prediction (default 0.40)
+            *_weight: Contribution weights for each level
 
         Returns:
             Sampled pattern ID, or None if no data available
         """
         candidates = {}  # pattern_id -> combined score
 
-        # Level 1: Base frequency (unigram) - O(N) but N is small per instrument
-        if gm_program in self.pattern_counts_by_gm:
-            total = sum(self.pattern_counts_by_gm[gm_program].values())
-            for pattern_id, count in self.pattern_counts_by_gm[gm_program].items():
-                candidates[pattern_id] = frequency_weight * (count / total)
-
-        # Level 2: Transition probability - O(K) where K is patterns following current
-        if gm_program in self.transition_probs and current_pattern:
-            current_key = str(current_pattern)
-            if current_key in self.transition_probs[gm_program]:
-                next_patterns, probs = self.transition_probs[gm_program][current_key]
-                for pattern_id, prob in zip(next_patterns, probs):
-                    if pattern_id in candidates:
-                        candidates[pattern_id] += transition_weight * prob
-                    else:
-                        candidates[pattern_id] = transition_weight * prob
+        # PPM*: Variable-order Markov model (replaces Levels 1-2)
+        # Uses context from self.pattern_context[gm_program]
+        if hasattr(self, 'ppm'):
+            context = self.pattern_context.get(gm_program, [])
+            ppm_dist = self.ppm.get_distribution(context, gm_program)
+            for pattern_id, prob in ppm_dist.items():
+                candidates[pattern_id] = ppm_weight * prob
+        else:
+            # Fallback to old Level 1-2 if PPM not available
+            if gm_program in self.pattern_counts_by_gm:
+                total = sum(self.pattern_counts_by_gm[gm_program].values())
+                for pattern_id, count in self.pattern_counts_by_gm[gm_program].items():
+                    candidates[pattern_id] = ppm_weight * 0.3 * (count / total)
+            if gm_program in self.transition_probs and current_pattern:
+                current_key = str(current_pattern)
+                if current_key in self.transition_probs[gm_program]:
+                    next_patterns, probs = self.transition_probs[gm_program][current_key]
+                    for pattern_id, prob in zip(next_patterns, probs):
+                        if pattern_id in candidates:
+                            candidates[pattern_id] += ppm_weight * 0.7 * prob
+                        else:
+                            candidates[pattern_id] = ppm_weight * 0.7 * prob
 
         # Level 3: Position conditioning - O(K) where K is patterns at this position
         bucket = int(min(position, 0.999) * self.n_position_buckets)
@@ -1557,6 +1775,14 @@ class MetaPatternGenerator:
             # Record in STM for future reuse boosting
             if hasattr(self, 'stm'):
                 self.stm.record(sampled, pattern_position)
+
+            # Update PPM context for this instrument (keep last max_order patterns)
+            if hasattr(self, 'pattern_context') and hasattr(self, 'ppm'):
+                self.pattern_context[gm_program].append(sampled)
+                # Trim to max_order to prevent unbounded growth
+                max_ctx = self.ppm.max_order
+                if len(self.pattern_context[gm_program]) > max_ctx:
+                    self.pattern_context[gm_program] = self.pattern_context[gm_program][-max_ctx:]
 
             return sampled
 
@@ -1788,6 +2014,10 @@ class MetaPatternGenerator:
         # Reset Short-Term Memory for new piece
         if hasattr(self, 'stm'):
             self.stm.reset()
+
+        # Reset PPM context for new piece
+        if hasattr(self, 'pattern_context'):
+            self.pattern_context = defaultdict(list)
 
         # Sample style variable z at piece start (Compound PCFG)
         style_id = self.sample_style() if hasattr(self, 'sample_style') else None
