@@ -126,22 +126,27 @@ def build_per_instrument_grammars(
     device: str = 'cuda',
     min_pair_count: int = 2,
     max_rules_per_instrument: int = 2000,
+    top_instruments: int = 15,
+    max_notes_per_instrument: int = 100000,  # Cap notes to avoid slow processing
     verbose: bool = True,
 ) -> Dict[int, 'PureContourGrammar']:
-    """Build separate Re-Pair grammar for each instrument.
+    """Build SEPARATE Re-Pair grammar for each instrument.
 
-    KEY CHANGE FROM v53:
-    Instead of one grammar for all tracks, we build one per GM program.
-    This ensures:
-    - Bass patterns are ONLY from bass tracks
-    - Piano patterns preserve chord structure
-    - Melody patterns are instrument-specific
+    TRUE per-instrument isolation:
+    - Bass [+2, +5] → GM32_129
+    - Trumpet [+2, +5] → GM56_129 (DIFFERENT pattern!)
+
+    Each instrument gets its own vocabulary. This enables:
+    - Role-specific generation (bass samples from bass-only patterns)
+    - Instrument idiom capture (patterns reflect instrument-specific usage)
+    - Clean PPM context (PPM[bass] has only bass patterns)
 
     Args:
         tracks: List of FactoredTrack objects
         device: 'cuda' or 'cpu'
         min_pair_count: Minimum pair frequency for rule creation
         max_rules_per_instrument: Max rules per instrument
+        top_instruments: Only process top N instruments by note count (0 = all)
         verbose: Print progress
 
     Returns:
@@ -150,27 +155,55 @@ def build_per_instrument_grammars(
     grammars_by_gm = {}
     tracks_by_gm = group_tracks_by_instrument(tracks)
 
-    if verbose:
-        print(f"  Building per-instrument grammars for {len(tracks_by_gm)} instruments...")
+    # Sort instruments by total note count (descending) and take top N
+    gm_note_counts = []
+    for gm, gm_tracks in tracks_by_gm.items():
+        n_notes = sum(len(t.pitch_classes) for t in gm_tracks)
+        n_tracks = len(gm_tracks)
+        gm_note_counts.append((gm, n_notes, n_tracks, gm_tracks))
 
-    for gm, gm_tracks in sorted(tracks_by_gm.items()):
-        if len(gm_tracks) < 2:
+    gm_note_counts.sort(key=lambda x: x[1], reverse=True)
+
+    if top_instruments > 0:
+        gm_note_counts = gm_note_counts[:top_instruments]
+        if verbose:
+            print(f"  Processing top {top_instruments} instruments by note count (of {len(tracks_by_gm)} total)...")
+    else:
+        if verbose:
+            print(f"  Building per-instrument grammars for {len(tracks_by_gm)} instruments...")
+
+    for gm, n_notes, n_tracks, gm_tracks in gm_note_counts:
+        if n_tracks < 2:
             if verbose:
-                print(f"    GM {gm}: Skipping (only {len(gm_tracks)} track)")
+                print(f"    GM {gm}: Skipping (only {n_tracks} track)")
             continue
 
-        n_notes = sum(len(t.pitch_classes) for t in gm_tracks)
         if n_notes < 10:
             if verbose:
                 print(f"    GM {gm}: Skipping (only {n_notes} notes)")
             continue
 
-        if verbose:
-            print(f"    GM {gm}: {len(gm_tracks)} tracks, {n_notes:,} notes...", end=' ', flush=True)
+        # Subsample tracks if too many notes
+        tracks_to_use = gm_tracks
+        if max_notes_per_instrument > 0 and n_notes > max_notes_per_instrument:
+            sorted_tracks = sorted(gm_tracks, key=lambda t: len(t.pitch_classes), reverse=True)
+            tracks_to_use = []
+            note_count = 0
+            for t in sorted_tracks:
+                if note_count + len(t.pitch_classes) > max_notes_per_instrument:
+                    break
+                tracks_to_use.append(t)
+                note_count += len(t.pitch_classes)
+            n_notes_used = note_count
+            if verbose:
+                print(f"    GM {gm}: {len(tracks_to_use)}/{n_tracks} tracks, {n_notes_used:,}/{n_notes:,} notes (capped)...", end=' ', flush=True)
+        else:
+            if verbose:
+                print(f"    GM {gm}: {n_tracks} tracks, {n_notes:,} notes...", end=' ', flush=True)
 
         try:
             grammar = build_pure_contour_grammar(
-                gm_tracks,
+                tracks_to_use,
                 device=device,
                 min_pair_count=min_pair_count,
                 max_rules=max_rules_per_instrument,
@@ -197,15 +230,10 @@ def convert_per_instrument_grammars_to_rules(
 
     Each pattern ID is prefixed with its GM program to ensure uniqueness:
     - GM32_129 = bass pattern 129
-    - GM56_129 = trumpet pattern 129 (DIFFERENT pattern!)
-
-    Also stores:
-    - onset_time for simultaneity reconstruction
-    - rhythm_ratios, velocity_ratios, duration_ratios for full expression
-    - gm_program to identify which instrument owns this pattern
+    - GM56_129 = trumpet pattern 129 (DIFFERENT pattern, same local ID!)
 
     Args:
-        grammars_by_gm: Dict of GM -> PureContourGrammar
+        grammars_by_gm: Dict of GM -> PureContourGrammar (separate grammar per instrument)
         tracks_by_gm: Dict of GM -> list of tracks
         verbose: Print progress
 
@@ -215,9 +243,7 @@ def convert_per_instrument_grammars_to_rules(
     all_rules = {}
 
     for gm, grammar in grammars_by_gm.items():
-        gm_tracks = tracks_by_gm.get(gm, [])
-
-        # Build track lookups for this instrument
+        # Build track lookups for this instrument's grammar
         track_to_piece = {}
         track_to_midi_id = {}
         for i, info in enumerate(grammar.track_info):
@@ -230,14 +256,14 @@ def convert_per_instrument_grammars_to_rules(
         for rule_idx in range(grammar.n_rules):
             rule_id = n_terminals + 1 + rule_idx
 
-            # Create GM-prefixed pattern ID
+            # Create GM-prefixed pattern ID (unique across all instruments)
             prefixed_id = f"GM{gm}_{rule_id}"
 
             # Get contour definition
             interval, rhythm_bucket, velocity_bucket = grammar.get_rule_contour(rule_id)
             count = grammar.rule_counts[rule_idx].item()
 
-            # Get children for hierarchical (also prefix them)
+            # Get children for hierarchical (also prefix with same GM)
             left_child, right_child = grammar.get_rule_children(rule_id)
             is_hierarchical = left_child >= 0
 
@@ -273,7 +299,6 @@ def convert_per_instrument_grammars_to_rules(
                         pitches.append(pitches[-1] + iv)
                     canonical_pitches = pitches
 
-                    # Extract rhythm/velocity/duration ratios from first occurrence
                     rhythm_ratios = first_occ.get('rhythm_ratios', [])
                     velocity_ratios = first_occ.get('velocity_ratios', [])
                     duration_ratios = first_occ.get('duration_ratios', [])
@@ -297,8 +322,8 @@ def convert_per_instrument_grammars_to_rules(
                 'connector_interval': interval if is_hierarchical else 0,
                 'contour': (interval, rhythm_bucket, velocity_bucket),
                 'is_pure_contour': True,
-                'is_per_instrument': True,  # v54 marker
-                'gm_program': gm,  # Which instrument owns this pattern
+                'is_per_instrument': True,
+                'gm_program': gm,
             }
 
         # Add occurrences with full timing data
@@ -322,15 +347,14 @@ def convert_per_instrument_grammars_to_rules(
                         'piece_id': piece_id,
                         'track_id': midi_track_id,
                         'gm_program': gm,
-                        'is_drum': False,
+                        'is_drum': gm == 128,
                         'position': orig_pos,
                         'last_position': occ.get('last_orig_pos', orig_pos),
                         'first_pitch': occ.get('first_pitch', 60),
                         'last_pitch': occ.get('last_pitch', 60),
-                        'onset_time': occ.get('onset_time', 0),  # For simultaneity
+                        'onset_time': occ.get('onset_time', 0),
                         'tau_offset': occ.get('first_ioi', 480),
                         'pitch_offset': occ.get('first_pitch', 60) % 12,
-                        # Store per-note timing for full expression
                         'rhythm_ratios': occ.get('rhythm_ratios', []),
                         'velocity_ratios': occ.get('velocity_ratios', []),
                         'duration_ratios': occ.get('duration_ratios', []),
@@ -682,6 +706,8 @@ def run_pure_contour_pipeline(
     device: str = 'cuda',
     workers: int = 4,
     per_instrument: bool = True,  # v54: Per-instrument pattern discovery
+    top_instruments: int = 15,    # Only process top N instruments (0 = all)
+    max_notes_per_instrument: int = 100000,  # Cap notes per instrument
     verbose: bool = True
 ) -> dict:
     """Run the full pure contour pipeline with all phases.
@@ -732,6 +758,10 @@ def run_pure_contour_pipeline(
 
     all_tracks = []
     n_failed = 0
+    n_loaded = 0
+    total_files = len(midi_files)
+    last_progress = 0
+
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(load_midi_factored, f): f for f in midi_files}
         for future in as_completed(futures):
@@ -739,8 +769,17 @@ def run_pure_contour_pipeline(
                 tracks = future.result()
                 if tracks:
                     all_tracks.extend(tracks)
+                n_loaded += 1
             except Exception as e:
                 n_failed += 1
+                n_loaded += 1
+
+            # Progress update every 10%
+            if verbose:
+                progress = (n_loaded * 100) // total_files
+                if progress >= last_progress + 10:
+                    last_progress = (progress // 10) * 10
+                    print(f"    Loading: {n_loaded}/{total_files} files ({progress}%), {len(all_tracks)} tracks...", flush=True)
 
     stats['n_tracks'] = len(all_tracks)
     stats['n_notes'] = sum(len(t.pitch_classes) for t in all_tracks)
@@ -766,6 +805,7 @@ def run_pure_contour_pipeline(
             device=device,
             min_pair_count=min_count,
             max_rules_per_instrument=max_rules,
+            top_instruments=top_instruments,
             verbose=verbose,
         )
 
@@ -1311,6 +1351,10 @@ Examples:
                        help='Run Re-Pair separately per instrument (v54, default)')
     parser.add_argument('--no-per-instrument', dest='per_instrument', action='store_false',
                        help='Run unified Re-Pair on all tracks (v53 behavior)')
+    parser.add_argument('--top-instruments', type=int, default=15,
+                       help='Only process top N instruments by note count (0=all, default=15)')
+    parser.add_argument('--max-notes', type=int, default=100000,
+                       help='Max notes per instrument (0=unlimited, default=100000)')
     args = parser.parse_args()
 
     run_pure_contour_pipeline(
@@ -1322,6 +1366,7 @@ Examples:
         device=args.device,
         workers=args.workers,
         per_instrument=args.per_instrument,
+        top_instruments=args.top_instruments,
         verbose=True,
     )
 

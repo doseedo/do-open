@@ -370,12 +370,12 @@ def load_midi_factored(midi_path: str) -> Optional[List[FactoredTrack]]:
         piece_id = Path(midi_path).stem
         ticks_per_beat = midi.ticks_per_beat
 
-        # Extract notes per track with full info
+        # Key: track_idx -> list of notes (each MIDI track = one instrument)
         tracks = defaultdict(list)
-        # Extract GM program per track (first program_change wins)
+        # Key: track_idx -> GM program (first program_change in each track)
         track_programs = {}
-        # Track which tracks contain channel 9 notes (for drum detection)
-        channel9_tracks = set()
+        # Tracks that have notes on channel 9 (drums)
+        drum_tracks = set()
 
         for track_idx, track in enumerate(midi.tracks):
             current_time = 0
@@ -384,20 +384,17 @@ def load_midi_factored(midi_path: str) -> Optional[List[FactoredTrack]]:
             for msg in track:
                 current_time += msg.time
 
-                # Capture GM program change (first one per track)
+                # Capture first program change in this track
                 if msg.type == 'program_change' and track_idx not in track_programs:
                     track_programs[track_idx] = msg.program
 
                 if msg.type == 'note_on' and msg.velocity > 0:
-                    # Channel 9 handling: don't skip blindly - collect for analysis
-                    # Bass and other melodic tracks can be incorrectly assigned to ch9
                     if msg.channel == 9:
-                        channel9_tracks.add(track_idx)
+                        drum_tracks.add(track_idx)
                     key = (msg.channel, msg.note)
                     active[key] = (current_time, msg.velocity)
 
                 elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
-                    # Process all channels - drum detection will happen post-hoc
                     key = (msg.channel, msg.note)
                     if key in active:
                         onset, velocity = active[key]
@@ -416,9 +413,9 @@ def load_midi_factored(midi_path: str) -> Optional[List[FactoredTrack]]:
                         ))
                         del active[key]
 
-        # Build FactoredTrack objects
+        # Build FactoredTrack objects - one per MIDI track
         results = []
-        for track_id, notes in tracks.items():
+        for track_idx, notes in tracks.items():
             if len(notes) < 3:  # Skip very short tracks
                 continue
 
@@ -426,8 +423,7 @@ def load_midi_factored(midi_path: str) -> Optional[List[FactoredTrack]]:
             notes = sorted(notes, key=lambda n: n.onset)
 
             # Detect drum track from channel 9 (MIDI channel 10 in 1-indexed)
-            # This is the standard General MIDI drum channel
-            is_drum = track_id in channel9_tracks
+            is_drum = track_idx in drum_tracks
 
             # Build factor arrays
             pitch_classes = np.array([n.pitch_class for n in notes], dtype=np.int32)
@@ -445,12 +441,16 @@ def load_midi_factored(midi_path: str) -> Optional[List[FactoredTrack]]:
             else:
                 rhythm_ioi = np.array([], dtype=np.int64)
 
-            # Get GM program (default 0 = Acoustic Grand Piano)
-            gm_program = track_programs.get(track_id, 0)
+            # Get GM program from this track's program change
+            # Channel 9 = drums = GM program 128 (special marker)
+            if is_drum:
+                gm_program = 128  # Special marker for drums
+            else:
+                gm_program = track_programs.get(track_idx, 0)  # Default: piano
 
             results.append(FactoredTrack(
                 piece_id=piece_id,
-                track_id=track_id,
+                track_id=track_idx,
                 notes=notes,
                 pitch_classes=pitch_classes,
                 octaves=octaves,
