@@ -125,6 +125,7 @@ def find_vertical_slices_gpu(
     Find all vertical slices (simultaneous patterns across tracks).
 
     GPU-accelerated grouping by (piece, onset_time).
+    OPTIMIZED: Uses numpy for fast flattening, GPU for grouping.
 
     Args:
         patterns: List of pattern dicts with 'occurrences' field
@@ -138,23 +139,43 @@ def find_vertical_slices_gpu(
     if not torch.cuda.is_available():
         device = 'cpu'
 
-    # Flatten all occurrences
-    all_occs = []
+    # Count total occurrences first for pre-allocation
+    total_occs = sum(len(p.get('occurrences', [])) for p in patterns)
+    if total_occs < 2:
+        return []
+
+    if verbose:
+        print(f"    Flattening {total_occs:,} occurrences...")
+
+    # Pre-allocate numpy arrays for speed
+    piece_hashes = np.zeros(total_occs, dtype=np.int64)
+    track_ids = np.zeros(total_occs, dtype=np.int32)
+    onset_times = np.zeros(total_occs, dtype=np.int64)
+    pattern_indices = np.zeros(total_occs, dtype=np.int32)
+    instruments = np.zeros(total_occs, dtype=np.int32)
+    pitch_offsets = np.zeros(total_occs, dtype=np.int32)
+
+    # Build piece_id -> hash mapping (avoid repeated hashing)
+    piece_id_to_hash = {}
+
+    idx = 0
     for p_idx, p in enumerate(patterns):
         for occ in p.get('occurrences', []):
             # Handle both dict and PatternOccurrence objects
             if hasattr(occ, 'piece_id'):
-                # It's a PatternOccurrence object
                 piece_id = occ.piece_id
                 track_id = int(occ.track_id)
                 onset = int(occ.onset_time)
                 pitch_offset = getattr(occ, 'pitch_offset', 0)
             else:
-                # It's a dict
                 piece_id = occ['piece_id']
                 track_id = int(occ['track_id'])
                 onset = int(occ['onset_time'])
                 pitch_offset = occ.get('pitch_offset', 0)
+
+            # Cache piece hash
+            if piece_id not in piece_id_to_hash:
+                piece_id_to_hash[piece_id] = hash(piece_id) % (2**31)
 
             # Get instrument (GM program)
             if track_instruments:
@@ -162,25 +183,27 @@ def find_vertical_slices_gpu(
             else:
                 instrument = track_id
 
-            all_occs.append({
-                'piece_id': piece_id,
-                'piece_hash': hash(piece_id) % (2**31),
-                'track_id': track_id,
-                'onset_time': onset,
-                'pattern_idx': p_idx,
-                'instrument': instrument,
-                'pitch_offset': pitch_offset,
-            })
+            piece_hashes[idx] = piece_id_to_hash[piece_id]
+            track_ids[idx] = track_id
+            onset_times[idx] = onset
+            pattern_indices[idx] = p_idx
+            instruments[idx] = instrument
+            pitch_offsets[idx] = pitch_offset
+            idx += 1
 
-    if len(all_occs) < 2:
-        return []
+    # Store piece_ids separately (strings can't go in numpy efficiently)
+    # We'll use piece_hash -> piece_id reverse lookup
+    hash_to_piece_id = {v: k for k, v in piece_id_to_hash.items()}
+
+    if verbose:
+        print(f"    GPU grouping...")
 
     # Convert to tensors for GPU grouping
-    piece_hashes = torch.tensor([o['piece_hash'] for o in all_occs], device=device)
-    onsets = torch.tensor([o['onset_time'] for o in all_occs], device=device)
+    piece_hashes_t = torch.from_numpy(piece_hashes).to(device)
+    onsets_t = torch.from_numpy(onset_times).to(device)
 
     # Create slice keys (piece * large_const + onset)
-    slice_keys = piece_hashes * 10000000 + onsets
+    slice_keys = piece_hashes_t * 10000000 + onsets_t
 
     # Sort to group same-slice occurrences
     sorted_indices = torch.argsort(slice_keys)
@@ -201,30 +224,36 @@ def find_vertical_slices_gpu(
     valid_ends = slice_ends[valid_mask].cpu().numpy()
     sorted_indices_cpu = sorted_indices.cpu().numpy()
 
-    # Build VerticalSlice objects
+    if verbose:
+        print(f"    Building {len(valid_starts)} slice objects...")
+
+    # Build VerticalSlice objects - vectorized where possible
     slices = []
     for start, end in zip(valid_starts, valid_ends):
         indices = sorted_indices_cpu[start:end]
-        first_occ = all_occs[indices[0]]
 
-        slice_occs = []
-        for idx in indices:
-            occ = all_occs[idx]
-            slice_occs.append({
-                'track_id': occ['track_id'],
-                'pattern_idx': occ['pattern_idx'],
-                'instrument': occ['instrument'],
-                'pitch_offset': occ['pitch_offset'],
-            })
+        # Check unique tracks quickly with numpy
+        slice_tracks = track_ids[indices]
+        if len(np.unique(slice_tracks)) < 2:
+            continue
 
-        # Only include if we have multiple DIFFERENT tracks
-        unique_tracks = set(o['track_id'] for o in slice_occs)
-        if len(unique_tracks) >= 2:
-            slices.append(VerticalSlice(
-                piece_id=first_occ['piece_id'],
-                onset_time=first_occ['onset_time'],
-                occurrences=slice_occs,
-            ))
+        # Build occurrence list
+        slice_occs = [
+            {
+                'track_id': int(track_ids[i]),
+                'pattern_idx': int(pattern_indices[i]),
+                'instrument': int(instruments[i]),
+                'pitch_offset': int(pitch_offsets[i]),
+            }
+            for i in indices
+        ]
+
+        piece_hash = piece_hashes[indices[0]]
+        slices.append(VerticalSlice(
+            piece_id=hash_to_piece_id[piece_hash],
+            onset_time=int(onset_times[indices[0]]),
+            occurrences=slice_occs,
+        ))
 
     if verbose:
         print(f"  Found {len(slices)} vertical slices with 2+ tracks")
@@ -425,47 +454,108 @@ def discover_track_derives_gpu(
             pattern_lengths[length] = []
         pattern_lengths[length].append((p_idx, pc))
 
-    # Step 3: Extract ALL cross-track pairs from slices
+    # Step 3: Extract ALL cross-track pairs from slices (OPTIMIZED)
     if verbose:
         print(f"  Extracting cross-track pairs from {len(slices)} slices...")
 
-    # Collect all pairs with metadata
-    all_pairs = []  # (slice_idx, src_occ_idx, tgt_occ_idx, src_pattern_idx, tgt_pattern_idx)
+    # Pre-estimate pair count to avoid list resizing
+    estimated_pairs = sum(len(s.occurrences) * (len(s.occurrences) - 1) for s in slices)
+    if verbose:
+        print(f"    Estimated max pairs: {estimated_pairs:,}")
 
+    # Use numpy arrays for faster pair collection
+    # Pre-allocate with estimated size
+    max_possible = min(estimated_pairs, max_pairs * 2)  # Over-allocate slightly
+
+    pair_slice_idx = np.zeros(max_possible, dtype=np.int32)
+    pair_src_occ = np.zeros(max_possible, dtype=np.int32)
+    pair_tgt_occ = np.zeros(max_possible, dtype=np.int32)
+    pair_src_pattern = np.zeros(max_possible, dtype=np.int32)
+    pair_tgt_pattern = np.zeros(max_possible, dtype=np.int32)
+    pair_src_track = np.zeros(max_possible, dtype=np.int32)
+    pair_tgt_track = np.zeros(max_possible, dtype=np.int32)
+    pair_src_inst = np.zeros(max_possible, dtype=np.int32)
+    pair_tgt_inst = np.zeros(max_possible, dtype=np.int32)
+    pair_src_pitch = np.zeros(max_possible, dtype=np.int32)
+    pair_tgt_pitch = np.zeros(max_possible, dtype=np.int32)
+
+    pair_count = 0
     for slice_idx, slice_obj in enumerate(slices):
         occs = slice_obj.occurrences
         n = len(occs)
-        for i in range(n):
-            for j in range(n):
-                if i != j and occs[i]['track_id'] != occs[j]['track_id']:
-                    all_pairs.append((
-                        slice_idx,
-                        i, j,
-                        occs[i]['pattern_idx'],
-                        occs[j]['pattern_idx'],
-                        occs[i]['track_id'],
-                        occs[j]['track_id'],
-                        occs[i].get('instrument', occs[i]['track_id']),
-                        occs[j].get('instrument', occs[j]['track_id']),
-                        occs[i].get('pitch_offset', 0),
-                        occs[j].get('pitch_offset', 0),
-                    ))
 
-    if not all_pairs:
+        # Extract to arrays for faster nested loop
+        track_arr = np.array([o['track_id'] for o in occs], dtype=np.int32)
+        pattern_arr = np.array([o['pattern_idx'] for o in occs], dtype=np.int32)
+        inst_arr = np.array([o.get('instrument', o['track_id']) for o in occs], dtype=np.int32)
+        pitch_arr = np.array([o.get('pitch_offset', 0) for o in occs], dtype=np.int32)
+
+        # Vectorized pair generation using broadcasting
+        for i in range(n):
+            # Find all j where track differs
+            diff_track_mask = track_arr != track_arr[i]
+            js = np.where(diff_track_mask)[0]
+
+            for j in js:
+                if pair_count >= max_possible:
+                    break
+                pair_slice_idx[pair_count] = slice_idx
+                pair_src_occ[pair_count] = i
+                pair_tgt_occ[pair_count] = j
+                pair_src_pattern[pair_count] = pattern_arr[i]
+                pair_tgt_pattern[pair_count] = pattern_arr[j]
+                pair_src_track[pair_count] = track_arr[i]
+                pair_tgt_track[pair_count] = track_arr[j]
+                pair_src_inst[pair_count] = inst_arr[i]
+                pair_tgt_inst[pair_count] = inst_arr[j]
+                pair_src_pitch[pair_count] = pitch_arr[i]
+                pair_tgt_pitch[pair_count] = pitch_arr[j]
+                pair_count += 1
+
+        if pair_count >= max_possible:
+            break
+
+    if pair_count == 0:
         if verbose:
             print("  No cross-track pairs found")
         return []
 
-    # Sample if too many pairs
-    if len(all_pairs) > max_pairs:
-        if verbose:
-            print(f"  Sampling {max_pairs} from {len(all_pairs)} pairs...")
-        import random
-        random.shuffle(all_pairs)
-        all_pairs = all_pairs[:max_pairs]
+    # Trim to actual size
+    pair_slice_idx = pair_slice_idx[:pair_count]
+    pair_src_occ = pair_src_occ[:pair_count]
+    pair_tgt_occ = pair_tgt_occ[:pair_count]
+    pair_src_pattern = pair_src_pattern[:pair_count]
+    pair_tgt_pattern = pair_tgt_pattern[:pair_count]
+    pair_src_track = pair_src_track[:pair_count]
+    pair_tgt_track = pair_tgt_track[:pair_count]
+    pair_src_inst = pair_src_inst[:pair_count]
+    pair_tgt_inst = pair_tgt_inst[:pair_count]
+    pair_src_pitch = pair_src_pitch[:pair_count]
+    pair_tgt_pitch = pair_tgt_pitch[:pair_count]
 
     if verbose:
-        print(f"  GPU matching {len(all_pairs)} cross-track pairs...")
+        print(f"    Collected {pair_count:,} cross-track pairs")
+
+    # Sample if too many pairs
+    if pair_count > max_pairs:
+        if verbose:
+            print(f"  Sampling {max_pairs} from {pair_count} pairs...")
+        indices = np.random.choice(pair_count, max_pairs, replace=False)
+        pair_slice_idx = pair_slice_idx[indices]
+        pair_src_occ = pair_src_occ[indices]
+        pair_tgt_occ = pair_tgt_occ[indices]
+        pair_src_pattern = pair_src_pattern[indices]
+        pair_tgt_pattern = pair_tgt_pattern[indices]
+        pair_src_track = pair_src_track[indices]
+        pair_tgt_track = pair_tgt_track[indices]
+        pair_src_inst = pair_src_inst[indices]
+        pair_tgt_inst = pair_tgt_inst[indices]
+        pair_src_pitch = pair_src_pitch[indices]
+        pair_tgt_pitch = pair_tgt_pitch[indices]
+        pair_count = max_pairs
+
+    if verbose:
+        print(f"  GPU matching {pair_count} cross-track pairs...")
 
     # Step 4: GPU-batched transform matching
     # Build transform tables
@@ -473,7 +563,8 @@ def discover_track_derives_gpu(
     n_transforms = len(transform_names)
 
     # Process by pattern length (patterns must have same length to compare)
-    matched_pairs = []  # (pair_info, transform_idx)
+    matched_pair_indices = []  # indices into pair arrays
+    matched_transforms = []    # transform index for each match
 
     for length, patterns_at_length in pattern_lengths.items():
         if length < 2:
@@ -481,16 +572,24 @@ def discover_track_derives_gpu(
 
         # Build lookup for patterns at this length
         pattern_idx_to_local = {p_idx: local_idx for local_idx, (p_idx, _) in enumerate(patterns_at_length)}
+        pattern_idx_set = set(pattern_idx_to_local.keys())
 
-        # Filter pairs where both patterns have this length
-        pairs_at_length = [
-            (pair_info, pattern_idx_to_local[pair_info[3]], pattern_idx_to_local[pair_info[4]])
-            for pair_info in all_pairs
-            if pair_info[3] in pattern_idx_to_local and pair_info[4] in pattern_idx_to_local
-        ]
+        # Filter pairs where both patterns have this length (vectorized)
+        src_in_length = np.isin(pair_src_pattern, list(pattern_idx_set))
+        tgt_in_length = np.isin(pair_tgt_pattern, list(pattern_idx_set))
+        pairs_mask = src_in_length & tgt_in_length
+        pairs_indices_at_length = np.where(pairs_mask)[0]
 
-        if not pairs_at_length:
+        if len(pairs_indices_at_length) == 0:
             continue
+
+        # Get src/tgt pattern indices for pairs at this length
+        src_patterns_at_len = pair_src_pattern[pairs_indices_at_length]
+        tgt_patterns_at_len = pair_tgt_pattern[pairs_indices_at_length]
+
+        # Map to local indices
+        src_local = np.array([pattern_idx_to_local[p] for p in src_patterns_at_len])
+        tgt_local = np.array([pattern_idx_to_local[p] for p in tgt_patterns_at_len])
 
         # Build pitch class tensor for patterns at this length
         pc_tensor = torch.zeros((len(patterns_at_length), length), dtype=torch.int8, device=device)
@@ -498,8 +597,8 @@ def discover_track_derives_gpu(
             pc_tensor[local_idx] = torch.tensor(pc, dtype=torch.int8)
 
         # Build pair indices
-        src_indices = torch.tensor([p[1] for p in pairs_at_length], dtype=torch.long, device=device)
-        tgt_indices = torch.tensor([p[2] for p in pairs_at_length], dtype=torch.long, device=device)
+        src_indices = torch.from_numpy(src_local).long().to(device)
+        tgt_indices = torch.from_numpy(tgt_local).long().to(device)
 
         # Get source and target pitch classes
         src_pcs = pc_tensor[src_indices]  # (n_pairs, length)
@@ -511,72 +610,69 @@ def discover_track_derives_gpu(
 
         # Batch process in chunks to manage memory
         chunk_size = 50000
-        n_pairs_at_length = len(pairs_at_length)
+        n_pairs_at_length = len(pairs_indices_at_length)
 
         for chunk_start in range(0, n_pairs_at_length, chunk_size):
             chunk_end = min(chunk_start + chunk_size, n_pairs_at_length)
+            chunk_size_actual = chunk_end - chunk_start
             chunk_src = src_pcs[chunk_start:chunk_end]  # (chunk, length)
             chunk_tgt = tgt_pcs[chunk_start:chunk_end]  # (chunk, length)
 
-            # For non-retrograde transforms (first 24): apply directly
-            # Use gather to apply transforms: transform_table[t, pc] gives new pc
-            # chunk_src: (chunk, length), transform_table: (n_transforms, 12)
+            # FULLY VECTORIZED: Apply all 24 non-retrograde transforms at once
+            # transform_table[:24]: (24, 12) - PC mappings
+            # chunk_src: (chunk, length) with values 0-11
+            # Use advanced indexing: result[c,t,l] = transform_table[t, chunk_src[c,l]]
+            src_long = chunk_src.long()  # (chunk, length)
 
-            # Expand for broadcasting
-            # src_expanded: (chunk, 1, length) -> (chunk, 24, length)
-            src_long = chunk_src.long()
-            chunk_transformed = transform_table[:24].unsqueeze(0).expand(chunk_end - chunk_start, -1, -1)
-            # Gather: chunk_transformed[batch, transform, position] indexed by src_long[batch, position]
+            # Expand src to (chunk, 24, length) by repeating
+            src_expanded = src_long.unsqueeze(1).expand(-1, 24, -1)  # (chunk, 24, length)
 
-            # Apply each transform to each source pattern
-            # Result shape: (chunk, 24, length)
-            transformed_src = torch.zeros((chunk_end - chunk_start, 24, length), dtype=torch.int8, device=device)
-            for t_idx in range(24):
-                # transform_table[t_idx] is the mapping for transform t_idx
-                t_map = transform_table[t_idx]  # (12,)
-                transformed_src[:, t_idx, :] = t_map[src_long]
+            # Reshape for gather: flatten batch and length dims
+            # transform_table[:24] is (24, 12)
+            # We want transformed_src[c, t, l] = transform_table[t, src[c, l]]
+            transformed_src = transform_table[:24][torch.arange(24, device=device).view(1, 24, 1), src_expanded]
 
             # Check which transforms match target
-            # chunk_tgt: (chunk, length) -> (chunk, 1, length)
-            tgt_expanded = chunk_tgt.unsqueeze(1).expand(-1, 24, -1)
+            tgt_expanded = chunk_tgt.unsqueeze(1).expand(-1, 24, -1)  # (chunk, 24, length)
             matches = (transformed_src == tgt_expanded).all(dim=2)  # (chunk, 24)
 
-            # For retrograde transforms (next 24): reverse source first
-            src_reversed = chunk_src.flip(dims=[1])
-            src_rev_long = src_reversed.long()
-            transformed_rev = torch.zeros((chunk_end - chunk_start, 24, length), dtype=torch.int8, device=device)
-            for t_idx in range(24):
-                t_map = transform_table[24 + t_idx]  # R + T or R + I
-                transformed_rev[:, t_idx, :] = t_map[src_rev_long]
+            # FULLY VECTORIZED: Apply all 24 retrograde transforms at once
+            src_reversed = chunk_src.flip(dims=[1]).long()
+            src_rev_expanded = src_reversed.unsqueeze(1).expand(-1, 24, -1)
+            transformed_rev = transform_table[24:48][torch.arange(24, device=device).view(1, 24, 1), src_rev_expanded]
 
             matches_rev = (transformed_rev == tgt_expanded).all(dim=2)  # (chunk, 24)
 
             # Combine matches
             all_matches = torch.cat([matches, matches_rev], dim=1)  # (chunk, 48)
 
-            # Find pairs with any match
+            # VECTORIZED match extraction
             has_match = all_matches.any(dim=1)  # (chunk,)
-            match_indices = torch.where(has_match)[0]
+            match_indices_local = torch.where(has_match)[0]
 
-            for local_idx in match_indices.cpu().numpy():
-                global_idx = chunk_start + local_idx
-                pair_info = pairs_at_length[global_idx][0]
+            if len(match_indices_local) > 0:
+                # Get first matching transform for each matched pair (vectorized)
+                # argmax on bool gives first True index
+                first_transforms = all_matches[match_indices_local].byte().argmax(dim=1)
 
-                # Get best (simplest) transform
-                pair_matches = all_matches[local_idx]
-                t_idx = pair_matches.nonzero(as_tuple=True)[0][0].item()
+                # Convert to numpy and add to results
+                local_indices_np = match_indices_local.cpu().numpy()
+                transforms_np = first_transforms.cpu().numpy()
 
-                matched_pairs.append((pair_info, t_idx))
+                for i, local_idx in enumerate(local_indices_np):
+                    global_idx = pairs_indices_at_length[chunk_start + local_idx]
+                    matched_pair_indices.append(global_idx)
+                    matched_transforms.append(int(transforms_np[i]))
 
     if verbose:
-        print(f"  Found {len(matched_pairs)} transform matches")
+        print(f"  Found {len(matched_pair_indices)} transform matches")
 
     # Step 5: Select leaders and build TrackDerive objects
     # Group matched pairs by slice
     pairs_by_slice = defaultdict(list)
-    for pair_info, t_idx in matched_pairs:
-        slice_idx = pair_info[0]
-        pairs_by_slice[slice_idx].append((pair_info, t_idx))
+    for i, global_idx in enumerate(matched_pair_indices):
+        slice_idx = pair_slice_idx[global_idx]
+        pairs_by_slice[slice_idx].append((global_idx, matched_transforms[i]))
 
     if verbose:
         print(f"  Selecting leaders for {len(pairs_by_slice)} slices with matches...")
@@ -591,8 +687,8 @@ def discover_track_derives_gpu(
         occ_derive_counts = defaultdict(int)
         occ_derive_costs = defaultdict(float)
 
-        for pair_info, t_idx in slice_pairs:
-            src_occ_idx = pair_info[1]
+        for global_idx, t_idx in slice_pairs:
+            src_occ_idx = pair_src_occ[global_idx]
             occ_derive_counts[src_occ_idx] += 1
             # Cost: identity=0, T=1, I=2, R=2, compound=3
             t_name = transform_names[t_idx]
@@ -621,11 +717,11 @@ def discover_track_derives_gpu(
         leader_instruments[leader_occ.get('instrument', leader_occ['track_id'])] += 1
 
         # Create TrackDerive for each pair where leader is source
-        for pair_info, t_idx in slice_pairs:
-            if pair_info[1] != leader_occ_idx:
+        for global_idx, t_idx in slice_pairs:
+            if pair_src_occ[global_idx] != leader_occ_idx:
                 continue  # Not from leader
 
-            tgt_occ_idx = pair_info[2]
+            tgt_occ_idx = pair_tgt_occ[global_idx]
             tgt_occ = slice_obj.occurrences[tgt_occ_idx]
 
             # Build CompoundTransform from transform name
@@ -633,20 +729,20 @@ def discover_track_derives_gpu(
             transform = _name_to_compound_transform(t_name)
 
             # Pitch offset
-            src_offset = pair_info[9]
-            tgt_offset = pair_info[10]
+            src_offset = pair_src_pitch[global_idx]
+            tgt_offset = pair_tgt_pitch[global_idx]
             voicing_offset = (tgt_offset - src_offset) % 12
 
             derive = TrackDerive(
                 source_piece=slice_obj.piece_id,
-                source_track=pair_info[5],
-                source_instrument=pair_info[7],
+                source_track=int(pair_src_track[global_idx]),
+                source_instrument=int(pair_src_inst[global_idx]),
                 source_time=slice_obj.onset_time,
-                source_pattern_id=pair_info[3],
-                target_track=pair_info[6],
-                target_instrument=pair_info[8],
+                source_pattern_id=int(pair_src_pattern[global_idx]),
+                target_track=int(pair_tgt_track[global_idx]),
+                target_instrument=int(pair_tgt_inst[global_idx]),
                 target_time=slice_obj.onset_time,
-                target_pattern_id=pair_info[4],
+                target_pattern_id=int(pair_tgt_pattern[global_idx]),
                 transform=transform,
                 pitch_offset=voicing_offset,
                 rhythm_scale=1.0,  # Could compute from patterns if needed

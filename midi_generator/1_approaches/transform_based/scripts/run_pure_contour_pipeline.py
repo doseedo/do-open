@@ -33,6 +33,7 @@ import json
 import glob
 import argparse
 import numpy as np
+import torch
 from pathlib import Path
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -1045,6 +1046,10 @@ def run_pure_contour_pipeline(
     phase_start = time.time()
     interval_magnitude_discovery = {'preferred_representation': 'chromatic'}
 
+    # Clear GPU memory before Phase 5d
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     if len(canonicals) > 10:
         if verbose:
             print(f"\n[Phase 5d] Interval Magnitude Discovery (Diatonic vs Chromatic)...", flush=True)
@@ -1052,7 +1057,7 @@ def run_pure_contour_pipeline(
         try:
             patterns_for_im = [{
                 'pitch_classes': p.pitch_classes,
-                'occurrences': [{'piece_id': o.piece_id, 'track_id': o.track_id} for o in p.occurrences] if hasattr(p, 'occurrences') else [],
+                'occurrences': [{'piece_id': o.piece_id, 'track_id': o.track_id, 'onset_time': o.onset_time, 'pitch_offset': getattr(o, 'pitch_offset', 0)} for o in p.occurrences] if hasattr(p, 'occurrences') else [],
             } for p in canonicals]
 
             interval_magnitude_discovery = run_interval_magnitude_discovery(
@@ -1079,6 +1084,10 @@ def run_pure_contour_pipeline(
     # =========================================================================
     phase_start = time.time()
     feature_importance_discovery = {'useful_features': []}
+
+    # Clear GPU memory before Phase 5e
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     if len(canonicals) > 20 and stats.get('n_transform_vocabulary', 0) > 0:
         if verbose:
@@ -1183,6 +1192,10 @@ def run_pure_contour_pipeline(
     phase_start = time.time()
     meta_patterns = {}
 
+    # Clear GPU memory before Phase 6
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     if verbose:
         print(f"\n[Phase 6] Level 3 Meta-Pattern Discovery...", flush=True)
 
@@ -1206,7 +1219,7 @@ def run_pure_contour_pipeline(
             if verbose:
                 print(f"  Building GPU transform lookup table...", flush=True)
             transform_lookup = build_transform_lookup_gpu(
-                patterns_for_l3, transform_vocab_parsed, device='cuda'
+                patterns_for_l3, transform_vocab_parsed, device='cuda', verbose=verbose
             )
 
             if verbose:

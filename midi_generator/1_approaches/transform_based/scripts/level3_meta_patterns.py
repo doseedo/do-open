@@ -59,16 +59,26 @@ def parse_transform_name(name: str) -> Dict:
     return {'type': 'unknown', 'param': 0, 'name': name}
 
 
+def get_gpu_free_memory(device: str = 'cuda') -> int:
+    """Get free GPU memory in bytes."""
+    if not torch.cuda.is_available():
+        return 0
+    torch.cuda.empty_cache()
+    free, total = torch.cuda.mem_get_info()
+    return free
+
+
 def build_transform_lookup_gpu(
     patterns: List[Dict],
     transform_vocab: List,  # Can be List[Dict] or List[str]
     device: str = 'cuda',
-    verbose: bool = True
+    verbose: bool = True,
+    max_patterns_for_full_lookup: int = 20000,  # Above this, use sparse/batched
 ) -> torch.Tensor:
     """
     Build a GPU tensor for fast transform lookup between patterns.
 
-    FULLY GPU-ACCELERATED VERSION - no Python loops over GPU data.
+    OOM-SAFE VERSION: Uses batched processing for large pattern sets.
 
     Returns:
         lookup[i, j] = transform_id that maps pattern_i → pattern_j
@@ -86,8 +96,23 @@ def build_transform_lookup_gpu(
         transform_vocab = [parse_transform_name(t) for t in transform_vocab]
 
     n_transforms = len(transform_vocab)
+
+    # Check memory requirements
+    # Full lookup needs n_patterns^2 * 2 bytes
+    required_bytes = n_patterns * n_patterns * 2
+    free_bytes = get_gpu_free_memory(device) if torch.cuda.is_available() else 0
+
     if verbose:
         print(f"    GPU lookup: {n_patterns} patterns × {n_transforms} transforms", flush=True)
+        print(f"    Memory: need {required_bytes/1e9:.1f}GB, free {free_bytes/1e9:.1f}GB", flush=True)
+
+    # If too many patterns, use batched sparse approach
+    if n_patterns > max_patterns_for_full_lookup or required_bytes > free_bytes * 0.8:
+        if verbose:
+            print(f"    Using batched lookup (patterns > {max_patterns_for_full_lookup} or low memory)", flush=True)
+        return build_transform_lookup_batched(
+            patterns, transform_vocab, device, verbose, batch_size=5000
+        )
 
     # ================================================================
     # STEP 1: Build pattern tensor on CPU first, then transfer (faster)
@@ -230,6 +255,153 @@ def build_transform_lookup_gpu(
         print(f"    Lookup complete: {n_found} relations, {time.time()-t0:.1f}s", flush=True)
 
     return lookup
+
+
+def build_transform_lookup_batched(
+    patterns: List[Dict],
+    transform_vocab: List[Dict],
+    device: str = 'cuda',
+    verbose: bool = True,
+    batch_size: int = 5000,
+) -> torch.Tensor:
+    """
+    OOM-safe batched version of transform lookup.
+
+    Instead of creating full n×n matrix, processes in batches and stores
+    results in a sparse format on CPU, then builds final lookup.
+    """
+    import time
+    t0 = time.time()
+
+    n_patterns = len(patterns)
+    n_transforms = len(transform_vocab)
+
+    if verbose:
+        print(f"    Batched lookup: {n_patterns} patterns in batches of {batch_size}", flush=True)
+
+    # Build pattern data on CPU
+    max_len = max(len(p['pitch_classes']) for p in patterns)
+    pattern_np = np.full((n_patterns, max_len), -1, dtype=np.int32)
+    lengths_np = np.zeros(n_patterns, dtype=np.int32)
+
+    for i, p in enumerate(patterns):
+        pc = p['pitch_classes']
+        pattern_np[i, :len(pc)] = pc
+        lengths_np[i] = len(pc)
+
+    # Build transform table
+    base_pcs = np.arange(12, dtype=np.int32)
+    transform_table_np = np.zeros((n_transforms, 12), dtype=np.int32)
+    transform_valid_np = np.ones(n_transforms, dtype=bool)
+
+    for t_idx, t in enumerate(transform_vocab):
+        if t['type'] == 'transpose':
+            transform_table_np[t_idx] = (base_pcs + t['param']) % 12
+        elif t['type'] == 'invert':
+            transform_table_np[t_idx] = (t['param'] - base_pcs) % 12
+        elif t['type'] == 'identity':
+            transform_table_np[t_idx] = base_pcs
+        elif t['type'] == 'retrograde':
+            transform_table_np[t_idx] = base_pcs
+            transform_valid_np[t_idx] = False
+        else:
+            transform_valid_np[t_idx] = False
+
+    # Store results sparsely: list of (src, tgt, transform_id)
+    results = []
+
+    # Group patterns by length first
+    length_groups = defaultdict(list)
+    for i, length in enumerate(lengths_np):
+        if length > 0:
+            length_groups[length].append(i)
+
+    for length, indices in length_groups.items():
+        if len(indices) < 2:
+            continue
+
+        indices = np.array(indices)
+        n_same_len = len(indices)
+
+        # Process in batches
+        for batch_start in range(0, n_same_len, batch_size):
+            batch_end = min(batch_start + batch_size, n_same_len)
+            batch_indices = indices[batch_start:batch_end]
+
+            # Get patterns for this batch
+            batch_patterns = pattern_np[batch_indices, :length]  # [B, L]
+
+            # Move batch to GPU
+            batch_tensor = torch.from_numpy(batch_patterns).to(device)
+            all_patterns_tensor = torch.from_numpy(pattern_np[indices, :length]).to(device)
+            transform_table = torch.from_numpy(transform_table_np).to(device)
+            transform_valid = torch.from_numpy(transform_valid_np).to(device)
+
+            B = batch_tensor.shape[0]
+            M = all_patterns_tensor.shape[0]
+            T = n_transforms
+            L = length
+
+            # Apply transforms: [B, T, L]
+            batch_expanded = batch_tensor.unsqueeze(1).expand(B, T, L)
+            t_indices = torch.arange(T, device=device).view(1, T, 1).expand(B, T, L)
+            transformed = transform_table[t_indices, batch_expanded]
+
+            # Compare to all patterns of same length: [B, T, M]
+            trans_4d = transformed.unsqueeze(2)  # [B, T, 1, L]
+            target_4d = all_patterns_tensor.unsqueeze(0).unsqueeze(0)  # [1, 1, M, L]
+            matches = (trans_4d == target_4d).all(dim=3)  # [B, T, M]
+            matches[:, ~transform_valid, :] = False
+
+            # Find first matching transform
+            transform_priority = torch.arange(T, device=device).view(1, T, 1).expand(B, T, M)
+            priority_masked = torch.where(matches, transform_priority, torch.tensor(T + 1, device=device))
+            first_match, first_t_idx = priority_masked.min(dim=1)  # [B, M]
+            has_match = first_match < T
+
+            # Extract matches to CPU
+            match_positions = torch.where(has_match)
+            if match_positions[0].numel() > 0:
+                batch_local = match_positions[0].cpu().numpy()
+                target_local = match_positions[1].cpu().numpy()
+                t_ids = first_t_idx[has_match].cpu().numpy()
+
+                # Map to global indices
+                src_global = batch_indices[batch_local]
+                tgt_global = indices[target_local]
+
+                for s, t, tid in zip(src_global, tgt_global, t_ids):
+                    results.append((s, t, tid))
+
+            # Clear GPU memory
+            del batch_tensor, all_patterns_tensor, transformed, matches
+            torch.cuda.empty_cache()
+
+        if verbose and length % 10 == 0:
+            print(f"      Length {length}: {len(indices)} patterns, {len(results)} relations so far", flush=True)
+
+    # Build final lookup on CPU (sparse -> dense)
+    if verbose:
+        print(f"    Building final lookup from {len(results)} relations...", flush=True)
+
+    # Keep lookup on CPU to avoid OOM, convert to GPU only when needed
+    lookup = torch.full((n_patterns, n_patterns), -1, dtype=torch.int16)
+
+    for src, tgt, tid in results:
+        if lookup[src, tgt] == -1:
+            lookup[src, tgt] = tid
+
+    if verbose:
+        n_found = (lookup >= 0).sum().item()
+        print(f"    Batched lookup complete: {n_found} relations, {time.time()-t0:.1f}s", flush=True)
+
+    # Return on requested device (but may need to stay on CPU if too large)
+    try:
+        return lookup.to(device)
+    except RuntimeError:  # OOM
+        if verbose:
+            print(f"    Lookup too large for GPU, keeping on CPU", flush=True)
+        return lookup
 
 
 # ============================================================

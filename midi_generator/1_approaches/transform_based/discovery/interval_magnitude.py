@@ -146,16 +146,25 @@ def convert_chromatic_to_magnitude_sequence(
     return [semitones_to_magnitude(s) for s in chromatic_seq]
 
 
+def get_gpu_free_memory(device: str = 'cuda') -> int:
+    """Get free GPU memory in bytes."""
+    if not torch.cuda.is_available():
+        return 0
+    torch.cuda.empty_cache()
+    free, total = torch.cuda.mem_get_info()
+    return free
+
+
 def build_magnitude_lookup_gpu(
     patterns: List[Dict],
     device: str = 'cuda',
-    verbose: bool = True
+    verbose: bool = True,
+    max_patterns_full: int = 10000,  # Reduced from 20000 - 10K^2 = 400MB which is safe
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Build BOTH chromatic and magnitude transform lookup tables on GPU.
 
-    This is the key function: instead of just computing chromatic transforms,
-    we compute both representations simultaneously.
+    OOM-SAFE VERSION: Uses sampling for large pattern sets.
 
     Returns:
         chromatic_lookup: [n_patterns, n_patterns] -> semitone transform (0-11, or -1)
@@ -168,6 +177,33 @@ def build_magnitude_lookup_gpu(
     if n_patterns == 0:
         empty = torch.empty((0, 0), dtype=torch.int16, device=device)
         return empty, empty
+
+    # Check memory and determine actual pattern count to use
+    free_bytes = get_gpu_free_memory(device) if device == 'cuda' else 8 * 1024**3  # Assume 8GB for CPU
+
+    # Calculate max safe patterns based on available memory (use 50% of free memory max)
+    # 2 matrices of n^2 * 2 bytes each = 4 * n^2 bytes
+    max_safe_patterns = int((free_bytes * 0.5 / 4) ** 0.5)
+    max_patterns_to_use = min(n_patterns, max_patterns_full, max_safe_patterns)
+
+    if verbose:
+        print(f"    Magnitude lookup: {n_patterns} patterns", flush=True)
+
+    # Sample down if needed
+    if n_patterns > max_patterns_to_use:
+        if verbose:
+            print(f"    Sampling to {max_patterns_to_use} patterns (memory: {free_bytes/1e9:.1f}GB free)", flush=True)
+        # Sample patterns with most occurrences (more useful)
+        occ_counts = [(i, len(p.get('occurrences', []))) for i, p in enumerate(patterns)]
+        occ_counts.sort(key=lambda x: -x[1])
+        sampled_indices = [x[0] for x in occ_counts[:max_patterns_to_use]]
+        patterns = [patterns[i] for i in sampled_indices]
+        n_patterns = len(patterns)
+
+    # Final memory estimate after sampling
+    required_bytes = n_patterns * n_patterns * 2 * 2
+    if verbose:
+        print(f"    Using {n_patterns} patterns, need {required_bytes/1e6:.0f}MB", flush=True)
 
     # Build pattern tensor
     max_len = max(len(p.get('pitch_classes', [])) for p in patterns)
@@ -183,9 +219,18 @@ def build_magnitude_lookup_gpu(
     pattern_tensor = torch.from_numpy(pattern_np).to(device)
     pattern_lengths = torch.from_numpy(lengths_np).to(device)
 
-    # Initialize lookup tables
-    chromatic_lookup = torch.full((n_patterns, n_patterns), -1, dtype=torch.int16, device=device)
-    magnitude_lookup = torch.full((n_patterns, n_patterns), -1, dtype=torch.int16, device=device)
+    # Initialize lookup tables - try GPU first, fall back to CPU
+    try:
+        chromatic_lookup = torch.full((n_patterns, n_patterns), -1, dtype=torch.int16, device=device)
+        magnitude_lookup = torch.full((n_patterns, n_patterns), -1, dtype=torch.int16, device=device)
+    except RuntimeError:
+        if verbose:
+            print(f"    GPU OOM, using CPU for lookups", flush=True)
+        device = 'cpu'
+        pattern_tensor = pattern_tensor.cpu()
+        pattern_lengths = pattern_lengths.cpu()
+        chromatic_lookup = torch.full((n_patterns, n_patterns), -1, dtype=torch.int16, device='cpu')
+        magnitude_lookup = torch.full((n_patterns, n_patterns), -1, dtype=torch.int16, device='cpu')
 
     # Semitone to magnitude lookup on GPU
     s2m = torch.tensor(SEMITONE_TO_MAGNITUDE, dtype=torch.int16, device=device)
