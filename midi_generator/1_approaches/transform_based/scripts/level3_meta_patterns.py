@@ -262,7 +262,7 @@ def build_transform_lookup_batched(
     transform_vocab: List[Dict],
     device: str = 'cuda',
     verbose: bool = True,
-    batch_size: int = 5000,
+    batch_size: int = 1000,  # Reduced from 5000 to prevent OOM
 ) -> torch.Tensor:
     """
     OOM-safe batched version of transform lookup.
@@ -316,6 +316,19 @@ def build_transform_lookup_batched(
         if length > 0:
             length_groups[length].append(i)
 
+    # Calculate safe batch sizes based on GPU memory
+    # [B, T, M] tensor is the bottleneck - need B * T * M * 1 byte (bool) to fit
+    # But torch.where and other ops create temporaries, so be more conservative
+    # With T=42, we need B * M < free_bytes / (42 * safety_factor)
+    free_bytes = get_gpu_free_memory(device) if torch.cuda.is_available() else 4 * 1024**3
+    # Use 10% of free memory (was 30%) to account for temporary tensors in torch.where
+    max_bm_product = int(free_bytes * 0.10 / n_transforms)
+
+    # Move transform table to GPU once
+    transform_table = torch.from_numpy(transform_table_np).to(device)
+    transform_valid = torch.from_numpy(transform_valid_np).to(device)
+    T = n_transforms
+
     for length, indices in length_groups.items():
         if len(indices) < 2:
             continue
@@ -323,58 +336,64 @@ def build_transform_lookup_batched(
         indices = np.array(indices)
         n_same_len = len(indices)
 
-        # Process in batches
-        for batch_start in range(0, n_same_len, batch_size):
-            batch_end = min(batch_start + batch_size, n_same_len)
+        # Dynamically adjust batch sizes: B * M should be < max_bm_product
+        # For large groups, use smaller batches
+        effective_batch_size = min(batch_size, max(100, max_bm_product // max(n_same_len, 1)))
+        # Reduced floor from 1000 to 200 to prevent OOM with torch.where temporaries
+        target_batch_size = min(n_same_len, max(200, max_bm_product // max(effective_batch_size, 1)))
+
+        # Process source patterns in batches
+        for batch_start in range(0, n_same_len, effective_batch_size):
+            batch_end = min(batch_start + effective_batch_size, n_same_len)
             batch_indices = indices[batch_start:batch_end]
+            batch_patterns = pattern_np[batch_indices, :length]
 
-            # Get patterns for this batch
-            batch_patterns = pattern_np[batch_indices, :length]  # [B, L]
-
-            # Move batch to GPU
             batch_tensor = torch.from_numpy(batch_patterns).to(device)
-            all_patterns_tensor = torch.from_numpy(pattern_np[indices, :length]).to(device)
-            transform_table = torch.from_numpy(transform_table_np).to(device)
-            transform_valid = torch.from_numpy(transform_valid_np).to(device)
-
             B = batch_tensor.shape[0]
-            M = all_patterns_tensor.shape[0]
-            T = n_transforms
             L = length
 
             # Apply transforms: [B, T, L]
             batch_expanded = batch_tensor.unsqueeze(1).expand(B, T, L)
-            t_indices = torch.arange(T, device=device).view(1, T, 1).expand(B, T, L)
-            transformed = transform_table[t_indices, batch_expanded]
+            t_indices_expanded = torch.arange(T, device=device).view(1, T, 1).expand(B, T, L)
+            transformed = transform_table[t_indices_expanded, batch_expanded]  # [B, T, L]
 
-            # Compare to all patterns of same length: [B, T, M]
-            trans_4d = transformed.unsqueeze(2)  # [B, T, 1, L]
-            target_4d = all_patterns_tensor.unsqueeze(0).unsqueeze(0)  # [1, 1, M, L]
-            matches = (trans_4d == target_4d).all(dim=3)  # [B, T, M]
-            matches[:, ~transform_valid, :] = False
+            # Process target patterns in batches too (double batching for large groups)
+            for tgt_start in range(0, n_same_len, target_batch_size):
+                tgt_end = min(tgt_start + target_batch_size, n_same_len)
+                tgt_indices = indices[tgt_start:tgt_end]
+                tgt_patterns = pattern_np[tgt_indices, :length]
 
-            # Find first matching transform
-            transform_priority = torch.arange(T, device=device).view(1, T, 1).expand(B, T, M)
-            priority_masked = torch.where(matches, transform_priority, torch.tensor(T + 1, device=device))
-            first_match, first_t_idx = priority_masked.min(dim=1)  # [B, M]
-            has_match = first_match < T
+                tgt_tensor = torch.from_numpy(tgt_patterns).to(device)
+                M = tgt_tensor.shape[0]
 
-            # Extract matches to CPU
-            match_positions = torch.where(has_match)
-            if match_positions[0].numel() > 0:
-                batch_local = match_positions[0].cpu().numpy()
-                target_local = match_positions[1].cpu().numpy()
-                t_ids = first_t_idx[has_match].cpu().numpy()
+                # Compare: [B, T, M]
+                trans_4d = transformed.unsqueeze(2)  # [B, T, 1, L]
+                target_4d = tgt_tensor.unsqueeze(0).unsqueeze(0)  # [1, 1, M, L]
+                matches = (trans_4d == target_4d).all(dim=3)  # [B, T, M]
+                matches[:, ~transform_valid, :] = False
 
-                # Map to global indices
-                src_global = batch_indices[batch_local]
-                tgt_global = indices[target_local]
+                # Find first matching transform
+                transform_priority = torch.arange(T, device=device).view(1, T, 1).expand(B, T, M)
+                priority_masked = torch.where(matches, transform_priority, torch.tensor(T + 1, device=device))
+                first_match, first_t_idx = priority_masked.min(dim=1)  # [B, M]
+                has_match = first_match < T
 
-                for s, t, tid in zip(src_global, tgt_global, t_ids):
-                    results.append((s, t, tid))
+                # Extract matches
+                match_positions = torch.where(has_match)
+                if match_positions[0].numel() > 0:
+                    batch_local = match_positions[0].cpu().numpy()
+                    target_local = match_positions[1].cpu().numpy()
+                    t_ids = first_t_idx[has_match].cpu().numpy()
 
-            # Clear GPU memory
-            del batch_tensor, all_patterns_tensor, transformed, matches
+                    src_global = batch_indices[batch_local]
+                    tgt_global = tgt_indices[target_local]
+
+                    for s, t, tid in zip(src_global, tgt_global, t_ids):
+                        results.append((s, t, tid))
+
+                del tgt_tensor, matches, transform_priority, priority_masked
+
+            del batch_tensor, transformed
             torch.cuda.empty_cache()
 
         if verbose and length % 10 == 0:

@@ -160,7 +160,7 @@ def build_magnitude_lookup_gpu(
     device: str = 'cuda',
     verbose: bool = True,
     max_patterns_full: int = 10000,  # Reduced from 20000 - 10K^2 = 400MB which is safe
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, List[Dict]]:
     """
     Build BOTH chromatic and magnitude transform lookup tables on GPU.
 
@@ -169,6 +169,7 @@ def build_magnitude_lookup_gpu(
     Returns:
         chromatic_lookup: [n_patterns, n_patterns] -> semitone transform (0-11, or -1)
         magnitude_lookup: [n_patterns, n_patterns] -> magnitude transform (0-6, or -1)
+        sampled_patterns: The patterns actually used (may be subset if sampled)
     """
     if not torch.cuda.is_available():
         device = 'cpu'
@@ -176,7 +177,7 @@ def build_magnitude_lookup_gpu(
     n_patterns = len(patterns)
     if n_patterns == 0:
         empty = torch.empty((0, 0), dtype=torch.int16, device=device)
-        return empty, empty
+        return empty, empty, []
 
     # Check memory and determine actual pattern count to use
     free_bytes = get_gpu_free_memory(device) if device == 'cuda' else 8 * 1024**3  # Assume 8GB for CPU
@@ -287,7 +288,7 @@ def build_magnitude_lookup_gpu(
         n_chromatic = (chromatic_lookup >= 0).sum().item()
         print(f"  Built dual lookup: {n_chromatic} transform pairs")
 
-    return chromatic_lookup, magnitude_lookup
+    return chromatic_lookup, magnitude_lookup, patterns  # Return the (possibly sampled) patterns
 
 
 def extract_dual_transform_sequences(
@@ -657,22 +658,23 @@ def run_interval_magnitude_discovery(
     if verbose:
         print(f"  Building dual lookup tables...")
 
-    chromatic_lookup, magnitude_lookup = build_magnitude_lookup_gpu(
+    chromatic_lookup, magnitude_lookup, sampled_patterns = build_magnitude_lookup_gpu(
         patterns, device=device, verbose=verbose
     )
 
     # Add magnitude_offset to every occurrence (O(1) per occurrence)
+    # Note: This operates on ALL patterns, not just sampled ones
     if verbose:
         print(f"  Adding magnitude to occurrences...")
 
     n_magnitude_added = add_magnitude_to_occurrences(patterns, verbose=verbose)
 
-    # Extract dual sequences
+    # Extract dual sequences - use sampled_patterns to match lookup table size
     if verbose:
         print(f"  Extracting transform sequences...")
 
     chromatic_sequences, magnitude_sequences = extract_dual_transform_sequences(
-        patterns, chromatic_lookup, magnitude_lookup
+        sampled_patterns, chromatic_lookup, magnitude_lookup
     )
 
     if verbose:
