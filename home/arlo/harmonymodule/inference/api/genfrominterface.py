@@ -13044,3 +13044,349 @@ async def download_chord_midi(process_id: str, filename: str):
     if not file_path.exists():
         raise HTTPException(404, "Chord MIDI file not found")
     return FileResponse(file_path, media_type="audio/midi", filename=filename)
+
+
+# ==============================================================================
+# MIDI MELODY GENERATION ENDPOINT
+# ==============================================================================
+# Three modes:
+# - basic: ProperMelodyGenerator (target-note technique, Berklee method)
+# - genre: Genre-specific generation using midi_generator library
+# - context: Context-aware generation that analyzes existing arrangement
+# ==============================================================================
+
+@app.post("/api/generate-melody")
+async def generate_melody(request: Request):
+    """
+    Generate MIDI melody using various algorithms
+
+    Modes:
+    - basic: Target-note technique with chord-scale theory (Berklee method)
+    - genre: Genre-specific melody generation (jazz, blues, funk, etc.)
+    - context: Context-aware generation (matches existing arrangement style)
+
+    Input JSON:
+    {
+        "mode": "basic" | "genre" | "context",
+        "key": "C minor",
+        "chords": "Cm7,G7,Cm7,G7",
+        "bars": 4,
+        "minNote": 60,
+        "maxNote": 76,
+        "chromatic": 0.3,  // For basic mode
+        "tempo": 120,
+        "genre": "jazz",   // For genre mode
+        "style": "bebop",  // For genre mode
+        "role": "melody",  // For context mode
+        "seed": null
+    }
+
+    Returns:
+    {
+        "notes": [{"pitch": 60, "start": 0, "duration": 480, "velocity": 80}, ...],
+        "tempo": 120,
+        "mode": "basic",
+        "metadata": {...}
+    }
+    """
+    try:
+        # Check if multipart form (for context mode with file upload)
+        content_type = request.headers.get('content-type', '')
+
+        if 'multipart/form-data' in content_type:
+            form = await request.form()
+            params_str = form.get('params', '{}')
+            data = json.loads(params_str)
+            existing_midi = form.get('existingMidi')
+        else:
+            data = await request.json()
+            existing_midi = None
+
+        mode = data.get('mode', 'basic')
+        key = data.get('key', 'C minor')
+        chords_str = data.get('chords', 'Cm7,G7,Cm7,G7')
+        bars = data.get('bars', 4)
+        min_note = data.get('minNote', 60)
+        max_note = data.get('maxNote', 76)
+        chromatic = data.get('chromatic', 0.3)
+        tempo = data.get('tempo', 120)
+        seed = data.get('seed')
+        genre = data.get('genre', 'jazz')
+        style = data.get('style', 'bebop')
+        role = data.get('role', 'melody')
+
+        print(f"\n{'='*60}")
+        print(f"🎵 MELODY GENERATION REQUEST")
+        print(f"{'='*60}")
+        print(f"Mode: {mode}")
+        print(f"Key: {key}")
+        print(f"Chords: {chords_str}")
+        print(f"Bars: {bars}")
+        print(f"Range: MIDI {min_note}-{max_note}")
+        print(f"Tempo: {tempo}")
+
+        # Parse chords string into dict (one chord per bar by default)
+        chords_list = [c.strip() for c in chords_str.split(',')]
+        ticks_per_beat = 480
+        bar_ticks = ticks_per_beat * 4  # 4/4 time
+
+        chord_progression = {}
+        for i, chord in enumerate(chords_list):
+            # Repeat chords if fewer chords than bars
+            chord_idx = i % len(chords_list)
+            chord_progression[i * bar_ticks] = chords_list[chord_idx]
+
+        # Extend to fill all bars
+        if len(chords_list) < bars:
+            for i in range(len(chords_list), bars):
+                chord_idx = i % len(chords_list)
+                chord_progression[i * bar_ticks] = chords_list[chord_idx]
+
+        notes = []
+        metadata = {}
+
+        if mode == 'basic':
+            # =====================================================
+            # BASIC MODE: ProperMelodyGenerator (target-note technique)
+            # =====================================================
+            print(f"Using: ProperMelodyGenerator (Berklee method)")
+            print(f"Chromatic approach probability: {chromatic}")
+
+            sys.path.append('/home/arlo/Data')
+            from melody_generator_proper import ProperMelodyGenerator
+
+            generator = ProperMelodyGenerator(tempo=tempo, seed=seed)
+
+            melody_raw = generator.generate_melody(
+                chord_progression,
+                bars,
+                min_note,
+                max_note,
+                use_chromatic_approaches=chromatic
+            )
+
+            # Convert (tick, duration, pitch) to note objects
+            for tick, duration, pitch in melody_raw:
+                notes.append({
+                    'pitch': pitch,
+                    'start': tick,
+                    'duration': duration,
+                    'velocity': 80
+                })
+
+            metadata = {
+                'algorithm': 'target_note_technique',
+                'method': 'Berklee chord-scale theory',
+                'chromatic_probability': chromatic
+            }
+
+        elif mode == 'genre':
+            # =====================================================
+            # GENRE MODE: Genre-specific generation
+            # =====================================================
+            print(f"Using: Genre-specific generator")
+            print(f"Genre: {genre}, Style: {style}")
+
+            # Import midi_generator modules
+            sys.path.insert(0, '/home/arlo/Do/midi_generator')
+
+            try:
+                from algorithms.melodic_algorithms import MelodicAlgorithms, ContourType
+                from generators.style_fusion import GenreFeatures, GENRE_PROFILES
+            except ImportError as e:
+                print(f"⚠️  Could not import midi_generator: {e}")
+                print(f"    Falling back to basic mode")
+                # Fallback to basic mode
+                sys.path.append('/home/arlo/Data')
+                from melody_generator_proper import ProperMelodyGenerator
+                generator = ProperMelodyGenerator(tempo=tempo, seed=seed)
+                melody_raw = generator.generate_melody(
+                    chord_progression, bars, min_note, max_note, chromatic
+                )
+                for tick, duration, pitch in melody_raw:
+                    notes.append({
+                        'pitch': pitch,
+                        'start': tick,
+                        'duration': duration,
+                        'velocity': 80
+                    })
+                metadata = {'algorithm': 'fallback_basic', 'reason': str(e)}
+            else:
+                # Genre-specific generation
+                if seed is not None:
+                    random.seed(seed)
+                    np.random.seed(seed)
+
+                # Get genre profile
+                genre_profile = GENRE_PROFILES.get(genre.lower(), GENRE_PROFILES.get('jazz', {}))
+
+                # Style-specific parameters
+                style_params = {
+                    'bebop': {'chromatic': 0.4, 'density': 'high', 'contour': ContourType.WAVE},
+                    'ballad': {'chromatic': 0.1, 'density': 'low', 'contour': ContourType.ARCH},
+                    'funk': {'chromatic': 0.2, 'density': 'medium', 'contour': ContourType.STATIC},
+                    'blues': {'chromatic': 0.3, 'density': 'medium', 'contour': ContourType.DESCENDING},
+                }.get(style.lower(), {'chromatic': 0.2, 'density': 'medium', 'contour': ContourType.ARCH})
+
+                # Initialize algorithm
+                algo = MelodicAlgorithms(seed=seed)
+
+                # Generate melody with genre-specific characteristics
+                melody_raw = algo.generate_genre_melody(
+                    chord_progression=chord_progression,
+                    num_bars=bars,
+                    min_pitch=min_note,
+                    max_pitch=max_note,
+                    genre_profile=genre_profile,
+                    contour=style_params['contour'],
+                    density=style_params['density'],
+                    chromatic_prob=style_params['chromatic'],
+                    tempo=tempo
+                )
+
+                for tick, duration, pitch, velocity in melody_raw:
+                    notes.append({
+                        'pitch': pitch,
+                        'start': tick,
+                        'duration': duration,
+                        'velocity': velocity
+                    })
+
+                metadata = {
+                    'algorithm': 'genre_specific',
+                    'genre': genre,
+                    'style': style,
+                    'genre_profile': genre_profile.get('name', genre)
+                }
+
+        elif mode == 'context':
+            # =====================================================
+            # CONTEXT MODE: Context-aware generation
+            # =====================================================
+            print(f"Using: Context-aware generator")
+            print(f"Role: {role}")
+
+            sys.path.insert(0, '/home/arlo/Do/midi_generator')
+
+            try:
+                from generators.context_aware_generator import ContextAwareGenerator
+            except ImportError as e:
+                print(f"⚠️  Could not import context_aware_generator: {e}")
+                print(f"    Falling back to basic mode")
+                # Fallback
+                sys.path.append('/home/arlo/Data')
+                from melody_generator_proper import ProperMelodyGenerator
+                generator = ProperMelodyGenerator(tempo=tempo, seed=seed)
+                melody_raw = generator.generate_melody(
+                    chord_progression, bars, min_note, max_note, chromatic
+                )
+                for tick, duration, pitch in melody_raw:
+                    notes.append({
+                        'pitch': pitch,
+                        'start': tick,
+                        'duration': duration,
+                        'velocity': 80
+                    })
+                metadata = {'algorithm': 'fallback_basic', 'reason': str(e)}
+            else:
+                # Context-aware generation
+                ctx_gen = ContextAwareGenerator(seed=seed)
+
+                # If existing MIDI provided, analyze it
+                arrangement_context = None
+                if existing_midi:
+                    # Save uploaded file temporarily
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(suffix='.mid', delete=False) as tmp:
+                        content = await existing_midi.read()
+                        tmp.write(content)
+                        tmp_path = tmp.name
+
+                    arrangement_context = ctx_gen.analyze_arrangement(tmp_path)
+                    os.unlink(tmp_path)  # Clean up
+                    print(f"   Analyzed existing arrangement: {arrangement_context.get('detected_style', 'unknown')}")
+
+                # Generate contextual melody
+                melody_raw = ctx_gen.generate_contextual_melody(
+                    chord_progression=chord_progression,
+                    num_bars=bars,
+                    min_pitch=min_note,
+                    max_pitch=max_note,
+                    tempo=tempo,
+                    role=role,
+                    context=arrangement_context
+                )
+
+                for tick, duration, pitch, velocity in melody_raw:
+                    notes.append({
+                        'pitch': pitch,
+                        'start': tick,
+                        'duration': duration,
+                        'velocity': velocity
+                    })
+
+                metadata = {
+                    'algorithm': 'context_aware',
+                    'role': role,
+                    'had_context': arrangement_context is not None,
+                    'detected_style': arrangement_context.get('detected_style') if arrangement_context else None
+                }
+
+        else:
+            raise HTTPException(400, f"Unknown mode: {mode}. Use 'basic', 'genre', or 'context'")
+
+        # Sort notes by start time
+        notes.sort(key=lambda n: n['start'])
+
+        print(f"\n✅ Generated {len(notes)} notes")
+        print(f"   Mode: {mode}")
+        print(f"   Metadata: {metadata}")
+        print(f"{'='*60}\n")
+
+        return {
+            'notes': notes,
+            'tempo': tempo,
+            'mode': mode,
+            'metadata': metadata,
+            'bars': bars,
+            'key': key,
+            'chords': chords_str
+        }
+
+    except Exception as e:
+        print(f"❌ Error generating melody: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"Melody generation failed: {str(e)}")
+
+
+@app.get("/api/generate-melody/genres")
+async def list_melody_genres():
+    """List available genres for melody generation"""
+    genres = [
+        {'id': 'jazz', 'name': 'Jazz', 'styles': ['bebop', 'swing', 'modal', 'fusion']},
+        {'id': 'blues', 'name': 'Blues', 'styles': ['chicago', 'delta', 'slow']},
+        {'id': 'funk', 'name': 'Funk', 'styles': ['classic', 'modern', 'fusion']},
+        {'id': 'pop', 'name': 'Pop', 'styles': ['ballad', 'uptempo', 'electronic']},
+        {'id': 'rock', 'name': 'Rock', 'styles': ['classic', 'hard', 'progressive']},
+        {'id': 'electronic', 'name': 'Electronic', 'styles': ['house', 'techno', 'ambient']},
+        {'id': 'classical', 'name': 'Classical', 'styles': ['baroque', 'romantic', 'modern']},
+        {'id': 'hip-hop', 'name': 'Hip-Hop', 'styles': ['boom-bap', 'trap', 'lo-fi']},
+        {'id': 'r&b', 'name': 'R&B', 'styles': ['classic', 'neo-soul', 'contemporary']},
+        {'id': 'country', 'name': 'Country', 'styles': ['traditional', 'modern', 'bluegrass']},
+        {'id': 'reggae', 'name': 'Reggae', 'styles': ['roots', 'dub', 'dancehall']},
+        {'id': 'gospel', 'name': 'Gospel', 'styles': ['traditional', 'contemporary']},
+        {'id': 'latin', 'name': 'Latin', 'styles': ['salsa', 'bossa-nova', 'tango']},
+        {'id': 'arabic', 'name': 'Arabic', 'styles': ['maqam', 'traditional']},
+        {'id': 'indian', 'name': 'Indian', 'styles': ['raga', 'bollywood']},
+    ]
+    return {'genres': genres}
+
+
+@app.get("/download-melody/{process_id}/{filename}")
+async def download_melody_midi(process_id: str, filename: str):
+    """Serve generated melody MIDI files"""
+    file_path = Path(f"./generated_ui/melody_{process_id}") / filename
+    if not file_path.exists():
+        raise HTTPException(404, "Melody MIDI file not found")
+    return FileResponse(file_path, media_type="audio/midi", filename=filename)
