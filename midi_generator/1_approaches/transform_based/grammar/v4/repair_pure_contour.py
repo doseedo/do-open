@@ -630,7 +630,8 @@ class RePairPureContour:
                     track_vels = track_data.get('velocities', [])
                     track_durs = track_data.get('durations', [])
 
-                    # Compute rhythm ratios (IOI[i+1] / IOI[i])
+                    # Compute rhythm ratios (IOI[i+1] / IOI[i]) - successive ratios
+                    # This is scale-invariant: same pattern shape at any tempo
                     if len(track_iois) > orig_pos_end:
                         iois_slice = track_iois[orig_pos_start:orig_pos_end + 1]
                         if len(iois_slice) > 1:

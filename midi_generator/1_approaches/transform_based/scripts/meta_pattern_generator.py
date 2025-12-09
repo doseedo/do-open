@@ -39,7 +39,14 @@ Everything is derived from checkpoint data. No hardcoded probabilities or music 
 
 import os
 import sys
-import json
+try:
+    import orjson
+    def json_load(f):
+        return orjson.loads(f.read())
+except ImportError:
+    import json
+    def json_load(f):
+        return json.load(f)
 import random
 import argparse
 import logging
@@ -422,8 +429,8 @@ class MetaPatternGenerator:
         patterns_file = ckpt.get('patterns_json_file', [None])[0]
         if patterns_file:
             patterns_path = os.path.join(os.path.dirname(checkpoint_path), patterns_file)
-            with open(patterns_path) as f:
-                self.patterns = json.load(f)
+            with open(patterns_path, 'rb') as f:
+                self.patterns = json_load(f)
         else:
             raise ValueError("No patterns in checkpoint")
 
@@ -434,8 +441,8 @@ class MetaPatternGenerator:
         if transforms_file:
             transforms_path = os.path.join(os.path.dirname(checkpoint_path), transforms_file)
             if os.path.exists(transforms_path):
-                with open(transforms_path) as f:
-                    transforms_data = json.load(f)
+                with open(transforms_path, 'rb') as f:
+                    transforms_data = json_load(f)
                     self.transform_vocab = transforms_data.get('vocabulary', [])
                     self.transform_relations = transforms_data.get('relations', [])
 
@@ -445,8 +452,8 @@ class MetaPatternGenerator:
         if meta_file:
             meta_path = os.path.join(os.path.dirname(checkpoint_path), meta_file)
             if os.path.exists(meta_path):
-                with open(meta_path) as f:
-                    meta_data = json.load(f)
+                with open(meta_path, 'rb') as f:
+                    meta_data = json_load(f)
                     self.meta_patterns = meta_data.get('interpreted', [])
                     self.orchestration_rules = meta_data.get('orchestration_rules', [])
 
@@ -458,8 +465,8 @@ class MetaPatternGenerator:
         if track_derives_file:
             td_path = os.path.join(os.path.dirname(checkpoint_path), track_derives_file)
             if os.path.exists(td_path):
-                with open(td_path) as f:
-                    td_data = json.load(f)
+                with open(td_path, 'rb') as f:
+                    td_data = json_load(f)
                     self.track_derives = td_data.get('derives_json', td_data.get('derives', []))
                     self.track_derives_by_transform = td_data.get('derives_by_transform', {})
                     self.leader_instruments = td_data.get('leader_instruments', {})
@@ -472,8 +479,8 @@ class MetaPatternGenerator:
         if multi_factor_file:
             mf_path = os.path.join(os.path.dirname(checkpoint_path), multi_factor_file)
             if os.path.exists(mf_path):
-                with open(mf_path) as f:
-                    mf_data = json.load(f)
+                with open(mf_path, 'rb') as f:
+                    mf_data = json_load(f)
                     self.rhythm_transforms = mf_data.get('rhythm_vocabulary', [])
                     self.velocity_transforms = mf_data.get('velocity_vocabulary', [])
                     self.duration_transforms = mf_data.get('duration_vocabulary', [])
@@ -2482,17 +2489,17 @@ class MetaPatternGenerator:
                     if tau_offsets:
                         base_ioi = random.choice(tau_offsets)
 
-                # Calculate phrase duration (how long this pattern takes)
-                phrase_duration = base_ioi * (len(intervals) + 1)
-
                 # Use CORPUS-DERIVED instrument roles (no hardcoded categories)
                 # lead_gm already determined from TrackDerive source counts
                 # follower_instruments already computed
 
-                # LEAD INSTRUMENT: Plays the main pattern
+                # LEAD INSTRUMENT: Plays the main pattern with its stored ratios
                 lead_pitch = self._sample_pitch_for_instrument(pattern, lead_gm)
-                lead_notes = self._expand_to_notes(
-                    intervals, lead_pitch, current_time, lead_gm, base_ioi
+                lead_notes, phrase_duration = self._expand_to_notes(
+                    intervals, lead_pitch, current_time, lead_gm, base_ioi,
+                    rhythm_ratios=pattern.get('rhythm_ratios'),
+                    velocity_ratios=pattern.get('velocity_ratios'),
+                    duration_ratios=pattern.get('duration_ratios'),
                 )
                 all_tracks[lead_gm].extend(lead_notes)
 
@@ -2534,8 +2541,13 @@ class MetaPatternGenerator:
                     if follower_pattern_id:
                         current_patterns[follower_gm] = follower_pattern_id
 
-                    follower_notes = self._expand_to_notes(
-                        follower_intervals, follower_pitch, current_time, follower_gm, base_ioi
+                    # Get follower pattern's ratios for authentic reproduction
+                    follower_pattern = self.patterns.get(follower_pattern_id, {}) if follower_pattern_id else {}
+                    follower_notes, _ = self._expand_to_notes(
+                        follower_intervals, follower_pitch, current_time, follower_gm, base_ioi,
+                        rhythm_ratios=follower_pattern.get('rhythm_ratios'),
+                        velocity_ratios=follower_pattern.get('velocity_ratios'),
+                        duration_ratios=follower_pattern.get('duration_ratios'),
                     )
                     all_tracks[follower_gm].extend(follower_notes)
 
@@ -2887,43 +2899,64 @@ class MetaPatternGenerator:
         start_time: int,
         gm_program: int,
         base_ioi: int,
+        rhythm_ratios: List[float] = None,
+        velocity_ratios: List[float] = None,
+        duration_ratios: List[float] = None,
         use_variations: bool = True,
-    ) -> List[Dict]:
-        """Expand intervals to note events.
+    ) -> tuple:
+        """Expand intervals to note events using pattern-specific ratios.
 
-        If use_variations=True, applies learned rhythm/velocity/duration
-        transforms for expressive output.
+        Uses the pattern's stored rhythm/velocity/duration ratios for authentic
+        reproduction of the learned musical patterns.
+
+        Returns:
+            tuple: (notes_list, actual_duration) where actual_duration is the
+                   total time span of the pattern for proper sequencing.
         """
         notes = []
         pitch_range = GM_RANGES.get(gm_program, DEFAULT_RANGE)
+        n_notes = len(intervals) + 1
 
         current_pitch = first_pitch
         current_time = start_time
 
-        # Sample base velocity with optional variation
-        base_velocity = 80
-        if use_variations:
-            base_velocity = self._sample_velocity_variation(base_velocity)
+        # Use pattern ratios if available, otherwise defaults
+        r_ratios = rhythm_ratios if rhythm_ratios and len(rhythm_ratios) >= len(intervals) else None
+        v_ratios = velocity_ratios if velocity_ratios and len(velocity_ratios) >= n_notes else None
+        d_ratios = duration_ratios if duration_ratios and len(duration_ratios) >= n_notes else None
 
-        # First note
-        note_duration = base_ioi
-        if use_variations:
-            note_duration = self._sample_duration_variation(base_ioi)
+        # Base velocity from occurrence or default
+        base_velocity = 80
+
+        # First note velocity from pattern ratios (first ratio is typically 1.0)
+        first_velocity = base_velocity
+        if v_ratios:
+            first_velocity = max(40, min(127, int(base_velocity * v_ratios[0])))
+
+        # First note duration - cap to avoid overlap
+        first_duration = base_ioi
+        if d_ratios:
+            first_duration = max(30, min(base_ioi, int(base_ioi * d_ratios[0])))
 
         notes.append({
             'pitch': max(pitch_range[0], min(pitch_range[1], current_pitch)),
-            'velocity': base_velocity,
+            'velocity': first_velocity,
             'time': current_time,
-            'duration': note_duration,
+            'duration': first_duration,
         })
 
-        # Remaining notes
-        for i, interval in enumerate(intervals):
-            # Apply rhythm variation for timing
-            ioi = base_ioi
-            if use_variations:
-                ioi = self._sample_rhythm_variation(base_ioi)
+        # Track total IOI for actual duration calculation
+        total_ioi = 0
 
+        # Remaining notes using pattern ratios
+        for i, interval in enumerate(intervals):
+            # IOI from rhythm ratios (ratios[i] is IOI ratio before note i+1)
+            if r_ratios and i < len(r_ratios):
+                ioi = max(30, int(base_ioi * r_ratios[i]))
+            else:
+                ioi = base_ioi
+
+            total_ioi += ioi
             current_time += ioi
             current_pitch += interval
 
@@ -2933,13 +2966,21 @@ class MetaPatternGenerator:
             while current_pitch > pitch_range[1]:
                 current_pitch -= 12
 
-            # Apply velocity and duration variations
-            velocity = base_velocity
-            duration = ioi
-            if use_variations:
-                # Slight velocity variation per note for expression
-                velocity = self._sample_velocity_variation(base_velocity)
-                duration = self._sample_duration_variation(ioi)
+            # Velocity from pattern ratios
+            if v_ratios and (i + 1) < len(v_ratios):
+                velocity = max(40, min(127, int(base_velocity * v_ratios[i + 1])))
+            else:
+                velocity = base_velocity
+
+            # Duration from pattern ratios - cap to next IOI to prevent overlap
+            next_ioi = base_ioi  # default for last note
+            if r_ratios and (i + 1) < len(r_ratios):
+                next_ioi = max(30, int(base_ioi * r_ratios[i + 1]))
+
+            if d_ratios and (i + 1) < len(d_ratios):
+                duration = max(30, min(next_ioi, int(base_ioi * d_ratios[i + 1])))
+            else:
+                duration = min(ioi, next_ioi)
 
             notes.append({
                 'pitch': current_pitch,
@@ -2948,7 +2989,13 @@ class MetaPatternGenerator:
                 'duration': duration,
             })
 
-        return notes
+        # Actual duration = sum of IOIs + last note duration
+        # Quantize to beat grid (480 ticks = quarter note)
+        actual_duration = total_ioi + notes[-1]['duration'] if notes else base_ioi
+        # Round up to nearest beat for clean sequencing
+        quantized_duration = ((actual_duration + 479) // 480) * 480
+
+        return notes, quantized_duration
 
     def to_midi(
         self,
