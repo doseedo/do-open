@@ -124,6 +124,29 @@
   margin-top: 16px;
 }
 
+.toolBadgeActive {
+  display: inline-block;
+  padding: 6px 12px;
+  background: rgba(100, 220, 150, 0.2);
+  border: 1px solid rgba(100, 220, 150, 0.5);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(150, 255, 180, 0.95);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 16px;
+}
+
+.toolCardActive {
+  border-color: rgba(100, 220, 150, 0.4);
+}
+
+.toolCardActive:hover {
+  border-color: rgba(100, 220, 150, 0.7);
+  box-shadow: 0 12px 32px rgba(100, 220, 150, 0.25);
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
   .toolsGrid {
