@@ -339,6 +339,31 @@ server {
         client_max_body_size 10M;
     }
 
+    # Melody generation endpoint (basic, genre, context modes)
+    location /api/generate-melody {
+        proxy_pass http://localhost:8070;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        client_max_body_size 50M;
+    }
+
+    # Download generated melody MIDI files
+    location ~ ^/download-melody/(.+)/(.+)$ {
+        proxy_pass http://localhost:8070/download-melody/$1/$2;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
     # ACE-Step generation endpoint (text-to-music)
     location = /api/generate-ace-step {
         proxy_pass http://localhost:8070/api/generate-ace-step;
