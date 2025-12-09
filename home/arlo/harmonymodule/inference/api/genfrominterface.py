@@ -12947,6 +12947,175 @@ async def download_ace_step_audio(process_id: str, filename: str):
     raise HTTPException(404, "ACE-Step audio file not found")
 
 
+# ==============================================================================
+# VOCAL HARMONIZER ENDPOINTS
+# ==============================================================================
+
+@app.post("/api/vocal-harmonizer")
+async def vocal_harmonizer_endpoint(
+    num_harmonies: int = Form(2),
+    voicing: str = Form("close"),
+    key: str = Form("C"),
+    noise_level: float = Form(0.8),
+    use_ace_step: bool = Form(False),
+    extract_lyrics: bool = Form(True),
+    tempo: int = Form(120),
+    input_audio: UploadFile = File(...)
+):
+    """
+    Vocal Harmonizer API endpoint.
+
+    Takes a vocal audio file and generates harmony voices.
+
+    Parameters:
+        num_harmonies: Number of harmony voices (1-4, default: 2)
+        voicing: Voicing style preset (close, thirds, fifths, gospel, barbershop)
+        key: Musical key (C, Am, F#, etc.)
+        noise_level: Noise level for ACE-Step rendering (0.0-1.0)
+        use_ace_step: Whether to render through ACE-Step for natural vocals
+        extract_lyrics: Whether to extract lyrics with Whisper
+        tempo: Tempo in BPM for MIDI export
+        input_audio: Vocal audio file (WAV, MP3, etc.)
+
+    Returns:
+        JSON with harmony audio URLs, MIDI URL, lyrics, and metadata
+    """
+    import uuid
+    from pathlib import Path
+
+    print(f"\n{'='*80}")
+    print(f"VOCAL HARMONIZER REQUEST")
+    print(f"{'='*80}")
+    print(f"  num_harmonies: {num_harmonies}")
+    print(f"  voicing: {voicing}")
+    print(f"  key: {key}")
+    print(f"  noise_level: {noise_level}")
+    print(f"  use_ace_step: {use_ace_step}")
+    print(f"  extract_lyrics: {extract_lyrics}")
+    print(f"  tempo: {tempo}")
+    print(f"  input_audio: {input_audio.filename}")
+    print(f"{'='*80}\n")
+
+    try:
+        # Generate unique process ID
+        process_id = str(uuid.uuid4())[:8]
+
+        # Create output directory
+        output_dir = Path(f"./generated_ui/vocal_harmonizer_{process_id}")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save uploaded audio
+        input_path = output_dir / f"input_{input_audio.filename}"
+        with open(input_path, "wb") as f:
+            content = await input_audio.read()
+            f.write(content)
+        print(f"Saved input audio: {input_path}")
+
+        # Import vocal harmonizer
+        sys.path.append('/home/arlo/harmonymodule')
+        from vocal_harmonizer import harmonize_vocals, render_harmony_with_ace_step
+
+        # Run harmonization
+        result = harmonize_vocals(
+            input_audio=str(input_path),
+            output_dir=str(output_dir),
+            num_harmonies=num_harmonies,
+            voicing_type=voicing,
+            key=key,
+            noise_level=noise_level,
+            use_ace_step=False,  # We'll handle ACE-Step separately for async
+            extract_lyrics=extract_lyrics,
+            tempo=tempo
+        )
+
+        # Build response URLs
+        harmony_urls = []
+        for i, audio_path in enumerate(result.get("harmony_audio_paths", [])):
+            filename = os.path.basename(audio_path)
+            url = f"/download-vocal-harmony/{process_id}/{filename}"
+            harmony_urls.append({
+                "voice": i + 1,
+                "url": url,
+                "filename": filename
+            })
+
+        midi_filename = os.path.basename(result.get("midi_path", ""))
+        midi_url = f"/download-vocal-harmony/{process_id}/{midi_filename}" if midi_filename else None
+
+        # Optionally render through ACE-Step
+        ace_step_urls = []
+        if use_ace_step and result.get("harmony_audio_paths"):
+            for i, harmony_path in enumerate(result["harmony_audio_paths"]):
+                ace_output = str(output_dir / f"ace_step_harmony_{i+1}.wav")
+                try:
+                    render_harmony_with_ace_step(
+                        result["midi_path"],
+                        harmony_path,
+                        ace_output,
+                        lyrics=result.get("lyrics", ""),
+                        noise_level=noise_level
+                    )
+                    ace_filename = os.path.basename(ace_output)
+                    ace_step_urls.append({
+                        "voice": i + 1,
+                        "url": f"/download-vocal-harmony/{process_id}/{ace_filename}",
+                        "filename": ace_filename
+                    })
+                except Exception as e:
+                    print(f"  Warning: ACE-Step render failed for voice {i+1}: {e}")
+
+        response = {
+            "success": True,
+            "process_id": process_id,
+            "harmony_audio": harmony_urls,
+            "midi_url": midi_url,
+            "lyrics": result.get("lyrics", ""),
+            "num_pitch_events": result.get("num_pitch_events", 0),
+            "word_count": result.get("word_count", 0),
+            "settings": {
+                "num_harmonies": num_harmonies,
+                "voicing": voicing,
+                "key": key,
+                "noise_level": noise_level
+            }
+        }
+
+        if ace_step_urls:
+            response["ace_step_audio"] = ace_step_urls
+
+        print(f"\nVocal Harmonizer complete!")
+        print(f"  Generated {len(harmony_urls)} harmony voices")
+        print(f"  Process ID: {process_id}")
+
+        return response
+
+    except Exception as e:
+        print(f"Vocal Harmonizer error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"Harmonization failed: {str(e)}")
+
+
+@app.get("/download-vocal-harmony/{process_id}/{filename}")
+async def download_vocal_harmony(process_id: str, filename: str):
+    """Serve vocal harmonizer generated files (audio and MIDI)"""
+    file_path = Path(f"./generated_ui/vocal_harmonizer_{process_id}") / filename
+
+    if not file_path.exists():
+        raise HTTPException(404, "Harmony file not found")
+
+    # Determine media type
+    if filename.endswith('.mid') or filename.endswith('.midi'):
+        media_type = "audio/midi"
+    elif filename.endswith('.wav'):
+        media_type = "audio/wav"
+    elif filename.endswith('.mp3'):
+        media_type = "audio/mpeg"
+    else:
+        media_type = "application/octet-stream"
+
+    return FileResponse(file_path, media_type=media_type, filename=filename)
+
 
 @app.post("/api/render-chords")
 async def render_chords(request: Request):
