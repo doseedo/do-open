@@ -149,6 +149,21 @@ const initialState = {
   phaserRate: 0.1,
   phaserDepth: 0.6,
   phaserFeedback: 0.7,
+
+  // FX Slots - Dynamic effect chain (8 slots)
+  fxSlots: [
+    { id: 0, pluginName: 'Reverb', enabled: true, params: {} },
+    { id: 1, pluginName: 'SimpleDelay', enabled: true, params: {} },
+    { id: 2, pluginName: 'Chorus', enabled: true, params: {} },
+    { id: 3, pluginName: 'Compressor', enabled: true, params: {} },
+    { id: 4, pluginName: 'EQThree', enabled: true, params: {} },
+    { id: 5, pluginName: 'Phaser', enabled: true, params: {} },
+    { id: 6, pluginName: null, enabled: false, params: {} },
+    { id: 7, pluginName: null, enabled: false, params: {} },
+  ],
+  fxChainPresets: [], // Saved FX chain configurations
+  selectedFxSlot: null, // Currently selected slot for editing
+
   stemsSidebar: {
     isCollapsed: true
   },
@@ -1336,6 +1351,168 @@ function appReducer(state, action) {
       return { ...state, phaserDepth: action.payload };
     case 'SET_PHASER_FEEDBACK':
       return { ...state, phaserFeedback: action.payload };
+
+    // FX Slots Actions
+    case 'SET_FX_SLOT':
+      // Set plugin in a specific slot
+      return {
+        ...state,
+        fxSlots: state.fxSlots.map(slot =>
+          slot.id === action.payload.slotId
+            ? {
+                ...slot,
+                pluginName: action.payload.pluginName,
+                enabled: action.payload.enabled !== undefined ? action.payload.enabled : true,
+                params: action.payload.params || {}
+              }
+            : slot
+        )
+      };
+
+    case 'CLEAR_FX_SLOT':
+      // Clear a slot (remove plugin)
+      return {
+        ...state,
+        fxSlots: state.fxSlots.map(slot =>
+          slot.id === action.payload.slotId
+            ? { ...slot, pluginName: null, enabled: false, params: {} }
+            : slot
+        )
+      };
+
+    case 'TOGGLE_FX_SLOT':
+      // Toggle slot enabled/bypassed state
+      return {
+        ...state,
+        fxSlots: state.fxSlots.map(slot =>
+          slot.id === action.payload.slotId
+            ? { ...slot, enabled: !slot.enabled }
+            : slot
+        )
+      };
+
+    case 'SET_FX_SLOT_ENABLED':
+      // Set slot enabled state
+      return {
+        ...state,
+        fxSlots: state.fxSlots.map(slot =>
+          slot.id === action.payload.slotId
+            ? { ...slot, enabled: action.payload.enabled }
+            : slot
+        )
+      };
+
+    case 'UPDATE_FX_SLOT_PARAMS':
+      // Update parameters for a slot
+      return {
+        ...state,
+        fxSlots: state.fxSlots.map(slot =>
+          slot.id === action.payload.slotId
+            ? { ...slot, params: { ...slot.params, ...action.payload.params } }
+            : slot
+        )
+      };
+
+    case 'SET_FX_SLOT_PARAM':
+      // Set a single parameter for a slot
+      return {
+        ...state,
+        fxSlots: state.fxSlots.map(slot =>
+          slot.id === action.payload.slotId
+            ? {
+                ...slot,
+                params: {
+                  ...slot.params,
+                  [action.payload.paramName]: action.payload.value
+                }
+              }
+            : slot
+        )
+      };
+
+    case 'SWAP_FX_SLOTS':
+      // Swap two slots
+      const { slotA, slotB } = action.payload;
+      const slotACopy = { ...state.fxSlots[slotA] };
+      const slotBCopy = { ...state.fxSlots[slotB] };
+      return {
+        ...state,
+        fxSlots: state.fxSlots.map(slot => {
+          if (slot.id === slotA) {
+            return { ...slotBCopy, id: slotA };
+          }
+          if (slot.id === slotB) {
+            return { ...slotACopy, id: slotB };
+          }
+          return slot;
+        })
+      };
+
+    case 'SELECT_FX_SLOT':
+      // Select a slot for detailed editing
+      return { ...state, selectedFxSlot: action.payload.slotId };
+
+    case 'DESELECT_FX_SLOT':
+      // Deselect slot
+      return { ...state, selectedFxSlot: null };
+
+    case 'SAVE_FX_CHAIN_PRESET':
+      // Save current FX chain as a preset
+      const newPreset = {
+        id: `preset-${Date.now()}`,
+        name: action.payload.name,
+        timestamp: Date.now(),
+        slots: state.fxSlots.map(slot => ({
+          pluginName: slot.pluginName,
+          enabled: slot.enabled,
+          params: { ...slot.params }
+        }))
+      };
+      return {
+        ...state,
+        fxChainPresets: [...state.fxChainPresets, newPreset]
+      };
+
+    case 'LOAD_FX_CHAIN_PRESET':
+      // Load an FX chain preset
+      const preset = state.fxChainPresets.find(p => p.id === action.payload.presetId);
+      if (!preset) return state;
+      return {
+        ...state,
+        fxSlots: state.fxSlots.map((slot, index) => {
+          const presetSlot = preset.slots[index];
+          if (!presetSlot) return slot;
+          return {
+            ...slot,
+            pluginName: presetSlot.pluginName,
+            enabled: presetSlot.enabled,
+            params: { ...presetSlot.params }
+          };
+        })
+      };
+
+    case 'DELETE_FX_CHAIN_PRESET':
+      // Delete an FX chain preset
+      return {
+        ...state,
+        fxChainPresets: state.fxChainPresets.filter(p => p.id !== action.payload.presetId)
+      };
+
+    case 'RESET_FX_CHAIN':
+      // Reset to default FX chain
+      return {
+        ...state,
+        fxSlots: [
+          { id: 0, pluginName: 'Reverb', enabled: true, params: {} },
+          { id: 1, pluginName: 'SimpleDelay', enabled: true, params: {} },
+          { id: 2, pluginName: 'Chorus', enabled: true, params: {} },
+          { id: 3, pluginName: 'Compressor', enabled: true, params: {} },
+          { id: 4, pluginName: 'EQThree', enabled: true, params: {} },
+          { id: 5, pluginName: 'Phaser', enabled: true, params: {} },
+          { id: 6, pluginName: null, enabled: false, params: {} },
+          { id: 7, pluginName: null, enabled: false, params: {} },
+        ]
+      };
 
     default:
       return state;
