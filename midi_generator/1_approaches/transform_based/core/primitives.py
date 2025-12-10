@@ -37,6 +37,88 @@ class PrimitiveType(Enum):
     RETROGRADE = "retrograde"    # Involution (self-inverse)
 
 
+# =============================================================================
+# Interval Magnitude: Diatonic-Agnostic Interval Grouping
+# =============================================================================
+# This maps semitone distances to "magnitude" - a rough measure of interval size
+# that groups minor/major variants together WITHOUT prescribing music theory.
+#
+# The key insight: b3 (3 semitones) and 3 (4 semitones) are both "3rds"
+# This is a MATHEMATICAL grouping, not a theoretical prescription.
+# The system can DISCOVER when this grouping is useful for compression.
+#
+# Semitones -> Magnitude mapping (purely structural):
+#   0 -> 0 (unison)
+#   1,2 -> 1 (seconds - small steps)
+#   3,4 -> 2 (thirds - medium steps)
+#   5 -> 3 (fourth)
+#   6 -> 4 (tritone - UNIQUE: inverts to itself, distinct function)
+#   7 -> 5 (fifth)
+#   8,9 -> 6 (sixths)
+#   10,11 -> 7 (sevenths)
+
+# Semitone to magnitude lookup (index = semitones mod 12)
+SEMITONE_TO_MAGNITUDE = [0, 1, 1, 2, 2, 3, 4, 5, 6, 6, 7, 7]
+
+# Magnitude names for readability (not theory - just labels)
+MAGNITUDE_NAMES = ['U', '2', '3', '4', 'TT', '5', '6', '7']  # TT = tritone
+
+
+def semitones_to_magnitude(semitones: int) -> int:
+    """
+    Convert semitone distance to interval magnitude.
+
+    This is a pure mathematical binning that groups:
+    - Minor/major 2nds (1-2 semitones) -> magnitude 1
+    - Minor/major 3rds (3-4 semitones) -> magnitude 2
+    - Perfect 4th (5 semitones) -> magnitude 3
+    - Tritone (6 semitones) -> magnitude 4 (unique - inverts to itself)
+    - Perfect 5th (7 semitones) -> magnitude 5
+    - Minor/major 6ths (8-9 semitones) -> magnitude 6
+    - Minor/major 7ths (10-11 semitones) -> magnitude 7
+
+    This allows the system to DISCOVER diatonic relationships without
+    prescribing what they should be.
+    """
+    return SEMITONE_TO_MAGNITUDE[semitones % 12]
+
+
+def magnitude_to_name(magnitude: int) -> str:
+    """Get readable name for magnitude."""
+    if 0 <= magnitude < len(MAGNITUDE_NAMES):
+        return MAGNITUDE_NAMES[magnitude]
+    return f"M{magnitude}"
+
+
+class IntervalMagnitude(Enum):
+    """
+    Interval magnitude classes - groups intervals by approximate size.
+
+    This is NOT music theory - it's a structural grouping that allows
+    the system to discover when b3/3, b6/6, b7/7 behave similarly.
+
+    The tritone gets its own class because it's mathematically unique:
+    it's the only interval that inverts to itself (12-6=6).
+    """
+    UNISON = 0      # 0 semitones
+    SECOND = 1      # 1-2 semitones (minor/major 2nd)
+    THIRD = 2       # 3-4 semitones (minor/major 3rd)
+    FOURTH = 3      # 5 semitones (perfect 4th)
+    TRITONE = 4     # 6 semitones (unique - self-inverting)
+    FIFTH = 5       # 7 semitones (perfect 5th)
+    SIXTH = 6       # 8-9 semitones (minor/major 6th)
+    SEVENTH = 7     # 10-11 semitones (minor/major 7th)
+
+    @classmethod
+    def from_semitones(cls, semitones: int) -> 'IntervalMagnitude':
+        """Convert semitone distance to magnitude."""
+        mag = semitones_to_magnitude(semitones)
+        return cls(mag)
+
+    def __str__(self):
+        return MAGNITUDE_NAMES[self.value]
+
+
 @dataclass(frozen=True)
 class Primitive:
     """An atomic transform primitive."""
@@ -90,6 +172,122 @@ class CompoundTransform:
 
     def __repr__(self):
         return f"CompoundTransform({self.name})"
+
+
+# =============================================================================
+# TrackDerive: Cross-Track Derivation Primitive
+# =============================================================================
+# This captures arrangement-level relationships:
+#   "Trombone@bar4 = Trumpet@bar4 × T(-7)"
+#   "SaxSection@A = BrassHorn@A × T(3) × τ(0.5)"
+#
+# Unlike aggregate_orchestration_rules which produces STATISTICS,
+# TrackDerive creates per-occurrence DERIVATION relationships that
+# become part of the pattern graph.
+
+@dataclass
+class TrackDerive:
+    """
+    Cross-track derivation: one occurrence derives from another.
+
+    This is the heart of arrangement knowledge. Instead of just:
+        "Trumpet→Trombone: T7 with 85% confidence" (summary statistic)
+
+    We capture:
+        "This trombone occurrence = this trumpet occurrence + T(-7)"
+
+    This enables the tokenizer to emit cross-track references and
+    allows discovery of arrangement-level patterns like:
+        "A section sax = A section brass + harmonized intervals"
+
+    Attributes:
+        source_piece: Piece ID where both occurrences live
+        source_track: Track ID of the SOURCE pattern (leader)
+        source_instrument: GM program of source (for semantic meaning)
+        source_time: Onset time of source occurrence
+        source_pattern_id: Pattern ID of source
+        target_track: Track ID of the TARGET pattern (follower/derived)
+        target_instrument: GM program of target
+        target_time: Onset time of target occurrence
+        target_pattern_id: Pattern ID of target
+        transform: The compound transform relating source→target
+        pitch_offset: Additional pitch offset between occurrences (0-11)
+        rhythm_scale: τ factor if rhythm differs (1.0 = same)
+        velocity_scale: v factor if velocity differs (1.0 = same)
+        confidence: How well the transform matches (1.0 = exact)
+    """
+    source_piece: str
+    source_track: int
+    source_instrument: int  # GM program (meaningful identity)
+    source_time: int
+    source_pattern_id: int
+    target_track: int
+    target_instrument: int
+    target_time: int
+    target_pattern_id: int
+    transform: 'CompoundTransform'
+    pitch_offset: int = 0  # Voicing offset (0-11)
+    rhythm_scale: float = 1.0  # τ factor
+    velocity_scale: float = 1.0  # v factor
+    confidence: float = 1.0
+
+    def __str__(self):
+        src_inst = self.source_instrument
+        tgt_inst = self.target_instrument
+        t_str = str(self.transform) if self.transform else "identity"
+
+        parts = [t_str]
+        if self.pitch_offset != 0:
+            parts.append(f"+O{self.pitch_offset}")
+        if self.rhythm_scale != 1.0:
+            parts.append(f"×τ{self.rhythm_scale:.2f}")
+        if self.velocity_scale != 1.0:
+            parts.append(f"×v{self.velocity_scale:.2f}")
+
+        transform_str = "".join(parts)
+        return f"Track{self.source_track}[{src_inst}]@{self.source_time} → Track{self.target_track}[{tgt_inst}]@{self.target_time}: {transform_str}"
+
+    def to_dict(self) -> dict:
+        """Serialize for JSON storage."""
+        return {
+            'source_piece': self.source_piece,
+            'source_track': self.source_track,
+            'source_instrument': self.source_instrument,
+            'source_time': self.source_time,
+            'source_pattern_id': self.source_pattern_id,
+            'target_track': self.target_track,
+            'target_instrument': self.target_instrument,
+            'target_time': self.target_time,
+            'target_pattern_id': self.target_pattern_id,
+            'transform': str(self.transform) if self.transform else 'identity',
+            'pitch_offset': self.pitch_offset,
+            'rhythm_scale': self.rhythm_scale,
+            'velocity_scale': self.velocity_scale,
+            'confidence': self.confidence,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict, transform_lookup: dict = None) -> 'TrackDerive':
+        """Deserialize from JSON."""
+        transform = None
+        if transform_lookup and d.get('transform') in transform_lookup:
+            transform = transform_lookup[d['transform']]
+        return cls(
+            source_piece=d['source_piece'],
+            source_track=d['source_track'],
+            source_instrument=d['source_instrument'],
+            source_time=d['source_time'],
+            source_pattern_id=d['source_pattern_id'],
+            target_track=d['target_track'],
+            target_instrument=d['target_instrument'],
+            target_time=d['target_time'],
+            target_pattern_id=d['target_pattern_id'],
+            transform=transform,
+            pitch_offset=d.get('pitch_offset', 0),
+            rhythm_scale=d.get('rhythm_scale', 1.0),
+            velocity_scale=d.get('velocity_scale', 1.0),
+            confidence=d.get('confidence', 1.0),
+        )
 
 
 # =============================================================================
@@ -484,7 +682,8 @@ def find_transforms_batch_gpu(
     candidates: List[CompoundTransform] = None,
     table: 'torch.Tensor' = None,
     retrograde_mask: 'torch.Tensor' = None,
-    device: str = 'cuda'
+    device: str = 'cuda',
+    check_pure_retrograde: bool = True
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Fully vectorized GPU transform matching for A100.
@@ -494,6 +693,7 @@ def find_transforms_batch_gpu(
     2. Single gather operation - O(1) per element, fully parallel
     3. No tensor cloning - direct table lookup
     4. Boolean exact match - faster than float comparison
+    5. NEW: Check pure retrograde FIRST (target == reverse(source))
 
     Args:
         sources: (B, L) source sequences
@@ -502,9 +702,11 @@ def find_transforms_batch_gpu(
         table: Precomputed (C, 12) lookup table (reuse across calls!)
         retrograde_mask: Precomputed boolean mask for retrograde transforms
         device: PyTorch device ('cuda' or 'cpu')
+        check_pure_retrograde: If True, check for pure R before compound transforms
 
     Returns:
         (best_indices, best_errors): Arrays of shape (B,)
+        For pure retrograde matches, returns index of pure R in candidates (or -2 special code)
     """
     try:
         import torch
@@ -535,38 +737,73 @@ def find_transforms_batch_gpu(
     sources_t = torch.tensor(sources, dtype=torch.long, device=device)
     targets_t = torch.tensor(targets, dtype=torch.long, device=device)
 
-    # Vectorized table lookup: transform ALL candidates simultaneously
-    # table: (C, 12) → expand to (C, 1, 1, 12) for broadcast
-    # sources_t: (B, L) → expand to (C, B, L) as indices
+    # Initialize result arrays
+    best_indices_t = torch.full((B,), -1, dtype=torch.long, device=device)
 
-    sources_expanded = sources_t.unsqueeze(0).expand(C, -1, -1)  # (C, B, L)
+    # =========================================================================
+    # NEW: Check pure retrograde FIRST (target == reverse(source))
+    # This catches R relationships that compound transforms might miss
+    # =========================================================================
+    if check_pure_retrograde and L > 1:
+        sources_reversed = sources_t.flip(dims=[1])  # (B, L)
+        pure_retrograde_matches = (sources_reversed == targets_t).all(dim=1)  # (B,)
 
-    # Use advanced indexing for fully vectorized lookup
-    # table[c, sources_expanded[c, b, l]] for all c, b, l simultaneously
-    all_transformed = table[
-        torch.arange(C, device=device).view(C, 1, 1).expand(C, B, L),
-        sources_expanded
-    ]  # (C, B, L)
+        # Find index of pure R in candidates (single R primitive)
+        pure_r_idx = -1
+        for i, c in enumerate(candidates):
+            if len(c.primitives) == 1 and c.primitives[0].type == PrimitiveType.RETROGRADE:
+                pure_r_idx = i
+                break
 
-    # Apply retrograde where needed - vectorized flip
-    if retrograde_mask.any():
-        # Flip only the retrograde candidates
-        retro_indices = retrograde_mask.nonzero(as_tuple=True)[0]
-        all_transformed[retro_indices] = all_transformed[retro_indices].flip(dims=[2])
+        if pure_r_idx >= 0:
+            # Mark pure retrograde matches
+            best_indices_t[pure_retrograde_matches] = pure_r_idx
+        else:
+            # Use special code -2 for pure retrograde if not in candidates
+            best_indices_t[pure_retrograde_matches] = -2
 
-    # Compare all at once using boolean exact match (faster than float)
-    targets_expanded = targets_t.unsqueeze(0)  # (1, B, L)
-    exact_matches = (all_transformed == targets_expanded).all(dim=2)  # (C, B) boolean
+    # =========================================================================
+    # Standard compound transform matching for remaining pairs
+    # =========================================================================
+    unmatched_mask = best_indices_t < 0  # Pairs not yet matched
 
-    # Find first matching transform per pair
-    any_match = exact_matches.any(dim=0)  # (B,)
+    if unmatched_mask.any():
+        # Vectorized table lookup: transform ALL candidates simultaneously
+        sources_expanded = sources_t.unsqueeze(0).expand(C, -1, -1)  # (C, B, L)
 
-    # argmax on int gives first True index
-    best_indices_t = exact_matches.int().argmax(dim=0)  # (B,)
-    best_indices_t[~any_match] = -1  # Mark no-match
+        # Use advanced indexing for fully vectorized lookup
+        all_transformed = table[
+            torch.arange(C, device=device).view(C, 1, 1).expand(C, B, L),
+            sources_expanded
+        ]  # (C, B, L)
+
+        # Apply retrograde where needed - vectorized flip
+        if retrograde_mask.any():
+            retro_indices = retrograde_mask.nonzero(as_tuple=True)[0]
+            all_transformed[retro_indices] = all_transformed[retro_indices].flip(dims=[2])
+
+        # Compare all at once using boolean exact match
+        targets_expanded = targets_t.unsqueeze(0)  # (1, B, L)
+        exact_matches = (all_transformed == targets_expanded).all(dim=2)  # (C, B) boolean
+
+        # Find first matching transform per pair
+        any_match = exact_matches.any(dim=0)  # (B,)
+
+        # argmax on int gives first True index
+        compound_indices = exact_matches.int().argmax(dim=0)  # (B,)
+
+        # Update only unmatched pairs that found a compound match
+        update_mask = unmatched_mask & any_match
+        best_indices_t[update_mask] = compound_indices[update_mask]
+
+    # Handle -2 (pure retrograde not in candidates) -> convert to -1 for compatibility
+    # But return additional info about pure retrograde
+    pure_retro_count = (best_indices_t == -2).sum().item()
+    best_indices_t[best_indices_t == -2] = -1  # Compatibility with existing code
 
     # Errors: 0 for match, 1 for no match
-    best_errors = (~any_match).float()
+    any_match_final = best_indices_t >= 0
+    best_errors = (~any_match_final).float()
 
     return best_indices_t.cpu().numpy(), best_errors.cpu().numpy()
 

@@ -484,7 +484,7 @@ def run_preprocessing(
         "--input", str(temp_paths_file),
         "--output", str(output_dir),
         "--gpus", ",".join(map(str, gpus)),
-        "--formats", "minimal"  # dcae_latents, encodec, piano_roll, amp, rframe, rbend
+        "--formats", "dcae_latents,conditioning"  # no encodec, no midi/piano_roll
     ]
 
     if skip_existing:

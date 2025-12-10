@@ -60,6 +60,33 @@ from scripts.level3_meta_patterns import (
     aggregate_orchestration_rules,
 )
 
+# Multi-factor transform discovery (τ, v, d)
+from discovery.multi_factor_transforms import (
+    run_multi_factor_discovery,
+    FactorTransform,
+    FactorType,
+)
+
+# TrackDerive: Cross-track derivation (arrangement patterns)
+from discovery.track_derive import (
+    run_track_derive_discovery,
+)
+
+# Interval Magnitude: Dual chromatic/diatonic transform representation
+from discovery.interval_magnitude import (
+    run_interval_magnitude_discovery,
+)
+
+# Feature Importance: MDL-based conditioning variable discovery
+from discovery.feature_importance import (
+    run_feature_importance_discovery,
+)
+
+# Octave Equivalence: MDL-based test for octave equivalence
+from discovery.octave_equivalence import (
+    run_octave_equivalence_discovery,
+)
+
 
 def convert_normalized_to_factored_patterns(
     normalized_rules: dict,
@@ -131,6 +158,9 @@ def save_normalized_checkpoint(
     stats: dict,
     transform_discovery: dict = None,
     meta_patterns: dict = None,
+    multi_factor_discovery: dict = None,
+    track_derive_discovery: dict = None,
+    feature_importance_discovery: dict = None,
     verbose: bool = True
 ):
     """Save checkpoint with full normalized pattern data.
@@ -207,6 +237,73 @@ def save_normalized_checkpoint(
         with open(transforms_path, 'w') as f:
             json.dump(transform_data, f)
         data['transforms_json_file'] = np.array([os.path.basename(transforms_path)])
+
+    # Add multi-factor discovery (τ, v, d) if available
+    if multi_factor_discovery:
+        mf_data = convert_numpy({
+            k: v for k, v in multi_factor_discovery.items()
+            if k != 'vocabulary_objects'  # Remove non-serializable
+        })
+        multi_factor_path = f'{base_path}_multi_factor.json'
+        with open(multi_factor_path, 'w') as f:
+            json.dump(mf_data, f)
+        data['multi_factor_json_file'] = np.array([os.path.basename(multi_factor_path)])
+        data['n_factor_vocabulary'] = np.array([len(multi_factor_discovery.get('vocabulary', []))])
+        data['n_rhythm_transforms'] = np.array([multi_factor_discovery.get('rhythm_transforms', 0)])
+        data['n_velocity_transforms'] = np.array([multi_factor_discovery.get('velocity_transforms', 0)])
+        data['n_duration_transforms'] = np.array([multi_factor_discovery.get('duration_transforms', 0)])
+
+    # Add TrackDerive discovery (cross-track arrangement derivations)
+    if track_derive_discovery and track_derive_discovery.get('n_derives', 0) > 0:
+        td_data = convert_numpy({
+            'derives_json': track_derive_discovery.get('derives_json', []),
+            'n_derives': track_derive_discovery.get('n_derives', 0),
+            'derives_by_transform': track_derive_discovery.get('derives_by_transform', {}),
+            'leader_instruments': track_derive_discovery.get('leader_instruments', {}),
+        })
+        track_derives_path = f'{base_path}_track_derives.json'
+        with open(track_derives_path, 'w') as f:
+            json.dump(td_data, f)
+        data['track_derives_json_file'] = np.array([os.path.basename(track_derives_path)])
+        data['n_track_derives'] = np.array([track_derive_discovery.get('n_derives', 0)])
+
+        if verbose:
+            print(f"  Saved {track_derive_discovery.get('n_derives', 0)} TrackDerive relations")
+
+    # Add feature importance discovery (MDL-based feature selection)
+    if feature_importance_discovery and feature_importance_discovery.get('useful_features'):
+        fi_data = convert_numpy({
+            'useful_features': feature_importance_discovery.get('useful_features', []),
+            'feature_gains': feature_importance_discovery.get('feature_gains', {}),
+            'feature_clusters': feature_importance_discovery.get('feature_clusters', {}),
+            'feature_shifts': feature_importance_discovery.get('feature_shifts', {}),
+        })
+        feature_importance_path = f'{base_path}_feature_importance.json'
+        with open(feature_importance_path, 'w') as f:
+            json.dump(fi_data, f)
+        data['feature_importance_json_file'] = np.array([os.path.basename(feature_importance_path)])
+        data['n_useful_features'] = np.array([len(feature_importance_discovery.get('useful_features', []))])
+
+        if verbose:
+            useful = feature_importance_discovery.get('useful_features', [])
+            print(f"  Saved {len(useful)} useful features: {', '.join(useful)}")
+
+    # Add per-piece interval preferences (for context-aware generation)
+    piece_prefs = stats.get('piece_interval_preferences', {})
+    if piece_prefs:
+        prefs_path = f'{base_path}_interval_prefs.json'
+        with open(prefs_path, 'w') as f:
+            json.dump(convert_numpy(piece_prefs), f)
+        data['interval_prefs_json_file'] = np.array([os.path.basename(prefs_path)])
+        data['preferred_interval_repr'] = np.array([stats.get('preferred_interval_repr', 'chromatic')])
+
+        if verbose:
+            from collections import Counter
+            pref_counts = Counter(piece_prefs.values())
+            print(f"  Saved per-piece interval preferences: "
+                  f"magnitude={pref_counts.get('magnitude', 0)}, "
+                  f"chromatic={pref_counts.get('chromatic', 0)}, "
+                  f"both={pref_counts.get('both', 0)}")
 
     # Add meta patterns if available (can also be large)
     if meta_patterns:
@@ -305,19 +402,35 @@ def convert_grammar_to_rules(
         # Expand to get pitch classes (terminals)
         expanded = grammar.expand_rule(rule_id, memo)
 
-        # Compute SIGNED intervals from expanded pitch classes
-        # This preserves melodic direction (up vs down) for generation
-        pitch_intervals = []
-        for i in range(len(expanded) - 1):
-            diff = (expanded[i + 1] - expanded[i]) % 12
-            if diff > 6:
-                diff -= 12  # Convert 7-11 to -5 to -1 (down instead of up)
-            pitch_intervals.append(diff)
+        # Get the SIGNED pitch interval from the grammar (computed from actual pitches)
+        # Stored as actual signed integers - no decoding needed
+        # +15 = ascending minor 10th, -9 = descending major 6th, 0 = unison
+        signed_interval = grammar.rule_pitch_intervals[rule_idx].item()  # Already signed
 
         # Get children IDs for hierarchical expansion
         left_child = grammar.rule_table[rule_idx, 0].item()
         right_child = grammar.rule_table[rule_idx, 1].item()
         is_hierarchical = (left_child >= n_terminals or right_child >= n_terminals)
+
+        # Build pitch_intervals correctly for both base and hierarchical patterns
+        # For hierarchical: combine children's intervals + connector
+        pitch_intervals = []
+        connector_interval = 0
+
+        if is_hierarchical:
+            # Get children's pitch_intervals (already processed since we iterate by rule_id order)
+            left_intervals = rules.get(str(left_child), {}).get('pitch_intervals', [])
+            right_intervals = rules.get(str(right_child), {}).get('pitch_intervals', [])
+
+            # The grammar's signed_interval is the connector between left's last note and right's first
+            connector_interval = signed_interval
+
+            # Combine: left_intervals + [connector] + right_intervals
+            pitch_intervals = list(left_intervals) + [signed_interval] + list(right_intervals)
+        else:
+            # Base 2-note pattern: use grammar's signed interval directly
+            pitch_intervals = [signed_interval]
+            connector_interval = 0
 
         rules[str(rule_id)] = {
             'pitch_classes': expanded,
@@ -336,7 +449,8 @@ def convert_grammar_to_rules(
             'left_child': left_child,
             'right_child': right_child,
             # Connector interval: pitch offset from left's last note to right's first note
-            'connector_interval': pitch_interval,  # This is the interval between children
+            # This is the SIGNED interval, computed from the actual pitch classes
+            'connector_interval': connector_interval,
         }
 
     # === KEY FIX: Use rule_occurrences captured during compression ===
@@ -620,10 +734,8 @@ def convert_grammar_to_rules(
         right_pitches = expand_canonical_pitches(str(right_child), memo)
 
         # Connector interval determines how right_pitches attach to left_pitches
-        # connector_interval is the pitch class delta (0-11), need to interpret as signed
+        # connector_interval is already a signed interval (computed from pitch_intervals)
         connector = rule.get('connector_interval', 0)
-        if connector > 6:
-            connector -= 12  # Treat as descending
 
         # Adjust right_pitches so that:
         # right_pitches[0] = left_pitches[-1] + connector
@@ -942,6 +1054,304 @@ def run_normalized_pipeline(
     stats['phase5_time'] = time.time() - phase_start
 
     # =========================================================================
+    # PHASE 5b: Multi-Factor Transform Discovery (τ, v, d)
+    # =========================================================================
+    phase_start = time.time()
+    multi_factor_discovery = {'vocabulary': [], 'rhythm_transforms': 0, 'velocity_transforms': 0, 'duration_transforms': 0}
+
+    if len(canonicals) > 10:
+        if verbose:
+            print(f"\n[Phase 5b] Multi-Factor Transform Discovery (τ, v, d)...", flush=True)
+
+        try:
+            # Convert canonicals to dict format for multi-factor discovery
+            patterns_for_mf = [p.to_dict() if hasattr(p, 'to_dict') else {
+                'pitch_classes': p.pitch_classes,
+                'rhythm_ratios': getattr(p, '_rhythm_ratios', None) or p.rhythm_ratios,
+                'velocity_ratios': getattr(p, '_velocity_ratios', None) or p.velocity_ratios,
+                'duration_ratios': getattr(p, '_duration_ratios', None) or [1.0] * len(p.durations),
+            } for p in canonicals]
+
+            multi_factor_discovery = run_multi_factor_discovery(
+                patterns_for_mf,
+                device='cuda',
+                tolerance=0.1,
+                min_frequency=3,
+                verbose=verbose
+            )
+
+            stats['n_rhythm_transforms'] = multi_factor_discovery.get('rhythm_transforms', 0)
+            stats['n_velocity_transforms'] = multi_factor_discovery.get('velocity_transforms', 0)
+            stats['n_duration_transforms'] = multi_factor_discovery.get('duration_transforms', 0)
+            stats['n_factor_vocabulary'] = len(multi_factor_discovery.get('vocabulary', []))
+
+            if verbose:
+                print(f"  Discovered {stats['n_factor_vocabulary']} factor transforms", flush=True)
+                print(f"    τ (rhythm): {stats['n_rhythm_transforms']}", flush=True)
+                print(f"    v (velocity): {stats['n_velocity_transforms']}", flush=True)
+                print(f"    d (duration): {stats['n_duration_transforms']}", flush=True)
+
+        except Exception as e:
+            if verbose:
+                print(f"  Multi-factor discovery failed: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            stats['n_factor_vocabulary'] = 0
+    else:
+        if verbose:
+            print(f"\n[Phase 5b] Skipping multi-factor discovery (need >10 patterns)", flush=True)
+        stats['n_factor_vocabulary'] = 0
+
+    stats['phase5b_time'] = time.time() - phase_start
+
+    # =========================================================================
+    # PHASE 5c: TrackDerive Discovery (Cross-Track Arrangement Patterns)
+    # =========================================================================
+    phase_start = time.time()
+    track_derive_discovery = {'derives': [], 'n_derives': 0}
+
+    if len(canonicals) > 5:
+        if verbose:
+            print(f"\n[Phase 5c] TrackDerive Discovery (Cross-Track Arrangements)...", flush=True)
+
+        try:
+            # Convert canonicals to dict format with occurrences
+            patterns_for_td = []
+            for p in canonicals:
+                p_dict = p.to_dict() if hasattr(p, 'to_dict') else {
+                    'pitch_classes': p.pitch_classes,
+                    'rhythm_ratios': getattr(p, '_rhythm_ratios', None) or p.rhythm_ratios,
+                    'velocity_ratios': getattr(p, '_velocity_ratios', None) or p.velocity_ratios,
+                    'duration_ratios': getattr(p, '_duration_ratios', None) or [1.0] * len(p.durations),
+                }
+                # Add occurrences from grammar result
+                if hasattr(p, 'occurrences'):
+                    p_dict['occurrences'] = p.occurrences
+                patterns_for_td.append(p_dict)
+
+            # Build track_instruments mapping from all_tracks
+            # Note: all_tracks contains FactoredTrack objects, not dicts
+            track_instruments = {}
+            for track in all_tracks:
+                piece_id = getattr(track, 'piece_id', getattr(track, 'source_file', 'unknown'))
+                track_id = getattr(track, 'track_id', 0)
+                program = getattr(track, 'gm_program', getattr(track, 'program', track_id))
+                track_instruments[(piece_id, track_id)] = program
+
+            track_derive_discovery = run_track_derive_discovery(
+                patterns_for_td,
+                track_instruments=track_instruments if track_instruments else None,
+                device='cuda',
+                add_to_occurrences=True,  # Adds 'derived_from' to occurrences
+                verbose=verbose
+            )
+
+            stats['n_track_derives'] = track_derive_discovery.get('n_derives', 0)
+            stats['track_derive_transforms'] = track_derive_discovery.get('derives_by_transform', {})
+
+            if verbose and stats['n_track_derives'] > 0:
+                print(f"  Added {stats['n_track_derives']} cross-track derivations to graph", flush=True)
+
+        except Exception as e:
+            if verbose:
+                print(f"  TrackDerive discovery failed: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            stats['n_track_derives'] = 0
+    else:
+        if verbose:
+            print(f"\n[Phase 5c] Skipping TrackDerive discovery (need >5 patterns)", flush=True)
+        stats['n_track_derives'] = 0
+
+    stats['phase5c_time'] = time.time() - phase_start
+
+    # =========================================================================
+    # PHASE 5d: Interval Magnitude Discovery (Diatonic vs Chromatic)
+    # =========================================================================
+    phase_start = time.time()
+    interval_magnitude_discovery = {'preferred_representation': 'chromatic'}
+
+    if len(canonicals) > 10:
+        if verbose:
+            print(f"\n[Phase 5d] Interval Magnitude Discovery (Diatonic vs Chromatic)...", flush=True)
+
+        try:
+            # Reuse patterns_for_td if available, else rebuild
+            if 'patterns_for_td' not in dir():
+                patterns_for_im = [{
+                    'pitch_classes': p.pitch_classes,
+                    'occurrences': p.occurrences if hasattr(p, 'occurrences') else [],
+                } for p in canonicals]
+            else:
+                patterns_for_im = patterns_for_td
+
+            interval_magnitude_discovery = run_interval_magnitude_discovery(
+                patterns_for_im,
+                device='cuda',
+                verbose=verbose
+            )
+
+            stats['preferred_interval_repr'] = interval_magnitude_discovery.get('preferred_representation', 'chromatic')
+            comp = interval_magnitude_discovery.get('compression_comparison', {})
+            stats['chromatic_compression'] = comp.get('chromatic', {}).get('compression', 0.0)
+            stats['magnitude_compression'] = comp.get('magnitude', {}).get('compression', 0.0)
+
+            # Per-piece preferences for context-aware generation
+            stats['piece_interval_preferences'] = interval_magnitude_discovery.get('piece_preferences', {})
+            stats['n_magnitude_added'] = interval_magnitude_discovery.get('n_magnitude_added', 0)
+
+        except Exception as e:
+            if verbose:
+                print(f"  Interval magnitude discovery failed: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            stats['preferred_interval_repr'] = 'chromatic'
+    else:
+        if verbose:
+            print(f"\n[Phase 5d] Skipping interval magnitude discovery (need >10 patterns)", flush=True)
+        stats['preferred_interval_repr'] = 'chromatic'
+
+    stats['phase5d_time'] = time.time() - phase_start
+
+    # =========================================================================
+    # PHASE 5e: Feature Importance Discovery (MDL-Based)
+    # =========================================================================
+    # This discovers WHICH features help predict transforms, without prescribing
+    # what those features mean. If "keys" are real, pitch_offset_relative will
+    # emerge as useful. If music is atonal, it will be ignored.
+    phase_start = time.time()
+    feature_importance_discovery = {'useful_features': []}
+
+    if len(canonicals) > 20 and stats.get('n_transform_vocabulary', 0) > 0:
+        if verbose:
+            print(f"\n[Phase 5e] Feature Importance Discovery (MDL-Based)...", flush=True)
+
+        try:
+            # Need transform lookup for this phase
+            # Build it from the transform discovery if available
+            if transform_discovery and 'lookup' in transform_discovery:
+                transform_lookup = transform_discovery['lookup']
+            else:
+                # Build a simple lookup from patterns
+                from scripts.level3_meta_patterns import build_transform_lookup_gpu
+                patterns_for_fi = [{
+                    'pitch_classes': p.pitch_classes,
+                    'occurrences': [{'piece_id': o.piece_id, 'track_id': o.track_id,
+                                     'onset_time': o.onset_time, 'pitch_offset': getattr(o, 'pitch_offset', 0)}
+                                    for o in p.occurrences] if hasattr(p, 'occurrences') else [],
+                } for p in canonicals]
+
+                transform_vocab = transform_discovery.get('vocabulary', []) if transform_discovery else []
+                if transform_vocab:
+                    transform_lookup = build_transform_lookup_gpu(
+                        patterns_for_fi, transform_vocab, device='cuda', verbose=False
+                    )
+                else:
+                    transform_lookup = None
+
+            if transform_lookup is not None:
+                # Prepare patterns with occurrences
+                patterns_for_fi = [{
+                    'pitch_classes': p.pitch_classes,
+                    'occurrences': [{'piece_id': o.piece_id, 'track_id': o.track_id,
+                                     'onset_time': o.onset_time,
+                                     'pitch_offset': getattr(o, 'pitch_offset', 0),
+                                     'instrument': getattr(o, 'instrument', o.track_id)}
+                                    for o in p.occurrences] if hasattr(p, 'occurrences') else [],
+                } for p in canonicals]
+
+                transform_names = transform_discovery.get('vocabulary', []) if transform_discovery else None
+
+                feature_importance_discovery = run_feature_importance_discovery(
+                    patterns_for_fi,
+                    transform_lookup,
+                    transform_names=transform_names,
+                    min_gain_bits=50.0,
+                    device='cuda',
+                    verbose=verbose
+                )
+
+                stats['useful_features'] = feature_importance_discovery.get('useful_features', [])
+                stats['n_useful_features'] = len(stats['useful_features'])
+
+                # Check if pitch_offset_relative emerged as useful (implies "keys are real")
+                if 'pitch_offset_relative' in stats['useful_features']:
+                    stats['keys_discovered'] = True
+                    if verbose:
+                        print(f"  → pitch_offset_relative is useful: 'scale degrees' emerged!", flush=True)
+                else:
+                    stats['keys_discovered'] = False
+
+        except Exception as e:
+            if verbose:
+                print(f"  Feature importance discovery failed: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            stats['useful_features'] = []
+            stats['n_useful_features'] = 0
+    else:
+        if verbose:
+            print(f"\n[Phase 5e] Skipping feature importance discovery (need >20 patterns and transforms)", flush=True)
+        stats['useful_features'] = []
+        stats['n_useful_features'] = 0
+
+    stats['phase5e_time'] = time.time() - phase_start
+
+    # =========================================================================
+    # PHASE 5g: Octave Equivalence Discovery (MDL-based)
+    # =========================================================================
+    phase_start = time.time()
+    octave_equivalence_discovery = {'octave_equivalence_useful': False}
+
+    if len(normalized_rules) > 10:
+        if verbose:
+            print(f"\n[Phase 5g] Octave Equivalence Discovery (MDL-Based)...", flush=True)
+
+        try:
+            # Prepare patterns with their pitch intervals
+            patterns_for_octave = [
+                {
+                    'pitch_intervals': rule.get('pitch_intervals', []),
+                    'count': rule.get('count', 1),
+                }
+                for rule in normalized_rules.values()
+                if rule.get('pitch_intervals')
+            ]
+
+            if patterns_for_octave:
+                octave_equivalence_discovery = run_octave_equivalence_discovery(
+                    patterns=patterns_for_octave,
+                    min_benefit_bits=100.0,
+                    verbose=verbose,
+                )
+
+                stats['octave_equivalence_useful'] = octave_equivalence_discovery.get('octave_equivalence_useful', False)
+                stats['octave_mdl_benefit'] = octave_equivalence_discovery.get('mdl_benefit_bits', 0.0)
+                stats['octave_offset_entropy'] = octave_equivalence_discovery.get('octave_offset_entropy', 0.0)
+                stats['multi_octave_patterns'] = octave_equivalence_discovery.get('multi_octave_pattern_count', 0)
+
+                if octave_equivalence_discovery.get('octave_equivalence_useful', False):
+                    if verbose:
+                        print(f"  -> Octave equivalence DISCOVERED: {stats['octave_mdl_benefit']:.1f} bits saved", flush=True)
+                else:
+                    if verbose:
+                        print(f"  -> Octave equivalence not beneficial for this corpus", flush=True)
+            else:
+                if verbose:
+                    print(f"  No patterns with intervals found", flush=True)
+
+        except Exception as e:
+            if verbose:
+                print(f"  Octave equivalence discovery failed: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+    else:
+        if verbose:
+            print(f"\n[Phase 5g] Skipping octave equivalence discovery (need >10 patterns)", flush=True)
+
+    stats['phase5g_time'] = time.time() - phase_start
+
+    # =========================================================================
     # PHASE 6: Level 3 Meta-Pattern Discovery
     # =========================================================================
     phase_start = time.time()
@@ -1070,6 +1480,9 @@ def run_normalized_pipeline(
         stats,
         transform_discovery=transform_discovery,
         meta_patterns=meta_patterns,
+        multi_factor_discovery=multi_factor_discovery,
+        track_derive_discovery=track_derive_discovery,
+        feature_importance_discovery=feature_importance_discovery,
         verbose=verbose
     )
 
@@ -1087,9 +1500,44 @@ def run_normalized_pipeline(
         print(f"  Patterns: {stats['n_patterns']}")
         print(f"  Total occurrences: {stats['total_occurrences']:,}")
         print(f"  Multi-piece patterns: {stats['multi_piece_patterns']}")
-        print(f"  Transform vocabulary: {stats.get('n_transform_vocabulary', 0)}")
+        print(f"  Transform vocabulary (pitch): {stats.get('n_transform_vocabulary', 0)}")
+        if stats.get('n_factor_vocabulary', 0) > 0:
+            print(f"  Factor vocabulary (τ,v,d): {stats.get('n_factor_vocabulary', 0)}")
+            print(f"    τ (rhythm): {stats.get('n_rhythm_transforms', 0)}")
+            print(f"    v (velocity): {stats.get('n_velocity_transforms', 0)}")
+            print(f"    d (duration): {stats.get('n_duration_transforms', 0)}")
+        if stats.get('n_track_derives', 0) > 0:
+            print(f"  TrackDerive relations: {stats.get('n_track_derives', 0)}")
+            if stats.get('track_derive_transforms'):
+                td_transforms = stats['track_derive_transforms']
+                parts = [f"{k}:{v}" for k, v in sorted(td_transforms.items(), key=lambda x: -x[1])[:4]]
+                print(f"    By transform: {', '.join(parts)}")
+        if stats.get('preferred_interval_repr'):
+            pref = stats['preferred_interval_repr']
+            chrom = stats.get('chromatic_compression', 0)
+            mag = stats.get('magnitude_compression', 0)
+            print(f"  Interval representation (global): {pref}")
+            print(f"    Chromatic compression: {chrom:.2f}x")
+            print(f"    Magnitude compression: {mag:.2f}x")
+            if pref == 'magnitude':
+                print(f"    → Corpus has diatonic structure (b3/3 treated as '3rds')")
+            # Show per-piece breakdown
+            piece_prefs = stats.get('piece_interval_preferences', {})
+            if piece_prefs:
+                from collections import Counter
+                pref_counts = Counter(piece_prefs.values())
+                print(f"    Per-piece: magnitude={pref_counts.get('magnitude', 0)}, "
+                      f"chromatic={pref_counts.get('chromatic', 0)}, "
+                      f"both={pref_counts.get('both', 0)}")
+        if stats.get('useful_features'):
+            useful = stats['useful_features']
+            print(f"  Useful features (MDL): {', '.join(useful)}")
+            if 'pitch_offset_relative' in useful:
+                print(f"    → 'Keys' emerged as useful (pitch relative to piece mode)")
+            if 'pitch_offset_delta' in useful:
+                print(f"    → Melodic motion patterns emerged as useful")
         if meta_patterns.get('n_orchestration_rules'):
-            print(f"  Orchestration rules: {meta_patterns['n_orchestration_rules']}")
+            print(f"  Orchestration rules (summary): {meta_patterns['n_orchestration_rules']}")
         print(f"  Total time: {stats['total_time']:.1f}s")
         print(f"\n  Output: {output_path}")
 

@@ -15,6 +15,7 @@ A piece is a subgraph with temporal edges forming the timeline.
 """
 
 import json
+import os
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple, Iterator, Any
@@ -677,39 +678,65 @@ class GenomeGraph:
                 }
             })
 
+        # Aggregate edges between same source-target pairs
+        # Key: (source, target) -> list of (edge_id, edge)
+        edge_pairs = defaultdict(list)
         for eid in edge_ids:
             e = self.edges[eid]
+            key = (e.source, e.target)
+            edge_pairs[key].append((eid, e))
+
+        for (source, target), edges_list in edge_pairs.items():
+            # Use the first edge for primary properties
+            first_eid, first_edge = edges_list[0]
+            count = len(edges_list)
+
+            # Collect all unique transforms
+            transforms = list(set(e.transform for _, e in edges_list))
+            primary_transform = first_edge.transform
+
             # Determine edge color by edge type and transform
-            if e.edge_type == 'cross-track':
+            if first_edge.edge_type == 'cross-track':
                 color = '#E91E63'  # Pink for cross-track
                 line_style = 'dashed'
-            elif 'τ' in e.transform:
+            elif 'τ' in primary_transform:
                 color = '#4CAF50'  # Green for temporal
                 line_style = 'solid'
-            elif 'I' in e.transform:
+            elif 'I' in primary_transform:
                 color = '#F44336'  # Red for inversion
                 line_style = 'solid'
-            elif 'R' in e.transform:
+            elif 'R' in primary_transform:
                 color = '#9C27B0'  # Purple for retrograde
                 line_style = 'solid'
-            elif 'T' in e.transform:
+            elif 'T' in primary_transform:
                 color = '#2196F3'  # Blue for transposition
                 line_style = 'solid'
             else:
                 color = '#9E9E9E'  # Gray for other
                 line_style = 'solid'
 
-            edges_out.append({
-                'data': {
-                    'id': f'E{eid}',
-                    'source': f'P{e.source}',
-                    'target': f'P{e.target}',
-                    'transform': e.transform,
-                    'edge_type': e.edge_type,
-                    'color': color,
-                    'line_style': line_style,
-                }
-            })
+            # Create single aggregated edge with count
+            edge_data = {
+                'id': f'E{first_eid}',
+                'source': f'P{source}',
+                'target': f'P{target}',
+                'transform': primary_transform,
+                'edge_type': first_edge.edge_type,
+                'color': color,
+                'line_style': line_style,
+                'count': count,  # Number of connections between these nodes
+            }
+
+            # Add all transforms if multiple
+            if len(transforms) > 1:
+                edge_data['all_transforms'] = transforms
+
+            # Make edge thicker and add label if count > 1
+            if count > 1:
+                edge_data['label'] = str(count)
+                edge_data['width'] = min(1 + count * 0.5, 6)  # Scale width, max 6
+
+            edges_out.append({'data': edge_data})
 
         return {
             'elements': {
@@ -917,12 +944,25 @@ def convert_v24_to_genome_graph(checkpoint_path: str, include_cross_track: bool 
         GenomeGraph instance
     """
     data = np.load(checkpoint_path, allow_pickle=True)
+    checkpoint_dir = os.path.dirname(checkpoint_path)
 
     graph = GenomeGraph()
 
-    # Load patterns from grammar_rules_json or patterns_json (v33 format)
+    # Load patterns from various checkpoint formats
     rules = None
-    if 'grammar_rules_json' in data:
+
+    # v4 format: patterns stored in external JSON file
+    if 'patterns_json_file' in data:
+        patterns_file = data['patterns_json_file']
+        if hasattr(patterns_file, '__len__') and len(patterns_file) == 1:
+            patterns_file = patterns_file[0]
+        else:
+            patterns_file = str(patterns_file.item())
+        patterns_path = os.path.join(checkpoint_dir, patterns_file)
+        with open(patterns_path, 'r') as f:
+            rules = json.load(f)
+        print(f"Loaded {len(rules)} patterns from v4 external format")
+    elif 'grammar_rules_json' in data:
         rules_json = data['grammar_rules_json']
         if hasattr(rules_json, '__len__') and len(rules_json) == 1:
             rules = json.loads(str(rules_json[0]))

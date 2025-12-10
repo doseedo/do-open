@@ -417,8 +417,36 @@ def run_server(checkpoint_path: str, port: int = 8765, directory: str = None):
 
     # Load canonicals for encoding
     ckpt = np.load(checkpoint_path, allow_pickle=True)
-    canonicals = json.loads(str(ckpt['canonical_patterns_json'][0]))
-    print(f"Loaded {len(canonicals)} canonical patterns for encoding")
+    checkpoint_dir = os.path.dirname(checkpoint_path)
+    canonicals = None
+
+    # v4+ format: patterns in external JSON file (canonicals embedded in patterns)
+    if 'patterns_json_file' in ckpt:
+        patterns_file = ckpt['patterns_json_file'].item()
+        patterns_path = os.path.join(checkpoint_dir, patterns_file)
+        with open(patterns_path, 'r') as f:
+            patterns = json.load(f)
+        # Extract canonical pitches from patterns for encoding
+        # Convert to list format for compatibility with live_round_trip encoding functions
+        canonicals = []
+        for pid in sorted(patterns.keys(), key=lambda x: int(x) if x.isdigit() else float('inf')):
+            pdata = patterns[pid]
+            entry = {'id': pid}
+            if 'canonical_pitches' in pdata and pdata['canonical_pitches']:
+                entry['canonical_pitches'] = pdata['canonical_pitches']
+                # Also derive pitch_classes for pattern matching
+                entry['pitch_classes'] = [p % 12 for p in pdata['canonical_pitches']]
+            elif 'pitch_classes' in pdata:
+                entry['pitch_classes'] = pdata['pitch_classes']
+            canonicals.append(entry)
+        print(f"Extracted {len(canonicals)} canonical patterns from patterns file")
+    # Legacy: canonical_patterns_json inline
+    elif 'canonical_patterns_json' in ckpt:
+        canonicals = json.loads(str(ckpt['canonical_patterns_json'][0]))
+        print(f"Loaded {len(canonicals)} canonical patterns for encoding")
+    else:
+        canonicals = {}
+        print("Warning: No canonical patterns found in checkpoint")
 
     HierarchyHandler.grammar = grammar
     HierarchyHandler.checkpoint_path = checkpoint_path

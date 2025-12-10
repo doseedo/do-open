@@ -199,38 +199,62 @@ class GrammarHierarchy:
     @classmethod
     def from_checkpoint(cls, checkpoint_path: str) -> 'GrammarHierarchy':
         """Load grammar hierarchy from checkpoint file."""
+        import os
         data = np.load(checkpoint_path, allow_pickle=True)
+        checkpoint_dir = os.path.dirname(checkpoint_path)
 
         # Detect if this is a factored checkpoint
-        is_factored = 'is_factored' in data and bool(data['is_factored'].item())
+        is_factored = 'is_factored' in data and bool(data['is_factored'].item()) if 'is_factored' in data else False
 
         # Handle different checkpoint formats
-        if 'grammar_rules_json' in data:
+        rules_dict = None
+
+        # v4+ format: patterns in external JSON file
+        if 'patterns_json_file' in data:
+            patterns_file = data['patterns_json_file'].item()
+            patterns_path = os.path.join(checkpoint_dir, patterns_file)
+            with open(patterns_path, 'r') as f:
+                rules_dict = json.load(f)
+        # v33 format: patterns_json inline
+        elif 'patterns_json' in data:
+            patterns_json = data['patterns_json']
+            if hasattr(patterns_json, 'item'):
+                rules_dict = json.loads(str(patterns_json.item()))
+            else:
+                rules_dict = json.loads(str(patterns_json))
+        # Legacy format: grammar_rules_json
+        elif 'grammar_rules_json' in data:
             rules_json = data['grammar_rules_json']
             if hasattr(rules_json, '__len__') and len(rules_json) == 1:
                 rules_dict = json.loads(str(rules_json[0]))
             else:
                 rules_dict = json.loads(str(rules_json.item()))
         else:
-            raise ValueError("No grammar_rules_json in checkpoint")
+            raise ValueError("No grammar_rules_json or patterns_json_file in checkpoint")
 
         instance = cls(rules_dict, is_factored=is_factored)
 
         # Load factored-specific data
-        if is_factored:
-            if 'transform_vocabulary_json' in data:
-                vocab_json = data['transform_vocabulary_json']
-                if hasattr(vocab_json, '__len__') and len(vocab_json) == 1:
-                    instance.transform_vocab = json.loads(str(vocab_json[0]))
-                else:
-                    instance.transform_vocab = json.loads(str(vocab_json.item()))
+        # v4+ format: external JSON files
+        if 'transforms_json_file' in data:
+            transforms_file = data['transforms_json_file'].item()
+            transforms_path = os.path.join(checkpoint_dir, transforms_file)
+            if os.path.exists(transforms_path):
+                with open(transforms_path, 'r') as f:
+                    instance.transform_vocab = json.load(f)
+        elif 'transform_vocabulary_json' in data:
+            vocab_json = data['transform_vocabulary_json']
+            if hasattr(vocab_json, '__len__') and len(vocab_json) == 1:
+                instance.transform_vocab = json.loads(str(vocab_json[0]))
+            else:
+                instance.transform_vocab = json.loads(str(vocab_json.item()))
 
-            if 'meta_patterns_json' in data:
-                meta_json = data['meta_patterns_json']
-                if hasattr(meta_json, '__len__') and len(meta_json) == 1:
-                    instance.meta_patterns = json.loads(str(meta_json[0]))
-                else:
-                    instance.meta_patterns = json.loads(str(meta_json.item()))
+        if 'meta_patterns_json' in data:
+            meta_json = data['meta_patterns_json']
+            if hasattr(meta_json, '__len__') and len(meta_json) == 1:
+                instance.meta_patterns = json.loads(str(meta_json[0]))
+            else:
+                instance.meta_patterns = json.loads(str(meta_json.item()))
 
         return instance
 

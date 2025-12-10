@@ -83,7 +83,7 @@ class Config:
     # Validation thresholds
     silence_threshold: float = 1e-6
     min_duration_sec: float = 0.5
-    max_duration_sec: float = 720.0  # 12 minutes
+    max_duration_sec: float = 480.0  # 8 minutes
     std_range: Tuple[float, float] = (0.4, 2.2)
     mean_range: Tuple[float, float] = (-1.3, 1.3)
 
@@ -146,6 +146,7 @@ class ModelCache:
         self.device = device
         self._dcae_model = None
         self._encodec_model = None
+        self._basicpitch_model = None
 
     @property
     def dcae(self):
@@ -169,10 +170,22 @@ class ModelCache:
             print(f"EnCodec model loaded on {self.device}")
         return self._encodec_model
 
+    @property
+    def basicpitch(self):
+        if self._basicpitch_model is None:
+            print("Loading BasicPitch model...")
+            import basic_pitch
+            from basic_pitch.inference import Model
+            onnx_path = Path(basic_pitch.__file__).parent / "saved_models" / "icassp_2022" / "nmp.onnx"
+            self._basicpitch_model = Model(str(onnx_path))
+            print("BasicPitch model loaded")
+        return self._basicpitch_model
+
     def clear(self):
         """Free GPU memory"""
         self._dcae_model = None
         self._encodec_model = None
+        self._basicpitch_model = None
         torch.cuda.empty_cache()
         gc.collect()
 
@@ -259,81 +272,48 @@ def extract_midi_and_piano_roll(
     audio_path: Path,
     out_midi: Path,
     out_pr: Path,
-    config: Config
+    config: Config,
+    model_cache: ModelCache = None
 ) -> Dict[str, Any]:
-    """Extract MIDI and piano roll using BasicPitch (subprocess for isolation)"""
-    import subprocess
-    import sys
-    import tempfile
+    """Extract MIDI and piano roll using BasicPitch with cached model"""
+    import pretty_midi
+    from basic_pitch.inference import predict_and_save, predict
+    from basic_pitch import ICASSP_2022_MODEL_PATH
 
-    with tempfile.NamedTemporaryFile(prefix="bp_", suffix=".json", delete=False) as tf:
-        result_json = tf.name
+    # Use cached model if available
+    if model_cache is not None:
+        _, midi_pm, _ = predict(
+            str(audio_path),
+            model_or_model_path=model_cache.basicpitch,
+            onset_threshold=config.onset_threshold,
+            frame_threshold=config.frame_threshold,
+            minimum_note_length=config.min_note_length_ms
+        )
+    else:
+        _, midi_pm, _ = predict(
+            str(audio_path),
+            model_or_model_path=ICASSP_2022_MODEL_PATH,
+            onset_threshold=config.onset_threshold,
+            frame_threshold=config.frame_threshold,
+            minimum_note_length=config.min_note_length_ms
+        )
 
-    code = f'''
-import os, sys, json, traceback
-os.environ.setdefault("OMP_NUM_THREADS", "1")
-os.environ["BASIC_PITCH_DISABLE_TFLITE"] = "1"
+    # Save MIDI
+    out_midi.parent.mkdir(parents=True, exist_ok=True)
+    midi_pm.write(str(out_midi))
 
-from pathlib import Path
-import numpy as np
-import pretty_midi
-
-audio = Path(sys.argv[1])
-out_mid = Path(sys.argv[2])
-out_pr = Path(sys.argv[3])
-json_out = Path(sys.argv[4])
-
-try:
-    import basic_pitch
-    from basic_pitch.inference import predict as basicpitch_predict
-
-    onnx_model = Path(basic_pitch.__file__).parent / "saved_models" / "icassp_2022" / "nmp.onnx"
-
-    _, midi_pm, _ = basicpitch_predict(
-        str(audio),
-        model_or_model_path=str(onnx_model),
-        onset_threshold={config.onset_threshold},
-        frame_threshold={config.frame_threshold},
-        minimum_note_length={config.min_note_length_ms}
-    )
-    midi_pm.write(str(out_mid))
-
-    pm = pretty_midi.PrettyMIDI(str(out_mid))
-    pr = pm.get_piano_roll(fs={config.frame_rate})
+    # Create piano roll
+    pm = pretty_midi.PrettyMIDI(str(out_midi))
+    pr = pm.get_piano_roll(fs=config.frame_rate)
     pr[pr > 0] = 1
     np.save(out_pr, pr.astype(np.uint8))
 
-    with open(json_out, "w") as f:
-        json.dump({{
-            "midi_path": str(out_mid),
-            "piano_roll_path": str(out_pr),
-            "piano_roll_shape": [int(pr.shape[0]), int(pr.shape[1])],
-            "frame_rate_hz": {config.frame_rate}
-        }}, f)
-
-except Exception as e:
-    with open(json_out, "w") as f:
-        json.dump({{"error": str(e), "trace": traceback.format_exc()}}, f)
-    sys.exit(1)
-'''
-
-    proc = subprocess.run(
-        [sys.executable, "-c", code, str(audio_path), str(out_midi), str(out_pr), result_json],
-        capture_output=True, text=True
-    )
-
-    try:
-        with open(result_json, "r") as f:
-            data = json.load(f)
-    except:
-        data = {"error": "No JSON output", "stdout": proc.stdout, "stderr": proc.stderr}
-
-    os.unlink(result_json)
-
-    if "error" in data:
-        raise RuntimeError(f"BasicPitch failed: {data['error']}")
-
-    return data
+    return {
+        "midi_path": str(out_midi),
+        "piano_roll_path": str(out_pr),
+        "piano_roll_shape": [int(pr.shape[0]), int(pr.shape[1])],
+        "frame_rate_hz": config.frame_rate
+    }
 
 
 def extract_conditioning_features(
@@ -344,7 +324,7 @@ def extract_conditioning_features(
     """Extract conditioning features: amp, rframe, rbend, f0, f0_masked, onsets"""
     import torchcrepe
 
-    device = "cpu"  # Use CPU for torchcrepe to avoid GPU memory issues
+    device = "cuda"  # Use GPU for torchcrepe
 
     y = waveform[0]  # Mono
 
@@ -354,6 +334,11 @@ def extract_conditioning_features(
     if y.numel() < win:
         y = torch.nn.functional.pad(y, (0, win - y.numel()))
 
+    # Resample to 16kHz for torchcrepe (native sample rate)
+    crepe_sr = 16000
+    crepe_hop = int(crepe_sr / config.frame_rate)  # ~1486 to maintain 10.77 Hz
+    y_16k = torchaudio.functional.resample(y.unsqueeze(0), sr, crepe_sr).squeeze(0)
+
     # RMS amplitude
     frames = y.unfold(0, win, hop)
     amp = torch.sqrt((frames ** 2).mean(dim=1) + 1e-12)
@@ -361,19 +346,19 @@ def extract_conditioning_features(
         amp = amp / amp.max()
     amp = amp.numpy().astype(np.float32)
 
-    # F0 with torchcrepe
-    y_crepe = y.unsqueeze(0).to(device)
+    # F0 with torchcrepe (using 16kHz resampled audio)
+    y_crepe = y_16k.unsqueeze(0).to(device)
 
     with torch.inference_mode():
         f0, periodicity = torchcrepe.predict(
             y_crepe,
-            sample_rate=sr,
-            hop_length=hop,
+            sample_rate=crepe_sr,
+            hop_length=crepe_hop,
             fmin=config.fmin,
             fmax=config.fmax,
             pad=True,
             model="tiny",
-            batch_size=128,
+            batch_size=256,  # Increased batch size for faster processing
             device=device,
             return_periodicity=True
         )
@@ -443,8 +428,8 @@ class UnifiedProcessor:
     def _init_models(self):
         """Lazy initialize models"""
         if self.model_cache is None:
-            needs_gpu = bool(self.formats & {"dcae_latents", "encodec"})
-            if needs_gpu:
+            needs_models = bool(self.formats & {"dcae_latents", "encodec", "midi", "piano_roll"})
+            if needs_models:
                 self.model_cache = ModelCache(self.checkpoint_dir, self.device)
 
     def _get_output_paths(self, audio_path: Path) -> Dict[str, Path]:
@@ -549,7 +534,7 @@ class UnifiedProcessor:
             # Extract MIDI and piano roll
             if "midi" in self.formats or "piano_roll" in self.formats:
                 midi_result = extract_midi_and_piano_roll(
-                    audio_path, out_paths["midi"], out_paths["piano_roll"], self.config
+                    audio_path, out_paths["midi"], out_paths["piano_roll"], self.config, self.model_cache
                 )
                 if "midi" in self.formats:
                     results["midi_path"] = str(out_paths["midi"])

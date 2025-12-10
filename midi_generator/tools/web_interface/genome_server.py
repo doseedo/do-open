@@ -7,19 +7,26 @@ REST API for genome graph visualization and editing.
 
 Endpoints:
     GET /                       - Serve web interface
-    GET /api/stats              - Graph statistics
+    GET /api/stats              - Graph statistics (includes v43 data)
     GET /api/cytoscape          - Full graph in Cytoscape format
     GET /api/cytoscape/<piece>  - Piece subgraph in Cytoscape format
     GET /api/pattern/<id>       - Pattern details
     GET /api/edges/<id>         - Edges from pattern
     GET /api/pieces             - List all pieces
+    GET /api/transforms         - Pitch transform vocabulary (T, I, R)
+    GET /api/playback/<piece>   - Reconstruct MIDI events for playback
     POST /api/factor/<edge_id>  - Factor a compound edge
     POST /api/entangle          - Entangle edges into compound
     POST /api/clone             - Clone subgraph with transform
     POST /api/apply             - Apply transform to pattern
 
+    v43+ Endpoints:
+    GET /api/multi_factor       - τ, v, d transform vocabulary
+    GET /api/track_derives      - Cross-track arrangement derivations
+    GET /api/feature_importance - MDL-discovered useful features
+
 Usage:
-    python genome_server.py checkpoint_v24_graph.npz [--port 8080]
+    python genome_server.py checkpoint_v43_1000files.npz [--port 8080]
 """
 
 import json
@@ -47,6 +54,11 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
     pattern_edits: dict = {}  # pattern_id -> modified pattern data (pitch_classes, octaves, etc.)
     v24_rules: dict = None  # grammar_rules from v24 checkpoint (for playback reconstruction)
     track_info: list = None  # track_info from checkpoint (for is_drum detection)
+    # v43 additions
+    multi_factor: dict = None  # τ, v, d transform vocabulary
+    track_derives: list = None  # Cross-track arrangement derivations
+    feature_importance: dict = None  # MDL-discovered useful features
+    checkpoint_stats: dict = None  # Stats from checkpoint (for /api/stats)
 
     def send_json(self, data, status=200):
         """Send JSON response."""
@@ -111,6 +123,34 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         def vel_bucket_to_midi(bucket):
             return min(127, bucket * 16 + 8)
 
+        def rhythm_bucket_to_ratio(bucket: int) -> float:
+            """Convert v53 rhythm bucket (0-15) to IOI ratio.
+
+            Buckets 0-7 represent subdivision ratios (< 1.0)
+            Buckets 8-15 represent multiplication ratios (>= 1.0)
+            Bucket 7 and 8 are both ~1.0 (equal rhythm).
+            """
+            # Inverse of compute_rhythm_bucket from grammar/v4/repair_pure_contour.py
+            ratios = [
+                0.125,   # 0: very short subdivision
+                0.2375,  # 1: short subdivision
+                0.355,   # 2
+                0.5025,  # 3: ~half
+                0.6475,  # 4
+                0.7625,  # 5
+                0.875,   # 6
+                1.0,     # 7: equal
+                1.0,     # 8: equal
+                1.5,     # 9
+                2.125,   # 10: ~double
+                3.0,     # 11
+                4.25,    # 12
+                6.0,     # 13
+                7.75,    # 14
+                10.0,    # 15: very long
+            ]
+            return ratios[min(bucket, 15)]
+
         def emit_pattern_events(pattern, time_ticks):
             """Generate note events for a pattern at a given time."""
             events = []
@@ -164,6 +204,56 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             if not edge_ids:
                 return {'error': f'Piece not found: {piece_id}', 'tracks': [], 'duration': 0}
 
+        # Filter overlapping occurrences for hierarchical patterns
+        # When pattern R21 contains R13, both will have occurrences at overlapping positions.
+        # We must keep only the top-level (largest) pattern at each position to avoid duplicates.
+        def filter_overlapping_occurrences(occ_list):
+            """Filter to keep only non-overlapping occurrences.
+
+            For each position range, keep the largest pattern (most notes).
+            Uses 'position' (note index) to identify overlaps.
+            """
+            if not occ_list:
+                return occ_list
+
+            # Build list with position info: (rid, onset_time, rule, occ, position, length)
+            items_with_pos = []
+            for item in occ_list:
+                rid, onset_time, rule, occ = item
+                position = occ.get('position', 0) if occ else 0
+                # Get pattern length from rule data
+                length = 2  # default for atomic patterns
+                if rule:
+                    # Use canonical_pitches or pitch_classes length
+                    cp = rule.get('canonical_pitches', [])
+                    pc = rule.get('pitch_classes', [])
+                    length = len(cp) if cp else len(pc) if pc else 2
+                items_with_pos.append((rid, onset_time, rule, occ, position, length))
+
+            # Sort by position, then by length descending (larger patterns first)
+            items_with_pos.sort(key=lambda x: (x[4], -x[5]))
+
+            # Greedy selection: keep patterns that don't overlap with already-selected ones
+            selected = []
+            covered_positions = set()
+
+            for rid, onset_time, rule, occ, position, length in items_with_pos:
+                # Check if any position in this pattern's range is already covered
+                pattern_range = set(range(position, position + length))
+                if pattern_range & covered_positions:
+                    # This pattern overlaps with an already-selected one - skip it
+                    continue
+
+                # No overlap - select this pattern
+                selected.append((rid, onset_time, rule, occ))
+                covered_positions.update(pattern_range)
+
+            return selected
+
+        # Apply overlap filtering to each track
+        for track_id in tracks_occs:
+            tracks_occs[track_id] = filter_overlapping_occurrences(tracks_occs[track_id])
+
         def emit_v24_rule_events(rule_data, time_ticks, occ_data=None, rule_id=None):
             """Generate note events from v24/v33/v37 rule data.
 
@@ -194,15 +284,24 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 pitch_classes = rule_data.get('pitch_classes', [])
 
             # v41+ transformational approach: canonical_pitches + octave_transform
+            # v50+ contour-normalized: also adds pitch_offset (0-11) for full transposition
             # v40 and earlier: octaves array (per-pattern or per-occurrence)
             if edited_data and 'canonical_pitches' in edited_data:
                 canonical_pitches = edited_data.get('canonical_pitches', [])
             else:
                 canonical_pitches = rule_data.get('canonical_pitches', [])
 
+            # v50+/v53 contour-normalized: use first_pitch + pitch_intervals
+            # v53 (pure contour) stores first_pitch as absolute MIDI pitch (0-127)
+            pitch_intervals = rule_data.get('pitch_intervals', [])
+            first_pitch = occ_data.get('first_pitch') if occ_data and 'first_pitch' in occ_data else None
+
             octave_transform = 0
+            pitch_offset = 0  # v50+: pitch class offset (0-11) for contour-normalized patterns
             if occ_data and 'octave_transform' in occ_data:
                 octave_transform = occ_data.get('octave_transform', 0)
+            if occ_data and 'pitch_offset' in occ_data:
+                pitch_offset = occ_data.get('pitch_offset', 0)
 
             # Fallback for older checkpoints: use octaves array
             if edited_data and 'octaves' in edited_data:
@@ -226,15 +325,24 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             else:
                 velocity_ratios = rule_data.get('velocity_ratios', [])
 
+            # v53 pure contour: check if pattern uses contour-based representation
+            is_pure_contour = rule_data.get('is_pure_contour', False)
+            rhythm_bucket = rule_data.get('rhythm_bucket', 7)  # Default to 1.0 ratio (bucket 7)
+
             # Get offsets from occurrence data (v33/v37) or use defaults
+            # IMPORTANT: Use 'or' to handle None values (not just missing keys)
             tau_offset = 480  # Default IOI
             duration_offset = 480  # Default duration
             v_offset_raw = 80  # Default velocity (MIDI)
 
             if occ_data:
-                tau_offset = occ_data.get('tau_offset', 480)
-                duration_offset = occ_data.get('duration_offset', 480)
-                v_offset_raw = occ_data.get('v_offset', 80)
+                tau_offset = occ_data.get('tau_offset') or 480  # Handle None
+                duration_offset = occ_data.get('duration_offset') or 480  # Handle None
+                v_offset_raw = occ_data.get('v_offset') or 80  # Handle None
+
+            # Sanity bounds - prevent extreme values from corrupted data
+            tau_offset = max(1, min(tau_offset, 48000))  # 1 tick to 100 quarter notes
+            duration_offset = max(1, min(duration_offset, 48000))
 
             # v37 format stores v_offset as a bucket (0-7), not MIDI velocity
             # Detect by checking if value is small (bucket) vs large (MIDI)
@@ -253,10 +361,20 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             current_time = time_ticks
 
             for i, pc in enumerate(pitch_classes):
-                # v41+ transformational approach: canonical_pitches + octave_transform
-                if canonical_pitches and i < len(canonical_pitches):
-                    # Transformational: derive pitch from canonical + transform
-                    midi_pitch = canonical_pitches[i] + octave_transform
+                # v53 pure contour: first_pitch + pitch_intervals takes priority
+                # Each occurrence has its own first_pitch (absolute MIDI 0-127)
+                if first_pitch is not None and pitch_intervals and i <= len(pitch_intervals):
+                    # v50+/v53 contour: use first_pitch + intervals (works for first_pitch=0 too)
+                    if i == 0:
+                        midi_pitch = first_pitch
+                    else:
+                        # Compute pitch from first_pitch + sum of intervals up to this note
+                        midi_pitch = first_pitch + sum(pitch_intervals[:i])
+                elif canonical_pitches and i < len(canonical_pitches):
+                    # v41+/v50 transformational approach: canonical_pitches + octave_transform + pitch_offset
+                    # v50 contour-normalized: pitch_offset is the pitch class offset (0-11)
+                    # The full transposition is octave_transform (multiple of 12) + pitch_offset (0-11)
+                    midi_pitch = canonical_pitches[i] + octave_transform + pitch_offset
                 else:
                     # Fallback for older checkpoints: use octaves array
                     # octave is stored as pitch // 12, so midi_pitch = pc + oct * 12
@@ -276,12 +394,16 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 # Compute duration
                 if duration_ratios and i < len(duration_ratios):
                     # v33/v37 format: use ratio * offset
-                    dur_ticks = int(duration_ratios[i] * duration_offset)
+                    # Cap ratio to prevent extremely long notes from corrupted data
+                    ratio = min(duration_ratios[i], 50.0)  # Max 50x the base duration
+                    dur_ticks = int(ratio * duration_offset)
                 elif i < len(durations):
                     # Fall back to bucket
                     dur_ticks = dur_bucket_to_ticks(durations[i])
                 else:
                     dur_ticks = duration_offset
+                # Sanity bounds on final duration (1 tick to 20 quarter notes)
+                dur_ticks = max(1, min(dur_ticks, 9600))
 
                 events.append({
                     'time': current_time * ticks_to_sec,
@@ -295,6 +417,12 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 if rhythm_ratios and i < len(rhythm_ratios):
                     # v33/v37 format: use ratio * tau_offset
                     ioi = int(rhythm_ratios[i] * tau_offset)
+                    current_time += ioi
+                elif is_pure_contour and i < len(pitch_classes) - 1:
+                    # v53 pure contour: use rhythm_bucket for uniform IOI advancement
+                    # Rhythm bucket encodes the ratio between consecutive notes
+                    rhythm_ratio = rhythm_bucket_to_ratio(rhythm_bucket)
+                    ioi = int(tau_offset * rhythm_ratio)
                     current_time += ioi
 
             return events
@@ -327,30 +455,27 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
             # Determine if drum track - prefer stored metadata from checkpoint
             is_drum = False
-            if self.track_info:
+
+            # Method 1: Check occurrence data (v53+ stores is_drum per occurrence)
+            # This is the most accurate method since it comes from MIDI channel 9
+            for item in occ_list:
+                pid, onset_time, rule_data, occ_data = item
+                if occ_data and occ_data.get('is_drum', False):
+                    is_drum = True
+                    break  # Any occurrence marked as drum means the track is drum
+
+            # Method 2: Fall back to track_info (for older checkpoints)
+            if not is_drum and self.track_info:
                 # Look up is_drum from stored track_info
                 # track_id here is the global track index from the grammar (matches index in track_info)
                 if track_id < len(self.track_info):
                     is_drum = self.track_info[track_id].get('is_drum', False)
 
-            # Fallback to pitch-based heuristic if track_info not available
-            if not is_drum and events:
-                pitches = [e['pitch'] for e in events]
-                if pitches:
-                    min_pitch = min(pitches)
-                    max_pitch = max(pitches)
-                    avg_pitch = sum(pitches) / len(pitches)
-                    # Drum heuristic: pitches in typical drum range (27-87),
-                    # low pitch spread (<= 30 semitones), many notes, low average pitch
-                    pitch_spread = max_pitch - min_pitch
-                    in_drum_range = 27 <= min_pitch <= 60 and max_pitch <= 87
-                    # Also check: drums often have many repeated pitches (low unique ratio)
-                    unique_ratio = len(set(pitches)) / len(pitches) if pitches else 1
-                    is_drum = (in_drum_range and
-                               pitch_spread <= 40 and
-                               avg_pitch < 60 and
-                               len(pitches) > 20 and
-                               unique_ratio < 0.3)
+            # NOTE: Pitch-based drum detection heuristic is DISABLED.
+            # Without channel information (channel 9 = drums in MIDI), we cannot reliably
+            # distinguish drums from bass, baritone vocals, or other low-pitched instruments.
+            # Bass notes (e.g., D1 = MIDI 38) collide with GM drum pitches (snare = 38).
+            # The occurrence/track_info approach above is the only reliable method.
 
             tracks.append({
                 'track_id': track_id,
@@ -613,7 +738,26 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         if path == '/' or path == '/index.html':
             self.serve_editor()
         elif path == '/api/stats':
-            self.send_json(self.graph.stats())
+            stats = self.graph.stats()
+            # Merge in v43 checkpoint stats
+            if GenomeGraphHandler.checkpoint_stats:
+                stats.update(GenomeGraphHandler.checkpoint_stats)
+            # Add v43 feature importance summary
+            if GenomeGraphHandler.feature_importance:
+                stats['useful_features'] = GenomeGraphHandler.feature_importance.get('useful_features', [])
+                stats['keys_discovered'] = 'pitch_offset_relative' in stats.get('useful_features', [])
+            # Add v43 multi-factor summary
+            if GenomeGraphHandler.multi_factor:
+                def mf_count(key):
+                    v = GenomeGraphHandler.multi_factor.get(key, 0)
+                    return len(v) if isinstance(v, list) else (v if isinstance(v, int) else 0)
+                stats['n_rhythm_transforms'] = mf_count('rhythm_transforms')
+                stats['n_velocity_transforms'] = mf_count('velocity_transforms')
+                stats['n_duration_transforms'] = mf_count('duration_transforms')
+            # Add track derives count
+            if GenomeGraphHandler.track_derives:
+                stats['n_track_derives'] = len(GenomeGraphHandler.track_derives)
+            self.send_json(stats)
         elif path == '/api/cytoscape':
             piece = query.get('piece', [None])[0]
             data = self.graph.to_cytoscape(piece)
@@ -634,8 +778,10 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                     if GenomeGraphHandler.v24_rules and str(pid) in GenomeGraphHandler.v24_rules:
                         rule = GenomeGraphHandler.v24_rules[str(pid)]
                         # Copy fields from rule that may have been swapped
+                        # v52+: include pitch_intervals for contour-normalized patterns
                         for field in ['pitch_classes', 'octaves', 'durations', 'intervals',
-                                      'canonical_pitches', 'rhythm_ratios', 'duration_ratios', 'velocity_ratios']:
+                                      'canonical_pitches', 'pitch_intervals',
+                                      'rhythm_ratios', 'duration_ratios', 'velocity_ratios']:
                             if field in rule:
                                 result[field] = rule[field]
                     self.send_json(result)
@@ -666,6 +812,31 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             self.send_json(accuracy)
         elif path == '/api/transforms':
             self.send_json({'transforms': self.graph.transform_vocab})
+        # v43 API endpoints
+        elif path == '/api/multi_factor':
+            if GenomeGraphHandler.multi_factor:
+                self.send_json(GenomeGraphHandler.multi_factor)
+            else:
+                self.send_json({'error': 'No multi-factor transforms loaded (v43+ required)'}, 404)
+        elif path == '/api/track_derives':
+            if GenomeGraphHandler.track_derives:
+                # Return summary + paginated list
+                limit = int(query.get('limit', [100])[0])
+                offset = int(query.get('offset', [0])[0])
+                derives = GenomeGraphHandler.track_derives[offset:offset+limit]
+                self.send_json({
+                    'total': len(GenomeGraphHandler.track_derives),
+                    'offset': offset,
+                    'limit': limit,
+                    'derives': derives
+                })
+            else:
+                self.send_json({'error': 'No track derives loaded (v43+ required)'}, 404)
+        elif path == '/api/feature_importance':
+            if GenomeGraphHandler.feature_importance:
+                self.send_json(GenomeGraphHandler.feature_importance)
+            else:
+                self.send_json({'error': 'No feature importance loaded (v43+ required)'}, 404)
         elif path == '/transform-editor' or path == '/transform-editor/':
             self.serve_transform_editor()
         elif path.startswith('/api/transform-space/'):
@@ -726,6 +897,19 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                     })
                 except (ValueError, KeyError) as e:
                     self.send_json({'error': str(e)}, 400)
+        # Piece comparison endpoints
+        elif path == '/compare' or path == '/compare/':
+            self.serve_compare()
+        elif path == '/api/compare':
+            piece1 = query.get('piece1', [None])[0]
+            piece2 = query.get('piece2', [None])[0]
+            if not piece1 or not piece2:
+                self.send_json({'error': 'Must provide piece1 and piece2 query parameters'}, 400)
+            else:
+                piece1 = unquote(piece1)
+                piece2 = unquote(piece2)
+                result = self.compare_pieces(piece1, piece2)
+                self.send_json(result)
         else:
             self.send_json({'error': 'Not found'}, 404)
 
@@ -842,8 +1026,9 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 source_rule = GenomeGraphHandler.v24_rules[source_key]
                 target_rule = GenomeGraphHandler.v24_rules[target_key]
                 # Copy pitch content from target to source
+                # v52+: include pitch_intervals for contour-normalized patterns
                 for field in ['pitch_classes', 'octaves', 'durations', 'intervals', 'canonical_pitches',
-                              'rhythm_ratios', 'duration_ratios', 'velocity_ratios']:
+                              'pitch_intervals', 'rhythm_ratios', 'duration_ratios', 'velocity_ratios']:
                     if field in target_rule:
                         source_rule[field] = target_rule[field].copy() if isinstance(target_rule[field], list) else target_rule[field]
                 print(f"Applied swap immediately: {source_key} now has content of {target_key}")
@@ -976,6 +1161,427 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         # Collect unique tracks for legend
         unique_tracks = sorted(set(n.get('data', {}).get('track_id', 0) or 0 for n in node_list))
         data['tracks'] = [{'track_id': t, 'color': TRACK_COLORS[t % len(TRACK_COLORS)]} for t in unique_tracks]
+
+    def get_piece_patterns(self, piece_id: str) -> set:
+        """Get set of pattern IDs used in a piece."""
+        edge_ids = self.graph._edges_by_piece.get(piece_id, [])
+        patterns = set()
+        for eid in edge_ids:
+            edge = self.graph.edges.get(eid)
+            if edge:
+                patterns.add(edge.source)
+                patterns.add(edge.target)
+        return patterns
+
+    def get_piece_transforms(self, piece_id: str) -> dict:
+        """Get frequency distribution of transforms used in a piece."""
+        edge_ids = self.graph._edges_by_piece.get(piece_id, [])
+        transforms = defaultdict(int)
+        for eid in edge_ids:
+            edge = self.graph.edges.get(eid)
+            if edge and edge.transform:
+                transforms[edge.transform] += 1
+        return dict(transforms)
+
+    def get_piece_intervals(self, piece_id: str) -> list:
+        """Get all pitch intervals used in a piece's patterns."""
+        patterns = self.get_piece_patterns(piece_id)
+        intervals = []
+        for pid in patterns:
+            pattern = self.graph.patterns.get(pid)
+            if pattern:
+                # Try pitch_intervals first (v53+), then intervals
+                pi = getattr(pattern, 'pitch_intervals', None)
+                if pi:
+                    intervals.extend(pi)
+                elif hasattr(pattern, 'intervals'):
+                    intervals.extend(pattern.intervals)
+        return intervals
+
+    def compare_pieces(self, piece1: str, piece2: str) -> dict:
+        """Compare two pieces using multiple similarity metrics."""
+        # Get pattern sets
+        patterns1 = self.get_piece_patterns(piece1)
+        patterns2 = self.get_piece_patterns(piece2)
+
+        # Get transform distributions
+        transforms1 = self.get_piece_transforms(piece1)
+        transforms2 = self.get_piece_transforms(piece2)
+
+        # Get interval distributions
+        intervals1 = self.get_piece_intervals(piece1)
+        intervals2 = self.get_piece_intervals(piece2)
+
+        # Compute similarity metrics
+        metrics = {}
+
+        # 1. Pattern Jaccard similarity (shared patterns / union of patterns)
+        shared_patterns = patterns1 & patterns2
+        union_patterns = patterns1 | patterns2
+        metrics['pattern_jaccard'] = len(shared_patterns) / len(union_patterns) if union_patterns else 0
+
+        # 2. Pattern overlap coefficient (shared / min)
+        metrics['pattern_overlap'] = len(shared_patterns) / min(len(patterns1), len(patterns2)) if min(len(patterns1), len(patterns2)) > 0 else 0
+
+        # 3. Transform Jaccard (shared transform types / union)
+        shared_transforms = set(transforms1.keys()) & set(transforms2.keys())
+        union_transforms = set(transforms1.keys()) | set(transforms2.keys())
+        metrics['transform_jaccard'] = len(shared_transforms) / len(union_transforms) if union_transforms else 0
+
+        # 4. Transform distribution cosine similarity
+        all_transforms = union_transforms
+        if all_transforms:
+            vec1 = [transforms1.get(t, 0) for t in all_transforms]
+            vec2 = [transforms2.get(t, 0) for t in all_transforms]
+            dot = sum(a * b for a, b in zip(vec1, vec2))
+            norm1 = sum(a * a for a in vec1) ** 0.5
+            norm2 = sum(b * b for b in vec2) ** 0.5
+            metrics['transform_cosine'] = dot / (norm1 * norm2) if norm1 * norm2 > 0 else 0
+        else:
+            metrics['transform_cosine'] = 0
+
+        # 5. Interval distribution similarity
+        from collections import Counter
+        int_counts1 = Counter(intervals1)
+        int_counts2 = Counter(intervals2)
+        all_intervals = set(int_counts1.keys()) | set(int_counts2.keys())
+        if all_intervals:
+            vec1 = [int_counts1.get(i, 0) for i in all_intervals]
+            vec2 = [int_counts2.get(i, 0) for i in all_intervals]
+            dot = sum(a * b for a, b in zip(vec1, vec2))
+            norm1 = sum(a * a for a in vec1) ** 0.5
+            norm2 = sum(b * b for b in vec2) ** 0.5
+            metrics['interval_cosine'] = dot / (norm1 * norm2) if norm1 * norm2 > 0 else 0
+        else:
+            metrics['interval_cosine'] = 0
+
+        # 6. Overall similarity (weighted average)
+        metrics['overall'] = (
+            0.3 * metrics['pattern_jaccard'] +
+            0.2 * metrics['pattern_overlap'] +
+            0.2 * metrics['transform_cosine'] +
+            0.3 * metrics['interval_cosine']
+        )
+
+        return {
+            'piece1': piece1,
+            'piece2': piece2,
+            'metrics': metrics,
+            'details': {
+                'piece1_patterns': len(patterns1),
+                'piece2_patterns': len(patterns2),
+                'shared_patterns': len(shared_patterns),
+                'shared_pattern_ids': list(shared_patterns)[:20],  # First 20
+                'piece1_transforms': len(transforms1),
+                'piece2_transforms': len(transforms2),
+                'shared_transforms': list(shared_transforms),
+                'piece1_intervals': len(intervals1),
+                'piece2_intervals': len(intervals2),
+            }
+        }
+
+    def serve_compare(self):
+        """Serve the piece comparison HTML page."""
+        html = '''<!DOCTYPE html>
+<html>
+<head>
+    <title>Piece Comparison</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #e94560; margin-bottom: 20px; }
+        h2 { color: #0f4c75; margin: 20px 0 10px; font-size: 16px; }
+        .selectors {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        .selector-group {
+            flex: 1;
+            min-width: 300px;
+        }
+        .selector-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #888;
+        }
+        select {
+            width: 100%;
+            padding: 10px;
+            background: #0f3460;
+            border: 1px solid #16213e;
+            color: #e0e0e0;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background: #e94560;
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        button:hover { background: #ff6b6b; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        .results {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .metric-card {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .metric-name {
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .metric-bar {
+            height: 6px;
+            background: #1a1a2e;
+            border-radius: 3px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .metric-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e94560, #4CAF50);
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+        .overall-score {
+            text-align: center;
+            padding: 30px;
+            background: #0f3460;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .overall-score .score {
+            font-size: 64px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #e94560, #4CAF50);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .overall-score .label {
+            color: #888;
+            margin-top: 5px;
+        }
+        .details {
+            margin-top: 20px;
+            padding: 15px;
+            background: #0f3460;
+            border-radius: 8px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #16213e;
+        }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-label { color: #888; }
+        .shared-patterns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 10px;
+        }
+        .pattern-chip {
+            background: #e94560;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        .loading { text-align: center; padding: 40px; color: #888; }
+        .back-link {
+            display: inline-block;
+            color: #e94560;
+            text-decoration: none;
+            margin-bottom: 20px;
+        }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">&larr; Back to Genome Editor</a>
+        <h1>Piece Comparison</h1>
+
+        <div class="selectors">
+            <div class="selector-group">
+                <label>Piece 1</label>
+                <select id="piece1">
+                    <option value="">Loading pieces...</option>
+                </select>
+            </div>
+            <div class="selector-group">
+                <label>Piece 2</label>
+                <select id="piece2">
+                    <option value="">Loading pieces...</option>
+                </select>
+            </div>
+        </div>
+        <button id="compare-btn" onclick="compare()" disabled>Compare Pieces</button>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        let pieces = [];
+
+        async function loadPieces() {
+            const response = await fetch('/api/pieces');
+            const data = await response.json();
+            pieces = data.pieces || [];
+
+            const select1 = document.getElementById('piece1');
+            const select2 = document.getElementById('piece2');
+
+            const options = pieces.map(p => `<option value="${p}">${p}</option>`).join('');
+            select1.innerHTML = '<option value="">Select a piece...</option>' + options;
+            select2.innerHTML = '<option value="">Select a piece...</option>' + options;
+
+            // Enable compare button when both selected
+            select1.onchange = select2.onchange = () => {
+                document.getElementById('compare-btn').disabled =
+                    !select1.value || !select2.value || select1.value === select2.value;
+            };
+        }
+
+        async function compare() {
+            const piece1 = document.getElementById('piece1').value;
+            const piece2 = document.getElementById('piece2').value;
+
+            if (!piece1 || !piece2) return;
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">Comparing pieces...</div>';
+
+            try {
+                const response = await fetch(`/api/compare?piece1=${encodeURIComponent(piece1)}&piece2=${encodeURIComponent(piece2)}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    resultsDiv.innerHTML = `<div class="results"><p style="color: #e94560;">Error: ${data.error}</p></div>`;
+                    return;
+                }
+
+                const m = data.metrics;
+                const d = data.details;
+
+                resultsDiv.innerHTML = `
+                    <div class="results">
+                        <div class="overall-score">
+                            <div class="score">${(m.overall * 100).toFixed(1)}%</div>
+                            <div class="label">Overall Similarity</div>
+                        </div>
+
+                        <h2>Similarity Metrics</h2>
+                        <div class="metric-grid">
+                            <div class="metric-card">
+                                <div class="metric-name">Pattern Jaccard</div>
+                                <div class="metric-value">${(m.pattern_jaccard * 100).toFixed(1)}%</div>
+                                <div class="metric-bar"><div class="metric-bar-fill" style="width: ${m.pattern_jaccard * 100}%"></div></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-name">Pattern Overlap</div>
+                                <div class="metric-value">${(m.pattern_overlap * 100).toFixed(1)}%</div>
+                                <div class="metric-bar"><div class="metric-bar-fill" style="width: ${m.pattern_overlap * 100}%"></div></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-name">Transform Jaccard</div>
+                                <div class="metric-value">${(m.transform_jaccard * 100).toFixed(1)}%</div>
+                                <div class="metric-bar"><div class="metric-bar-fill" style="width: ${m.transform_jaccard * 100}%"></div></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-name">Transform Cosine</div>
+                                <div class="metric-value">${(m.transform_cosine * 100).toFixed(1)}%</div>
+                                <div class="metric-bar"><div class="metric-bar-fill" style="width: ${m.transform_cosine * 100}%"></div></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-name">Interval Cosine</div>
+                                <div class="metric-value">${(m.interval_cosine * 100).toFixed(1)}%</div>
+                                <div class="metric-bar"><div class="metric-bar-fill" style="width: ${m.interval_cosine * 100}%"></div></div>
+                            </div>
+                        </div>
+
+                        <div class="details">
+                            <h2>Details</h2>
+                            <div class="detail-row">
+                                <span class="detail-label">${data.piece1} patterns</span>
+                                <span>${d.piece1_patterns}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${data.piece2} patterns</span>
+                                <span>${d.piece2_patterns}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Shared patterns</span>
+                                <span>${d.shared_patterns}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${data.piece1} transforms</span>
+                                <span>${d.piece1_transforms}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${data.piece2} transforms</span>
+                                <span>${d.piece2_transforms}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Shared transforms</span>
+                                <span>${d.shared_transforms.length}</span>
+                            </div>
+                        </div>
+
+                        ${d.shared_pattern_ids.length > 0 ? `
+                        <div class="details">
+                            <h2>Shared Pattern IDs (first 20)</h2>
+                            <div class="shared-patterns">
+                                ${d.shared_pattern_ids.map(p => `<span class="pattern-chip">P${p}</span>`).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="results"><p style="color: #e94560;">Error: ${error.message}</p></div>`;
+            }
+        }
+
+        // Load pieces on page load
+        loadPieces();
+    </script>
+</body>
+</html>'''
+        self.send_html(html)
 
     def serve_editor(self):
         """Serve the genome editor HTML."""
@@ -1381,6 +1987,9 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
     </div>
 
     <script>
+        // Detect API base path - handles both direct access (localhost:8080) and proxied (/genome)
+        const API_BASE = window.location.pathname.includes('/genome') ? '/genome/api' : '/api';
+
         let cy;
         let selectedPattern = null;
         let selectedEdge = null;
@@ -1559,7 +2168,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             document.getElementById('playback-status').textContent = 'Loading...';
 
             try {
-                const resp = await fetch(`/api/playback/${encodeURIComponent(currentPiece)}`);
+                const resp = await fetch(`${API_BASE}/playback/${encodeURIComponent(currentPiece)}`);
                 playbackData = await resp.json();
 
                 if (playbackData.error) {
@@ -1715,7 +2324,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             const newTransform = prompt('Edit transform (e.g., T5, I0, R, τ480):', currentTransform);
             if (!newTransform || newTransform === currentTransform) return;
 
-            const resp = await fetch('/api/edit', {
+            const resp = await fetch(`${API_BASE}/edit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ edge_id: selectedEdge, transform: newTransform })
@@ -1740,7 +2349,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             document.getElementById('save-status').style.color = '#888';
 
             try {
-                const resp = await fetch('/api/save', {
+                const resp = await fetch(`${API_BASE}/save`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({})
@@ -1871,7 +2480,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Load stats
         async function loadStats() {
-            const resp = await fetch('/api/stats');
+            const resp = await fetch(`${API_BASE}/stats`);
             const stats = await resp.json();
             document.getElementById('stat-patterns').textContent = stats.n_patterns.toLocaleString();
             document.getElementById('stat-edges').textContent = stats.n_edges.toLocaleString();
@@ -1881,7 +2490,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Load pieces list
         async function loadPieces() {
-            const resp = await fetch('/api/pieces');
+            const resp = await fetch(`${API_BASE}/pieces`);
             const data = await resp.json();
             const select = document.getElementById('piece-filter');
             data.pieces.forEach(p => {
@@ -1894,7 +2503,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Load graph data
         async function loadGraph(piece = null) {
-            const url = piece ? `/api/cytoscape/${encodeURIComponent(piece)}` : '/api/cytoscape';
+            const url = piece ? `${API_BASE}/cytoscape/${encodeURIComponent(piece)}` : `${API_BASE}/cytoscape`;
             const resp = await fetch(url);
             const data = await resp.json();
 
@@ -1906,7 +2515,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Show pattern detail
         async function showPatternDetail(pid) {
-            const resp = await fetch(`/api/pattern/${pid}`);
+            const resp = await fetch(`${API_BASE}/pattern/${pid}`);
             const pattern = await resp.json();
 
             document.getElementById('detail-id').textContent = `P${pid}`;
@@ -1943,7 +2552,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                     ).join('') + '</optgroup>' : '');
 
             // Load edges
-            const edgeResp = await fetch(`/api/edges/${pid}`);
+            const edgeResp = await fetch(`${API_BASE}/edges/${pid}`);
             const edges = await edgeResp.json();
 
             const edgeDiv = document.getElementById('detail-edges');
@@ -1963,7 +2572,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
             const sourceId = `P${selectedPattern}`;
 
-            const resp = await fetch('/api/swap_pattern', {
+            const resp = await fetch(`${API_BASE}/swap_pattern`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2018,7 +2627,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         // Factor edge
         async function factorEdge() {
             if (!selectedEdge) return;
-            const resp = await fetch(`/api/factor/${selectedEdge}`, { method: 'POST' });
+            const resp = await fetch(`${API_BASE}/factor/${selectedEdge}`, { method: 'POST' });
             const result = await resp.json();
             if (result.new_edge_ids) {
                 alert(`Factored into ${result.new_edge_ids.length} edges`);
@@ -2032,7 +2641,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             const transform = prompt('Enter transform (e.g., T5, I0, R, τ480):');
             if (!transform) return;
 
-            const resp = await fetch('/api/apply', {
+            const resp = await fetch(`${API_BASE}/apply`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ pattern_id: selectedPattern, transform })
@@ -2050,7 +2659,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             const transform = prompt('Enter transform to apply to cloned subgraph:');
             if (!transform) return;
 
-            const resp = await fetch('/api/clone', {
+            const resp = await fetch(`${API_BASE}/clone`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ root_id: selectedPattern, transform })
@@ -2412,7 +3021,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Load stats
         async function loadStats() {
-            const resp = await fetch('/api/dag/stats');
+            const resp = await fetch(`${API_BASE}/dag/stats`);
             const stats = await resp.json();
             document.getElementById('stat-nodes').textContent = stats.node_count?.toLocaleString() || '-';
             document.getElementById('stat-patterns').textContent = stats.by_type?.pattern?.toLocaleString() || '0';
@@ -2423,7 +3032,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Load graph
         async function loadGraph() {
-            const resp = await fetch('/api/dag/cytoscape?max_nodes=2000');
+            const resp = await fetch(`${API_BASE}/dag/cytoscape?max_nodes=2000`);
             const data = await resp.json();
             if (cy) cy.destroy();
             initGraph(data);
@@ -2432,7 +3041,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         // Show node detail
         async function showNodeDetail(nid) {
-            const resp = await fetch(`/api/dag/node/${nid}`);
+            const resp = await fetch(`${API_BASE}/dag/node/${nid}`);
             const node = await resp.json();
 
             document.getElementById('detail-id').textContent = nid;
@@ -2490,7 +3099,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 
         async function expandNode() {
             if (!selectedNode) return;
-            const resp = await fetch(`/api/dag/expand/${selectedNode}`);
+            const resp = await fetch(`${API_BASE}/dag/expand/${selectedNode}`);
             const data = await resp.json();
             alert(`Node ${selectedNode} expands to ${data.event_count} events\\n\\nFirst few: ${JSON.stringify(data.events.slice(0,5))}`);
         }
@@ -2794,6 +3403,9 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
     </div>
 
 <script>
+// API base path - works for both /genome and /transform routes
+const API_BASE = window.location.pathname.includes('/genome') ? '/genome/api' : '/genome/api';
+
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const container = document.getElementById('canvas-container');
@@ -2956,7 +3568,7 @@ function render() {
 }
 
 async function loadPieces() {
-    const resp = await fetch('/api/pieces');
+    const resp = await fetch(`${API_BASE}/pieces`);
     const data = await resp.json();
     const select = document.getElementById('piece-select');
     data.pieces.forEach(p => {
@@ -2971,7 +3583,7 @@ async function loadPiece(piece) {
     if (!piece) return;
 
     currentPiece = piece;
-    const resp = await fetch(`/api/transform-space/${encodeURIComponent(piece)}`);
+    const resp = await fetch(`${API_BASE}/transform-space/${encodeURIComponent(piece)}`);
     const data = await resp.json();
 
     if (data.error) {
@@ -3196,7 +3808,7 @@ async function applyTransformEdit() {
 
     const newTransform = `T${pitch}:tau${tau}`;
 
-    const resp = await fetch('/api/edit', {
+    const resp = await fetch(`${API_BASE}/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ edge_id: selectedEdge.id, transform: newTransform })
@@ -3225,7 +3837,7 @@ async function saveEdits() {
     document.getElementById('save-status').style.color = '#888';
 
     try {
-        const resp = await fetch('/api/save', {
+        const resp = await fetch(`${API_BASE}/save`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({})
@@ -3318,7 +3930,7 @@ async function playPiece() {
 
     try {
         // Fetch actual playback data from server (includes edited patterns)
-        const resp = await fetch(`/api/playback/${encodeURIComponent(currentPiece)}`);
+        const resp = await fetch(`${API_BASE}/playback/${encodeURIComponent(currentPiece)}`);
         const playbackData = await resp.json();
 
         if (playbackData.error) {
@@ -3535,6 +4147,57 @@ def main():
                 GenomeGraphHandler.track_info = track_info
                 drum_count = sum(1 for ti in track_info if ti.get('is_drum', False))
                 print(f"Loaded track info: {len(track_info)} tracks ({drum_count} drums)")
+
+            # v43: Load multi-factor transforms (τ, v, d)
+            if 'multi_factor_json_file' in main_data:
+                mf_file = main_data['multi_factor_json_file'].item()
+                mf_path = os.path.join(checkpoint_dir, mf_file)
+                if os.path.exists(mf_path):
+                    with open(mf_path, 'r') as f:
+                        GenomeGraphHandler.multi_factor = json.load(f)
+                    # Handle both formats: list or int count
+                    def get_count(key):
+                        v = GenomeGraphHandler.multi_factor.get(key, 0)
+                        return len(v) if isinstance(v, list) else (v if isinstance(v, int) else 0)
+                    n_tau = get_count('rhythm_transforms')
+                    n_vel = get_count('velocity_transforms')
+                    n_dur = get_count('duration_transforms')
+                    print(f"Loaded multi-factor transforms: τ={n_tau}, v={n_vel}, d={n_dur}")
+
+            # v43: Load track derives (cross-track arrangements)
+            if 'track_derives_json_file' in main_data:
+                td_file = main_data['track_derives_json_file'].item()
+                td_path = os.path.join(checkpoint_dir, td_file)
+                if os.path.exists(td_path):
+                    with open(td_path, 'r') as f:
+                        td_data = json.load(f)
+                    # Handle both formats: list or {"derives_json": [...]}
+                    if isinstance(td_data, dict) and 'derives_json' in td_data:
+                        GenomeGraphHandler.track_derives = td_data['derives_json']
+                    else:
+                        GenomeGraphHandler.track_derives = td_data
+                    print(f"Loaded {len(GenomeGraphHandler.track_derives)} track derive relations")
+
+            # v43: Load feature importance (MDL-discovered useful features)
+            if 'feature_importance_json_file' in main_data:
+                fi_file = main_data['feature_importance_json_file'].item()
+                fi_path = os.path.join(checkpoint_dir, fi_file)
+                if os.path.exists(fi_path):
+                    with open(fi_path, 'r') as f:
+                        GenomeGraphHandler.feature_importance = json.load(f)
+                    useful = GenomeGraphHandler.feature_importance.get('useful_features', [])
+                    print(f"Loaded feature importance: {', '.join(useful) if useful else 'none discovered'}")
+
+            # Load checkpoint stats for /api/stats
+            stats = {}
+            for key in ['n_files', 'n_tracks', 'n_notes', 'n_patterns', 'n_transform_vocabulary',
+                        'n_factor_vocabulary', 'n_rhythm_transforms', 'n_velocity_transforms',
+                        'n_duration_transforms', 'n_track_derives']:
+                if key in main_data:
+                    stats[key] = int(main_data[key].item())
+            if stats:
+                GenomeGraphHandler.checkpoint_stats = stats
+
         except Exception as e:
             import traceback
             traceback.print_exc()

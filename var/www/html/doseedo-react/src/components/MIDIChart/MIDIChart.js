@@ -42,6 +42,7 @@ const MIDIChart = () => {
   // Generate MIDI settings
   const [showGenerateSettings, setShowGenerateSettings] = useState(false);
   const [generateSettings, setGenerateSettings] = useState({
+    mode: 'basic',      // 'basic', 'genre', 'context', 'chords'
     key: 'C minor',
     chords: 'Cm7,G7,Cm7,G7',
     bars: 4,
@@ -49,7 +50,18 @@ const MIDIChart = () => {
     maxNote: 76,
     chromatic: 0.2,
     tempo: 120,
-    seed: null
+    seed: null,
+    // Genre mode settings
+    genre: 'jazz',
+    style: 'bebop',
+    // Context mode settings
+    role: 'melody',
+    matchDensity: true,
+    matchStyle: true,
+    // Chord mode settings
+    voicing: 'random',
+    rhythm: 'random',
+    chordStyle: 'random'
   });
 
   // Determine if we're in select mode based on tool mode and Cmd key
@@ -1760,28 +1772,104 @@ const MIDIChart = () => {
     console.log(`🎵 Transposed ${selectedNotes.length} notes down by 1 octave`);
   }, [selectedNotes]);
 
-  // Generate MIDI using melody generator
+  // Generate MIDI using melody generator (supports multiple modes)
   const handleGenerateMIDI = useCallback(async () => {
     console.log('🎹 Generating MIDI with settings:', generateSettings);
 
     try {
-      // Call backend API to generate MIDI
-      const response = await fetch('/api/generate-melody', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(generateSettings)
-      });
+      let response;
+      let data;
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      if (generateSettings.mode === 'chords') {
+        // Chord rendering mode - uses /api/render-chords endpoint
+        // Convert chord string to beat map (one chord per bar)
+        const chordsList = generateSettings.chords.split(',').map(c => c.trim());
+        const beatsPerBar = 4;
+        const chordsMap = {};
+        for (let i = 0; i < generateSettings.bars; i++) {
+          const chordIdx = i % chordsList.length;
+          chordsMap[i * beatsPerBar] = chordsList[chordIdx];
+        }
+
+        response = await fetch('/api/render-chords', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chords: chordsMap,
+            bpm: generateSettings.tempo,
+            duration: generateSettings.bars * beatsPerBar,
+            voicing: generateSettings.voicing,
+            rhythm: generateSettings.rhythm,
+            style: generateSettings.chordStyle
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        data = await response.json();
+
+        // Chord rendering returns a file path - notify user
+        if (data.file_path) {
+          console.log(`✅ Chord MIDI generated: ${data.file_path}`);
+          alert(`Chord MIDI generated!\nDownload: ${data.file_path}\n\nNote: Chord mode generates a MIDI file for download rather than notes to display.`);
+        }
+        return;
+
+      } else {
+        // Melody generation modes (basic, genre, context)
+        response = await fetch('/api/generate-melody', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: generateSettings.mode,
+            key: generateSettings.key,
+            chords: generateSettings.chords,
+            bars: generateSettings.bars,
+            minNote: generateSettings.minNote,
+            maxNote: generateSettings.maxNote,
+            chromatic: generateSettings.chromatic,
+            tempo: generateSettings.tempo,
+            seed: generateSettings.seed,
+            // Genre mode
+            genre: generateSettings.genre,
+            style: generateSettings.style,
+            // Context mode
+            role: generateSettings.role,
+            matchDensity: generateSettings.matchDensity,
+            matchStyle: generateSettings.matchStyle
+          })
+        });
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      data = await response.json();
 
       if (data.notes && data.notes.length > 0) {
-        console.log(`✅ Generated ${data.notes.length} notes`);
-        setNotes(data.notes);
-        setOriginalNotes(JSON.parse(JSON.stringify(data.notes)));
+        console.log(`✅ Generated ${data.notes.length} notes (mode: ${data.mode})`);
+        console.log(`   Algorithm: ${data.metadata?.algorithm || 'unknown'}`);
+
+        // Convert backend format to MIDIChart format
+        // Backend: { pitch, start (ticks), duration (ticks), velocity }
+        // MIDIChart: { note (pitch), time (seconds), duration (seconds), velocity }
+        const ticksPerBeat = 480;
+        const secondsPerBeat = 60 / generateSettings.tempo;
+        const ticksToSeconds = (ticks) => (ticks / ticksPerBeat) * secondsPerBeat;
+
+        const convertedNotes = data.notes.map(n => ({
+          note: n.pitch,
+          time: ticksToSeconds(n.start),
+          duration: ticksToSeconds(n.duration),
+          velocity: n.velocity || 80
+        }));
+
+        setNotes(convertedNotes);
+        setOriginalNotes(JSON.parse(JSON.stringify(convertedNotes)));
 
         if (data.tempo) {
           setMidiTempo(data.tempo);
@@ -1967,7 +2055,40 @@ const MIDIChart = () => {
       {/* Expandable Generate Settings Panel */}
       {showGenerateSettings && (
         <div className={styles.settingsPanel}>
+          {/* Mode Selector */}
+          <div className={styles.modeSelector}>
+            <button
+              className={`${styles.modeButton} ${generateSettings.mode === 'basic' ? styles.active : ''}`}
+              onClick={() => setGenerateSettings({ ...generateSettings, mode: 'basic' })}
+              title="Basic melody generation using target-note technique"
+            >
+              <i className="fa-solid fa-music"></i> Basic
+            </button>
+            <button
+              className={`${styles.modeButton} ${generateSettings.mode === 'genre' ? styles.active : ''}`}
+              onClick={() => setGenerateSettings({ ...generateSettings, mode: 'genre' })}
+              title="Genre-specific melody generation (Jazz, Blues, Funk, etc.)"
+            >
+              <i className="fa-solid fa-guitar"></i> Genre
+            </button>
+            <button
+              className={`${styles.modeButton} ${generateSettings.mode === 'context' ? styles.active : ''}`}
+              onClick={() => setGenerateSettings({ ...generateSettings, mode: 'context' })}
+              title="Context-aware generation (matches existing arrangement)"
+            >
+              <i className="fa-solid fa-layer-group"></i> Context
+            </button>
+            <button
+              className={`${styles.modeButton} ${generateSettings.mode === 'chords' ? styles.active : ''}`}
+              onClick={() => setGenerateSettings({ ...generateSettings, mode: 'chords' })}
+              title="Chord progression rendering with voicings"
+            >
+              <i className="fa-solid fa-cubes"></i> Chords
+            </button>
+          </div>
+
           <div className={styles.settingsGrid}>
+            {/* Common Settings */}
             <div className={styles.settingGroup}>
               <label className={styles.settingLabel}>Key</label>
               <input
@@ -2003,43 +2124,6 @@ const MIDIChart = () => {
             </div>
 
             <div className={styles.settingGroup}>
-              <label className={styles.settingLabel}>Min Note (MIDI)</label>
-              <input
-                type="number"
-                className={styles.settingInput}
-                value={generateSettings.minNote}
-                onChange={(e) => setGenerateSettings({ ...generateSettings, minNote: parseInt(e.target.value) })}
-                min="0"
-                max="127"
-              />
-            </div>
-
-            <div className={styles.settingGroup}>
-              <label className={styles.settingLabel}>Max Note (MIDI)</label>
-              <input
-                type="number"
-                className={styles.settingInput}
-                value={generateSettings.maxNote}
-                onChange={(e) => setGenerateSettings({ ...generateSettings, maxNote: parseInt(e.target.value) })}
-                min="0"
-                max="127"
-              />
-            </div>
-
-            <div className={styles.settingGroup}>
-              <label className={styles.settingLabel}>Chromatic (%)</label>
-              <input
-                type="number"
-                className={styles.settingInput}
-                value={generateSettings.chromatic * 100}
-                onChange={(e) => setGenerateSettings({ ...generateSettings, chromatic: parseFloat(e.target.value) / 100 })}
-                min="0"
-                max="100"
-                step="5"
-              />
-            </div>
-
-            <div className={styles.settingGroup}>
               <label className={styles.settingLabel}>Tempo (BPM)</label>
               <input
                 type="number"
@@ -2051,8 +2135,171 @@ const MIDIChart = () => {
               />
             </div>
 
+            {/* Melody-specific settings (Basic, Genre, Context modes) */}
+            {generateSettings.mode !== 'chords' && (
+              <>
+                <div className={styles.settingGroup}>
+                  <label className={styles.settingLabel}>Min Note</label>
+                  <input
+                    type="number"
+                    className={styles.settingInput}
+                    value={generateSettings.minNote}
+                    onChange={(e) => setGenerateSettings({ ...generateSettings, minNote: parseInt(e.target.value) })}
+                    min="0"
+                    max="127"
+                  />
+                </div>
+
+                <div className={styles.settingGroup}>
+                  <label className={styles.settingLabel}>Max Note</label>
+                  <input
+                    type="number"
+                    className={styles.settingInput}
+                    value={generateSettings.maxNote}
+                    onChange={(e) => setGenerateSettings({ ...generateSettings, maxNote: parseInt(e.target.value) })}
+                    min="0"
+                    max="127"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Basic mode: Chromatic setting */}
+            {generateSettings.mode === 'basic' && (
+              <div className={styles.settingGroup}>
+                <label className={styles.settingLabel}>Chromatic %</label>
+                <input
+                  type="number"
+                  className={styles.settingInput}
+                  value={generateSettings.chromatic * 100}
+                  onChange={(e) => setGenerateSettings({ ...generateSettings, chromatic: parseFloat(e.target.value) / 100 })}
+                  min="0"
+                  max="100"
+                  step="5"
+                />
+              </div>
+            )}
+
+            {/* Genre mode: Genre and Style selectors */}
+            {generateSettings.mode === 'genre' && (
+              <>
+                <div className={styles.settingGroup}>
+                  <label className={styles.settingLabel}>Genre</label>
+                  <select
+                    className={styles.settingSelect}
+                    value={generateSettings.genre}
+                    onChange={(e) => setGenerateSettings({ ...generateSettings, genre: e.target.value })}
+                  >
+                    <option value="jazz">Jazz</option>
+                    <option value="blues">Blues</option>
+                    <option value="funk">Funk</option>
+                    <option value="pop">Pop</option>
+                    <option value="rock">Rock</option>
+                    <option value="electronic">Electronic</option>
+                    <option value="classical">Classical</option>
+                    <option value="hip-hop">Hip-Hop</option>
+                    <option value="r&b">R&B</option>
+                    <option value="country">Country</option>
+                    <option value="reggae">Reggae</option>
+                    <option value="gospel">Gospel</option>
+                    <option value="latin">Latin</option>
+                    <option value="arabic">Arabic</option>
+                    <option value="indian">Indian</option>
+                  </select>
+                </div>
+
+                <div className={styles.settingGroup}>
+                  <label className={styles.settingLabel}>Style</label>
+                  <select
+                    className={styles.settingSelect}
+                    value={generateSettings.style}
+                    onChange={(e) => setGenerateSettings({ ...generateSettings, style: e.target.value })}
+                  >
+                    <option value="bebop">Bebop</option>
+                    <option value="swing">Swing</option>
+                    <option value="ballad">Ballad</option>
+                    <option value="funk">Funk</option>
+                    <option value="blues">Blues</option>
+                    <option value="modal">Modal</option>
+                    <option value="fusion">Fusion</option>
+                  </select>
+                </div>
+              </>
+            )}
+
+            {/* Context mode: Role selector */}
+            {generateSettings.mode === 'context' && (
+              <div className={styles.settingGroup}>
+                <label className={styles.settingLabel}>Role</label>
+                <select
+                  className={styles.settingSelect}
+                  value={generateSettings.role}
+                  onChange={(e) => setGenerateSettings({ ...generateSettings, role: e.target.value })}
+                >
+                  <option value="melody">Melody</option>
+                  <option value="bass">Bass</option>
+                  <option value="harmony">Harmony</option>
+                  <option value="countermelody">Counter-melody</option>
+                </select>
+              </div>
+            )}
+
+            {/* Chords mode: Voicing, Rhythm, Style */}
+            {generateSettings.mode === 'chords' && (
+              <>
+                <div className={styles.settingGroup}>
+                  <label className={styles.settingLabel}>Voicing</label>
+                  <select
+                    className={styles.settingSelect}
+                    value={generateSettings.voicing}
+                    onChange={(e) => setGenerateSettings({ ...generateSettings, voicing: e.target.value })}
+                  >
+                    <option value="random">Random</option>
+                    <option value="close">Close</option>
+                    <option value="open">Open</option>
+                    <option value="drop2">Drop 2</option>
+                    <option value="drop3">Drop 3</option>
+                    <option value="shell">Shell</option>
+                    <option value="spread">Spread</option>
+                  </select>
+                </div>
+
+                <div className={styles.settingGroup}>
+                  <label className={styles.settingLabel}>Rhythm</label>
+                  <select
+                    className={styles.settingSelect}
+                    value={generateSettings.rhythm}
+                    onChange={(e) => setGenerateSettings({ ...generateSettings, rhythm: e.target.value })}
+                  >
+                    <option value="random">Random</option>
+                    <option value="whole">Whole Notes</option>
+                    <option value="half">Half Notes</option>
+                    <option value="quarter">Quarter Notes</option>
+                    <option value="eighth">Eighth Notes</option>
+                    <option value="syncopated">Syncopated</option>
+                    <option value="arpeggio">Arpeggio</option>
+                    <option value="dotted">Dotted</option>
+                  </select>
+                </div>
+
+                <div className={styles.settingGroup}>
+                  <label className={styles.settingLabel}>Style</label>
+                  <select
+                    className={styles.settingSelect}
+                    value={generateSettings.chordStyle}
+                    onChange={(e) => setGenerateSettings({ ...generateSettings, chordStyle: e.target.value })}
+                  >
+                    <option value="random">Random</option>
+                    <option value="block">Block</option>
+                    <option value="arpeggio">Arpeggio</option>
+                  </select>
+                </div>
+              </>
+            )}
+
+            {/* Seed (all modes) */}
             <div className={styles.settingGroup}>
-              <label className={styles.settingLabel}>Seed (optional)</label>
+              <label className={styles.settingLabel}>Seed</label>
               <input
                 type="number"
                 className={styles.settingInput}
@@ -2063,12 +2310,18 @@ const MIDIChart = () => {
             </div>
           </div>
 
+          {/* Mode-specific help text */}
           <div className={styles.settingsHelp}>
             <i className="fa-solid fa-circle-info"></i>
             <span>
-              Generate algorithmic melodies using proper chord-scale theory.
-              Chords should be comma-separated (e.g., "Cm7,G7,Cm7,G7").
-              Seed controls randomness (same seed = same melody).
+              {generateSettings.mode === 'basic' &&
+                'Basic mode uses target-note technique with Berklee chord-scale theory. Great for jazz improvisation lines.'}
+              {generateSettings.mode === 'genre' &&
+                'Genre mode generates melodies with style-specific characteristics. Choose a genre and style for authentic results.'}
+              {generateSettings.mode === 'context' &&
+                'Context mode analyzes existing arrangement and generates complementary parts. Choose a role (melody, bass, harmony).'}
+              {generateSettings.mode === 'chords' &&
+                'Chords mode renders full chord progressions with various voicings and rhythmic patterns. Downloads as MIDI file.'}
             </span>
           </div>
         </div>

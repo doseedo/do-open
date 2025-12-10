@@ -25,6 +25,31 @@
   font-size: 20px;
   font-weight: 600;
   color: var(--color-text-primary);
+  flex: 1;
+}
+
+.headerActions {
+  display: flex;
+  gap: 8px;
+}
+
+.headerButton {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(138, 92, 246, 0.15);
+  border-radius: 6px;
+  color: rgba(138, 92, 246, 0.8);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.headerButton:hover {
+  background: rgba(138, 92, 246, 0.3);
+  color: rgba(138, 92, 246, 1);
 }
 
 .globalControls {
@@ -391,4 +416,187 @@
     grid-template-columns: 1fr;
     grid-template-rows: auto;
   }
+}
+
+/* Presets Section */
+.presetsSection {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(138, 92, 246, 0.2);
+}
+
+.presetsSection h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.presetList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.presetItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+}
+
+.presetName {
+  font-size: 12px;
+  color: var(--color-text-primary);
+}
+
+.presetActions {
+  display: flex;
+  gap: 4px;
+}
+
+.presetActions button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  transition: all 0.15s ease;
+}
+
+.presetActions button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.presetActions button:last-child:hover {
+  background: rgba(255, 80, 80, 0.2);
+  color: rgba(255, 80, 80, 0.9);
+}
+
+/* Modal */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  background: rgba(25, 25, 30, 0.98);
+  border: 1px solid rgba(138, 92, 246, 0.3);
+  border-radius: 12px;
+  padding: 24px;
+  width: 320px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.modal h4 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.modal input {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(138, 92, 246, 0.3);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  outline: none;
+  margin-bottom: 16px;
+}
+
+.modal input:focus {
+  border-color: rgba(138, 92, 246, 0.6);
+}
+
+.modalActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.modalActions button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.modalActions button:first-child {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.modalActions button:first-child:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.modalActions button:last-child {
+  background: rgba(138, 92, 246, 0.3);
+  color: rgba(138, 92, 246, 1);
+}
+
+.modalActions button:last-child:hover {
+  background: rgba(138, 92, 246, 0.5);
+}
+
+.modalActions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Status Bar */
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(138, 92, 246, 0.1);
+}
+
+.statusIndicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.statusIndicator.active {
+  background: rgba(100, 255, 100, 0.8);
+  box-shadow: 0 0 8px rgba(100, 255, 100, 0.5);
+}
+
+.statusText {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.statusInfo {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-left: auto;
 }

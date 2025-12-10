@@ -147,6 +147,7 @@ def decode_to_tracks(
                 tau_offset=tau_offset,
                 velocity=velocity,
                 start_time=current_time,
+                role=current_role,  # Pass role for octave heuristics
             )
             tracks[current_track].extend(pattern_notes)
             pending_pattern = None
@@ -202,57 +203,48 @@ def pattern_to_notes(
     tau_offset: int = 480,
     velocity: int = 90,
     start_time: int = 0,
+    role: str = 'piano',
 ) -> List[Dict]:
-    """Convert a single pattern to notes."""
+    """Convert a single pattern to notes.
+
+    Uses role-based octave heuristics since the codec only stores pitch classes,
+    not absolute pitches. This gives musically appropriate octave placement.
+    """
     if not pattern:
         return []
 
     notes = []
     time = start_time
 
-    # Use canonical_pitches if available (already has correct intervals)
-    canonical_pitches = pattern.get('canonical_pitches', [])
-    if canonical_pitches:
-        # canonical_pitches are absolute relative to base 60
-        for i, cp in enumerate(canonical_pitches):
-            pitch = cp + transpose + (octave_offset * 12)
+    # Role-based base octave mapping (MIDI note number for middle of range)
+    # These are typical ranges for each instrument family
+    ROLE_BASE_OCTAVE = {
+        'bass': 2,       # E1-E3 range, center around octave 2 (MIDI 36-48)
+        'piano': 4,      # Wide range, center around octave 4 (MIDI 48-72)
+        'guitar': 3,     # E2-E5 range, center around octave 3 (MIDI 40-64)
+        'strings': 4,    # Violin-cello range, center around octave 4
+        'brass': 4,      # Trumpet-trombone, center around octave 4 (MIDI 48-72)
+        'reed': 4,       # Sax/clarinet, center around octave 4
+        'pipe': 5,       # Flute/piccolo, higher, octave 5
+        'organ': 4,      # Similar to piano
+        'synlead': 4,    # Lead synths
+        'synpad': 4,     # Pad synths
+        'synfx': 4,      # FX synths
+        'chromperc': 4,  # Vibraphone, marimba
+        'ethnic': 4,     # Various
+        'ensemble': 4,   # Orchestral
+        'perc': 4,       # Percussion (pitched)
+        'sfx': 4,        # Sound effects
+        'unknown': 4,
+    }
 
-            # Clamp to MIDI range
-            while pitch > 108:
-                pitch -= 12
-            while pitch < 24:
-                pitch += 12
+    # Get role-appropriate base octave
+    role_octave = ROLE_BASE_OCTAVE.get(role, 4)
 
-            # Get ratios
-            duration_ratios = pattern.get('duration_ratios', [1.0] * len(canonical_pitches))
-            velocity_ratios = pattern.get('velocity_ratios', [1.0] * len(canonical_pitches))
-            rhythm_ratios = pattern.get('rhythm_ratios', [1.0])
+    # Apply octave offset from token
+    actual_octave = role_octave + octave_offset
 
-            dur_ratio = duration_ratios[i] if i < len(duration_ratios) else 1.0
-            dur_ratio = max(0.1, min(4.0, dur_ratio))
-            duration = int(dur_ratio * tau_offset)
-            duration = max(60, duration)
-
-            vel_ratio = velocity_ratios[i] if i < len(velocity_ratios) else 1.0
-            vel = int(vel_ratio * velocity)
-            vel = min(127, max(1, vel))
-
-            notes.append({
-                'pitch': pitch,
-                'velocity': vel,
-                'time': time,
-                'duration': duration,
-            })
-
-            # Advance time
-            if i < len(rhythm_ratios):
-                rr = rhythm_ratios[i]
-                rr = max(0, min(4.0, rr))
-                time += int(rr * tau_offset)
-
-        return notes
-
-    # Fallback to pitch_classes + intervals
+    # Use pitch_classes + intervals (canonical_pitches is corrupted)
     pitch_classes = pattern.get('pitch_classes', [])
     if not pitch_classes:
         return []
@@ -262,7 +254,6 @@ def pattern_to_notes(
     velocity_ratios = pattern.get('velocity_ratios', [1.0] * len(pitch_classes))
     pitch_intervals = pattern.get('pitch_intervals', [])
 
-    actual_octave = base_octave + octave_offset
     prev_pitch = actual_octave * 12 + ((pitch_classes[0] + transpose) % 12)
 
     for i, pc in enumerate(pitch_classes):
