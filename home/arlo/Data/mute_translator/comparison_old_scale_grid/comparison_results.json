@@ -1,0 +1,55 @@
+{
+  "old_checkpoint": "./checkpoints/best.pt",
+  "new_checkpoint": "./checkpoints/best.pt",
+  "samples": [
+    {
+      "sample": "TPT2.3.07_07",
+      "dry_centroid": 2225.6330037150447,
+      "old_centroid": 6685.925731187674,
+      "new_centroid": 4828.674672830552,
+      "old_shift": 4460.292727472629,
+      "new_shift": 2603.041669115507,
+      "output_dir": "./comparison_old_scale_grid/sample_00_TPT2.3.07_07"
+    },
+    {
+      "sample": "Trumpet.16_50",
+      "dry_centroid": 1534.1506121992074,
+      "old_centroid": 5038.586257021394,
+      "new_centroid": 3554.8670386119766,
+      "old_shift": 3504.4356448221865,
+      "new_shift": 2020.7164264127691,
+      "output_dir": "./comparison_old_scale_grid/sample_01_Trumpet.16_50"
+    },
+    {
+      "sample": "Trumpet 3.37_38",
+      "dry_centroid": 2953.080803440808,
+      "old_centroid": 6975.387235698342,
+      "new_centroid": 5397.396665187815,
+      "old_shift": 4022.306432257534,
+      "new_shift": 2444.3158617470076,
+      "output_dir": "./comparison_old_scale_grid/sample_02_Trumpet 3.37_38"
+    },
+    {
+      "sample": "Trumpet 1.14-cm_2",
+      "dry_centroid": 2798.190294159678,
+      "old_centroid": 7599.685785999888,
+      "new_centroid": 5764.3631744124905,
+      "old_shift": 4801.49549184021,
+      "new_shift": 2966.1728802528123,
+      "output_dir": "./comparison_old_scale_grid/sample_03_Trumpet 1.14-cm_2"
+    },
+    {
+      "sample": "Trumpet.36_39",
+      "dry_centroid": 1420.9696912604497,
+      "old_centroid": 6468.72723495223,
+      "new_centroid": 3755.815361136869,
+      "old_shift": 5047.7575436917805,
+      "new_shift": 2334.8456698764194,
+      "output_dir": "./comparison_old_scale_grid/sample_04_Trumpet.36_39"
+    }
+  ],
+  "summary": {
+    "avg_old_centroid_shift": 4367.257568016868,
+    "avg_new_centroid_shift": 2473.8185014809033
+  }
+}

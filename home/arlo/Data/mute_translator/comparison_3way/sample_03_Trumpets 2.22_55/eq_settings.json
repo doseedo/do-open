@@ -1,0 +1,150 @@
+{
+  "eq_bands_old": [
+    {
+      "type": "highpass",
+      "freq": 260.0,
+      "gain": 0.0,
+      "Q": 0.71,
+      "slope_dB_per_oct": 12
+    },
+    {
+      "type": "peaking",
+      "freq": 139.0,
+      "gain": 0.1,
+      "Q": 1.0
+    },
+    {
+      "type": "peaking",
+      "freq": 100.0,
+      "gain": 0.0,
+      "Q": 0.6
+    },
+    {
+      "type": "peaking",
+      "freq": 4020.0,
+      "gain": -4.2,
+      "Q": 0.54
+    },
+    {
+      "type": "peaking",
+      "freq": 2660.0,
+      "gain": 3.2,
+      "Q": 0.41
+    },
+    {
+      "type": "peaking",
+      "freq": 4800.0,
+      "gain": 1.2,
+      "Q": 1.0
+    },
+    {
+      "type": "peaking",
+      "freq": 7150.0,
+      "gain": 4.6,
+      "Q": 0.89
+    }
+  ],
+  "eq_bands_new": [
+    {
+      "type": "highpass",
+      "freq": 262.0,
+      "gain": 0.0,
+      "Q": 1.1,
+      "slope_dB_per_oct": 12
+    },
+    {
+      "type": "peaking",
+      "freq": 75.0,
+      "gain": 0.0,
+      "Q": 1.0
+    },
+    {
+      "type": "peaking",
+      "freq": 100.0,
+      "gain": 0.0,
+      "Q": 0.6
+    },
+    {
+      "type": "peaking",
+      "freq": 7450.0,
+      "gain": -4.8,
+      "Q": 0.39
+    },
+    {
+      "type": "peaking",
+      "freq": 8250.0,
+      "gain": 5.5,
+      "Q": 0.79
+    },
+    {
+      "type": "peaking",
+      "freq": 8400.0,
+      "gain": 6.8,
+      "Q": 0.51
+    },
+    {
+      "type": "peaking",
+      "freq": 240.0,
+      "gain": 0.4,
+      "Q": 1.0
+    }
+  ],
+  "eq_bands_proq_final": [
+    {
+      "type": "highpass",
+      "freq": 151.0,
+      "gain": 0.0,
+      "Q": 0.54,
+      "slope_dB_per_oct": 12
+    },
+    {
+      "type": "peaking",
+      "freq": 47.4,
+      "gain": -1.2,
+      "Q": 1.0
+    },
+    {
+      "type": "peaking",
+      "freq": 426.0,
+      "gain": -3.2,
+      "Q": 0.51
+    },
+    {
+      "type": "peaking",
+      "freq": 1176.6,
+      "gain": -25.53,
+      "Q": 3.773
+    },
+    {
+      "type": "peaking",
+      "freq": 1492.4,
+      "gain": -22.11,
+      "Q": 12.76
+    },
+    {
+      "type": "peaking",
+      "freq": 1862.5,
+      "gain": -13.63,
+      "Q": 4.667
+    },
+    {
+      "type": "peaking",
+      "freq": 1591.6,
+      "gain": 1.66,
+      "Q": 1.022
+    },
+    {
+      "type": "peaking",
+      "freq": 3040.0,
+      "gain": -2.7,
+      "Q": 0.98
+    },
+    {
+      "type": "peaking",
+      "freq": 3300.0,
+      "gain": -7.0,
+      "Q": 0.51
+    }
+  ],
+  "new_model_gain_db": -9.5
+}

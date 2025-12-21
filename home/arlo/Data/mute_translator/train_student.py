@@ -22,8 +22,13 @@ import os
 import sys
 import argparse
 import json
+import warnings
 from datetime import datetime
 from pathlib import Path
+
+# Suppress torchaudio deprecation warnings
+warnings.filterwarnings("ignore", message=".*StreamingMediaDecoder has been deprecated.*")
+warnings.filterwarnings("ignore", message=".*torchaudio.load_with_torchcodec.*")
 
 import torch
 import torch.nn as nn
@@ -238,8 +243,24 @@ class PairedAudioDataset(Dataset):
         with open(manifest_path, 'r') as f:
             manifest = json.load(f)
 
-        self.pairs = manifest['files']
-        print(f"Loaded {len(self.pairs)} paired samples")
+        # Support both formats:
+        # 1. mixed_results.json format: {"samples": [{"dry_decoded": ..., "mixed_path": ...}]}
+        # 2. Original format: {"files": [{"dry_audio": ..., "muted_audio": ...}]}
+        if 'samples' in manifest:
+            raw_pairs = manifest['samples']
+            # Convert to standard format
+            self.pairs = []
+            for p in raw_pairs:
+                if p.get('status') == 'success' and p.get('mixed_path'):
+                    self.pairs.append({
+                        'dry_audio': p['dry_decoded'],
+                        'muted_audio': p['mixed_path'],
+                        'basename': p.get('basename', '')
+                    })
+            print(f"Loaded {len(self.pairs)} paired samples from mixed_results format")
+        else:
+            self.pairs = manifest['files']
+            print(f"Loaded {len(self.pairs)} paired samples")
 
         # Filter to existing
         self.pairs = [
@@ -452,8 +473,9 @@ class StudentTrainer:
 
 def main():
     parser = argparse.ArgumentParser(description="Train Student Model")
-    parser.add_argument('--synthetic_manifest', type=str, required=True,
-                        help='Path to synthetic data manifest')
+    parser.add_argument('--manifest', '--synthetic_manifest', type=str, required=True,
+                        dest='manifest',
+                        help='Path to manifest (mixed_results.json or synthetic_manifest.json)')
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Output directory for checkpoints')
     parser.add_argument('--model_type', type=str, default='mel',
@@ -468,7 +490,7 @@ def main():
     args = parser.parse_args()
 
     trainer = StudentTrainer(
-        manifest_path=args.synthetic_manifest,
+        manifest_path=args.manifest,
         output_dir=args.output_dir,
         model_type=args.model_type,
         batch_size=args.batch_size,

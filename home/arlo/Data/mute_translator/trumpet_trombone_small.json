@@ -1,0 +1,233 @@
+{
+  "summary": {
+    "trumpet_total": 10,
+    "trumpet_correct": 4,
+    "trumpet_accuracy": 40.0,
+    "trombone_total": 10,
+    "trombone_correct": 8,
+    "trombone_accuracy": 80.0,
+    "overall_accuracy": 60.0
+  },
+  "results": [
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-04-27/New/Tone_Arlo_1_31_25/Audio Files/Trumpet.10_02.wav",
+      "label": "trumpet",
+      "prediction": "trumpet",
+      "score": 0.93,
+      "correct": true,
+      "spectral_centroid": 2225.247492213204,
+      "mean_pitch": 648.5294117647059,
+      "low_high_ratio": 0.0038878730662950086,
+      "reason": "high_pitch:649, bright_spectrum, high_freq_energy"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 1.13-cm_2.wav",
+      "label": "trumpet",
+      "prediction": "trombone",
+      "score": 0.31999999999999995,
+      "correct": false,
+      "spectral_centroid": 1429.5470617085962,
+      "mean_pitch": 525.0,
+      "low_high_ratio": 2.326330784210044,
+      "reason": "high_pitch:525, dark_spectrum, low_high_freq"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 3.34_35.wav",
+      "label": "trumpet",
+      "prediction": "trombone",
+      "score": 0.0,
+      "correct": false,
+      "spectral_centroid": 1812.73993707517,
+      "mean_pitch": 183.75,
+      "low_high_ratio": 4.7388786720433735,
+      "reason": "low_pitch:184, dark_spectrum, low_high_freq, high_bass:0.23"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-04-04/New/Copy of 2025.02.23_TheSun_HornSession/Audio Files/Trumpet.16_50.wav",
+      "label": "trumpet",
+      "prediction": "trombone",
+      "score": 0.0,
+      "correct": false,
+      "spectral_centroid": 1469.1898669487407,
+      "mean_pitch": 87.5,
+      "low_high_ratio": 909.4817680033993,
+      "reason": "low_pitch:88, dark_spectrum, low_high_freq, high_bass:0.32"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protoolsA/2025-06-15/New/Tiril Jackson_HORNS OD_6.15.2025/Audio Files/Trumpet.32_36.wav",
+      "label": "trumpet",
+      "prediction": "trombone",
+      "score": 0.38,
+      "correct": false,
+      "spectral_centroid": 2352.5566765898075,
+      "mean_pitch": 459.375,
+      "low_high_ratio": 7.775544290391848,
+      "reason": "high_pitch:459, dark_spectrum, low_high_freq, high_bass:0.23"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protoolsA/2025-11-29/New/Mistake Charlie Comp/Audio Files/Trumpet_U87.26_26.wav",
+      "label": "trumpet",
+      "prediction": "trombone",
+      "score": 0.4799999999999999,
+      "correct": false,
+      "spectral_centroid": 1900.813692391667,
+      "mean_pitch": 459.375,
+      "low_high_ratio": 6.694399692744118,
+      "reason": "high_pitch:459, dark_spectrum, low_high_freq"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .28_28.wav",
+      "label": "trumpet",
+      "prediction": "trumpet",
+      "score": 1.0,
+      "correct": true,
+      "spectral_centroid": 3121.3226796571503,
+      "mean_pitch": 525.0,
+      "low_high_ratio": 0.07383436974983881,
+      "reason": "high_centroid:3121, high_pitch:525, bright_spectrum, high_freq_energy"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-06-24/New/AynInserto_11_8_16/Audio Files/Trumpet2_01.wav",
+      "label": "trumpet",
+      "prediction": "trumpet",
+      "score": 1.0,
+      "correct": true,
+      "spectral_centroid": 3448.6902595171514,
+      "mean_pitch": 441.0,
+      "low_high_ratio": 0.6166660450468057,
+      "reason": "high_centroid:3449, high_pitch:441, bright_spectrum, high_freq_energy"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-04-26/New/Gabo Rolas/Audio Files/TRUMPET.07_33.wav",
+      "label": "trumpet",
+      "prediction": "trombone",
+      "score": 0.06999999999999997,
+      "correct": false,
+      "spectral_centroid": 1126.5117000670036,
+      "mean_pitch": 1002.2727272727273,
+      "low_high_ratio": 5121.57461306756,
+      "reason": "low_centroid:1127, high_pitch:1002, dark_spectrum, low_high_freq, high_bass:0.65"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-04-04/New/Copy of 2025.02.23_TheSun_HornSession/Audio Files/Trombone.01_18.wav",
+      "label": "trombone",
+      "prediction": "trumpet",
+      "score": 0.53,
+      "correct": false,
+      "spectral_centroid": 1843.0362686447615,
+      "mean_pitch": 689.0625,
+      "low_high_ratio": 1.725627742035399,
+      "reason": "high_pitch:689, low_high_freq"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-04-04/New/Copy of 2025.02.23_TheSun_HornSession/Audio Files/Trombone.01_14.wav",
+      "label": "trombone",
+      "prediction": "trumpet",
+      "score": 0.73,
+      "correct": false,
+      "spectral_centroid": 2026.1699505515317,
+      "mean_pitch": 689.0625,
+      "low_high_ratio": 0.2995996113054273,
+      "reason": "high_pitch:689, bright_spectrum, low_high_freq"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-04-11/New/11-23-24 wHERE HAVE YOU bEEN - Winds Recording copy/Audio Files/Trombone 1.02_06.wav",
+      "label": "trombone",
+      "prediction": "trombone",
+      "score": 0.0,
+      "correct": true,
+      "spectral_centroid": 1017.5452202054411,
+      "mean_pitch": 180.7377049180328,
+      "low_high_ratio": 3087.354333667892,
+      "reason": "low_centroid:1018, low_pitch:181, dark_spectrum, low_high_freq, high_bass:0.73"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protoolsA/2025-10-06/Prev/EllaLevri_Experimental2_MP341_Finished/Audio Files/Trumpet 1 1_01.wav",
+      "label": "trumpet",
+      "prediction": "trumpet",
+      "score": 0.6299999999999999,
+      "correct": true,
+      "spectral_centroid": 1844.1511542652318,
+      "mean_pitch": 87.5,
+      "low_high_ratio": 0.6231661179592042,
+      "reason": "low_pitch:88, bright_spectrum, high_freq_energy"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-06-23/New/Joey Madison_Change VOX 2.27.25/Audio Files/Trombone.51_20.wav",
+      "label": "trombone",
+      "prediction": "trombone",
+      "score": 0.49999999999999994,
+      "correct": true,
+      "spectral_centroid": 3080.930655267211,
+      "mean_pitch": 164.55223880597015,
+      "low_high_ratio": 0.9572957342880001,
+      "reason": "high_centroid:3081, low_pitch:165"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protoolsA/2025-05-11/ArloStems/BRASS/TB/TROMBONE_7.wav",
+      "label": "trombone",
+      "prediction": "trombone",
+      "score": 0.0,
+      "correct": true,
+      "spectral_centroid": 1228.86090678967,
+      "mean_pitch": 98.4375,
+      "low_high_ratio": 39.899621267644584,
+      "reason": "low_pitch:98, dark_spectrum, low_high_freq"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-04-04/New/Copy of 2025.02.23_TheSun_HornSession/Audio Files/TB.16_40.wav",
+      "label": "trombone",
+      "prediction": "trombone",
+      "score": 0.4799999999999999,
+      "correct": true,
+      "spectral_centroid": 1921.979347210418,
+      "mean_pitch": 1002.2727272727273,
+      "low_high_ratio": 80.04041453307384,
+      "reason": "high_pitch:1002, dark_spectrum, low_high_freq"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-05-04/New/MP457_VinceBaur_HowDeepIsYourLove_5.1.24/Audio Files/Gaspard TB_07.wav",
+      "label": "trombone",
+      "prediction": "trombone",
+      "score": 0.0,
+      "correct": true,
+      "spectral_centroid": 2430.0058976048285,
+      "mean_pitch": 137.8125,
+      "low_high_ratio": 1259.390986661931,
+      "reason": "low_pitch:138, dark_spectrum, low_high_freq, high_bass:0.95"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-05-04/New/MP457_VinceBaur_HowDeepIsYourLove_5.1.24/Audio Files/Vlad TB_05.wav",
+      "label": "trombone",
+      "prediction": "trombone",
+      "score": 0.08999999999999998,
+      "correct": true,
+      "spectral_centroid": 1429.832393682768,
+      "mean_pitch": 245.0,
+      "low_high_ratio": 53.478049248599106,
+      "reason": "dark_spectrum, low_high_freq"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protoolsA/2025-05-11/ArloStems/BRASS/TB/BL1_TB_3.wav",
+      "label": "trombone",
+      "prediction": "trombone",
+      "score": 0.0,
+      "correct": true,
+      "spectral_centroid": 1087.0525445468909,
+      "mean_pitch": 155.28169014084506,
+      "low_high_ratio": 129.7275760913455,
+      "reason": "low_centroid:1087, low_pitch:155, dark_spectrum, low_high_freq, high_bass:0.35"
+    },
+    {
+      "file": "/home/arlo/gcs-bucket/protools/2025-06-26/New/MAKENA TATE BMDA_MIXDOWN/Bounced Files/MT_BMDA_DEMO1.wav",
+      "label": "trombone",
+      "prediction": "trombone",
+      "score": 0.37000000000000005,
+      "correct": true,
+      "spectral_centroid": 3211.1330645747094,
+      "mean_pitch": 918.75,
+      "low_high_ratio": 42.42073975525296,
+      "reason": "high_centroid:3211, high_pitch:919, dark_spectrum, low_high_freq, high_bass:0.86"
+    }
+  ]
+}

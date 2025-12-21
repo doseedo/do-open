@@ -1,0 +1,142 @@
+{
+  "checkpoint": "88",
+  "timestamp": "2025-12-11T02:45:54.626709",
+  "samples": [
+    {
+      "name": "sample_00_Flugel.01_11",
+      "latent_shape": [
+        1,
+        8,
+        16,
+        407
+      ],
+      "dry_audio": "eval_envelope_optimized/sample_00_Flugel.01_11/dry_original.wav",
+      "muted_audio": "eval_envelope_optimized/sample_00_Flugel.01_11/muted_translated.wav",
+      "spectral_distance": 21.271472930908203,
+      "centroid_shift": -345.47310641528395,
+      "dry_latent_mean": -0.788713812828064,
+      "dry_latent_std": 1.5681538581848145,
+      "muted_latent_mean": -0.5076066851615906,
+      "muted_latent_std": 1.0796383619308472,
+      "latent_diff_norm": 178.23678588867188,
+      "success": true
+    },
+    {
+      "name": "sample_01_Trumpet.06_09",
+      "latent_shape": [
+        1,
+        8,
+        16,
+        3643
+      ],
+      "dry_audio": "eval_envelope_optimized/sample_01_Trumpet.06_09/dry_original.wav",
+      "muted_audio": "eval_envelope_optimized/sample_01_Trumpet.06_09/muted_translated.wav",
+      "spectral_distance": 17.266572952270508,
+      "centroid_shift": -400.64943071592245,
+      "dry_latent_mean": -0.6497034430503845,
+      "dry_latent_std": 1.3787195682525635,
+      "muted_latent_mean": -0.49711689352989197,
+      "muted_latent_std": 1.0907520055770874,
+      "latent_diff_norm": 424.7622985839844,
+      "success": true
+    },
+    {
+      "name": "sample_02_Trumpet.30_32",
+      "latent_shape": [
+        1,
+        8,
+        16,
+        116
+      ],
+      "dry_audio": "eval_envelope_optimized/sample_02_Trumpet.30_32/dry_original.wav",
+      "muted_audio": "eval_envelope_optimized/sample_02_Trumpet.30_32/muted_translated.wav",
+      "spectral_distance": 25.13740348815918,
+      "centroid_shift": -506.2255421024463,
+      "dry_latent_mean": -0.6184298992156982,
+      "dry_latent_std": 1.3785970211029053,
+      "muted_latent_mean": -0.4872143268585205,
+      "muted_latent_std": 1.0909241437911987,
+      "latent_diff_norm": 79.62097930908203,
+      "success": true
+    },
+    {
+      "name": "sample_03_TRUMPET.04_06",
+      "latent_shape": [
+        1,
+        8,
+        16,
+        192
+      ],
+      "dry_audio": "eval_envelope_optimized/sample_03_TRUMPET.04_06/dry_original.wav",
+      "muted_audio": "eval_envelope_optimized/sample_03_TRUMPET.04_06/muted_translated.wav",
+      "spectral_distance": 41.81733322143555,
+      "centroid_shift": -172.19212113870103,
+      "dry_latent_mean": -0.9884524345397949,
+      "dry_latent_std": 1.75409996509552,
+      "muted_latent_mean": -0.5175737738609314,
+      "muted_latent_std": 1.0567880868911743,
+      "latent_diff_norm": 154.37705993652344,
+      "success": true
+    },
+    {
+      "name": "sample_04_Trumpet_U87.26_26",
+      "latent_shape": [
+        1,
+        8,
+        16,
+        160
+      ],
+      "dry_audio": "eval_envelope_optimized/sample_04_Trumpet_U87.26_26/dry_original.wav",
+      "muted_audio": "eval_envelope_optimized/sample_04_Trumpet_U87.26_26/muted_translated.wav",
+      "spectral_distance": 22.702482223510742,
+      "centroid_shift": -677.0576498754749,
+      "dry_latent_mean": -0.6634221076965332,
+      "dry_latent_std": 1.384811282157898,
+      "muted_latent_mean": -0.467233270406723,
+      "muted_latent_std": 1.0683424472808838,
+      "latent_diff_norm": 94.61738586425781,
+      "success": true
+    }
+  ],
+  "comparisons": [
+    {
+      "name": "Trumpet 1_15",
+      "type": "comparison",
+      "real_muted_mean": -0.9568259716033936,
+      "real_muted_std": 1.6975491046905518,
+      "translated_mean": -0.49414771795272827,
+      "translated_std": 1.034700870513916,
+      "real_audio": "eval_envelope_optimized/comparison_Trumpet 1_15/real_muted.wav",
+      "translated_audio": "eval_envelope_optimized/comparison_Trumpet 1_15/translated_muted.wav",
+      "success": true
+    },
+    {
+      "name": "Trumpet 1_16",
+      "type": "comparison",
+      "real_muted_mean": -0.82648104429245,
+      "real_muted_std": 1.5718944072723389,
+      "translated_mean": -0.45519134402275085,
+      "translated_std": 1.0726606845855713,
+      "real_audio": "eval_envelope_optimized/comparison_Trumpet 1_16/real_muted.wav",
+      "translated_audio": "eval_envelope_optimized/comparison_Trumpet 1_16/translated_muted.wav",
+      "success": true
+    },
+    {
+      "name": "Trumpet 1_18",
+      "type": "comparison",
+      "real_muted_mean": -0.9986890554428101,
+      "real_muted_std": 1.7372393608093262,
+      "translated_mean": -0.4853788912296295,
+      "translated_std": 1.0707656145095825,
+      "real_audio": "eval_envelope_optimized/comparison_Trumpet 1_18/real_muted.wav",
+      "translated_audio": "eval_envelope_optimized/comparison_Trumpet 1_18/translated_muted.wav",
+      "success": true
+    }
+  ],
+  "summary": {
+    "num_samples": 5,
+    "avg_centroid_shift_hz": -420.31957004956564,
+    "avg_spectral_distance": 25.639052963256837,
+    "avg_latent_diff_norm": 186.3229019165039
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "old_checkpoint": "./checkpoints/best.pt",
+  "new_checkpoint": "./checkpoints_baseline_optimized/best.pt",
+  "samples": [
+    {
+      "sample": "Trumpets 2.13_37",
+      "dry_centroid": 3691.47246889204,
+      "old_centroid": 5853.0015268684265,
+      "new_centroid": 4062.2458309682174,
+      "old_shift": 2161.5290579763864,
+      "new_shift": 370.77336207617736,
+      "output_dir": "./comparison_3way/sample_00_Trumpets 2.13_37"
+    },
+    {
+      "sample": "Trumpet.32_36",
+      "dry_centroid": 3868.30704856379,
+      "old_centroid": 5157.52949541649,
+      "new_centroid": 3644.578227792169,
+      "old_shift": 1289.2224468527002,
+      "new_shift": -223.72882077162103,
+      "output_dir": "./comparison_3way/sample_01_Trumpet.32_36"
+    },
+    {
+      "sample": "Trumpet.06_06",
+      "dry_centroid": 855.5123517763298,
+      "old_centroid": 4721.402352183226,
+      "new_centroid": 2687.8976532558304,
+      "old_shift": 3865.8900004068964,
+      "new_shift": 1832.3853014795006,
+      "output_dir": "./comparison_3way/sample_02_Trumpet.06_06"
+    },
+    {
+      "sample": "Trumpets 2.22_55",
+      "dry_centroid": 2109.0253505285536,
+      "old_centroid": 3261.992349679895,
+      "new_centroid": 1841.3734557143468,
+      "old_shift": 1152.9669991513415,
+      "new_shift": -267.6518948142068,
+      "output_dir": "./comparison_3way/sample_03_Trumpets 2.22_55"
+    },
+    {
+      "sample": "Trumpet.26_67",
+      "dry_centroid": 1627.4228218846822,
+      "old_centroid": 3763.8021303595206,
+      "new_centroid": 1647.651009606443,
+      "old_shift": 2136.3793084748386,
+      "new_shift": 20.228187721760833,
+      "output_dir": "./comparison_3way/sample_04_Trumpet.26_67"
+    }
+  ],
+  "summary": {
+    "avg_old_centroid_shift": 2121.1975625724326,
+    "avg_new_centroid_shift": 346.4012271383222
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "old_checkpoint": "./checkpoints/best.pt",
+  "new_checkpoint": "./checkpoints_envelope_optimized/best.pt",
+  "samples": [
+    {
+      "sample": "Trumpet.24_37",
+      "dry_centroid": 2174.607824003527,
+      "old_centroid": 5433.207076284225,
+      "new_centroid": 3418.169742896815,
+      "old_shift": 3258.599252280698,
+      "new_shift": 1243.5619188932878,
+      "output_dir": "./comparison_old_vs_new_v2/sample_00_Trumpet.24_37"
+    },
+    {
+      "sample": "Trumpet_01",
+      "dry_centroid": 1742.4282627476098,
+      "old_centroid": 3714.8760656810014,
+      "new_centroid": 1245.5651144945887,
+      "old_shift": 1972.4478029333916,
+      "new_shift": -496.8631482530211,
+      "output_dir": "./comparison_old_vs_new_v2/sample_01_Trumpet_01"
+    },
+    {
+      "sample": "Trumpet.09_09",
+      "dry_centroid": 1809.1083001325867,
+      "old_centroid": 2770.9301966882435,
+      "new_centroid": 2202.1310553228927,
+      "old_shift": 961.8218965556568,
+      "new_shift": 393.02275519030604,
+      "output_dir": "./comparison_old_vs_new_v2/sample_02_Trumpet.09_09"
+    },
+    {
+      "sample": "Trumpets 2.24_60",
+      "dry_centroid": 2640.348694734868,
+      "old_centroid": 4543.1327286175565,
+      "new_centroid": 1853.7509269845386,
+      "old_shift": 1902.7840338826886,
+      "new_shift": -786.5977677503292,
+      "output_dir": "./comparison_old_vs_new_v2/sample_03_Trumpets 2.24_60"
+    },
+    {
+      "sample": "Trumpet.27_68",
+      "dry_centroid": 1674.326048553486,
+      "old_centroid": 3735.234670362083,
+      "new_centroid": 1457.8037868858453,
+      "old_shift": 2060.9086218085968,
+      "new_shift": -216.5222616676408,
+      "output_dir": "./comparison_old_vs_new_v2/sample_04_Trumpet.27_68"
+    }
+  ],
+  "summary": {
+    "avg_old_centroid_shift": 2031.3123214922066,
+    "avg_new_centroid_shift": 27.320299282520544
+  }
+}

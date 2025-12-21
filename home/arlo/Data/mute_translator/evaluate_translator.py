@@ -33,7 +33,7 @@ sys.path.insert(0, '/home/arlo/Data/mute_translator')
 sys.path.insert(0, '/home/arlo/Data/ACE-Step')
 sys.path.insert(0, '/home/arlo/Data/dø')
 
-from models import MuteTranslator, MuteTranslatorLarge
+from models import MuteTranslator, MuteTranslatorLarge, MuteTranslatorWithEnvelope
 from dataset import load_manifest, VERIFIED_MUTED_PATTERNS
 
 
@@ -53,7 +53,12 @@ def load_translator(checkpoint_path: str, device: str = "cuda"):
 
     # Detect model type from state dict
     state_dict = checkpoint['model_state_dict']
-    if 'input_proj.weight' in state_dict:
+
+    # Check for envelope model (has envelope_mod.* keys)
+    if 'envelope_mod.gain_bias' in state_dict:
+        print("Detected MuteTranslatorWithEnvelope model")
+        model = MuteTranslatorWithEnvelope()
+    elif 'input_proj.weight' in state_dict:
         # Check input proj channels to determine type
         in_channels = state_dict['input_proj.weight'].shape[1]
         if in_channels == 8:
@@ -88,7 +93,7 @@ def encode_audio(dcae, audio_path: str, device: str = "cuda") -> torch.Tensor:
 
     # Encode
     with torch.no_grad():
-        latent = dcae.encode(audio, sr=sr)
+        latent, latent_lengths = dcae.encode(audio, sr=sr)
 
     return latent
 
@@ -96,15 +101,15 @@ def encode_audio(dcae, audio_path: str, device: str = "cuda") -> torch.Tensor:
 def decode_latent(dcae, latent: torch.Tensor, output_path: str):
     """Decode latent to audio and save."""
     with torch.no_grad():
-        audio = dcae.decode(latent)
+        sr, pred_wavs = dcae.decode(latent)
 
-    # audio shape: [B, 2, T]
-    audio = audio.squeeze(0).cpu()
+    # pred_wavs is a list of [2, T] tensors
+    audio = pred_wavs[0]  # Get first (and only) batch item
 
     # Normalize
     audio = audio / (audio.abs().max() + 1e-8) * 0.9
 
-    torchaudio.save(output_path, audio, 44100)
+    torchaudio.save(output_path, audio.cpu(), sr)
     return output_path
 
 
@@ -199,7 +204,22 @@ class TranslatorEvaluator:
             # 2. Translate to muted
             print(f"  Translating...")
             with torch.no_grad():
-                muted_latent = self.translator(dry_latent)
+                # Check if envelope model (needs onset/amp inputs)
+                if isinstance(self.translator, MuteTranslatorWithEnvelope):
+                    # Generate synthetic onsets/amp from latent
+                    # Compute energy as amplitude proxy
+                    B, C, H, T = dry_latent.shape
+                    energy = dry_latent.abs().mean(dim=(1, 2))  # [B, T]
+                    amp = energy / (energy.max() + 1e-6)  # Normalize to [0, 1]
+
+                    # Compute onset from energy gradient
+                    energy_diff = torch.diff(energy, dim=1)
+                    energy_diff = F.pad(energy_diff, (1, 0), value=0)
+                    onsets = (energy_diff > energy_diff.mean() + energy_diff.std()).float()
+
+                    muted_latent = self.translator(dry_latent, onsets, amp)
+                else:
+                    muted_latent = self.translator(dry_latent)
 
             # 3. Decode both
             print(f"  Decoding dry...")
