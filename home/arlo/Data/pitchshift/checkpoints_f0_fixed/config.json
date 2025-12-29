@@ -1,0 +1,18 @@
+{
+  "manifest_path": "/home/arlo/Data.backup/final_training_manifest_final.json",
+  "instrument": "trumpet",
+  "model_type": "direct",
+  "batch_size": 64,
+  "learning_rate": 0.0001,
+  "num_epochs": 100,
+  "window_frames": 128,
+  "samples_per_epoch": 10000,
+  "shift_range": [
+    -12,
+    12
+  ],
+  "artifact_removal_ratio": 0.3,
+  "reconstruction_weight": 1.0,
+  "timbre_weight": 1.0,
+  "content_weight": 0.3
+}

@@ -397,25 +397,17 @@ class RegisterAwareTranslatorLarge(nn.Module):
 
 class TimbreLoss(nn.Module):
     """
-    Loss for matching timbre characteristics without requiring paired content.
+    Multi-scale timbre matching in latent space.
 
-    Compares spectral envelope / statistics rather than exact reconstruction.
-    This allows learning correct timbre from reference recordings at the
-    target pitch even when the content (notes played) is different.
+    Uses multiple techniques to capture timbre:
+    1. Global spectral envelope (mean over time)
+    2. Spectral variance (dynamics)
+    3. Multi-scale temporal pooling
+    4. Gram matrix (frequency band correlations = timbre signature)
     """
 
     def __init__(self):
         super().__init__()
-
-    def spectral_envelope(self, latent: torch.Tensor) -> torch.Tensor:
-        """Extract spectral envelope from latent (average over time)."""
-        return latent.mean(dim=-1)  # [B, C, H]
-
-    def spectral_statistics(self, latent: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Extract mean and variance over time."""
-        mean = latent.mean(dim=-1)
-        var = latent.var(dim=-1)
-        return mean, var
 
     def forward(
         self,
@@ -423,22 +415,44 @@ class TimbreLoss(nn.Module):
         reference: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Compare timbre characteristics.
+        Compare timbre at multiple time scales.
 
         Args:
             output: [B, C, H, T] model output
-            reference: [B, C, H, T] reference at target pitch (different content)
+            reference: [B, C, H, T] reference at target pitch
         """
-        out_mean, out_var = self.spectral_statistics(output)
-        ref_mean, ref_var = self.spectral_statistics(reference)
+        losses = []
 
-        # L1 loss on spectral envelope
-        envelope_loss = F.l1_loss(out_mean, ref_mean)
+        # 1. Global spectral envelope
+        out_env = output.mean(dim=-1)
+        ref_env = reference.mean(dim=-1)
+        losses.append(F.l1_loss(out_env, ref_env))
 
-        # L1 loss on variance (dynamics range)
-        var_loss = F.l1_loss(out_var, ref_var)
+        # 2. Spectral envelope variance (dynamics)
+        out_var = output.var(dim=-1)
+        ref_var = reference.var(dim=-1)
+        losses.append(0.5 * F.l1_loss(out_var, ref_var))
 
-        return envelope_loss + 0.5 * var_loss
+        # 3. Multi-scale: compare at different temporal resolutions
+        for pool_size in [4, 8, 16]:
+            if output.shape[-1] >= pool_size:
+                out_pooled = F.avg_pool1d(output.flatten(1, 2), pool_size)
+                ref_pooled = F.avg_pool1d(reference.flatten(1, 2), pool_size)
+                losses.append(0.3 * F.l1_loss(out_pooled, ref_pooled))
+
+        # 4. Gram matrix (captures frequency band correlations = timbre signature)
+        out_gram = self._gram_matrix(output)
+        ref_gram = self._gram_matrix(reference)
+        losses.append(0.5 * F.l1_loss(out_gram, ref_gram))
+
+        return sum(losses) / len(losses)
+
+    def _gram_matrix(self, x: torch.Tensor) -> torch.Tensor:
+        """Gram matrix captures style/timbre correlations."""
+        B, C, H, T = x.shape
+        features = x.reshape(B, C * H, T)
+        gram = torch.bmm(features, features.transpose(1, 2))
+        return gram / (C * H * T)
 
 
 class ContentLoss(nn.Module):

@@ -308,6 +308,41 @@ class PitchShiftTrainer:
         latest_path = self.output_dir / "latest.pt"
         torch.save(checkpoint, latest_path)
 
+    @staticmethod
+    def apply_degradation_gpu(latent: torch.Tensor, shift: torch.Tensor) -> torch.Tensor:
+        """Apply shift degradation on GPU - vectorized and fast."""
+        B, C, H, T = latent.shape
+        degraded = latent.clone()
+
+        # Process each sample (shifts can differ per sample)
+        for i in range(B):
+            s = int(shift[i].item())
+            shift_pixels = int(s / 48.0 * H)
+
+            if shift_pixels != 0:
+                degraded[i] = torch.roll(degraded[i], shifts=shift_pixels, dims=1)
+                if shift_pixels > 0:
+                    degraded[i, :, :shift_pixels, :] *= 0.1
+                else:
+                    degraded[i, :, shift_pixels:, :] *= 0.1
+
+        # Batch noise - all at once
+        intensity = (shift.abs() / 12.0).view(B, 1, 1, 1)
+        noise = torch.randn_like(degraded) * 0.05 * intensity
+        degraded = degraded + noise
+
+        # Batch blur for samples with |shift| >= 3
+        blur_mask = shift.abs() >= 3
+        if blur_mask.any():
+            # Reshape for conv: [B*C*H, 1, T]
+            to_blur = degraded[blur_mask].reshape(-1, 1, T)
+            padded = torch.nn.functional.pad(to_blur, (1, 1), mode='replicate')
+            kernel = torch.ones(1, 1, 3, device=latent.device) / 3
+            blurred = torch.nn.functional.conv1d(padded, kernel)
+            degraded[blur_mask] = blurred.reshape(-1, C, H, T)
+
+        return degraded
+
     def train_epoch(self, epoch: int) -> dict:
         """Run one training epoch."""
         self.model.train()
@@ -325,9 +360,12 @@ class PitchShiftTrainer:
                 continue
 
             # Move to device
-            input_latent = batch['input_latent'].to(self.device)
+            original_latent = batch['original_latent'].to(self.device)
             target_pitch = batch['target_pitch'].to(self.device)
             shift_amount = batch['shift_amount'].to(self.device)
+
+            # Apply degradation on GPU
+            input_latent = self.apply_degradation_gpu(original_latent, shift_amount)
 
             batch_device = {
                 k: v.to(self.device) if torch.is_tensor(v) else v

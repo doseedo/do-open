@@ -144,17 +144,17 @@ class PitchShiftTrainer:
                 artifact_removal_ratio=artifact_removal_ratio,
             )
 
-        # Use 0 workers for real degradation (DCAE uses GPU in main process)
-        actual_workers = 0 if use_real_degradation and self.dcae is not None else num_workers
+        # Use 0 workers since latents are preloaded in RAM - workers add overhead
+        # The dataset serves from cache, so main process is fastest
+        actual_workers = 0
 
         self.dataloader = DataLoader(
             self.dataset,
             batch_size=batch_size,
             shuffle=True,
-            num_workers=actual_workers,
-            pin_memory=True,
+            num_workers=0,
+            pin_memory=False,  # Not needed with 0 workers
             drop_last=True,
-            persistent_workers=actual_workers > 0,
         )
 
         # Create model
@@ -308,6 +308,50 @@ class PitchShiftTrainer:
         latest_path = self.output_dir / "latest.pt"
         torch.save(checkpoint, latest_path)
 
+    @staticmethod
+    def apply_degradation_gpu(latent: torch.Tensor, shift: torch.Tensor) -> torch.Tensor:
+        """Apply shift degradation on GPU - fully vectorized, no CPU sync."""
+        B, C, H, T = latent.shape
+
+        # Compute shift pixels on GPU (no .item() calls!)
+        shift_pixels = (shift / 48.0 * H).round().long()  # [B]
+
+        # Create frequency axis indices for each sample
+        freq_idx = torch.arange(H, device=latent.device).view(1, 1, H, 1).expand(B, C, H, T)
+
+        # Shifted indices with wrapping
+        shifted_idx = (freq_idx - shift_pixels.view(B, 1, 1, 1)) % H
+
+        # Gather to apply roll - much faster than loop
+        degraded = torch.gather(latent, 2, shifted_idx)
+
+        # Vectorized edge attenuation - no loops, no .item()
+        # Create position indices [1, 1, H, 1]
+        pos = torch.arange(H, device=latent.device).view(1, 1, H, 1)
+        # For positive shifts: attenuate where pos < shift_pixels
+        # For negative shifts: attenuate where pos >= H + shift_pixels
+        sp = shift_pixels.view(B, 1, 1, 1)  # [B, 1, 1, 1]
+        pos_mask = (sp > 0) & (pos < sp)  # Positive shift edge
+        neg_mask = (sp < 0) & (pos >= H + sp)  # Negative shift edge
+        edge_mask = torch.where(pos_mask | neg_mask,
+                                torch.tensor(0.1, device=latent.device),
+                                torch.tensor(1.0, device=latent.device))
+        degraded = degraded * edge_mask
+
+        # Batch noise - all at once
+        intensity = (shift.abs() / 12.0).view(B, 1, 1, 1)
+        noise = torch.randn_like(degraded) * 0.05 * intensity
+        degraded = degraded + noise
+
+        # Batch blur for all samples (simpler, always apply light blur)
+        degraded_flat = degraded.reshape(B * C * H, 1, T)
+        padded = torch.nn.functional.pad(degraded_flat, (1, 1), mode='replicate')
+        kernel = torch.ones(1, 1, 3, device=latent.device) / 3
+        blurred = torch.nn.functional.conv1d(padded, kernel)
+        degraded = blurred.reshape(B, C, H, T)
+
+        return degraded
+
     def train_epoch(self, epoch: int) -> dict:
         """Run one training epoch."""
         self.model.train()
@@ -325,14 +369,19 @@ class PitchShiftTrainer:
                 continue
 
             # Move to device
-            input_latent = batch['input_latent'].to(self.device)
+            original_latent = batch['original_latent'].to(self.device)
             target_pitch = batch['target_pitch'].to(self.device)
             shift_amount = batch['shift_amount'].to(self.device)
+
+            # Apply degradation on GPU
+            input_latent = self.apply_degradation_gpu(original_latent, shift_amount)
 
             batch_device = {
                 k: v.to(self.device) if torch.is_tensor(v) else v
                 for k, v in batch.items()
             }
+            # Add degraded input for loss computation
+            batch_device['input_latent'] = input_latent
 
             # Forward pass
             output = self.model(input_latent, target_pitch, shift_amount)

@@ -638,6 +638,412 @@ def sum_audio_tracks(audio_file_paths: list, output_path: str, normalize: bool =
     return output_path
 
 # ------------------------------------------------------------------------------
+# Sliding Window Generation for Fast Passages
+# ------------------------------------------------------------------------------
+def compute_note_density(piano_roll: np.ndarray, window_frames: int = 43) -> np.ndarray:
+    """
+    Compute note density (notes per second) across the piano roll.
+
+    Args:
+        piano_roll: Piano roll array of shape [128, T] or [88, T]
+        window_frames: Frames to average over (~1 second at 43fps)
+
+    Returns:
+        density: Array of shape [T] with notes-per-second at each frame
+    """
+    # Count active notes at each frame
+    active_notes = (piano_roll > 0.1).sum(axis=0).astype(np.float32)  # [T]
+
+    # Detect note onsets (new notes appearing)
+    note_onsets = np.zeros_like(active_notes)
+    note_onsets[1:] = np.maximum(0, np.diff((piano_roll > 0.1).astype(np.float32), axis=1).sum(axis=0))
+    note_onsets[0] = active_notes[0]
+
+    # Smooth with moving average to get density
+    kernel = np.ones(window_frames) / window_frames
+    if len(note_onsets) >= window_frames:
+        density = np.convolve(note_onsets, kernel, mode='same')
+    else:
+        density = note_onsets
+
+    # Convert to notes per second (43 fps)
+    density = density * 43.066
+
+    return density
+
+
+def should_use_sliding_window(
+    piano_roll: np.ndarray,
+    density_threshold: float = 8.0,
+    min_fast_region_frames: int = 43
+) -> tuple:
+    """
+    Determine if sliding window generation should be used based on note density.
+
+    Args:
+        piano_roll: Piano roll array [128, T] or [88, T]
+        density_threshold: Notes per second threshold to trigger sliding window
+        min_fast_region_frames: Minimum frames of fast content to trigger (~1 second)
+
+    Returns:
+        (should_use: bool, max_density: float, fast_region_percentage: float)
+    """
+    density = compute_note_density(piano_roll)
+    max_density = float(density.max())
+    fast_frames = (density > density_threshold).sum()
+    fast_percentage = fast_frames / len(density) * 100
+
+    should_use = fast_frames >= min_fast_region_frames
+
+    return should_use, max_density, fast_percentage
+
+
+def split_conditioning_into_windows(
+    piano_roll: np.ndarray,
+    amp: np.ndarray,
+    rframe: np.ndarray,
+    rbend: np.ndarray,
+    window_frames: int = 128,
+    overlap_ratio: float = 0.5
+) -> list:
+    """
+    Split conditioning arrays into overlapping windows.
+
+    Args:
+        piano_roll: [128, T] or [88, T]
+        amp, rframe, rbend: [T]
+        window_frames: Frames per window (at 43fps, 128 frames ≈ 3 seconds)
+        overlap_ratio: Overlap between windows (0.5 = 50% overlap)
+
+    Returns:
+        List of dicts, each containing windowed conditioning:
+        [{'piano_roll': [...], 'amp': [...], 'rframe': [...], 'rbend': [...],
+          'start_frame': int, 'end_frame': int}, ...]
+    """
+    T = piano_roll.shape[-1]
+    hop_frames = int(window_frames * (1 - overlap_ratio))
+
+    windows = []
+    start = 0
+
+    while start < T:
+        end = min(start + window_frames, T)
+
+        # Handle last window - extend back if too short
+        if end - start < window_frames // 2 and len(windows) > 0:
+            # Last window too short, extend previous window
+            break
+
+        # Pad if this is the last window and it's short
+        actual_len = end - start
+
+        window = {
+            'piano_roll': piano_roll[:, start:end].copy(),
+            'amp': amp[start:end].copy(),
+            'rframe': rframe[start:end].copy(),
+            'rbend': rbend[start:end].copy(),
+            'start_frame': start,
+            'end_frame': end,
+            'actual_length': actual_len,
+        }
+
+        # Pad to full window size if needed
+        if actual_len < window_frames:
+            pad_len = window_frames - actual_len
+            window['piano_roll'] = np.pad(window['piano_roll'], ((0, 0), (0, pad_len)), mode='constant')
+            window['amp'] = np.pad(window['amp'], (0, pad_len), mode='constant')
+            window['rframe'] = np.pad(window['rframe'], (0, pad_len), mode='constant')
+            window['rbend'] = np.pad(window['rbend'], (0, pad_len), mode='constant')
+
+        windows.append(window)
+        start += hop_frames
+
+    return windows
+
+
+def create_crossfade_weights(length: int, fade_in: int, fade_out: int) -> np.ndarray:
+    """
+    Create crossfade weight array with raised cosine fades.
+
+    Args:
+        length: Total length of the window
+        fade_in: Number of samples for fade in (0 for first window)
+        fade_out: Number of samples for fade out (0 for last window)
+
+    Returns:
+        weights: Array of shape [length] with values 0-1
+    """
+    weights = np.ones(length)
+
+    if fade_in > 0:
+        # Raised cosine fade in: 0.5 * (1 - cos(pi * t))
+        t = np.linspace(0, 1, fade_in)
+        weights[:fade_in] = 0.5 * (1 - np.cos(np.pi * t))
+
+    if fade_out > 0:
+        # Raised cosine fade out: 0.5 * (1 + cos(pi * t))
+        t = np.linspace(0, 1, fade_out)
+        weights[-fade_out:] = 0.5 * (1 + np.cos(np.pi * t))
+
+    return weights
+
+
+def crossfade_blend_audio(
+    audio_segments: list,
+    window_info: list,
+    sample_rate: int = 44100,
+    fps: float = 43.066
+) -> torch.Tensor:
+    """
+    Blend audio segments with crossfade based on window positions.
+
+    Args:
+        audio_segments: List of audio tensors [C, samples] or [samples]
+        window_info: List of window dicts with 'start_frame', 'end_frame', 'actual_length'
+        sample_rate: Audio sample rate
+        fps: Conditioning frame rate
+
+    Returns:
+        blended: Single blended audio tensor [C, samples]
+    """
+    if len(audio_segments) == 1:
+        seg = audio_segments[0]
+        if seg.ndim == 1:
+            seg = seg.unsqueeze(0)
+        return seg
+
+    # Calculate total length from the last window's end
+    last_window = window_info[-1]
+    total_frames = last_window['start_frame'] + last_window['actual_length']
+    total_samples = int(total_frames / fps * sample_rate)
+
+    # Detect number of channels from first segment
+    first_seg = audio_segments[0]
+    if first_seg.ndim == 1:
+        num_channels = 1
+    else:
+        num_channels = first_seg.shape[0]
+
+    # Initialize output and weight accumulator
+    output = torch.zeros(num_channels, total_samples)
+    weights = torch.zeros(total_samples)
+
+    samples_per_frame = sample_rate / fps
+
+    for i, (audio, winfo) in enumerate(zip(audio_segments, window_info)):
+        if audio.ndim == 1:
+            audio = audio.unsqueeze(0)
+
+        start_sample = int(winfo['start_frame'] * samples_per_frame)
+        actual_samples = int(winfo['actual_length'] * samples_per_frame)
+
+        # Trim audio to actual length (remove padding)
+        audio = audio[:, :actual_samples]
+
+        end_sample = start_sample + audio.shape[-1]
+
+        # Ensure we don't exceed output bounds
+        if end_sample > total_samples:
+            audio = audio[:, :total_samples - start_sample]
+            end_sample = total_samples
+
+        # Calculate fade lengths based on overlap
+        if i > 0:
+            # Find overlap with previous window
+            prev_end = int((window_info[i-1]['start_frame'] + window_info[i-1]['actual_length']) * samples_per_frame)
+            fade_in_samples = max(0, prev_end - start_sample)
+        else:
+            fade_in_samples = 0
+
+        if i < len(audio_segments) - 1:
+            # Find overlap with next window
+            next_start = int(window_info[i+1]['start_frame'] * samples_per_frame)
+            fade_out_samples = max(0, end_sample - next_start)
+        else:
+            fade_out_samples = 0
+
+        # Create weights for this segment
+        seg_weights = create_crossfade_weights(
+            audio.shape[-1],
+            fade_in_samples,
+            fade_out_samples
+        )
+        seg_weights = torch.from_numpy(seg_weights).float()
+
+        # Add weighted audio to output
+        seg_len = audio.shape[-1]
+        output[:, start_sample:start_sample + seg_len] += audio * seg_weights
+        weights[start_sample:start_sample + seg_len] += seg_weights
+
+    # Normalize by weights (avoid division by zero)
+    weights = weights.clamp(min=1e-8)
+    output = output / weights.unsqueeze(0)
+
+    return output
+
+
+def generate_sliding_window(
+    model,
+    piano_roll: np.ndarray,
+    amp: np.ndarray,
+    rframe: np.ndarray,
+    rbend: np.ndarray,
+    group: str,
+    subgroup: str,
+    window_seconds: float = 3.0,
+    overlap_ratio: float = 0.5,
+    fps: float = 43.066,
+    audio_file: str = None,
+    **generate_kwargs
+) -> str:
+    """
+    Generate audio using sliding window approach for fast passages.
+
+    Splits conditioning into overlapping windows, generates each independently,
+    then crossfade blends the outputs. This avoids the temporal resolution issues
+    that occur when the model tries to handle very fast note sequences.
+
+    Args:
+        model: The generation model
+        piano_roll: [128, T] piano roll conditioning
+        amp, rframe, rbend: [T] conditioning arrays
+        group, subgroup: Instrument identifiers
+        window_seconds: Window duration in seconds (default 3.0)
+        overlap_ratio: Window overlap (default 0.5 = 50%)
+        fps: Conditioning frame rate
+        audio_file: Path to source audio for GT latent extraction (optional)
+        **generate_kwargs: Additional args passed to generate()
+
+    Returns:
+        Path to generated audio file
+    """
+    import tempfile
+
+    window_frames = int(window_seconds * fps)
+    T = piano_roll.shape[-1]
+    total_duration = T / fps
+
+    print(f"\n{'='*80}")
+    print(f"🪟 SLIDING WINDOW GENERATION")
+    print(f"{'='*80}")
+    print(f"Total duration: {total_duration:.2f}s ({T} frames)")
+    print(f"Window size: {window_seconds:.1f}s ({window_frames} frames)")
+    print(f"Overlap: {overlap_ratio*100:.0f}%")
+
+    # Check note density
+    should_window, max_density, fast_pct = should_use_sliding_window(piano_roll)
+    print(f"Max note density: {max_density:.1f} notes/sec")
+    print(f"Fast regions: {fast_pct:.1f}% of content")
+
+    # Load source audio for GT latent extraction if provided
+    source_audio = None
+    source_sr = 44100
+    if audio_file and os.path.exists(audio_file):
+        print(f"Loading source audio for GT latents: {Path(audio_file).name}")
+        source_audio, source_sr = torchaudio.load(audio_file)
+        # Convert to mono if stereo for slicing consistency
+        if source_audio.shape[0] > 1:
+            source_audio = source_audio.mean(dim=0, keepdim=True)
+        print(f"   Source audio: {source_audio.shape[-1]} samples ({source_audio.shape[-1]/source_sr:.2f}s)")
+
+    # Split into windows
+    windows = split_conditioning_into_windows(
+        piano_roll, amp, rframe, rbend,
+        window_frames=window_frames,
+        overlap_ratio=overlap_ratio
+    )
+    print(f"Split into {len(windows)} windows")
+
+    # Create empty encodec for each window (user requested no encodec input)
+    encodec_length = window_frames // 4
+    empty_encodec = torch.zeros((1, 8, encodec_length), dtype=torch.long)
+
+    # Create temp directory for audio slices
+    temp_dir = tempfile.mkdtemp(prefix="sliding_window_")
+
+    # Generate each window
+    audio_segments = []
+    seed = generate_kwargs.get('seed', -1)
+    if seed <= 0:
+        seed = torch.seed() % 2**31
+
+    for i, window in enumerate(windows):
+        print(f"\n   Window {i+1}/{len(windows)}: frames {window['start_frame']}-{window['end_frame']}")
+
+        # Use consistent seed offset per window for reproducibility
+        window_seed = (seed + i * 1000) % 2**31
+
+        # Calculate original audio length for this window
+        window_duration = window['actual_length'] / fps
+        original_audio_length = int(window_duration * 44100)
+
+        # Slice source audio for this window if available
+        window_audio_file = None
+        if source_audio is not None:
+            start_sample = int(window['start_frame'] / fps * source_sr)
+            end_sample = int((window['start_frame'] + window['actual_length']) / fps * source_sr)
+            end_sample = min(end_sample, source_audio.shape[-1])
+
+            if end_sample > start_sample:
+                window_audio = source_audio[:, start_sample:end_sample]
+                window_audio_file = os.path.join(temp_dir, f"window_{i}.wav")
+                torchaudio.save(window_audio_file, window_audio, source_sr)
+                print(f"      Sliced GT audio: {start_sample}-{end_sample} samples ({window_audio.shape[-1]/source_sr:.2f}s)")
+
+        # Generate this window
+        window_kwargs = generate_kwargs.copy()
+        window_kwargs['seed'] = window_seed
+        window_kwargs['original_audio_length'] = original_audio_length
+        window_kwargs['target_audio_duration'] = window_duration
+        if window_audio_file:
+            window_kwargs['audio_file'] = window_audio_file
+
+        output_path = generate(
+            model=model,
+            piano_roll=window['piano_roll'],
+            amp=window['amp'],
+            rframe=window['rframe'],
+            rbend=window['rbend'],
+            encodec_tokens=empty_encodec,
+            group=group,
+            subgroup=subgroup,
+            **window_kwargs
+        )
+
+        # Load the generated audio
+        audio, sr = torchaudio.load(output_path)
+
+        # Trim to actual length (remove any padding artifacts)
+        expected_samples = int(window['actual_length'] / fps * sr)
+        if audio.shape[-1] > expected_samples:
+            audio = audio[:, :expected_samples]
+
+        audio_segments.append(audio)
+        print(f"   ✅ Window {i+1} generated: {audio.shape[-1]} samples")
+
+    # Crossfade blend all segments
+    print(f"\n🔀 Blending {len(audio_segments)} segments with crossfade...")
+    blended = crossfade_blend_audio(audio_segments, windows, sample_rate=44100, fps=fps)
+
+    # Save blended output
+    out_dir = Path("./generated_ui")
+    out_dir.mkdir(exist_ok=True)
+    out_path = out_dir / f"{time.strftime('%Y%m%d-%H%M%S')}_sliding_window_seed{seed}.wav"
+
+    torchaudio.save(str(out_path), blended, 44100)
+
+    # Cleanup temp directory
+    import shutil
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+
+    print(f"\n✅ Sliding window generation complete: {out_path}")
+    print(f"   Duration: {blended.shape[-1] / 44100:.2f}s")
+    print(f"{'='*80}\n")
+
+    return str(out_path)
+
+# ------------------------------------------------------------------------------
 # MIDI Processing and FluidSynth Rendering
 # ------------------------------------------------------------------------------
 
@@ -2414,7 +2820,7 @@ def extract_conditioning_from_audio(audio_path: str, output_dir: str = "./extrac
 
     # Extract new conditioning
     print(f"🔄 Extracting conditioning for: {Path(audio_path).name}")
-    cmd = ["python", "test_extract_local.py", "--input", str(audio_path), "--output", str(out_dir)]
+    cmd = [sys.executable, "test_extract_local.py", "--input", str(audio_path), "--output", str(out_dir)]
 
     # Add formats parameter if specified
     if extract_formats:
@@ -4938,11 +5344,14 @@ def generate(
             print(f"   Clamping tokens to valid range...")
             encodec_tokens = torch.clamp(encodec_tokens, 0, encodec_vocab_size - 1)
 
+    # Get model dtype for conditioning tensors (support bfloat16 models)
+    model_dtype = next(model.parameters()).dtype
+
     conds = {
-        "piano_roll": torch.from_numpy(piano_roll).float().unsqueeze(0).to(device),  # [1,128,T]
-        "amp":        torch.from_numpy(amp).float().unsqueeze(0).to(device),         # [1,T]
-        "rframe":     torch.from_numpy(rframe).float().unsqueeze(0).to(device),      # [1,T]
-        "rbend":      torch.from_numpy(rbend).float().unsqueeze(0).to(device),       # [1,T]
+        "piano_roll": torch.from_numpy(piano_roll).to(dtype=model_dtype, device=device).unsqueeze(0),  # [1,128,T]
+        "amp":        torch.from_numpy(amp).to(dtype=model_dtype, device=device).unsqueeze(0),         # [1,T]
+        "rframe":     torch.from_numpy(rframe).to(dtype=model_dtype, device=device).unsqueeze(0),      # [1,T]
+        "rbend":      torch.from_numpy(rbend).to(dtype=model_dtype, device=device).unsqueeze(0),       # [1,T]
         "rbend_mask": torch.from_numpy((rframe > 0.5).astype(np.float32)).bool().unsqueeze(0).to(device),
         "encodec_tokens": encodec_tokens.to(device),                                  # [1,C,Tf]
         "group_id":   torch.tensor([gid], dtype=torch.long, device=device),
@@ -6372,6 +6781,10 @@ def generate_do_task(
     upsample_mode: bool = False,
     upsample_noise_level: float = 0.3,
     upsample_steps: int = 20,
+    # Sliding window mode for fast passages
+    sliding_window_mode: bool = False,
+    sliding_window_seconds: float = 3.0,
+    sliding_window_overlap: float = 0.5,
     use_overlap_decoder: bool = True,
     inpaint_mode: bool = False,
     inpaint_start_time: Optional[float] = None,
@@ -6435,6 +6848,7 @@ def generate_do_task(
         print(f"Duration parameter: {duration}s")
         print(f"Audio file: {audio_file_path}")
         print(f"🎞️ TAPE SPEED: {tape_speed}x, Method: {slowdown_method}")
+        print(f"🪟 SLIDING WINDOW: {sliding_window_mode} (window={sliding_window_seconds}s, overlap={sliding_window_overlap*100:.0f}%)")
         print(f"🔊 USE OVERLAP DECODER: {use_overlap_decoder}")
         print(f"⚡ FAST MODE: {fast_mode_variant} ({fast_mode_variant or 'disabled'})")
         print(f"📋 EXTRACTION FORMATS: {extract_formats or 'all (default)'}")
@@ -7830,51 +8244,94 @@ def generate_do_task(
                 voice_seed = seed + (voice_idx * 1000)
                 print(f"   Generating with seed {voice_seed}...")
 
-                # Initialize trajectory logger if debug mode is enabled
-                global TRAJECTORY_LOGGER
-                # Use frontend debug_mode parameter OR global environment variable
-                collect_trajectory_flag = debug_mode or DEBUG_TRAJECTORY_LOGGING
-                if collect_trajectory_flag and TRAJECTORY_LOGGER is None:
-                    TRAJECTORY_LOGGER = get_logger(
-                        debug_mode=True,
-                        save_every_n_steps=10,
-                        base_dir="/mnt/msdd/generation_debug"
-                    )
-                    print(f"[TrajectoryLogger] Initialized logger (frontend debug_mode={debug_mode}, env DEBUG_TRAJECTORY_LOGGING={DEBUG_TRAJECTORY_LOGGING})")
+                # Check if sliding window mode should be used
+                use_sliding_window = sliding_window_mode
+                collect_trajectory_flag = debug_mode or DEBUG_TRAJECTORY_LOGGING  # Define before branching
 
-                gen_result = generate(
-                    model=MODEL,
-                    piano_roll=piano_roll,
-                    amp=amp,
-                    rframe=rframe,
-                    rbend=rbend,
-                    encodec_tokens=encodec_tokens,
-                    group=group,
-                    subgroup=subgroup,
-                    steps=steps,
-                    seed=voice_seed,
-                    adapter_scale=adapter_scale,
-                    cfg_weight=cfg_weight,
-                    t0=1.0,
-                    sr_out=44100,
-                    instrument_strength=instrument_strength,
-                    inst_boost=2.5,
-                    piano_roll_gain=piano_roll_gain,
-                    amp_gain=amp_gain,
-                    rframe_gain=rframe_gain,
-                    rbend_gain=rbend_gain,
-                    encodec_gain=encodec_gain,
-                    use_overlap_decoder=use_overlap_decoder,
-                    original_audio_length=int(actual_duration * 44100),
-                    pitch_fidelity_boost=pitch_fidelity_boost,
-                    onset_guidance_boost=onset_guidance_boost,
-                    pitch_snap_strength=pitch_snap_strength,
-                    noise_level=noise_level,
-                    audio_file=voice_audio,
-                    fast_mode_variant=fast_mode_variant,  # Pass fast_mode_variant for T_dcae conversion
-                    target_audio_duration=consistent_duration,  # Ensure consistent latent extraction
-                    collect_trajectory=collect_trajectory_flag  # Collect trajectory if debug mode enabled
-                )
+                if use_sliding_window:
+                    # Check note density to confirm sliding window is beneficial
+                    should_window, max_density, fast_pct = should_use_sliding_window(piano_roll)
+                    print(f"   🪟 SLIDING WINDOW MODE: density={max_density:.1f} notes/sec, fast={fast_pct:.1f}%")
+                    if not should_window:
+                        print(f"      Note density is low, using standard generation instead")
+                        use_sliding_window = False
+
+                if use_sliding_window:
+                    # Use sliding window generation for fast passages
+                    print(f"   🪟 Using sliding window generation (window={sliding_window_seconds}s, overlap={sliding_window_overlap*100:.0f}%)")
+                    gen_result = generate_sliding_window(
+                        model=MODEL,
+                        piano_roll=piano_roll,
+                        amp=amp,
+                        rframe=rframe,
+                        rbend=rbend,
+                        group=group,
+                        subgroup=subgroup,
+                        window_seconds=sliding_window_seconds,
+                        overlap_ratio=sliding_window_overlap,
+                        steps=steps,
+                        seed=voice_seed,
+                        adapter_scale=adapter_scale,
+                        cfg_weight=cfg_weight,
+                        t0=1.0,
+                        sr_out=44100,
+                        instrument_strength=instrument_strength,
+                        inst_boost=2.5,
+                        piano_roll_gain=piano_roll_gain,
+                        amp_gain=amp_gain,
+                        rframe_gain=rframe_gain,
+                        rbend_gain=rbend_gain,
+                        encodec_gain=0.0,  # No encodec for sliding window
+                        use_overlap_decoder=use_overlap_decoder,
+                        pitch_fidelity_boost=pitch_fidelity_boost,
+                        onset_guidance_boost=onset_guidance_boost,
+                        pitch_snap_strength=pitch_snap_strength,
+                        noise_level=noise_level,
+                    )
+                else:
+                    # Initialize trajectory logger if debug mode is enabled
+                    global TRAJECTORY_LOGGER
+                    if collect_trajectory_flag and TRAJECTORY_LOGGER is None:
+                        TRAJECTORY_LOGGER = get_logger(
+                            debug_mode=True,
+                            save_every_n_steps=10,
+                            base_dir="/mnt/msdd/generation_debug"
+                        )
+                        print(f"[TrajectoryLogger] Initialized logger (frontend debug_mode={debug_mode}, env DEBUG_TRAJECTORY_LOGGING={DEBUG_TRAJECTORY_LOGGING})")
+
+                    gen_result = generate(
+                        model=MODEL,
+                        piano_roll=piano_roll,
+                        amp=amp,
+                        rframe=rframe,
+                        rbend=rbend,
+                        encodec_tokens=encodec_tokens,
+                        group=group,
+                        subgroup=subgroup,
+                        steps=steps,
+                        seed=voice_seed,
+                        adapter_scale=adapter_scale,
+                        cfg_weight=cfg_weight,
+                        t0=1.0,
+                        sr_out=44100,
+                        instrument_strength=instrument_strength,
+                        inst_boost=2.5,
+                        piano_roll_gain=piano_roll_gain,
+                        amp_gain=amp_gain,
+                        rframe_gain=rframe_gain,
+                        rbend_gain=rbend_gain,
+                        encodec_gain=encodec_gain,
+                        use_overlap_decoder=use_overlap_decoder,
+                        original_audio_length=int(actual_duration * 44100),
+                        pitch_fidelity_boost=pitch_fidelity_boost,
+                        onset_guidance_boost=onset_guidance_boost,
+                        pitch_snap_strength=pitch_snap_strength,
+                        noise_level=noise_level,
+                        audio_file=voice_audio,
+                        fast_mode_variant=fast_mode_variant,  # Pass fast_mode_variant for T_dcae conversion
+                        target_audio_duration=consistent_duration,  # Ensure consistent latent extraction
+                        collect_trajectory=collect_trajectory_flag  # Collect trajectory if debug mode enabled
+                    )
 
                 # Handle generate() return value (may include trajectory)
                 if collect_trajectory_flag and isinstance(gen_result, tuple):

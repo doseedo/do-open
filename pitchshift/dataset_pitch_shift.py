@@ -95,15 +95,15 @@ class PitchShiftDataset(Dataset):
         self.entries = self._load_manifest(manifest_path, instrument)
         print(f"Loaded {len(self.entries)} {instrument} entries")
 
-        # Build pitch index from MIDI data
+        # Build pitch index from f0 data
         self.pitch_index = self._build_pitch_index()
         print(f"Pitch index covers {len(self.pitch_index)} unique pitches")
         if self.pitch_index:
             print(f"Pitch range: {min(self.pitch_index.keys())} - {max(self.pitch_index.keys())}")
 
-        # Cache for loaded latents
+        # Preload all latents to RAM for speed
         self._latent_cache = {}
-        self._cache_max_size = 500
+        self._preload_latents()
 
     def _load_manifest(self, manifest_path: str, instrument: str) -> List[Dict]:
         """Load and filter manifest."""
@@ -135,26 +135,44 @@ class PitchShiftDataset(Dataset):
     def _build_pitch_index(self) -> Dict[int, List[Dict]]:
         """
         Build index: pitch -> list of entries containing that pitch.
-        Uses piano roll data to determine pitch content of each file.
+        Uses f0 conditioning (extracted from audio) for accurate pitch data.
         """
         pitch_index = defaultdict(list)
 
         for entry in self.entries:
-            piano_roll_path = entry.get('piano_roll_path', '')
+            # Use f0 conditioning - extracted directly from audio
+            cond = entry.get('conditioning_paths', {})
+            f0_path = cond.get('f0', '') or ''
+            f0_path = fix_mount_path(f0_path)
 
-            # Try to load pitch info from piano roll
-            pitches = load_piano_roll_pitches(piano_roll_path)
+            pitches = self._load_pitches_from_f0(f0_path)
 
             if pitches:
                 for pitch in pitches:
                     pitch_index[pitch].append(entry)
                 entry['_pitches'] = pitches
                 entry['_pitch_range'] = (min(pitches), max(pitches))
-            else:
-                # Fallback to instrument's typical range
-                self._add_default_pitch_range(entry, pitch_index)
+            # Skip entries without valid f0 - don't use fake defaults
 
         return dict(pitch_index)
+
+    def _load_pitches_from_f0(self, f0_path: str) -> List[int]:
+        """Load pitch info from f0 conditioning file."""
+        if not f0_path or not os.path.exists(f0_path):
+            return []
+        try:
+            f0 = np.load(f0_path)
+            valid_f0 = f0[(f0 > 0) & ~np.isnan(f0)]
+            if len(valid_f0) == 0:
+                return []
+            # Convert Hz to MIDI
+            midi = 69 + 12 * np.log2(valid_f0 / 440.0)
+            midi_int = midi.round().astype(int)
+            # Filter to instrument range (avoid octave errors)
+            in_range = midi_int[(midi_int >= 48) & (midi_int <= 96)]
+            return sorted(set(in_range.tolist()))
+        except Exception:
+            return []
 
     def _add_default_pitch_range(self, entry: Dict, pitch_index: Dict):
         """Add default pitch range based on instrument."""
@@ -186,34 +204,32 @@ class PitchShiftDataset(Dataset):
         entry['_pitches'] = list(range(low, high + 1))
         entry['_pitch_range'] = (low, high)
 
-    def _load_latent(self, entry: Dict) -> Optional[torch.Tensor]:
-        """Load latent from disk or cache."""
-        latent_path = entry.get('latent_path', '')
-
-        # Check cache
-        if latent_path in self._latent_cache:
-            return self._latent_cache[latent_path]
-
-        # Try to load from disk
-        if os.path.exists(latent_path):
-            try:
-                latent = torch.load(latent_path, map_location='cpu', weights_only=True)
-                if isinstance(latent, dict):
-                    latent = latent.get('latents', latent.get('latent', latent.get('z')))
-
-                # Ensure correct shape [C, H, T]
-                if latent.dim() == 4:
-                    latent = latent.squeeze(0)
-
-                # Cache with size limit
-                if len(self._latent_cache) < self._cache_max_size:
+    def _preload_latents(self):
+        """Preload all latents to RAM for fast training."""
+        from tqdm import tqdm
+        print(f"Preloading {len(self.entries)} latents to RAM...")
+        loaded = 0
+        for entry in tqdm(self.entries, desc="Loading latents"):
+            latent_path = entry.get('latent_path', '')
+            if not latent_path or latent_path in self._latent_cache:
+                continue
+            if os.path.exists(latent_path):
+                try:
+                    latent = torch.load(latent_path, map_location='cpu', weights_only=True)
+                    if isinstance(latent, dict):
+                        latent = latent.get('latents', latent.get('latent', latent.get('z')))
+                    if latent.dim() == 4:
+                        latent = latent.squeeze(0)
                     self._latent_cache[latent_path] = latent
+                    loaded += 1
+                except Exception:
+                    pass
+        print(f"Preloaded {loaded} latents ({len(self._latent_cache) * 0.85:.0f} MB est.)")
 
-                return latent
-            except Exception as e:
-                print(f"Error loading {latent_path}: {e}")
-
-        return None
+    def _load_latent(self, entry: Dict) -> Optional[torch.Tensor]:
+        """Load latent from cache (preloaded)."""
+        latent_path = entry.get('latent_path', '')
+        return self._latent_cache.get(latent_path)
 
     def _random_window(
         self,
@@ -303,16 +319,14 @@ class PitchShiftDataset(Dataset):
         noise = torch.randn_like(degraded) * 0.05 * intensity
         degraded = degraded + noise
 
-        # Slight blur proportional to shift (phase smearing)
+        # Slight blur proportional to shift (phase smearing) - vectorized
         if abs(shift) >= 3:
-            # Simple temporal smoothing
-            kernel = torch.ones(1, 1, 3) / 3
-            for c in range(C):
-                for h in range(H):
-                    row = degraded[c, h, :].unsqueeze(0).unsqueeze(0)
-                    row_padded = F.pad(row, (1, 1), mode='replicate')
-                    smoothed = F.conv1d(row_padded, kernel)
-                    degraded[c, h, :] = smoothed.squeeze()
+            # Reshape to [C*H, 1, T] for batched conv1d
+            degraded_flat = degraded.reshape(C * H, 1, T)
+            degraded_padded = F.pad(degraded_flat, (1, 1), mode='replicate')
+            kernel = torch.ones(1, 1, 3, device=degraded.device) / 3
+            smoothed = F.conv1d(degraded_padded, kernel)
+            degraded = smoothed.reshape(C, H, T)
 
         return degraded
 
@@ -375,46 +389,30 @@ class PitchShiftDataset(Dataset):
             # TYPE 1: Double-shift for artifact removal
             # Target pitch = source pitch (same pitch, just artifacts)
             target_pitch = source_pitch
-
-            # Simulate double-shift degradation
-            degraded_window = self._simulate_shift_degradation(original_window, shift)
-
-            return {
-                'input_latent': degraded_window,
-                'target_latent': original_window,
-                'reference_latent': original_window,  # Same as target for artifact removal
-                'shift_amount': torch.tensor(shift, dtype=torch.float32),
-                'target_pitch': torch.tensor(target_pitch, dtype=torch.long),
-                'source_pitch': torch.tensor(source_pitch, dtype=torch.long),
-                'loss_type': torch.tensor(0),  # 0 = artifact removal (full reconstruction)
-                'valid': torch.tensor(True),
-            }
-
+            reference = original_window  # Same as target for artifact removal
+            loss_type = 0
         else:
             # TYPE 2: Actual shift for register transfer
             target_pitch = source_pitch + shift
-
-            # Clamp to valid MIDI range
             target_pitch = max(24, min(96, target_pitch))
 
             # Get reference at target pitch (for timbre loss)
             reference = self._get_reference_at_pitch(target_pitch)
             if reference is None:
                 reference = torch.zeros_like(original_window)
+            loss_type = 1
 
-            # Simulate shifted input
-            shifted_window = self._simulate_shift_degradation(original_window, shift)
-
-            return {
-                'input_latent': shifted_window,
-                'target_latent': original_window,  # Content reference
-                'reference_latent': reference,  # Timbre reference at target pitch
-                'shift_amount': torch.tensor(shift, dtype=torch.float32),
-                'target_pitch': torch.tensor(target_pitch, dtype=torch.long),
-                'source_pitch': torch.tensor(source_pitch, dtype=torch.long),
-                'loss_type': torch.tensor(1),  # 1 = register transfer (content + timbre)
-                'valid': torch.tensor(True),
-            }
+        # Return clean latent - degradation applied on GPU in training loop
+        return {
+            'original_latent': original_window,  # Clean, will be degraded on GPU
+            'target_latent': original_window,
+            'reference_latent': reference,
+            'shift_amount': torch.tensor(shift, dtype=torch.float32),
+            'target_pitch': torch.tensor(target_pitch, dtype=torch.long),
+            'source_pitch': torch.tensor(source_pitch, dtype=torch.long),
+            'loss_type': torch.tensor(loss_type),
+            'valid': torch.tensor(True),
+        }
 
 
 class PitchShiftDatasetWithRealDegradation(PitchShiftDataset):

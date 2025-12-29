@@ -1,0 +1,562 @@
+{
+  "min_match_ratio": 0.8,
+  "min_notes": 4,
+  "max_notes": 12,
+  "total_processed": 1078,
+  "total_segments": 44157,
+  "pairs_found": 22,
+  "same_file_pairs": 0,
+  "diff_file_pairs": 22,
+  "pairs": [
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-26/New/Gabo Rolas/Audio Files/TRUMPET.09_47.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-26/New/Gabo Rolas/Audio Files/TRUMPET.09_47.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-26/New/Gabo Rolas/Audio Files/TRUMPET.09_47.f0.npy",
+        "median_midi": 37.25,
+        "start_frame": 1359,
+        "end_frame": 1423,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-04/New/Copy of ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-04/New/Copy of ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.pt",
+        "f0_path": "/mnt/msdd2/newconditioning/Copy of ST_Sunset_Mixing_Test/TRMPT_DI_13.f0.npy",
+        "median_midi": 48.54999923706055,
+        "start_frame": 529,
+        "end_frame": 601,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 11.299999237060547,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-26/New/Gabo Rolas/Audio Files/TRUMPET.09_47.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-26/New/Gabo Rolas/Audio Files/TRUMPET.09_47.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-26/New/Gabo Rolas/Audio Files/TRUMPET.09_47.f0.npy",
+        "median_midi": 37.25,
+        "start_frame": 1359,
+        "end_frame": 1423,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-04/New/ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-04/New/ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.pt",
+        "f0_path": "/mnt/msdd2/newconditioning/ST_Sunset_Mixing_Test/TRMPT_DI_13.f0.npy",
+        "median_midi": 48.54999923706055,
+        "start_frame": 529,
+        "end_frame": 601,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 11.299999237060547,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protoolsA/2025-05-03/New/25.05.03_KyleKim_Tracking/Audio Files/Trumpet.02_04.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/dcae_latentsnewnew/protoolsA/2025-05-03/New/25.05.03_KyleKim_Tracking/Audio Files/Trumpet.02_04.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-05-03/New/25.05.03_KyleKim_Tracking/Audio Files/Trumpet.02_04.f0.npy",
+        "median_midi": 45.92500114440918,
+        "start_frame": 1059,
+        "end_frame": 1175,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protoolsA/2025-06-12/New/HaveAGoodTIme.Rec.Ensemble.03.04.20/Audio Files/Trumpet.11_11.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/dcae_latentsnewnew/protoolsA/2025-06-12/New/HaveAGoodTIme.Rec.Ensemble.03.04.20/Audio Files/Trumpet.11_11.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-06-12/New/HaveAGoodTIme.Rec.Ensemble.03.04.20/Audio Files/Trumpet.11_11.f0.npy",
+        "median_midi": 58.35000038146973,
+        "start_frame": 233,
+        "end_frame": 347,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 12.424999237060547,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.f0.npy",
+        "median_midi": 54.75,
+        "start_frame": 1108,
+        "end_frame": 1193,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-15/New/2024.11.03_BrookeSanders_Blonde_Mix/Audio Files/Trumpet 1.dup1.37_01.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-15/New/2024.11.03_BrookeSanders_Blonde_Mix/Audio Files/Trumpet 1.dup1.37_01.pt",
+        "f0_path": "/mnt/msdd2/evenmoreconditioning/2025-04-15/New/2024.11.03_BrookeSanders_Blonde_Mix/Audio Files/Trumpet 1.dup1.37_01.f0.npy",
+        "median_midi": 67.0,
+        "start_frame": 122,
+        "end_frame": 204,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 12.25,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-27/New/Tone_Arlo_1_31_25/Audio Files/Trumpet.10_03.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-27/New/Tone_Arlo_1_31_25/Audio Files/Trumpet.10_03.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-27/New/Tone_Arlo_1_31_25/Audio Files/Trumpet.10_03.f0.npy",
+        "median_midi": 55.15000057220459,
+        "start_frame": 0,
+        "end_frame": 51,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-15/New/2024.11.03_BrookeSanders_Blonde_Mix/Audio Files/Trumpet 1_02.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-15/New/2024.11.03_BrookeSanders_Blonde_Mix/Audio Files/Trumpet 1_02.pt",
+        "f0_path": "/mnt/msdd2/newconditioning/2024.11.03_BrookeSanders_Blonde_Mix/Trumpet 1_02.f0.npy",
+        "median_midi": 67.19999694824219,
+        "start_frame": 176,
+        "end_frame": 232,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 12.049996376037598,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-04/New/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/Audio Files/TRMPT_04.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-04/New/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/Audio Files/TRMPT_04.pt",
+        "f0_path": "/mnt/msdd2/newconditioning/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/TRMPT_04.f0.npy",
+        "median_midi": 41.52499961853027,
+        "start_frame": 4331,
+        "end_frame": 4476,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.06_06.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.06_06.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.06_06.f0.npy",
+        "median_midi": 54.22500038146973,
+        "start_frame": 1605,
+        "end_frame": 1739,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 12.700000762939453,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-04/New/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/Audio Files/TRMPT_03.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-04/New/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/Audio Files/TRMPT_03.pt",
+        "f0_path": "/mnt/msdd2/newconditioning/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/TRMPT_03.f0.npy",
+        "median_midi": 41.69999980926514,
+        "start_frame": 4431,
+        "end_frame": 4606,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.08_08.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.08_08.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.08_08.f0.npy",
+        "median_midi": 54.0,
+        "start_frame": 1551,
+        "end_frame": 1709,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 12.300000190734863,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protoolsA/2025-06-20/New/2025.06.20_BrosamerCollective_Ollie/Audio Files/Trumpet 1-2.07_07.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protoolsA/2025-06-20/New/2025.06.20_BrosamerCollective_Ollie/Audio Files/Trumpet 1-2.07_07.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-06-20/New/2025.06.20_BrosamerCollective_Ollie/Audio Files/Trumpet 1-2.07_07.f0.npy",
+        "median_midi": 42.25,
+        "start_frame": 2401,
+        "end_frame": 2517,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.f0.npy",
+        "median_midi": 54.20000076293945,
+        "start_frame": 996,
+        "end_frame": 1105,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 11.950000762939453,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protoolsA/2025-06-20/New/2025.06.20_BrosamerCollective_Ollie/Audio Files/Trumpet 1-2.07_07.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protoolsA/2025-06-20/New/2025.06.20_BrosamerCollective_Ollie/Audio Files/Trumpet 1-2.07_07.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-06-20/New/2025.06.20_BrosamerCollective_Ollie/Audio Files/Trumpet 1-2.07_07.f0.npy",
+        "median_midi": 42.25,
+        "start_frame": 2401,
+        "end_frame": 2517,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.01_02.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.01_02.pt",
+        "f0_path": "/mnt/msdd2/evenmoreconditioning/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.01_02.f0.npy",
+        "median_midi": 54.45000076293945,
+        "start_frame": 1712,
+        "end_frame": 1816,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 12.200000762939453,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-02/New/Joav 00/Audio Files/Re20 trumpet.03_06.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-02/New/Joav 00/Audio Files/Re20 trumpet.03_06.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-02/New/Joav 00/Audio Files/Re20 trumpet.03_06.f0.npy",
+        "median_midi": 41.72500038146973,
+        "start_frame": 4223,
+        "end_frame": 4347,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.04_04.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.04_04.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.04_04.f0.npy",
+        "median_midi": 53.84999942779541,
+        "start_frame": 1051,
+        "end_frame": 1161,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 12.124999046325684,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protoolsA/2025-06-20/New/2025.06.20_BrosamerCollective_SuiteOfLove/Audio Files/Trumpet 1-2.07_07.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protoolsA/2025-06-20/New/2025.06.20_BrosamerCollective_SuiteOfLove/Audio Files/Trumpet 1-2.07_07.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-06-20/New/2025.06.20_BrosamerCollective_SuiteOfLove/Audio Files/Trumpet 1-2.07_07.f0.npy",
+        "median_midi": 42.25,
+        "start_frame": 2401,
+        "end_frame": 2517,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.f0.npy",
+        "median_midi": 54.20000076293945,
+        "start_frame": 996,
+        "end_frame": 1105,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 11.950000762939453,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protoolsA/2025-06-20/New/2025.06.20_BrosamerCollective_SuiteOfLove/Audio Files/Trumpet 1-2.07_07.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protoolsA/2025-06-20/New/2025.06.20_BrosamerCollective_SuiteOfLove/Audio Files/Trumpet 1-2.07_07.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-06-20/New/2025.06.20_BrosamerCollective_SuiteOfLove/Audio Files/Trumpet 1-2.07_07.f0.npy",
+        "median_midi": 42.25,
+        "start_frame": 2401,
+        "end_frame": 2517,
+        "num_notes": 4
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.01_02.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.01_02.pt",
+        "f0_path": "/mnt/msdd2/evenmoreconditioning/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.01_02.f0.npy",
+        "median_midi": 54.45000076293945,
+        "start_frame": 1712,
+        "end_frame": 1816,
+        "num_notes": 4
+      },
+      "match_ratio": 1.0,
+      "matched_notes": 4,
+      "total_notes": 4,
+      "pitch_diff": 12.200000762939453,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protoolsA/2025-05-01/New/BET/Audio Files/414.58_31.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/dcae_latentsnewnew/protoolsA/2025-05-01/New/BET/Audio Files/414.58_31.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-05-01/New/BET/Audio Files/414.58_31.f0.npy",
+        "median_midi": 76.85000228881836,
+        "start_frame": 156,
+        "end_frame": 307,
+        "num_notes": 6
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 2.06_07.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 2.06_07.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 2.06_07.f0.npy",
+        "median_midi": 89.17500114440918,
+        "start_frame": 2735,
+        "end_frame": 2876,
+        "num_notes": 6
+      },
+      "match_ratio": 0.8333333333333334,
+      "matched_notes": 5,
+      "total_notes": 6,
+      "pitch_diff": 12.32499885559082,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .42_44.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .42_44.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .42_44.f0.npy",
+        "median_midi": 59.599998474121094,
+        "start_frame": 67,
+        "end_frame": 264,
+        "num_notes": 5
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 1.07_08.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 1.07_08.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 1.07_08.f0.npy",
+        "median_midi": 72.0999984741211,
+        "start_frame": 176,
+        "end_frame": 391,
+        "num_notes": 5
+      },
+      "match_ratio": 0.8,
+      "matched_notes": 4,
+      "total_notes": 5,
+      "pitch_diff": 12.5,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .45_47.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .45_47.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .45_47.f0.npy",
+        "median_midi": 59.80000305175781,
+        "start_frame": 0,
+        "end_frame": 199,
+        "num_notes": 5
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 3.07_08.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 3.07_08.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 3.07_08.f0.npy",
+        "median_midi": 72.0999984741211,
+        "start_frame": 262,
+        "end_frame": 480,
+        "num_notes": 5
+      },
+      "match_ratio": 0.8,
+      "matched_notes": 4,
+      "total_notes": 5,
+      "pitch_diff": 12.299995422363281,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protoolsA/2025-06-12/New/HaveAGoodTIme.Rec.Ensemble.03.04.20/Audio Files/Trumpet.08_08.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/dcae_latentsnewnew/protoolsA/2025-06-12/New/HaveAGoodTIme.Rec.Ensemble.03.04.20/Audio Files/Trumpet.08_08.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-06-12/New/HaveAGoodTIme.Rec.Ensemble.03.04.20/Audio Files/Trumpet.08_08.f0.npy",
+        "median_midi": 60.0,
+        "start_frame": 129,
+        "end_frame": 292,
+        "num_notes": 5
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 3.42_43.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 3.42_43.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-15/New/EdRox_10-13_Medley_090923/Audio Files/Trumpet 3.42_43.f0.npy",
+        "median_midi": 72.30000305175781,
+        "start_frame": 59,
+        "end_frame": 230,
+        "num_notes": 5
+      },
+      "match_ratio": 0.8,
+      "matched_notes": 4,
+      "total_notes": 5,
+      "pitch_diff": 12.300003051757812,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-04/New/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/Audio Files/TRMPT_04.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-04/New/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/Audio Files/TRMPT_04.pt",
+        "f0_path": "/mnt/msdd2/newconditioning/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/TRMPT_04.f0.npy",
+        "median_midi": 42.20000076293945,
+        "start_frame": 2280,
+        "end_frame": 2371,
+        "num_notes": 5
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.f0.npy",
+        "median_midi": 54.5,
+        "start_frame": 1108,
+        "end_frame": 1214,
+        "num_notes": 5
+      },
+      "match_ratio": 0.8,
+      "matched_notes": 4,
+      "total_notes": 5,
+      "pitch_diff": 12.299999237060547,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-04/New/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/Audio Files/TRMPT_04.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-04/New/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/Audio Files/TRMPT_04.pt",
+        "f0_path": "/mnt/msdd2/newconditioning/Copy of 2025-03-23_Song Thu_San Trinh_GuitarReamp/TRMPT_04.f0.npy",
+        "median_midi": 41.64999961853027,
+        "start_frame": 4252,
+        "end_frame": 4450,
+        "num_notes": 5
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-08/New/Sleepwalk_Tracking_10.4.2024 /Audio Files/TRP.03_03.f0.npy",
+        "median_midi": 54.5,
+        "start_frame": 459,
+        "end_frame": 643,
+        "num_notes": 5
+      },
+      "match_ratio": 0.8,
+      "matched_notes": 4,
+      "total_notes": 5,
+      "pitch_diff": 12.850000381469727,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-04/New/Copy of ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-04/New/Copy of ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.pt",
+        "f0_path": "/mnt/msdd2/newconditioning/Copy of ST_Sunset_Mixing_Test/TRMPT_DI_13.f0.npy",
+        "median_midi": 48.0,
+        "start_frame": 2315,
+        "end_frame": 2472,
+        "num_notes": 5
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.f0.npy",
+        "median_midi": 59.70000076293945,
+        "start_frame": 35,
+        "end_frame": 198,
+        "num_notes": 5
+      },
+      "match_ratio": 0.8,
+      "matched_notes": 4,
+      "total_notes": 5,
+      "pitch_diff": 11.700000762939453,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-04/New/Copy of ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-04/New/Copy of ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.pt",
+        "f0_path": "/mnt/msdd2/newconditioning/Copy of ST_Sunset_Mixing_Test/TRMPT_DI_13.f0.npy",
+        "median_midi": 48.0,
+        "start_frame": 2315,
+        "end_frame": 2472,
+        "num_notes": 5
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.f0.npy",
+        "median_midi": 59.70000076293945,
+        "start_frame": 101,
+        "end_frame": 263,
+        "num_notes": 5
+      },
+      "match_ratio": 0.8,
+      "matched_notes": 4,
+      "total_notes": 5,
+      "pitch_diff": 11.700000762939453,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-04/New/ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-04/New/ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.pt",
+        "f0_path": "/mnt/msdd2/newconditioning/ST_Sunset_Mixing_Test/TRMPT_DI_13.f0.npy",
+        "median_midi": 48.0,
+        "start_frame": 2315,
+        "end_frame": 2472,
+        "num_notes": 5
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.f0.npy",
+        "median_midi": 59.70000076293945,
+        "start_frame": 35,
+        "end_frame": 198,
+        "num_notes": 5
+      },
+      "match_ratio": 0.8,
+      "matched_notes": 4,
+      "total_notes": 5,
+      "pitch_diff": 11.700000762939453,
+      "same_file": false
+    },
+    {
+      "low": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-04/New/ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/protools/2025-04-04/New/ST_Sunset_Mixing_Test/Audio Files/TRMPT_DI_13.pt",
+        "f0_path": "/mnt/msdd2/newconditioning/ST_Sunset_Mixing_Test/TRMPT_DI_13.f0.npy",
+        "median_midi": 48.0,
+        "start_frame": 2315,
+        "end_frame": 2472,
+        "num_notes": 5
+      },
+      "high": {
+        "audio_path": "/home/arlo/gcs-bucket/protools/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.wav",
+        "latent_path": "/mnt/msdd2/dcae_latentsnew/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.pt",
+        "f0_path": "/mnt/msdd2/moreconditioning/2025-04-25/New/24.3_Here I Am_Calele Perez_FOR TPT/Audio Files/TPT .44_46.f0.npy",
+        "median_midi": 59.70000076293945,
+        "start_frame": 101,
+        "end_frame": 263,
+        "num_notes": 5
+      },
+      "match_ratio": 0.8,
+      "matched_notes": 4,
+      "total_notes": 5,
+      "pitch_diff": 11.700000762939453,
+      "same_file": false
+    }
+  ]
+}
