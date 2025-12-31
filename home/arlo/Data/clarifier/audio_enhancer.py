@@ -111,11 +111,11 @@ class AudioEnhancer(nn.Module):
                                       padding=kernel_size // 2)
 
         # Initialize output to small values for stable training start
-        nn.init.normal_(self.output_proj.weight, std=0.01)
+        nn.init.normal_(self.output_proj.weight, std=0.02)
         nn.init.zeros_(self.output_proj.bias)
 
-        # Learnable residual scale (start at 0.5 - spectral losses are stable)
-        self.residual_scale = nn.Parameter(torch.tensor(0.5))
+        # Fixed residual scale = 1.0 (not learnable - prevents model from being too conservative)
+        self.register_buffer('residual_scale', torch.tensor(1.0))
 
     def forward(
         self,

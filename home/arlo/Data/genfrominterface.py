@@ -3156,7 +3156,30 @@ def load_conditioning_fast_mode(extraction: dict, window_slow: int, variant: str
     """
     print(f"⚡ Fast mode ({variant.upper()}): Loading conditioning")
 
-    # Pad/trim helper (ORIGINAL CODE)
+    # Resample helper (FIX: interpolate instead of zero-padding)
+    def _resample_arr(x, L, mode='linear'):
+        """Resample array from its current length to target length L."""
+        current_L = x.shape[-1]
+        if current_L == L:
+            return x
+        if current_L > L:
+            return x[..., :L]
+        # Upsample using interpolation
+        if x.ndim == 1:
+            x_tensor = torch.from_numpy(x).float().unsqueeze(0).unsqueeze(0)
+            if mode == 'nearest':
+                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='nearest')
+            else:
+                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='linear', align_corners=False)
+            return x_resampled.squeeze().numpy()
+        else:
+            x_tensor = torch.from_numpy(x).float().unsqueeze(0)
+            if mode == 'nearest':
+                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='nearest')
+            else:
+                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='linear', align_corners=False)
+            return x_resampled.squeeze(0).numpy()
+
     def _pad_arr(x, L):
         if x.shape[-1] >= L: return x[..., :L]
         pad = [(0,0)]*(x.ndim-1) + [(0, L - x.shape[-1])]
@@ -3237,7 +3260,12 @@ def load_conditioning_fast_mode(extraction: dict, window_slow: int, variant: str
             pr_padded[21:109, :] = pr  # Insert 88 keys at MIDI positions 21-108
             pr = pr_padded
 
-        pr = _pad_arr(pr, window_slow)
+        # Resample if significant length difference (different fps)
+        if pr.shape[-1] < window_slow * 0.9:
+            print(f"   🔄 Resampling piano roll: {pr.shape[-1]} → {window_slow} frames")
+            pr = _resample_arr(pr, window_slow, mode='nearest')
+        else:
+            pr = _pad_arr(pr, window_slow)
 
         # Create preset values for amp, rfr, rbd (stable/default values)
         # NOTE: amp, rframe, rbend should be 1D arrays of shape (window_slow,), not (128, window_slow)
@@ -3300,16 +3328,56 @@ def load_conditioning(extraction: dict, window_slow: int):
     if enc.ndim == 2:
         enc = enc.unsqueeze(0)
 
-    # pad/trim to window_slow (ORIGINAL CODE - no interpolation)
-    def _pad_arr(x, L):
-        if x.shape[-1] >= L: return x[..., :L]
-        pad = [(0,0)]*(x.ndim-1) + [(0, L - x.shape[-1])]
-        return np.pad(x, pad, mode="constant")
+    # RESAMPLE to window_slow (FIX: interpolate instead of zero-padding)
+    # Conditioning is extracted at 10.77 fps (hop=4096), model expects 43.066 fps
+    # Ratio is approximately 4x, so we need to upsample
+    def _resample_arr(x, L, mode='linear'):
+        """Resample array from its current length to target length L."""
+        current_L = x.shape[-1]
+        if current_L == L:
+            return x
+        if current_L > L:
+            # Downsample: just trim
+            return x[..., :L]
 
-    pr  = _pad_arr(pr,  window_slow)
-    amp = _pad_arr(amp, window_slow)
-    rfr = _pad_arr(rfr, window_slow)
-    rbd = _pad_arr(rbd, window_slow)
+        # Upsample using interpolation
+        if x.ndim == 1:
+            # 1D array (amp, rframe, rbend)
+            x_tensor = torch.from_numpy(x).float().unsqueeze(0).unsqueeze(0)  # [1, 1, T]
+            if mode == 'nearest':
+                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='nearest')
+            else:
+                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='linear', align_corners=False)
+            return x_resampled.squeeze().numpy()
+        else:
+            # 2D array (piano_roll: [128, T])
+            x_tensor = torch.from_numpy(x).float().unsqueeze(0)  # [1, 128, T]
+            if mode == 'nearest':
+                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='nearest')
+            else:
+                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='linear', align_corners=False)
+            return x_resampled.squeeze(0).numpy()
+
+    # Check if resampling is needed (significant length difference)
+    pr_len = pr.shape[-1]
+    if pr_len < window_slow * 0.9:  # More than 10% shorter means different fps
+        print(f"🔄 Resampling conditioning: {pr_len} → {window_slow} frames (10.77fps → 43.066fps)")
+        # Piano roll: use nearest-neighbor to preserve binary nature
+        pr = _resample_arr(pr, window_slow, mode='nearest')
+        # Continuous signals: use linear interpolation
+        amp = _resample_arr(amp, window_slow, mode='linear')
+        rfr = _resample_arr(rfr, window_slow, mode='linear')
+        rbd = _resample_arr(rbd, window_slow, mode='linear')
+    else:
+        # Just pad/trim if lengths are similar (same fps)
+        def _pad_arr(x, L):
+            if x.shape[-1] >= L: return x[..., :L]
+            pad = [(0,0)]*(x.ndim-1) + [(0, L - x.shape[-1])]
+            return np.pad(x, pad, mode="constant")
+        pr  = _pad_arr(pr,  window_slow)
+        amp = _pad_arr(amp, window_slow)
+        rfr = _pad_arr(rfr, window_slow)
+        rbd = _pad_arr(rbd, window_slow)
 
     return pr, amp, rfr, rbd, enc.long()
 
@@ -5282,7 +5350,12 @@ def generate(
     # Render & extract mode flag
     render_and_extract=False,
     # Debug trajectory logging
-    collect_trajectory=False
+    collect_trajectory=False,
+    # Latent space output for sliding window blending
+    return_latents=False,
+    # Post-generation GT mixing (at DCAE resolution, avoids interpolation artifacts)
+    # 0.0 = pure generated, 1.0 = pure GT, 0.1 = 90% generated + 10% GT
+    post_gen_gt_mix=0.0
 ):
     device = next(model.parameters()).device
     model.eval()
@@ -5401,10 +5474,16 @@ def generate(
     torch.manual_seed(int(seed))
 
     # Initialize latents based on noise level
-    # CRITICAL: In render & extract mode, ALWAYS extract GT latents even if noise_level=1.0
-    # This allows mixing with FluidSynth-rendered audio GT
-    if float(noise_level) >= 1.0 and not render_and_extract:
-        # Pure noise (original behavior) - but NOT in render & extract mode
+    # CRITICAL: Extract GT latents if:
+    # - noise_level < 1.0 (for pre-gen mixing)
+    # - render_and_extract mode (for FluidSynth mixing)
+    # - post_gen_gt_mix > 0 (for post-gen mixing at native resolution)
+    gt_latent_native = None  # Initialize outside conditional for post-gen mixing
+
+    need_gt_latents = (float(noise_level) < 1.0 or render_and_extract or float(post_gen_gt_mix) > 0.0)
+
+    if not need_gt_latents:
+        # Pure noise (original behavior)
         x = torch.randn_like(sample_patch.to(device=device, dtype=tokens.dtype))
     else:
         # Try to extract ground truth latents for proper noise mixing
@@ -5437,12 +5516,25 @@ def generate(
             if gt_latents.ndim == 3:  # [8, 16, T] -> [1, 8, 16, T]
                 gt_latents = gt_latents.unsqueeze(0)
 
-            # Pad or crop temporal dimension to match target
+            # Store native resolution GT for post-generation mixing (avoids interpolation artifacts)
+            if float(post_gen_gt_mix) > 0.0:
+                gt_latent_native = gt_latents.clone()
+                print(f"   📦 Stored GT latent at native resolution: {gt_latent_native.shape} for post-gen mixing")
+
+            # Interpolate or crop temporal dimension to match target
             if gt_latents.shape[-1] != target_shape[-1]:
                 if gt_latents.shape[-1] < target_shape[-1]:
-                    # Pad if too short
-                    pad_size = target_shape[-1] - gt_latents.shape[-1]
-                    gt_latents = F.pad(gt_latents, (0, pad_size), mode='constant', value=0)
+                    # INTERPOLATE if too short (not zero-pad!)
+                    # Shape: [1, 8, 16, T_short] -> [1, 8, 16, T_target]
+                    old_len = gt_latents.shape[-1]
+                    new_len = target_shape[-1]
+                    # Reshape for interpolate: [1, 8, 16, T] -> [1, 8*16, T]
+                    B, C, H, T = gt_latents.shape
+                    gt_flat = gt_latents.reshape(B, C * H, T)  # Use reshape, not view
+                    # Use NEAREST interpolation to preserve spectral structure (avoids linear blur)
+                    gt_interp = F.interpolate(gt_flat, size=new_len, mode='nearest-exact')
+                    gt_latents = gt_interp.reshape(B, C, H, new_len)  # Use reshape, not view
+                    print(f"   🔄 Interpolated GT latent (nearest): {old_len} → {new_len} frames")
                 else:
                     # Crop if too long
                     gt_latents = gt_latents[..., :target_shape[-1]]
@@ -5634,6 +5726,52 @@ def generate(
         print(f"🎵 DCAE DECODE DIAGNOSTICS:")
         print(f"   NO original_audio_length - Calculated from latent frames:")
         print(f"   {T_latent_actual} latent frames * {DCAE_HOP} hop * ({sr_out}/{DCAE_SR}) = {audio_len} samples = {expected_duration:.2f}s")
+
+    # Return latent before decoding if requested (for latent-space blending)
+    if return_latents:
+        print(f"🔧 Returning latent for blending: {x.shape}")
+        return x.clone()
+
+    # CRITICAL FIX: Generated latent is at conditioning fps (43.066), but DCAE expects
+    # latent at its native resolution (~10.77 fps = 44100/4096). Downsample before decode.
+    DCAE_FPS = DCAE_SR / DCAE_HOP  # ~10.766 fps
+    COND_FPS = 43.066
+
+    # Calculate target latent frames for DCAE based on audio duration
+    if original_audio_length is not None:
+        target_duration = original_audio_length / DCAE_SR
+    else:
+        target_duration = x.shape[-1] / COND_FPS
+
+    target_latent_frames = int(round(target_duration * DCAE_FPS))
+
+    if x.shape[-1] != target_latent_frames and x.shape[-1] > target_latent_frames * 1.5:
+        print(f"   🔄 Resampling latent for DCAE: {x.shape[-1]} → {target_latent_frames} frames")
+        print(f"      (conditioning at {COND_FPS:.1f}fps → DCAE at {DCAE_FPS:.2f}fps)")
+        B, C, H, T = x.shape
+        x_flat = x.reshape(B, C * H, T)
+        x_resampled = F.interpolate(x_flat, size=target_latent_frames, mode='linear', align_corners=False)
+        x = x_resampled.reshape(B, C, H, target_latent_frames)
+        print(f"   ✅ Resampled latent shape: {x.shape}")
+
+    # POST-GENERATION GT MIXING: Mix with GT latent at DCAE native resolution
+    # This avoids the interpolation artifacts that destroy timbre
+    if float(post_gen_gt_mix) > 0.0 and gt_latent_native is not None:
+        gt_native = gt_latent_native.to(device=x.device, dtype=x.dtype)
+
+        # Adjust GT latent length to match generated latent (minor adjustment, not 4x)
+        if gt_native.shape[-1] != x.shape[-1]:
+            B, C, H, T_gt = gt_native.shape
+            gt_flat = gt_native.reshape(B, C * H, T_gt)
+            gt_adjusted = F.interpolate(gt_flat, size=x.shape[-1], mode='linear', align_corners=False)
+            gt_native = gt_adjusted.reshape(B, C, H, x.shape[-1])
+            print(f"   🔄 Adjusted GT latent: {T_gt} → {x.shape[-1]} frames (minor adjustment)")
+
+        # Mix: x_final = (1 - mix) * generated + mix * gt
+        mix_amount = float(post_gen_gt_mix)
+        x = (1.0 - mix_amount) * x + mix_amount * gt_native
+        print(f"   🎯 Post-gen GT mix: {mix_amount:.1%} GT + {1-mix_amount:.1%} generated")
+        print(f"      (GT latent at native resolution - preserves timbre!)")
 
     p = next(model.dcae.parameters(), None)
     dev = p.device if p is not None else getattr(model.dcae, "device", device)

@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
 """
-Train Audio Enhancer v2 - with proper spectral and adversarial losses.
+Train Audio Enhancer v2 - with spectral + waveform L1 losses.
 
-Key improvements over v1:
-- Multi-resolution STFT loss (magnitude, not phase-dependent)
+Key losses:
+- Multi-resolution STFT loss (magnitude, phase-invariant)
 - Mel spectrogram loss (perceptually weighted)
+- Direct waveform L1 loss (crucial for correct magnitude - spectral losses alone don't enforce it)
 - Optional multi-scale discriminator (adversarial training)
 - Feature matching loss (stabilizes GAN training)
 
 Usage:
-    # Without discriminator (faster, still much better than L1):
+    # Recommended: STFT + Mel + L1 (no discriminator)
     python train_enhancer_v2.py \
         --pairs_dir /mnt/msdd2/enhancer_pairs_brass \
-        --output_dir /mnt/msdd2/audio_enhancer_checkpoints/brass_v2_stft \
+        --output_dir /mnt/msdd2/audio_enhancer_checkpoints/brass_v3_l1 \
         --epochs 50
 
-    # With discriminator (best quality, slower):
+    # With discriminator:
     python train_enhancer_v2.py \
         --pairs_dir /mnt/msdd2/enhancer_pairs_brass \
-        --output_dir /mnt/msdd2/audio_enhancer_checkpoints/brass_v2_gan \
+        --output_dir /mnt/msdd2/audio_enhancer_checkpoints/brass_v3_gan \
         --epochs 50 \
         --use_discriminator
 """
@@ -374,10 +375,23 @@ def feature_matching_loss(real_features: list, fake_features: list) -> torch.Ten
 class PreprocessedEnhancerDataset(Dataset):
     """Dataset that loads preprocessed (original, decoded) pairs."""
 
-    def __init__(self, pairs_dir: str):
+    def __init__(self, pairs_dir: str, min_rms: float = 0.0):
         self.pairs_dir = Path(pairs_dir)
-        self.pair_files = sorted(self.pairs_dir.glob('pair_*.pt'))
-        print(f"[Dataset] Found {len(self.pair_files)} pairs in {pairs_dir}")
+        all_files = sorted(self.pairs_dir.glob('pair_*.pt'))
+
+        # Filter by RMS if specified
+        if min_rms > 0:
+            print(f"[Dataset] Filtering pairs with RMS >= {min_rms}...")
+            self.pair_files = []
+            for pf in all_files:
+                data = torch.load(pf, map_location='cpu', weights_only=False)
+                rms = torch.sqrt((data['original'] ** 2).mean()).item()
+                if rms >= min_rms:
+                    self.pair_files.append(pf)
+            print(f"[Dataset] Kept {len(self.pair_files)}/{len(all_files)} pairs (filtered {len(all_files) - len(self.pair_files)} silent)")
+        else:
+            self.pair_files = all_files
+            print(f"[Dataset] Found {len(self.pair_files)} pairs in {pairs_dir}")
 
     def __len__(self):
         return len(self.pair_files)
@@ -419,6 +433,7 @@ class EnhancerTrainerV2:
         use_discriminator: bool = False,
         lambda_stft: float = 1.0,
         lambda_mel: float = 1.0,
+        lambda_l1: float = 10.0,  # Direct waveform L1 loss - crucial for correct magnitude
         lambda_adv: float = 0.1,
         lambda_fm: float = 2.0,
     ):
@@ -433,6 +448,7 @@ class EnhancerTrainerV2:
         # Loss weights
         self.lambda_stft = lambda_stft
         self.lambda_mel = lambda_mel
+        self.lambda_l1 = lambda_l1
         self.lambda_adv = lambda_adv
         self.lambda_fm = lambda_fm
 
@@ -467,15 +483,19 @@ class EnhancerTrainerV2:
         sc_loss, mag_loss = self.stft_loss(enhanced, original)
         mel_loss = self.mel_loss(enhanced, original)
 
+        # Direct waveform L1 loss - crucial for correct magnitude
+        l1_loss = F.l1_loss(enhanced, original)
+
         stft_total = sc_loss + mag_loss
 
-        # Generator loss
-        g_loss = self.lambda_stft * stft_total + self.lambda_mel * mel_loss
+        # Generator loss - L1 ensures correct waveform magnitude
+        g_loss = self.lambda_stft * stft_total + self.lambda_mel * mel_loss + self.lambda_l1 * l1_loss
 
         losses = {
             'sc': sc_loss.item(),
             'mag': mag_loss.item(),
             'mel': mel_loss.item(),
+            'l1': l1_loss.item(),
         }
 
         # Adversarial training
@@ -525,6 +545,7 @@ class EnhancerTrainerV2:
         total_sc = 0
         total_mag = 0
         total_mel = 0
+        total_l1 = 0
         n_batches = 0
 
         for batch in self.val_loader:
@@ -537,10 +558,12 @@ class EnhancerTrainerV2:
 
             sc_loss, mag_loss = self.stft_loss(enhanced, original)
             mel_loss = self.mel_loss(enhanced, original)
+            l1_loss = F.l1_loss(enhanced, original)
 
             total_sc += sc_loss.item()
             total_mag += mag_loss.item()
             total_mel += mel_loss.item()
+            total_l1 += l1_loss.item()
             n_batches += 1
 
         n = max(n_batches, 1)
@@ -548,7 +571,8 @@ class EnhancerTrainerV2:
             'val_sc': total_sc / n,
             'val_mag': total_mag / n,
             'val_mel': total_mel / n,
-            'val_loss': (total_sc + total_mag + total_mel) / n,
+            'val_l1': total_l1 / n,
+            'val_loss': (total_sc + total_mag + total_mel) / n + self.lambda_l1 * (total_l1 / n),
         }
 
     def save_checkpoint(self, filename: str):
@@ -591,7 +615,7 @@ class EnhancerTrainerV2:
                 n_batches += 1
 
                 # Display
-                display = {k: f"{v:.4f}" for k, v in losses.items() if k in ['g_loss', 'mel', 'd_loss']}
+                display = {k: f"{v:.4f}" for k, v in losses.items() if k in ['g_loss', 'l1', 'mel', 'd_loss']}
                 pbar.set_postfix(display)
 
             # Average epoch losses
@@ -604,13 +628,13 @@ class EnhancerTrainerV2:
 
             # Print epoch summary
             print(f"\nEpoch {epoch+1}:")
-            print(f"  SC: {epoch_losses.get('sc', 0):.4f}, Mag: {epoch_losses.get('mag', 0):.4f}, Mel: {epoch_losses.get('mel', 0):.4f}")
+            print(f"  SC: {epoch_losses.get('sc', 0):.4f}, Mag: {epoch_losses.get('mag', 0):.4f}, Mel: {epoch_losses.get('mel', 0):.4f}, L1: {epoch_losses.get('l1', 0):.5f}")
             if self.use_discriminator:
                 print(f"  Adv: {epoch_losses.get('adv', 0):.4f}, FM: {epoch_losses.get('fm', 0):.4f}, D: {epoch_losses.get('d_loss', 0):.4f}")
 
             # Validation
             val_metrics = self.validate()
-            print(f"  Val - SC: {val_metrics['val_sc']:.4f}, Mag: {val_metrics['val_mag']:.4f}, Mel: {val_metrics['val_mel']:.4f}")
+            print(f"  Val - SC: {val_metrics['val_sc']:.4f}, Mag: {val_metrics['val_mag']:.4f}, Mel: {val_metrics['val_mel']:.4f}, L1: {val_metrics['val_l1']:.5f}")
 
             # Save best
             if val_metrics['val_loss'] < self.best_val_loss:
@@ -652,9 +676,13 @@ def main():
                         help='Enable adversarial training')
     parser.add_argument('--lambda_stft', type=float, default=1.0)
     parser.add_argument('--lambda_mel', type=float, default=1.0)
+    parser.add_argument('--lambda_l1', type=float, default=10.0,
+                        help='Direct waveform L1 loss weight - crucial for correct magnitude')
     parser.add_argument('--lambda_adv', type=float, default=0.1)
     parser.add_argument('--lambda_fm', type=float, default=2.0)
 
+    parser.add_argument('--min_rms', type=float, default=0.0,
+                        help='Minimum RMS to filter silent pairs (e.g., 0.02)')
     parser.add_argument('--save_every', type=int, default=10)
     parser.add_argument('--resume', type=str, default=None,
                         help='Resume from checkpoint')
@@ -671,7 +699,7 @@ def main():
 
     # Dataset
     print(f"Loading pairs from {args.pairs_dir}")
-    full_dataset = PreprocessedEnhancerDataset(args.pairs_dir)
+    full_dataset = PreprocessedEnhancerDataset(args.pairs_dir, min_rms=args.min_rms)
 
     # Split
     val_size = int(len(full_dataset) * args.val_split)
@@ -735,6 +763,7 @@ def main():
         use_discriminator=args.use_discriminator,
         lambda_stft=args.lambda_stft,
         lambda_mel=args.lambda_mel,
+        lambda_l1=args.lambda_l1,
         lambda_adv=args.lambda_adv,
         lambda_fm=args.lambda_fm,
     )
