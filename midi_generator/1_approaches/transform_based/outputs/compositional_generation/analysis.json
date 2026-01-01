@@ -1,0 +1,85 @@
+{
+  "config": {
+    "vocab_size": 333,
+    "d_model": 512,
+    "n_heads": 8,
+    "n_layers": 8,
+    "d_ff": 2048,
+    "max_length": 1024,
+    "epochs": 30,
+    "batch_size": 4,
+    "lr": 0.0003
+  },
+  "stats": {
+    "interval_histogram": {
+      "0": 3740,
+      "2": 2162,
+      "3": 362,
+      "-2": 331,
+      "1": 289,
+      "-1": 232,
+      "4": 171,
+      "-9": 86,
+      "-5": 70,
+      "-3": 60,
+      "7": 60,
+      "5": 54,
+      "-7": 46,
+      "-4": 15,
+      "-11": 12,
+      "-12": 11,
+      "-31": 10,
+      "24": 7,
+      "12": 5,
+      "-14": 4
+    },
+    "total_intervals": 7740,
+    "unique_intervals": 29,
+    "avg_pattern_length": 3.3347694959069365,
+    "pattern_count": 2321
+  },
+  "novelty": {
+    "novel_patterns": 331,
+    "memorized_patterns": 1990,
+    "novelty_ratio": 0.14261094355881085,
+    "training_patterns_sampled": 6536
+  },
+  "prompts": {
+    "alto_sax": [
+      "BOS",
+      "BEAT_0",
+      "TRACK_65",
+      "OFFSET_0"
+    ],
+    "bass": [
+      "BOS",
+      "BEAT_0",
+      "TRACK_33",
+      "OFFSET_0"
+    ],
+    "flute": [
+      "BOS",
+      "BEAT_0",
+      "TRACK_73",
+      "OFFSET_0"
+    ],
+    "french_horn": [
+      "BOS",
+      "BEAT_0",
+      "TRACK_60",
+      "OFFSET_0"
+    ],
+    "baritone_sax": [
+      "BOS",
+      "BEAT_0",
+      "TRACK_67",
+      "OFFSET_0"
+    ],
+    "piano": [
+      "BOS",
+      "BEAT_0",
+      "TRACK_0",
+      "OFFSET_0"
+    ]
+  }
+}

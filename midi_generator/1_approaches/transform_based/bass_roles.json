@@ -1,0 +1,8974 @@
+{
+  "piece_roles": {
+    "score - 2025-08-07T204344.144": {
+      "role": "WALKING",
+      "n_patterns": 2482,
+      "avg_walking_pct": 0.909501656211996,
+      "avg_rhythm_var": 0.019971685192439814,
+      "top_intervals": [
+        [
+          2,
+          3155
+        ],
+        [
+          1,
+          2043
+        ],
+        [
+          -3,
+          1467
+        ],
+        [
+          -4,
+          922
+        ],
+        [
+          -1,
+          773
+        ]
+      ]
+    },
+    "score - 2025-08-07T185721.014": {
+      "role": "PEDAL",
+      "n_patterns": 1789,
+      "avg_walking_pct": 0.27799540080739105,
+      "avg_rhythm_var": 0.7879545624346822,
+      "top_intervals": [
+        [
+          0,
+          17639
+        ],
+        [
+          -1,
+          925
+        ],
+        [
+          2,
+          725
+        ],
+        [
+          1,
+          652
+        ],
+        [
+          -12,
+          543
+        ]
+      ]
+    },
+    "Pyramid_Peril": {
+      "role": "MIXED",
+      "n_patterns": 1409,
+      "avg_walking_pct": 0.8097626768833248,
+      "avg_rhythm_var": 0.991651605854959,
+      "top_intervals": [
+        [
+          -1,
+          5435
+        ],
+        [
+          -7,
+          5097
+        ],
+        [
+          -4,
+          4602
+        ],
+        [
+          12,
+          4393
+        ],
+        [
+          -2,
+          1229
+        ]
+      ]
+    },
+    "Senor_Blues__Horace_Silver": {
+      "role": "WALKING",
+      "n_patterns": 1353,
+      "avg_walking_pct": 0.8578358955017327,
+      "avg_rhythm_var": 0.34285835307703894,
+      "top_intervals": [
+        [
+          2,
+          2330
+        ],
+        [
+          -2,
+          1960
+        ],
+        [
+          -7,
+          1275
+        ],
+        [
+          7,
+          1084
+        ],
+        [
+          0,
+          981
+        ]
+      ]
+    },
+    "score - 2025-08-07T192851.081": {
+      "role": "MIXED",
+      "n_patterns": 1136,
+      "avg_walking_pct": 0.9078469887195831,
+      "avg_rhythm_var": 0.6939227138862737,
+      "top_intervals": [
+        [
+          -2,
+          1194
+        ],
+        [
+          2,
+          949
+        ],
+        [
+          -7,
+          758
+        ],
+        [
+          -3,
+          638
+        ],
+        [
+          12,
+          483
+        ]
+      ]
+    },
+    "Junkyard_Jive": {
+      "role": "WALKING",
+      "n_patterns": 1217,
+      "avg_walking_pct": 0.849730378512072,
+      "avg_rhythm_var": 0.006335548678586895,
+      "top_intervals": [
+        [
+          1,
+          1088
+        ],
+        [
+          -1,
+          842
+        ],
+        [
+          3,
+          640
+        ],
+        [
+          -2,
+          639
+        ],
+        [
+          -3,
+          604
+        ]
+      ]
+    },
+    "jazz_quartet": {
+      "role": "MIXED",
+      "n_patterns": 1151,
+      "avg_walking_pct": 0.6788138348234688,
+      "avg_rhythm_var": 0.5721875962272994,
+      "top_intervals": [
+        [
+          -5,
+          704
+        ],
+        [
+          7,
+          574
+        ],
+        [
+          0,
+          550
+        ],
+        [
+          5,
+          525
+        ],
+        [
+          4,
+          445
+        ]
+      ]
+    },
+    "score - 2025-08-07T215830.457": {
+      "role": "WALKING",
+      "n_patterns": 1195,
+      "avg_walking_pct": 0.6784762664518345,
+      "avg_rhythm_var": 0.1657228259489231,
+      "top_intervals": [
+        [
+          3,
+          1846
+        ],
+        [
+          5,
+          1574
+        ],
+        [
+          4,
+          1537
+        ],
+        [
+          0,
+          1416
+        ],
+        [
+          -12,
+          874
+        ]
+      ]
+    },
+    "Vulfpeck_-_Dean_Town": {
+      "role": "PEDAL",
+      "n_patterns": 1185,
+      "avg_walking_pct": 0.4200365710559349,
+      "avg_rhythm_var": 0.9994153128369269,
+      "top_intervals": [
+        [
+          0,
+          8364
+        ],
+        [
+          2,
+          1135
+        ],
+        [
+          -2,
+          1128
+        ],
+        [
+          3,
+          701
+        ],
+        [
+          -3,
+          456
+        ]
+      ]
+    },
+    "Everywhere_at_the_End_of_Time_EATEOT_WIP_-_The_CareTaker-_Big_Band_Arrangement_for_performance": {
+      "role": "PEDAL",
+      "n_patterns": 1104,
+      "avg_walking_pct": 0.3301653183846203,
+      "avg_rhythm_var": 0.6859039244332739,
+      "top_intervals": [
+        [
+          0,
+          7672
+        ],
+        [
+          5,
+          648
+        ],
+        [
+          -1,
+          348
+        ],
+        [
+          -5,
+          341
+        ],
+        [
+          -7,
+          244
+        ]
+      ]
+    },
+    "score - 2025-08-07T225224.883": {
+      "role": "WALKING",
+      "n_patterns": 1083,
+      "avg_walking_pct": 0.8617326128204486,
+      "avg_rhythm_var": 0.04741567764554634,
+      "top_intervals": [
+        [
+          2,
+          1176
+        ],
+        [
+          1,
+          833
+        ],
+        [
+          -3,
+          620
+        ],
+        [
+          -4,
+          424
+        ],
+        [
+          -1,
+          408
+        ]
+      ]
+    },
+    "Donna_Lee_chord_study_in_Eb_with_Parker_solo_transcription": {
+      "role": "WALKING",
+      "n_patterns": 1035,
+      "avg_walking_pct": 0.803004872041763,
+      "avg_rhythm_var": 0.30162845193360477,
+      "top_intervals": [
+        [
+          2,
+          691
+        ],
+        [
+          -3,
+          668
+        ],
+        [
+          0,
+          587
+        ],
+        [
+          -2,
+          464
+        ],
+        [
+          1,
+          422
+        ]
+      ]
+    },
+    "score - 2025-08-07T214432.770": {
+      "role": "WALKING",
+      "n_patterns": 948,
+      "avg_walking_pct": 0.6178677283219541,
+      "avg_rhythm_var": 0.2322975235190939,
+      "top_intervals": [
+        [
+          0,
+          1013
+        ],
+        [
+          -1,
+          545
+        ],
+        [
+          7,
+          437
+        ],
+        [
+          -7,
+          350
+        ],
+        [
+          1,
+          236
+        ]
+      ]
+    },
+    "Children_of_Sanchez_-_Big_Band_or_Combo": {
+      "role": "MIXED",
+      "n_patterns": 1119,
+      "avg_walking_pct": 0.3749257208544598,
+      "avg_rhythm_var": 0.616992970576745,
+      "top_intervals": [
+        [
+          0,
+          3436
+        ],
+        [
+          5,
+          956
+        ],
+        [
+          7,
+          735
+        ],
+        [
+          -7,
+          679
+        ],
+        [
+          -5,
+          579
+        ]
+      ]
+    },
+    "Sofrito_Mongo_Santamaria": {
+      "role": "WALKING",
+      "n_patterns": 1129,
+      "avg_walking_pct": 0.9857337616018039,
+      "avg_rhythm_var": 0.12196387788342929,
+      "top_intervals": [
+        [
+          2,
+          6195
+        ],
+        [
+          7,
+          5751
+        ],
+        [
+          -5,
+          3214
+        ],
+        [
+          1,
+          3205
+        ],
+        [
+          -2,
+          3164
+        ]
+      ]
+    },
+    "score - 2025-08-07T225929.314": {
+      "role": "MIXED",
+      "n_patterns": 1006,
+      "avg_walking_pct": 0.6610060243767965,
+      "avg_rhythm_var": 0.6078107051876841,
+      "top_intervals": [
+        [
+          3,
+          959
+        ],
+        [
+          0,
+          950
+        ],
+        [
+          5,
+          799
+        ],
+        [
+          4,
+          647
+        ],
+        [
+          -3,
+          166
+        ]
+      ]
+    },
+    "No_Name_Jive_Glen_Gray_-_Full_Big_Band_Arrangement": {
+      "role": "MIXED",
+      "n_patterns": 1086,
+      "avg_walking_pct": 0.7458770576915896,
+      "avg_rhythm_var": 0.808669072682932,
+      "top_intervals": [
+        [
+          -3,
+          1298
+        ],
+        [
+          3,
+          1232
+        ],
+        [
+          -2,
+          1051
+        ],
+        [
+          4,
+          957
+        ],
+        [
+          2,
+          955
+        ]
+      ]
+    },
+    "II_B.S": {
+      "role": "WALKING",
+      "n_patterns": 1000,
+      "avg_walking_pct": 0.8974686055542703,
+      "avg_rhythm_var": 0.3672666043225787,
+      "top_intervals": [
+        [
+          3,
+          864
+        ],
+        [
+          -3,
+          745
+        ],
+        [
+          1,
+          515
+        ],
+        [
+          5,
+          514
+        ],
+        [
+          -1,
+          310
+        ]
+      ]
+    },
+    "SMB3_Hammer_Bros._But_Jazzy": {
+      "role": "MIXED",
+      "n_patterns": 936,
+      "avg_walking_pct": 0.5912704716132136,
+      "avg_rhythm_var": 0.18304861022993005,
+      "top_intervals": [
+        [
+          1,
+          1127
+        ],
+        [
+          0,
+          1036
+        ],
+        [
+          3,
+          531
+        ],
+        [
+          -2,
+          260
+        ],
+        [
+          2,
+          130
+        ]
+      ]
+    },
+    "Friend_Like_Me_2015_Broadway_Transcription": {
+      "role": "MIXED",
+      "n_patterns": 979,
+      "avg_walking_pct": 0.6076725684761514,
+      "avg_rhythm_var": 1.9205591214510058,
+      "top_intervals": [
+        [
+          0,
+          2190
+        ],
+        [
+          1,
+          1334
+        ],
+        [
+          -5,
+          1160
+        ],
+        [
+          5,
+          1083
+        ],
+        [
+          -1,
+          763
+        ]
+      ]
+    },
+    "Graze_the_Roof_-__Big_Band_Jazz_Arrangement_from_Plants_vs._Zombies_-_Reeds_and_Seeds": {
+      "role": "WALKING",
+      "n_patterns": 932,
+      "avg_walking_pct": 0.7603567005547583,
+      "avg_rhythm_var": 0.30315647426155506,
+      "top_intervals": [
+        [
+          2,
+          852
+        ],
+        [
+          0,
+          706
+        ],
+        [
+          1,
+          644
+        ],
+        [
+          5,
+          378
+        ],
+        [
+          -3,
+          364
+        ]
+      ]
+    },
+    "Bootlegger_Boogie": {
+      "role": "MIXED",
+      "n_patterns": 950,
+      "avg_walking_pct": 0.5923810793691364,
+      "avg_rhythm_var": 0.027158499880749188,
+      "top_intervals": [
+        [
+          0,
+          1441
+        ],
+        [
+          -2,
+          1280
+        ],
+        [
+          -1,
+          821
+        ],
+        [
+          2,
+          604
+        ],
+        [
+          4,
+          523
+        ]
+      ]
+    },
+    "Pat_Metheny_First_circle": {
+      "role": "MIXED",
+      "n_patterns": 923,
+      "avg_walking_pct": 0.5656445204176346,
+      "avg_rhythm_var": 0.6540215954587149,
+      "top_intervals": [
+        [
+          0,
+          1760
+        ],
+        [
+          7,
+          702
+        ],
+        [
+          -7,
+          560
+        ],
+        [
+          2,
+          529
+        ],
+        [
+          -2,
+          330
+        ]
+      ]
+    },
+    "Battle_Torna_Big_Band_Arrangement": {
+      "role": "MIXED",
+      "n_patterns": 908,
+      "avg_walking_pct": 0.722404325548969,
+      "avg_rhythm_var": 1.3101124589141917,
+      "top_intervals": [
+        [
+          0,
+          1411
+        ],
+        [
+          2,
+          876
+        ],
+        [
+          -1,
+          696
+        ],
+        [
+          3,
+          608
+        ],
+        [
+          -2,
+          509
+        ]
+      ]
+    },
+    "Toads_Factory": {
+      "role": "MIXED",
+      "n_patterns": 757,
+      "avg_walking_pct": 0.4650961807333987,
+      "avg_rhythm_var": 4.081390692353159,
+      "top_intervals": [
+        [
+          0,
+          937
+        ],
+        [
+          -1,
+          830
+        ],
+        [
+          1,
+          699
+        ],
+        [
+          -2,
+          272
+        ],
+        [
+          4,
+          220
+        ]
+      ]
+    },
+    "Honeycomb_Herald": {
+      "role": "WALKING",
+      "n_patterns": 794,
+      "avg_walking_pct": 0.8630777249912881,
+      "avg_rhythm_var": 0.48513884591501727,
+      "top_intervals": [
+        [
+          7,
+          1900
+        ],
+        [
+          -1,
+          1690
+        ],
+        [
+          -6,
+          1179
+        ],
+        [
+          -7,
+          437
+        ],
+        [
+          0,
+          288
+        ]
+      ]
+    },
+    "Dear_old_stockholm": {
+      "role": "MIXED",
+      "n_patterns": 830,
+      "avg_walking_pct": 0.7248461125746771,
+      "avg_rhythm_var": 1.0538263720814813,
+      "top_intervals": [
+        [
+          2,
+          626
+        ],
+        [
+          0,
+          569
+        ],
+        [
+          1,
+          502
+        ],
+        [
+          -1,
+          480
+        ],
+        [
+          5,
+          350
+        ]
+      ]
+    },
+    "Fly_Me_To_The_Moon_satb__Frank_Sinatra": {
+      "role": "WALKING",
+      "n_patterns": 844,
+      "avg_walking_pct": 0.8802420063368375,
+      "avg_rhythm_var": 0.14998907069698048,
+      "top_intervals": [
+        [
+          -2,
+          1551
+        ],
+        [
+          2,
+          1018
+        ],
+        [
+          -1,
+          800
+        ],
+        [
+          1,
+          775
+        ],
+        [
+          3,
+          653
+        ]
+      ]
+    },
+    "Miracle_Paint": {
+      "role": "WALKING",
+      "n_patterns": 795,
+      "avg_walking_pct": 0.8080582095773313,
+      "avg_rhythm_var": 0.20493548425400013,
+      "top_intervals": [
+        [
+          2,
+          695
+        ],
+        [
+          1,
+          661
+        ],
+        [
+          0,
+          432
+        ],
+        [
+          -5,
+          376
+        ],
+        [
+          -1,
+          337
+        ]
+      ]
+    },
+    "Castaways_-_Backyardagains_Piano_Trio__Melody": {
+      "role": "MIXED",
+      "n_patterns": 808,
+      "avg_walking_pct": 0.539195397277635,
+      "avg_rhythm_var": 0.9211467243026115,
+      "top_intervals": [
+        [
+          0,
+          1468
+        ],
+        [
+          -7,
+          972
+        ],
+        [
+          7,
+          890
+        ],
+        [
+          5,
+          672
+        ],
+        [
+          -5,
+          280
+        ]
+      ]
+    },
+    "White_Jazz_Glen_Gray_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 825,
+      "avg_walking_pct": 0.6701269127493809,
+      "avg_rhythm_var": 0.22086732213479604,
+      "top_intervals": [
+        [
+          -2,
+          1654
+        ],
+        [
+          2,
+          1317
+        ],
+        [
+          0,
+          907
+        ],
+        [
+          -1,
+          606
+        ],
+        [
+          1,
+          557
+        ]
+      ]
+    },
+    "A_Night_In_Tunisia_WIP": {
+      "role": "WALKING",
+      "n_patterns": 757,
+      "avg_walking_pct": 0.8239993866799267,
+      "avg_rhythm_var": 0.28998389950067727,
+      "top_intervals": [
+        [
+          3,
+          617
+        ],
+        [
+          -2,
+          499
+        ],
+        [
+          2,
+          262
+        ],
+        [
+          4,
+          252
+        ],
+        [
+          0,
+          212
+        ]
+      ]
+    },
+    "Concerto_for_Clarinet__full__-_Shaw": {
+      "role": "MIXED",
+      "n_patterns": 791,
+      "avg_walking_pct": 0.9123603925073014,
+      "avg_rhythm_var": 1.7749207319064533,
+      "top_intervals": [
+        [
+          -2,
+          1613
+        ],
+        [
+          -1,
+          820
+        ],
+        [
+          5,
+          534
+        ],
+        [
+          0,
+          146
+        ],
+        [
+          3,
+          138
+        ]
+      ]
+    },
+    "Murine_Corps": {
+      "role": "MIXED",
+      "n_patterns": 785,
+      "avg_walking_pct": 0.8785192167118903,
+      "avg_rhythm_var": 0.8032117706261374,
+      "top_intervals": [
+        [
+          -3,
+          716
+        ],
+        [
+          -2,
+          649
+        ],
+        [
+          1,
+          629
+        ],
+        [
+          -1,
+          602
+        ],
+        [
+          5,
+          490
+        ]
+      ]
+    },
+    "score - 2025-08-07T182949.766": {
+      "role": "WALKING",
+      "n_patterns": 658,
+      "avg_walking_pct": 0.8122449595127788,
+      "avg_rhythm_var": 0.13435954233035405,
+      "top_intervals": [
+        [
+          -1,
+          334
+        ],
+        [
+          5,
+          258
+        ],
+        [
+          3,
+          220
+        ],
+        [
+          4,
+          212
+        ],
+        [
+          0,
+          188
+        ]
+      ]
+    },
+    "High_Seas_Hi-Jinx": {
+      "role": "MIXED",
+      "n_patterns": 800,
+      "avg_walking_pct": 0.41366132506569814,
+      "avg_rhythm_var": 0.146390895348461,
+      "top_intervals": [
+        [
+          0,
+          2146
+        ],
+        [
+          -2,
+          840
+        ],
+        [
+          -1,
+          731
+        ],
+        [
+          1,
+          566
+        ],
+        [
+          5,
+          331
+        ]
+      ]
+    },
+    "Poinciana": {
+      "role": "WALKING",
+      "n_patterns": 727,
+      "avg_walking_pct": 0.6422194322459828,
+      "avg_rhythm_var": 0.2918505100375998,
+      "top_intervals": [
+        [
+          0,
+          758
+        ],
+        [
+          5,
+          510
+        ],
+        [
+          4,
+          492
+        ],
+        [
+          3,
+          433
+        ],
+        [
+          -2,
+          378
+        ]
+      ]
+    },
+    "Blue_in_Green_-_Bill_EvansMiles_Davis": {
+      "role": "MIXED",
+      "n_patterns": 570,
+      "avg_walking_pct": 0.6535839598997494,
+      "avg_rhythm_var": 0.9672439893953707,
+      "top_intervals": [
+        [
+          0,
+          262
+        ],
+        [
+          2,
+          247
+        ],
+        [
+          3,
+          149
+        ],
+        [
+          1,
+          105
+        ],
+        [
+          4,
+          89
+        ]
+      ]
+    },
+    "Swing_That_Music_Louis_Armstrong_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 738,
+      "avg_walking_pct": 0.8048851034034664,
+      "avg_rhythm_var": 0.049710801017121095,
+      "top_intervals": [
+        [
+          -2,
+          598
+        ],
+        [
+          -1,
+          584
+        ],
+        [
+          3,
+          464
+        ],
+        [
+          -5,
+          382
+        ],
+        [
+          1,
+          381
+        ]
+      ]
+    },
+    "score - 2025-08-07T214231.636": {
+      "role": "MIXED",
+      "n_patterns": 694,
+      "avg_walking_pct": 0.7269760773535369,
+      "avg_rhythm_var": 0.8446886574457423,
+      "top_intervals": [
+        [
+          0,
+          713
+        ],
+        [
+          -2,
+          691
+        ],
+        [
+          -1,
+          394
+        ],
+        [
+          -3,
+          259
+        ],
+        [
+          1,
+          217
+        ]
+      ]
+    },
+    "Cotton_Tail_Duke_Ellington_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 730,
+      "avg_walking_pct": 0.7238636874432939,
+      "avg_rhythm_var": 0.07806060393877823,
+      "top_intervals": [
+        [
+          0,
+          841
+        ],
+        [
+          -2,
+          780
+        ],
+        [
+          1,
+          777
+        ],
+        [
+          2,
+          708
+        ],
+        [
+          -1,
+          551
+        ]
+      ]
+    },
+    "Meadowlands_Tex_Beneke_-_Full_Big_Band_Arrangement": {
+      "role": "PEDAL",
+      "n_patterns": 736,
+      "avg_walking_pct": 0.38744827893448724,
+      "avg_rhythm_var": 0.6587198359499504,
+      "top_intervals": [
+        [
+          0,
+          3901
+        ],
+        [
+          -2,
+          478
+        ],
+        [
+          2,
+          446
+        ],
+        [
+          -5,
+          397
+        ],
+        [
+          5,
+          354
+        ]
+      ]
+    },
+    "Carnaval_de_Fuego_Jazz_Ensemble": {
+      "role": "WALKING",
+      "n_patterns": 716,
+      "avg_walking_pct": 0.656752854498164,
+      "avg_rhythm_var": 0.25492318843464135,
+      "top_intervals": [
+        [
+          0,
+          1036
+        ],
+        [
+          -3,
+          852
+        ],
+        [
+          2,
+          845
+        ],
+        [
+          -2,
+          762
+        ],
+        [
+          1,
+          709
+        ]
+      ]
+    },
+    "Dolphin_Dance-Herbie_Hancock": {
+      "role": "MIXED",
+      "n_patterns": 611,
+      "avg_walking_pct": 0.874226170023773,
+      "avg_rhythm_var": 1.3027381457808493,
+      "top_intervals": [
+        [
+          5,
+          288
+        ],
+        [
+          -2,
+          274
+        ],
+        [
+          3,
+          220
+        ],
+        [
+          7,
+          208
+        ],
+        [
+          -5,
+          202
+        ]
+      ]
+    },
+    "Cheesecake": {
+      "role": "WALKING",
+      "n_patterns": 706,
+      "avg_walking_pct": 0.9265063744532193,
+      "avg_rhythm_var": 0.03411917599213156,
+      "top_intervals": [
+        [
+          -2,
+          1002
+        ],
+        [
+          2,
+          723
+        ],
+        [
+          -3,
+          445
+        ],
+        [
+          -1,
+          363
+        ],
+        [
+          3,
+          360
+        ]
+      ]
+    },
+    "Caravan_From_Whiplash": {
+      "role": "MIXED",
+      "n_patterns": 695,
+      "avg_walking_pct": 0.8795952114047572,
+      "avg_rhythm_var": 1.831279107824093,
+      "top_intervals": [
+        [
+          1,
+          787
+        ],
+        [
+          -5,
+          599
+        ],
+        [
+          -1,
+          567
+        ],
+        [
+          5,
+          485
+        ],
+        [
+          -2,
+          455
+        ]
+      ]
+    },
+    "Salt_Peanuts": {
+      "role": "MIXED",
+      "n_patterns": 667,
+      "avg_walking_pct": 0.7017399068305546,
+      "avg_rhythm_var": 1.1177223515277503,
+      "top_intervals": [
+        [
+          2,
+          707
+        ],
+        [
+          0,
+          690
+        ],
+        [
+          -1,
+          463
+        ],
+        [
+          -2,
+          389
+        ],
+        [
+          3,
+          319
+        ]
+      ]
+    },
+    "Lester_Leaps_In_Count_Basie_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 670,
+      "avg_walking_pct": 0.8019627632297446,
+      "avg_rhythm_var": 0.05772945504070814,
+      "top_intervals": [
+        [
+          2,
+          1047
+        ],
+        [
+          -2,
+          1014
+        ],
+        [
+          1,
+          612
+        ],
+        [
+          0,
+          406
+        ],
+        [
+          -1,
+          323
+        ]
+      ]
+    },
+    "The_Kings_Court": {
+      "role": "MIXED",
+      "n_patterns": 641,
+      "avg_walking_pct": 0.8556427602937818,
+      "avg_rhythm_var": 7.692917359746543,
+      "top_intervals": [
+        [
+          1,
+          391
+        ],
+        [
+          -2,
+          358
+        ],
+        [
+          2,
+          342
+        ],
+        [
+          7,
+          301
+        ],
+        [
+          0,
+          207
+        ]
+      ]
+    },
+    "DEAR_OLD_STOLKHOLM": {
+      "role": "WALKING",
+      "n_patterns": 528,
+      "avg_walking_pct": 0.768127015526087,
+      "avg_rhythm_var": 0.11208661737345504,
+      "top_intervals": [
+        [
+          2,
+          218
+        ],
+        [
+          -2,
+          191
+        ],
+        [
+          3,
+          184
+        ],
+        [
+          -1,
+          179
+        ],
+        [
+          1,
+          160
+        ]
+      ]
+    },
+    "Jumpin_at_the_Woodside_Count_Basie_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 695,
+      "avg_walking_pct": 0.8524993908645533,
+      "avg_rhythm_var": 0.01641433412904365,
+      "top_intervals": [
+        [
+          -2,
+          1057
+        ],
+        [
+          1,
+          1008
+        ],
+        [
+          -3,
+          567
+        ],
+        [
+          2,
+          543
+        ],
+        [
+          4,
+          496
+        ]
+      ]
+    },
+    "The_Preacher": {
+      "role": "MIXED",
+      "n_patterns": 641,
+      "avg_walking_pct": 0.7596451644983251,
+      "avg_rhythm_var": 1.6407515976526423,
+      "top_intervals": [
+        [
+          1,
+          642
+        ],
+        [
+          0,
+          385
+        ],
+        [
+          -5,
+          282
+        ],
+        [
+          3,
+          265
+        ],
+        [
+          5,
+          261
+        ]
+      ]
+    },
+    "Stayin_Alive__The_Bee_Gees_Stayinalive__Electro_Deluxe_Big_Band_Version": {
+      "role": "MIXED",
+      "n_patterns": 505,
+      "avg_walking_pct": 0.4496849463950762,
+      "avg_rhythm_var": 0.5427954459683341,
+      "top_intervals": [
+        [
+          0,
+          544
+        ],
+        [
+          -12,
+          129
+        ],
+        [
+          3,
+          122
+        ],
+        [
+          -1,
+          107
+        ],
+        [
+          2,
+          99
+        ]
+      ]
+    },
+    "Caravan": {
+      "role": "MIXED",
+      "n_patterns": 608,
+      "avg_walking_pct": 0.8836999265330482,
+      "avg_rhythm_var": 1.7094190243644478,
+      "top_intervals": [
+        [
+          -5,
+          866
+        ],
+        [
+          5,
+          726
+        ],
+        [
+          1,
+          603
+        ],
+        [
+          -1,
+          469
+        ],
+        [
+          -2,
+          407
+        ]
+      ]
+    },
+    "Rhapsody_In_Blue__George_Gershwin (1)": {
+      "role": "MIXED",
+      "n_patterns": 610,
+      "avg_walking_pct": 0.8642183510623029,
+      "avg_rhythm_var": 0.8591630780416641,
+      "top_intervals": [
+        [
+          2,
+          723
+        ],
+        [
+          1,
+          663
+        ],
+        [
+          -1,
+          623
+        ],
+        [
+          -2,
+          540
+        ],
+        [
+          -3,
+          193
+        ]
+      ]
+    },
+    "Tradition_Never_Graduates_Adapted_for_Big_Band": {
+      "role": "WALKING",
+      "n_patterns": 612,
+      "avg_walking_pct": 0.8350736440433676,
+      "avg_rhythm_var": 0.13174654503356015,
+      "top_intervals": [
+        [
+          1,
+          453
+        ],
+        [
+          -1,
+          352
+        ],
+        [
+          -2,
+          322
+        ],
+        [
+          4,
+          287
+        ],
+        [
+          3,
+          196
+        ]
+      ]
+    },
+    "Cavernism_Earl_Hines_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 631,
+      "avg_walking_pct": 0.6193520768628739,
+      "avg_rhythm_var": 0.016792379200190225,
+      "top_intervals": [
+        [
+          0,
+          644
+        ],
+        [
+          3,
+          610
+        ],
+        [
+          -3,
+          439
+        ],
+        [
+          4,
+          392
+        ],
+        [
+          -2,
+          375
+        ]
+      ]
+    },
+    "A_Town_With_An_Ocean_View": {
+      "role": "WALKING",
+      "n_patterns": 594,
+      "avg_walking_pct": 0.8507449274514594,
+      "avg_rhythm_var": 0.4366502739628398,
+      "top_intervals": [
+        [
+          1,
+          475
+        ],
+        [
+          2,
+          320
+        ],
+        [
+          -1,
+          318
+        ],
+        [
+          -2,
+          307
+        ],
+        [
+          0,
+          180
+        ]
+      ]
+    },
+    "Moanin_for_Jazz_Combo": {
+      "role": "MIXED",
+      "n_patterns": 605,
+      "avg_walking_pct": 0.9036937233837841,
+      "avg_rhythm_var": 1.8855608155361996,
+      "top_intervals": [
+        [
+          -3,
+          2608
+        ],
+        [
+          -2,
+          1987
+        ],
+        [
+          3,
+          1591
+        ],
+        [
+          5,
+          1354
+        ],
+        [
+          1,
+          424
+        ]
+      ]
+    },
+    "History_Repeating__Propellerheads": {
+      "role": "PEDAL",
+      "n_patterns": 592,
+      "avg_walking_pct": 0.13706392409245644,
+      "avg_rhythm_var": 0.7709194690745906,
+      "top_intervals": [
+        [
+          0,
+          6100
+        ],
+        [
+          7,
+          1833
+        ],
+        [
+          -7,
+          1656
+        ],
+        [
+          -12,
+          44
+        ],
+        [
+          2,
+          4
+        ]
+      ]
+    },
+    "YU.ME.NO_-__WIP": {
+      "role": "WALKING",
+      "n_patterns": 591,
+      "avg_walking_pct": 0.7952907508345157,
+      "avg_rhythm_var": 0.114952246004841,
+      "top_intervals": [
+        [
+          2,
+          659
+        ],
+        [
+          -2,
+          515
+        ],
+        [
+          0,
+          304
+        ],
+        [
+          1,
+          275
+        ],
+        [
+          -1,
+          205
+        ]
+      ]
+    },
+    "O_Tannenbaum": {
+      "role": "WALKING",
+      "n_patterns": 575,
+      "avg_walking_pct": 0.8258154601732762,
+      "avg_rhythm_var": 0.4378921705360399,
+      "top_intervals": [
+        [
+          -2,
+          429
+        ],
+        [
+          2,
+          395
+        ],
+        [
+          1,
+          326
+        ],
+        [
+          -1,
+          310
+        ],
+        [
+          0,
+          224
+        ]
+      ]
+    },
+    "score - 2025-08-07T223906.994": {
+      "role": "MIXED",
+      "n_patterns": 573,
+      "avg_walking_pct": 0.874580019842492,
+      "avg_rhythm_var": 0.5497815440678122,
+      "top_intervals": [
+        [
+          2,
+          621
+        ],
+        [
+          1,
+          435
+        ],
+        [
+          -1,
+          367
+        ],
+        [
+          -2,
+          256
+        ],
+        [
+          0,
+          123
+        ]
+      ]
+    },
+    "TANK_-_Cowboy_Bebop_Full_Score": {
+      "role": "WALKING",
+      "n_patterns": 593,
+      "avg_walking_pct": 0.8635384882672522,
+      "avg_rhythm_var": 0.4658085115850062,
+      "top_intervals": [
+        [
+          -1,
+          1064
+        ],
+        [
+          7,
+          673
+        ],
+        [
+          -5,
+          636
+        ],
+        [
+          -2,
+          614
+        ],
+        [
+          2,
+          454
+        ]
+      ]
+    },
+    "Maple_Treeway_-_Groovy_Jazz_Mario_Kart_Wii": {
+      "role": "MIXED",
+      "n_patterns": 565,
+      "avg_walking_pct": 0.4895641326121375,
+      "avg_rhythm_var": 0.5400283666042677,
+      "top_intervals": [
+        [
+          0,
+          927
+        ],
+        [
+          -2,
+          320
+        ],
+        [
+          -5,
+          134
+        ],
+        [
+          1,
+          124
+        ],
+        [
+          5,
+          124
+        ]
+      ]
+    },
+    "Minor_Swing": {
+      "role": "WALKING",
+      "n_patterns": 814,
+      "avg_walking_pct": 0.808830191062899,
+      "avg_rhythm_var": 0.2561061149589513,
+      "top_intervals": [
+        [
+          -2,
+          414
+        ],
+        [
+          -1,
+          331
+        ],
+        [
+          3,
+          267
+        ],
+        [
+          1,
+          246
+        ],
+        [
+          2,
+          176
+        ]
+      ]
+    },
+    "Moon_River__Henry_Mancini_Dave_Holland_Bass_line__solo": {
+      "role": "WALKING",
+      "n_patterns": 313,
+      "avg_walking_pct": 0.8057355849688118,
+      "avg_rhythm_var": 0.15292295781656232,
+      "top_intervals": [
+        [
+          -2,
+          96
+        ],
+        [
+          5,
+          62
+        ],
+        [
+          2,
+          58
+        ],
+        [
+          0,
+          50
+        ],
+        [
+          3,
+          48
+        ]
+      ]
+    },
+    "score - 2025-08-07T175257.143": {
+      "role": "MIXED",
+      "n_patterns": 322,
+      "avg_walking_pct": 0.5107660455486542,
+      "avg_rhythm_var": 0.2529944478165697,
+      "top_intervals": [
+        [
+          0,
+          227
+        ],
+        [
+          2,
+          143
+        ],
+        [
+          4,
+          108
+        ],
+        [
+          1,
+          72
+        ],
+        [
+          -1,
+          31
+        ]
+      ]
+    },
+    "score - 2025-08-07T225203.806": {
+      "role": "WALKING",
+      "n_patterns": 531,
+      "avg_walking_pct": 0.8589069535035075,
+      "avg_rhythm_var": 0.20421556496135182,
+      "top_intervals": [
+        [
+          1,
+          495
+        ],
+        [
+          -2,
+          379
+        ],
+        [
+          2,
+          307
+        ],
+        [
+          0,
+          175
+        ],
+        [
+          -1,
+          153
+        ]
+      ]
+    },
+    "Flying_Home__full__-_Hampton": {
+      "role": "MIXED",
+      "n_patterns": 548,
+      "avg_walking_pct": 0.49022401729521486,
+      "avg_rhythm_var": 0.04905077561876157,
+      "top_intervals": [
+        [
+          0,
+          778
+        ],
+        [
+          -2,
+          294
+        ],
+        [
+          -3,
+          213
+        ],
+        [
+          3,
+          189
+        ],
+        [
+          5,
+          124
+        ]
+      ]
+    },
+    "All_the_things_you_are": {
+      "role": "WALKING",
+      "n_patterns": 514,
+      "avg_walking_pct": 0.9147905409797424,
+      "avg_rhythm_var": 0.04149950621729419,
+      "top_intervals": [
+        [
+          -2,
+          472
+        ],
+        [
+          2,
+          314
+        ],
+        [
+          -1,
+          206
+        ],
+        [
+          1,
+          196
+        ],
+        [
+          5,
+          120
+        ]
+      ]
+    },
+    "Woodchoppers_Ball_Woody_Herman_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 506,
+      "avg_walking_pct": 0.7000652570160579,
+      "avg_rhythm_var": 0.056768622087499956,
+      "top_intervals": [
+        [
+          1,
+          461
+        ],
+        [
+          0,
+          321
+        ],
+        [
+          2,
+          279
+        ],
+        [
+          -2,
+          187
+        ],
+        [
+          -1,
+          83
+        ]
+      ]
+    },
+    "Berlin_Cheek_to_cheek_1934_Canto_e_Big_Band": {
+      "role": "WALKING",
+      "n_patterns": 485,
+      "avg_walking_pct": 0.8917199693054277,
+      "avg_rhythm_var": 0.37419439985416497,
+      "top_intervals": [
+        [
+          2,
+          306
+        ],
+        [
+          -2,
+          266
+        ],
+        [
+          1,
+          158
+        ],
+        [
+          -1,
+          148
+        ],
+        [
+          3,
+          134
+        ]
+      ]
+    },
+    "Tristeza-Aquarela_do_Brasil": {
+      "role": "MIXED",
+      "n_patterns": 447,
+      "avg_walking_pct": 0.4602801747097049,
+      "avg_rhythm_var": 0.900008966730677,
+      "top_intervals": [
+        [
+          0,
+          398
+        ],
+        [
+          -5,
+          173
+        ],
+        [
+          5,
+          144
+        ],
+        [
+          7,
+          82
+        ],
+        [
+          -7,
+          38
+        ]
+      ]
+    },
+    "MEGLIO_STASERA(It_Had_Better_Be_Tonight)": {
+      "role": "WALKING",
+      "n_patterns": 464,
+      "avg_walking_pct": 0.8598377376933412,
+      "avg_rhythm_var": 0.12310991389370204,
+      "top_intervals": [
+        [
+          -2,
+          225
+        ],
+        [
+          2,
+          186
+        ],
+        [
+          -1,
+          132
+        ],
+        [
+          1,
+          125
+        ],
+        [
+          5,
+          104
+        ]
+      ]
+    },
+    "Five_Nights_At_Freddys__8Bit_Jazz_Band_transcription": {
+      "role": "WALKING",
+      "n_patterns": 467,
+      "avg_walking_pct": 0.8542460216443086,
+      "avg_rhythm_var": 0.11144375926998962,
+      "top_intervals": [
+        [
+          -2,
+          230
+        ],
+        [
+          2,
+          186
+        ],
+        [
+          -1,
+          130
+        ],
+        [
+          1,
+          128
+        ],
+        [
+          0,
+          105
+        ]
+      ]
+    },
+    "Luigis_mansion_theme__8_Bit_Big_Band": {
+      "role": "WALKING",
+      "n_patterns": 402,
+      "avg_walking_pct": 0.7159203980099503,
+      "avg_rhythm_var": 0.16757733219656168,
+      "top_intervals": [
+        [
+          1,
+          184
+        ],
+        [
+          0,
+          168
+        ],
+        [
+          2,
+          120
+        ],
+        [
+          3,
+          98
+        ],
+        [
+          4,
+          39
+        ]
+      ]
+    },
+    "Senor_Blues__Horace_Silver (1)": {
+      "role": "WALKING",
+      "n_patterns": 425,
+      "avg_walking_pct": 0.7615686274509803,
+      "avg_rhythm_var": 0.13780158433743867,
+      "top_intervals": [
+        [
+          -2,
+          247
+        ],
+        [
+          2,
+          179
+        ],
+        [
+          0,
+          152
+        ],
+        [
+          7,
+          84
+        ],
+        [
+          5,
+          77
+        ]
+      ]
+    },
+    "Christopher_Columbus_Fletcher_Henderson_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 422,
+      "avg_walking_pct": 0.811267208305123,
+      "avg_rhythm_var": 0.08566504061335914,
+      "top_intervals": [
+        [
+          1,
+          152
+        ],
+        [
+          -2,
+          150
+        ],
+        [
+          2,
+          136
+        ],
+        [
+          0,
+          107
+        ],
+        [
+          -3,
+          78
+        ]
+      ]
+    },
+    "score - 2025-08-07T173519.602": {
+      "role": "WALKING",
+      "n_patterns": 405,
+      "avg_walking_pct": 0.8690170666096592,
+      "avg_rhythm_var": 0.04902382204480116,
+      "top_intervals": [
+        [
+          -2,
+          230
+        ],
+        [
+          -1,
+          157
+        ],
+        [
+          2,
+          106
+        ],
+        [
+          3,
+          64
+        ],
+        [
+          4,
+          48
+        ]
+      ]
+    },
+    "la_boheme_vs_jazz_21_03_17_TW": {
+      "role": "WALKING",
+      "n_patterns": 385,
+      "avg_walking_pct": 0.8036796536796535,
+      "avg_rhythm_var": 0.03511282631188754,
+      "top_intervals": [
+        [
+          4,
+          107
+        ],
+        [
+          5,
+          106
+        ],
+        [
+          -7,
+          87
+        ],
+        [
+          3,
+          83
+        ],
+        [
+          -2,
+          80
+        ]
+      ]
+    },
+    "Christmas_Time_is_Here (1)": {
+      "role": "PEDAL",
+      "n_patterns": 520,
+      "avg_walking_pct": 0.027478632478632477,
+      "avg_rhythm_var": 0.9534511388611305,
+      "top_intervals": [
+        [
+          0,
+          2668
+        ],
+        [
+          -1,
+          6
+        ],
+        [
+          -7,
+          5
+        ],
+        [
+          -2,
+          4
+        ],
+        [
+          5,
+          3
+        ]
+      ]
+    },
+    "Moanin'_(for_Combo_Band)": {
+      "role": "WALKING",
+      "n_patterns": 415,
+      "avg_walking_pct": 0.8927860359185662,
+      "avg_rhythm_var": 0.0035465446766894332,
+      "top_intervals": [
+        [
+          2,
+          180
+        ],
+        [
+          -3,
+          163
+        ],
+        [
+          3,
+          126
+        ],
+        [
+          -2,
+          114
+        ],
+        [
+          1,
+          106
+        ]
+      ]
+    },
+    "Killer_Joe__Benny_Golson": {
+      "role": "WALKING",
+      "n_patterns": 384,
+      "avg_walking_pct": 0.9803819444444445,
+      "avg_rhythm_var": 0.2053195656638427,
+      "top_intervals": [
+        [
+          5,
+          295
+        ],
+        [
+          -5,
+          175
+        ],
+        [
+          -1,
+          143
+        ],
+        [
+          -2,
+          94
+        ],
+        [
+          1,
+          90
+        ]
+      ]
+    },
+    "The_Plan_-_Original_Piece": {
+      "role": "WALKING",
+      "n_patterns": 326,
+      "avg_walking_pct": 0.7949897750511248,
+      "avg_rhythm_var": 0.3264194577854499,
+      "top_intervals": [
+        [
+          0,
+          100
+        ],
+        [
+          3,
+          92
+        ],
+        [
+          -3,
+          69
+        ],
+        [
+          -2,
+          65
+        ],
+        [
+          1,
+          57
+        ]
+      ]
+    },
+    "Castaways_EPIC_Jazz_Band_Arrangement": {
+      "role": "MIXED",
+      "n_patterns": 451,
+      "avg_walking_pct": 0.45494360747625967,
+      "avg_rhythm_var": 1.198039610673049,
+      "top_intervals": [
+        [
+          0,
+          632
+        ],
+        [
+          -7,
+          289
+        ],
+        [
+          7,
+          264
+        ],
+        [
+          5,
+          134
+        ],
+        [
+          -5,
+          84
+        ]
+      ]
+    },
+    "Moonview_Highway_Uptempo_Jazz_-_Mario_Kart_Wii": {
+      "role": "WALKING",
+      "n_patterns": 352,
+      "avg_walking_pct": 0.8932291666666665,
+      "avg_rhythm_var": 0.043044529520696456,
+      "top_intervals": [
+        [
+          -2,
+          156
+        ],
+        [
+          1,
+          98
+        ],
+        [
+          -1,
+          82
+        ],
+        [
+          2,
+          47
+        ],
+        [
+          -3,
+          40
+        ]
+      ]
+    },
+    "Haitian_Fight_Song": {
+      "role": "WALKING",
+      "n_patterns": 262,
+      "avg_walking_pct": 0.7256997455470737,
+      "avg_rhythm_var": 0.2847751400857191,
+      "top_intervals": [
+        [
+          0,
+          340
+        ],
+        [
+          1,
+          73
+        ],
+        [
+          3,
+          57
+        ],
+        [
+          -1,
+          40
+        ],
+        [
+          -7,
+          29
+        ]
+      ]
+    },
+    "Keep_On_-_Alfa_Mist_WIP": {
+      "role": "PEDAL",
+      "n_patterns": 348,
+      "avg_walking_pct": 0.4226897463966429,
+      "avg_rhythm_var": 0.5939075846324479,
+      "top_intervals": [
+        [
+          0,
+          345
+        ],
+        [
+          -7,
+          60
+        ],
+        [
+          5,
+          47
+        ],
+        [
+          2,
+          35
+        ],
+        [
+          -5,
+          35
+        ]
+      ]
+    },
+    "Reinhardt_Django_Latcho_drom_MIDI_GM_SMF_1": {
+      "role": "WALKING",
+      "n_patterns": 378,
+      "avg_walking_pct": 0.8606701940035273,
+      "avg_rhythm_var": 0.024884789992814686,
+      "top_intervals": [
+        [
+          -2,
+          152
+        ],
+        [
+          2,
+          118
+        ],
+        [
+          1,
+          83
+        ],
+        [
+          -1,
+          56
+        ],
+        [
+          0,
+          47
+        ]
+      ]
+    },
+    "La_Fiesta_-_Chick_Corea_As_Performed_by_Maynard_Ferguson": {
+      "role": "WALKING",
+      "n_patterns": 373,
+      "avg_walking_pct": 0.8366398570151922,
+      "avg_rhythm_var": 0.07563412860200387,
+      "top_intervals": [
+        [
+          7,
+          328
+        ],
+        [
+          -7,
+          113
+        ],
+        [
+          0,
+          103
+        ],
+        [
+          -2,
+          37
+        ],
+        [
+          1,
+          24
+        ]
+      ]
+    },
+    "score - 2025-08-07T174955.489": {
+      "role": "MIXED",
+      "n_patterns": 336,
+      "avg_walking_pct": 0.8680555555555556,
+      "avg_rhythm_var": 0.7098627645502648,
+      "top_intervals": [
+        [
+          5,
+          269
+        ],
+        [
+          7,
+          148
+        ],
+        [
+          0,
+          49
+        ],
+        [
+          -1,
+          8
+        ],
+        [
+          -12,
+          5
+        ]
+      ]
+    },
+    "Snow_Cult_Scuffle": {
+      "role": "WALKING",
+      "n_patterns": 300,
+      "avg_walking_pct": 0.9316666666666666,
+      "avg_rhythm_var": 0.10184337433457487,
+      "top_intervals": [
+        [
+          1,
+          82
+        ],
+        [
+          7,
+          57
+        ],
+        [
+          -1,
+          55
+        ],
+        [
+          -2,
+          47
+        ],
+        [
+          2,
+          43
+        ]
+      ]
+    },
+    "Ornithology": {
+      "role": "WALKING",
+      "n_patterns": 299,
+      "avg_walking_pct": 0.8963210702341137,
+      "avg_rhythm_var": 0.05934255015527637,
+      "top_intervals": [
+        [
+          2,
+          86
+        ],
+        [
+          1,
+          62
+        ],
+        [
+          -2,
+          61
+        ],
+        [
+          5,
+          40
+        ],
+        [
+          -1,
+          37
+        ]
+      ]
+    },
+    "last_night_I_went_out_with_Santa_Claus_21_12_03_TW": {
+      "role": "WALKING",
+      "n_patterns": 400,
+      "avg_walking_pct": 0.8550499929636927,
+      "avg_rhythm_var": 0.03424542031954366,
+      "top_intervals": [
+        [
+          -2,
+          243
+        ],
+        [
+          3,
+          228
+        ],
+        [
+          -3,
+          207
+        ],
+        [
+          4,
+          117
+        ],
+        [
+          2,
+          92
+        ]
+      ]
+    },
+    "BLUE_RONDO_A_LA_TURK (1)": {
+      "role": "PEDAL",
+      "n_patterns": 428,
+      "avg_walking_pct": 0.20381619937694703,
+      "avg_rhythm_var": 0.6801074846372819,
+      "top_intervals": [
+        [
+          0,
+          1230
+        ],
+        [
+          -2,
+          50
+        ],
+        [
+          1,
+          38
+        ],
+        [
+          -1,
+          18
+        ],
+        [
+          7,
+          8
+        ]
+      ]
+    },
+    "score - 2025-08-07T175801.515": {
+      "role": "WALKING",
+      "n_patterns": 336,
+      "avg_walking_pct": 0.7570153061224489,
+      "avg_rhythm_var": 0.38975570087301104,
+      "top_intervals": [
+        [
+          -2,
+          109
+        ],
+        [
+          1,
+          96
+        ],
+        [
+          0,
+          80
+        ],
+        [
+          2,
+          70
+        ],
+        [
+          -1,
+          40
+        ]
+      ]
+    },
+    "King_Porter_Stomp_Benny_Goodman_-_Full_Big_Band_Arrangement": {
+      "role": "PEDAL",
+      "n_patterns": 365,
+      "avg_walking_pct": 0.36804957599478144,
+      "avg_rhythm_var": 0.29098771222369485,
+      "top_intervals": [
+        [
+          0,
+          381
+        ],
+        [
+          -1,
+          96
+        ],
+        [
+          1,
+          36
+        ],
+        [
+          3,
+          24
+        ],
+        [
+          5,
+          21
+        ]
+      ]
+    },
+    "score - 2025-08-07T210056.319": {
+      "role": "WALKING",
+      "n_patterns": 348,
+      "avg_walking_pct": 0.935632183908046,
+      "avg_rhythm_var": 0.0,
+      "top_intervals": [
+        [
+          -2,
+          186
+        ],
+        [
+          -1,
+          115
+        ],
+        [
+          2,
+          112
+        ],
+        [
+          1,
+          90
+        ],
+        [
+          -3,
+          40
+        ]
+      ]
+    },
+    "One_O'Clock_Jump_(Count_Basie)_-_Full_Big_Band_Arrangement": {
+      "role": "MIXED",
+      "n_patterns": 335,
+      "avg_walking_pct": 0.4044776119402985,
+      "avg_rhythm_var": 0.06323629449361282,
+      "top_intervals": [
+        [
+          0,
+          216
+        ],
+        [
+          -2,
+          71
+        ],
+        [
+          4,
+          65
+        ],
+        [
+          2,
+          39
+        ],
+        [
+          -3,
+          37
+        ]
+      ]
+    },
+    "Harlem_Congo_(Chick_Webb)_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 325,
+      "avg_walking_pct": 0.680051282051282,
+      "avg_rhythm_var": 0.05154667942021669,
+      "top_intervals": [
+        [
+          0,
+          117
+        ],
+        [
+          5,
+          59
+        ],
+        [
+          1,
+          51
+        ],
+        [
+          -2,
+          48
+        ],
+        [
+          2,
+          43
+        ]
+      ]
+    },
+    "Emily": {
+      "role": "WALKING",
+      "n_patterns": 309,
+      "avg_walking_pct": 0.8666666666666667,
+      "avg_rhythm_var": 0.06512471070598316,
+      "top_intervals": [
+        [
+          2,
+          92
+        ],
+        [
+          5,
+          82
+        ],
+        [
+          -2,
+          76
+        ],
+        [
+          1,
+          59
+        ],
+        [
+          0,
+          32
+        ]
+      ]
+    },
+    "Air_Mail_Special_Benny_Goodman_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 322,
+      "avg_walking_pct": 0.6775695060632949,
+      "avg_rhythm_var": 0.17973878642469207,
+      "top_intervals": [
+        [
+          0,
+          156
+        ],
+        [
+          1,
+          84
+        ],
+        [
+          -1,
+          65
+        ],
+        [
+          -2,
+          62
+        ],
+        [
+          3,
+          49
+        ]
+      ]
+    },
+    "Strasbourg_St._Denis_WIP": {
+      "role": "MIXED",
+      "n_patterns": 312,
+      "avg_walking_pct": 0.5136752136752136,
+      "avg_rhythm_var": 0.10548491263456232,
+      "top_intervals": [
+        [
+          0,
+          219
+        ],
+        [
+          1,
+          58
+        ],
+        [
+          -1,
+          49
+        ],
+        [
+          2,
+          46
+        ],
+        [
+          -2,
+          35
+        ]
+      ]
+    },
+    "score - 2025-08-07T164832.146": {
+      "role": "MIXED",
+      "n_patterns": 312,
+      "avg_walking_pct": 0.5136752136752136,
+      "avg_rhythm_var": 0.10158979155194126,
+      "top_intervals": [
+        [
+          0,
+          219
+        ],
+        [
+          -1,
+          49
+        ],
+        [
+          2,
+          46
+        ],
+        [
+          -7,
+          36
+        ],
+        [
+          -2,
+          35
+        ]
+      ]
+    },
+    "Entr'Acte_(The_Wizard_of_Oz)_-_Harold_Arlen": {
+      "role": "MIXED",
+      "n_patterns": 325,
+      "avg_walking_pct": 0.5553260073260073,
+      "avg_rhythm_var": 0.09405465932996898,
+      "top_intervals": [
+        [
+          0,
+          219
+        ],
+        [
+          -2,
+          67
+        ],
+        [
+          2,
+          45
+        ],
+        [
+          3,
+          39
+        ],
+        [
+          1,
+          35
+        ]
+      ]
+    },
+    "I_Aint_Got_Nothin_But_The_Blues_as_performed_by_Duke_Ellington_and_his_Famous_Orchestra": {
+      "role": "WALKING",
+      "n_patterns": 278,
+      "avg_walking_pct": 0.8422090898709603,
+      "avg_rhythm_var": 0.22013831910441586,
+      "top_intervals": [
+        [
+          -2,
+          55
+        ],
+        [
+          1,
+          53
+        ],
+        [
+          0,
+          41
+        ],
+        [
+          2,
+          41
+        ],
+        [
+          -3,
+          41
+        ]
+      ]
+    },
+    "score - 2025-08-07T184634.785": {
+      "role": "WALKING",
+      "n_patterns": 341,
+      "avg_walking_pct": 0.9714076246334311,
+      "avg_rhythm_var": 0.02804038240330922,
+      "top_intervals": [
+        [
+          -2,
+          203
+        ],
+        [
+          2,
+          160
+        ],
+        [
+          1,
+          139
+        ],
+        [
+          -1,
+          95
+        ],
+        [
+          -3,
+          13
+        ]
+      ]
+    },
+    "Just_The_way_You_Are_(Diana_Krall_version)": {
+      "role": "PEDAL",
+      "n_patterns": 321,
+      "avg_walking_pct": 0.3998294021658508,
+      "avg_rhythm_var": 0.33492012326448983,
+      "top_intervals": [
+        [
+          0,
+          315
+        ],
+        [
+          5,
+          69
+        ],
+        [
+          -2,
+          39
+        ],
+        [
+          -5,
+          32
+        ],
+        [
+          7,
+          31
+        ]
+      ]
+    },
+    "Blue_Bossa (2)": {
+      "role": "MIXED",
+      "n_patterns": 337,
+      "avg_walking_pct": 0.48928924685601244,
+      "avg_rhythm_var": 2.0859898449301197,
+      "top_intervals": [
+        [
+          0,
+          336
+        ],
+        [
+          -7,
+          168
+        ],
+        [
+          7,
+          98
+        ],
+        [
+          5,
+          65
+        ],
+        [
+          -5,
+          18
+        ]
+      ]
+    },
+    "score - 2025-08-07T182258.834": {
+      "role": "MIXED",
+      "n_patterns": 300,
+      "avg_walking_pct": 0.5047777777777778,
+      "avg_rhythm_var": 0.14833561305668122,
+      "top_intervals": [
+        [
+          0,
+          228
+        ],
+        [
+          3,
+          79
+        ],
+        [
+          4,
+          68
+        ],
+        [
+          -2,
+          41
+        ],
+        [
+          2,
+          30
+        ]
+      ]
+    },
+    "Happier_-_Olivia_Rodrigo": {
+      "role": "WALKING",
+      "n_patterns": 299,
+      "avg_walking_pct": 0.9526198439241919,
+      "avg_rhythm_var": 0.09211248617326843,
+      "top_intervals": [
+        [
+          -2,
+          136
+        ],
+        [
+          5,
+          81
+        ],
+        [
+          1,
+          49
+        ],
+        [
+          -1,
+          38
+        ],
+        [
+          -5,
+          34
+        ]
+      ]
+    },
+    "mlle_chante_le_blues_21_05_31_TW": {
+      "role": "WALKING",
+      "n_patterns": 281,
+      "avg_walking_pct": 0.6160766279983362,
+      "avg_rhythm_var": 0.25343802550841077,
+      "top_intervals": [
+        [
+          0,
+          194
+        ],
+        [
+          5,
+          43
+        ],
+        [
+          -2,
+          39
+        ],
+        [
+          2,
+          39
+        ],
+        [
+          3,
+          38
+        ]
+      ]
+    },
+    "Dont_Be_That_Way_Benny_Goodman_-_Full_Big_Band_Arrangement": {
+      "role": "MIXED",
+      "n_patterns": 318,
+      "avg_walking_pct": 0.4679719476889288,
+      "avg_rhythm_var": 0.10066842243628414,
+      "top_intervals": [
+        [
+          0,
+          279
+        ],
+        [
+          5,
+          89
+        ],
+        [
+          3,
+          36
+        ],
+        [
+          2,
+          34
+        ],
+        [
+          -2,
+          30
+        ]
+      ]
+    },
+    "Beb_Hermeto_Pascoal_-_Arranjo_Luiz_Zago": {
+      "role": "WALKING",
+      "n_patterns": 220,
+      "avg_walking_pct": 0.8674242424242423,
+      "avg_rhythm_var": 0.05308913295773934,
+      "top_intervals": [
+        [
+          5,
+          64
+        ],
+        [
+          -1,
+          60
+        ],
+        [
+          1,
+          54
+        ],
+        [
+          7,
+          41
+        ],
+        [
+          -2,
+          19
+        ]
+      ]
+    },
+    "Jersey_Bounce_Benny_Goodman_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 286,
+      "avg_walking_pct": 0.8390442890442891,
+      "avg_rhythm_var": 0.24147281982917973,
+      "top_intervals": [
+        [
+          -2,
+          157
+        ],
+        [
+          3,
+          56
+        ],
+        [
+          2,
+          53
+        ],
+        [
+          -3,
+          49
+        ],
+        [
+          0,
+          35
+        ]
+      ]
+    },
+    "So_Many_Stars": {
+      "role": "PEDAL",
+      "n_patterns": 374,
+      "avg_walking_pct": 0.05277565571683219,
+      "avg_rhythm_var": 0.8164967806589812,
+      "top_intervals": [
+        [
+          0,
+          809
+        ],
+        [
+          -7,
+          40
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          -1,
+          4
+        ],
+        [
+          -2,
+          3
+        ]
+      ]
+    },
+    "Layla_Unplugged__Eric_Clapton": {
+      "role": "MIXED",
+      "n_patterns": 273,
+      "avg_walking_pct": 0.5956654456654457,
+      "avg_rhythm_var": 0.10231362667769439,
+      "top_intervals": [
+        [
+          0,
+          153
+        ],
+        [
+          -2,
+          93
+        ],
+        [
+          2,
+          45
+        ],
+        [
+          3,
+          34
+        ],
+        [
+          5,
+          23
+        ]
+      ]
+    },
+    "All_of_me": {
+      "role": "WALKING",
+      "n_patterns": 284,
+      "avg_walking_pct": 0.8231052984574111,
+      "avg_rhythm_var": 0.025282668231611894,
+      "top_intervals": [
+        [
+          3,
+          173
+        ],
+        [
+          -2,
+          87
+        ],
+        [
+          4,
+          83
+        ],
+        [
+          2,
+          43
+        ],
+        [
+          5,
+          30
+        ]
+      ]
+    },
+    "A_Night_In_Tunisia (1)": {
+      "role": "WALKING",
+      "n_patterns": 269,
+      "avg_walking_pct": 0.8231102850061959,
+      "avg_rhythm_var": 0.04105879982728353,
+      "top_intervals": [
+        [
+          1,
+          70
+        ],
+        [
+          -2,
+          64
+        ],
+        [
+          3,
+          60
+        ],
+        [
+          4,
+          52
+        ],
+        [
+          -3,
+          44
+        ]
+      ]
+    },
+    "Minor_Swing_1937vas": {
+      "role": "WALKING",
+      "n_patterns": 242,
+      "avg_walking_pct": 0.8236914600550964,
+      "avg_rhythm_var": 0.006026170798898071,
+      "top_intervals": [
+        [
+          3,
+          108
+        ],
+        [
+          7,
+          60
+        ],
+        [
+          2,
+          37
+        ],
+        [
+          4,
+          30
+        ],
+        [
+          0,
+          16
+        ]
+      ]
+    },
+    "Stolen_Moments_SP": {
+      "role": "WALKING",
+      "n_patterns": 288,
+      "avg_walking_pct": 0.8055555555555556,
+      "avg_rhythm_var": 0.06438327524321563,
+      "top_intervals": [
+        [
+          3,
+          116
+        ],
+        [
+          2,
+          96
+        ],
+        [
+          0,
+          54
+        ],
+        [
+          1,
+          54
+        ],
+        [
+          -1,
+          47
+        ]
+      ]
+    },
+    "Mack_The_Knife__Bobby_Darin": {
+      "role": "WALKING",
+      "n_patterns": 288,
+      "avg_walking_pct": 0.8313078703703705,
+      "avg_rhythm_var": 0.03350113579618091,
+      "top_intervals": [
+        [
+          3,
+          111
+        ],
+        [
+          -2,
+          84
+        ],
+        [
+          -3,
+          81
+        ],
+        [
+          4,
+          52
+        ],
+        [
+          2,
+          37
+        ]
+      ]
+    },
+    "Casino_Calavera": {
+      "role": "PEDAL",
+      "n_patterns": 326,
+      "avg_walking_pct": 0.1743207712532866,
+      "avg_rhythm_var": 0.0466601949633999,
+      "top_intervals": [
+        [
+          0,
+          479
+        ],
+        [
+          -1,
+          112
+        ],
+        [
+          3,
+          29
+        ],
+        [
+          -2,
+          27
+        ],
+        [
+          5,
+          16
+        ]
+      ]
+    },
+    "Chameleon_for_Jazz_Combo": {
+      "role": "WALKING",
+      "n_patterns": 277,
+      "avg_walking_pct": 0.9819494584837545,
+      "avg_rhythm_var": 0.029118866158577356,
+      "top_intervals": [
+        [
+          1,
+          340
+        ],
+        [
+          2,
+          36
+        ],
+        [
+          3,
+          33
+        ],
+        [
+          0,
+          7
+        ],
+        [
+          -2,
+          1
+        ]
+      ]
+    },
+    "Happy_Halloween_[UCG_SCORE]": {
+      "role": "WALKING",
+      "n_patterns": 267,
+      "avg_walking_pct": 0.8344569288389514,
+      "avg_rhythm_var": 0.06385407431354007,
+      "top_intervals": [
+        [
+          3,
+          89
+        ],
+        [
+          5,
+          88
+        ],
+        [
+          -2,
+          69
+        ],
+        [
+          4,
+          51
+        ],
+        [
+          -3,
+          24
+        ]
+      ]
+    },
+    "score - 2025-08-07T192405.334": {
+      "role": "WALKING",
+      "n_patterns": 236,
+      "avg_walking_pct": 0.7627118644067796,
+      "avg_rhythm_var": 0.056333288242963526,
+      "top_intervals": [
+        [
+          0,
+          56
+        ],
+        [
+          2,
+          49
+        ],
+        [
+          -2,
+          46
+        ],
+        [
+          1,
+          42
+        ],
+        [
+          -5,
+          37
+        ]
+      ]
+    },
+    "O_Gato__Paul_Desmond_O_Gato": {
+      "role": "PEDAL",
+      "n_patterns": 275,
+      "avg_walking_pct": 0.37417748917748916,
+      "avg_rhythm_var": 0.13937799301867482,
+      "top_intervals": [
+        [
+          0,
+          257
+        ],
+        [
+          5,
+          56
+        ],
+        [
+          1,
+          34
+        ],
+        [
+          -7,
+          25
+        ],
+        [
+          -1,
+          24
+        ]
+      ]
+    },
+    "score - 2025-08-08T160713.959": {
+      "role": "WALKING",
+      "n_patterns": 269,
+      "avg_walking_pct": 0.7739157372986369,
+      "avg_rhythm_var": 0.06159466629306139,
+      "top_intervals": [
+        [
+          -2,
+          154
+        ],
+        [
+          0,
+          77
+        ],
+        [
+          -1,
+          44
+        ],
+        [
+          7,
+          30
+        ],
+        [
+          5,
+          27
+        ]
+      ]
+    },
+    "PENNSYLVANIA_6-5000": {
+      "role": "PEDAL",
+      "n_patterns": 283,
+      "avg_walking_pct": 0.3875736160188457,
+      "avg_rhythm_var": 0.11550585706075572,
+      "top_intervals": [
+        [
+          0,
+          246
+        ],
+        [
+          1,
+          49
+        ],
+        [
+          7,
+          26
+        ],
+        [
+          4,
+          24
+        ],
+        [
+          -7,
+          18
+        ]
+      ]
+    },
+    "Victory_Tune_Cuphead": {
+      "role": "PEDAL",
+      "n_patterns": 310,
+      "avg_walking_pct": 0.4073323092677931,
+      "avg_rhythm_var": 0.09212249085512557,
+      "top_intervals": [
+        [
+          0,
+          326
+        ],
+        [
+          5,
+          70
+        ],
+        [
+          1,
+          57
+        ],
+        [
+          -2,
+          56
+        ],
+        [
+          -1,
+          29
+        ]
+      ]
+    },
+    "Skyliner_Charlie_Barnet_-_Full_Big_Band_Arrangment": {
+      "role": "WALKING",
+      "n_patterns": 258,
+      "avg_walking_pct": 0.6627906976744186,
+      "avg_rhythm_var": 0.09854024977522341,
+      "top_intervals": [
+        [
+          0,
+          93
+        ],
+        [
+          3,
+          52
+        ],
+        [
+          5,
+          39
+        ],
+        [
+          4,
+          32
+        ],
+        [
+          -2,
+          26
+        ]
+      ]
+    },
+    "Count_Bubba": {
+      "role": "WALKING",
+      "n_patterns": 250,
+      "avg_walking_pct": 0.7156,
+      "avg_rhythm_var": 0.11282041234247239,
+      "top_intervals": [
+        [
+          0,
+          130
+        ],
+        [
+          2,
+          126
+        ],
+        [
+          1,
+          57
+        ],
+        [
+          3,
+          48
+        ],
+        [
+          -2,
+          24
+        ]
+      ]
+    },
+    "Blue-Moon-Full-Score-AltoTenor": {
+      "role": "WALKING",
+      "n_patterns": 272,
+      "avg_walking_pct": 0.7089460784313726,
+      "avg_rhythm_var": 0.03105449752345139,
+      "top_intervals": [
+        [
+          3,
+          177
+        ],
+        [
+          2,
+          90
+        ],
+        [
+          0,
+          68
+        ],
+        [
+          1,
+          36
+        ],
+        [
+          4,
+          35
+        ]
+      ]
+    },
+    "Sing_Sing_Sing_Arr._Hunter_R.": {
+      "role": "WALKING",
+      "n_patterns": 248,
+      "avg_walking_pct": 0.6432123655913978,
+      "avg_rhythm_var": 0.12120693388665904,
+      "top_intervals": [
+        [
+          0,
+          119
+        ],
+        [
+          1,
+          57
+        ],
+        [
+          5,
+          43
+        ],
+        [
+          2,
+          40
+        ],
+        [
+          -2,
+          37
+        ]
+      ]
+    },
+    "PvZ_Fog_Level_Jazz": {
+      "role": "MIXED",
+      "n_patterns": 237,
+      "avg_walking_pct": 0.5900140646976092,
+      "avg_rhythm_var": 0.18905795100703604,
+      "top_intervals": [
+        [
+          0,
+          134
+        ],
+        [
+          2,
+          36
+        ],
+        [
+          5,
+          32
+        ],
+        [
+          -1,
+          29
+        ],
+        [
+          -3,
+          25
+        ]
+      ]
+    },
+    "C_Jam_Blues_Duke_Ellington_-_Full_Big_Band_Arrangement": {
+      "role": "WALKING",
+      "n_patterns": 304,
+      "avg_walking_pct": 0.8366726475279107,
+      "avg_rhythm_var": 0.02496429455642758,
+      "top_intervals": [
+        [
+          -2,
+          182
+        ],
+        [
+          -3,
+          132
+        ],
+        [
+          3,
+          93
+        ],
+        [
+          2,
+          79
+        ],
+        [
+          4,
+          79
+        ]
+      ]
+    },
+    "Chloe_meets_Gerschwin": {
+      "role": "WALKING",
+      "n_patterns": 265,
+      "avg_walking_pct": 0.8068553459119496,
+      "avg_rhythm_var": 0.14830295758889725,
+      "top_intervals": [
+        [
+          -2,
+          101
+        ],
+        [
+          0,
+          73
+        ],
+        [
+          1,
+          70
+        ],
+        [
+          -1,
+          49
+        ],
+        [
+          2,
+          31
+        ]
+      ]
+    },
+    "Blue_Bossa (3)": {
+      "role": "MIXED",
+      "n_patterns": 288,
+      "avg_walking_pct": 0.4968860229276895,
+      "avg_rhythm_var": 2.0342839995274904,
+      "top_intervals": [
+        [
+          0,
+          282
+        ],
+        [
+          -7,
+          142
+        ],
+        [
+          7,
+          84
+        ],
+        [
+          5,
+          54
+        ],
+        [
+          -5,
+          15
+        ]
+      ]
+    },
+    "St_Louis_Blues_March__Glenn_Miller": {
+      "role": "PEDAL",
+      "n_patterns": 299,
+      "avg_walking_pct": 0.22425280033975686,
+      "avg_rhythm_var": 0.5502527113085683,
+      "top_intervals": [
+        [
+          0,
+          537
+        ],
+        [
+          1,
+          39
+        ],
+        [
+          -1,
+          21
+        ],
+        [
+          5,
+          16
+        ],
+        [
+          -2,
+          15
+        ]
+      ]
+    },
+    "In_the_Mood___Glenn_Miller_Orchestra": {
+      "role": "WALKING",
+      "n_patterns": 281,
+      "avg_walking_pct": 0.728011431036342,
+      "avg_rhythm_var": 0.0630631879280208,
+      "top_intervals": [
+        [
+          -2,
+          98
+        ],
+        [
+          3,
+          93
+        ],
+        [
+          -3,
+          84
+        ],
+        [
+          0,
+          69
+        ],
+        [
+          4,
+          65
+        ]
+      ]
+    },
+    "In_The_Mood_Glenn_Miller_-_Full_Big_Band_Arrangement (2)": {
+      "role": "WALKING",
+      "n_patterns": 279,
+      "avg_walking_pct": 0.7140165091777996,
+      "avg_rhythm_var": 0.06501591860701939,
+      "top_intervals": [
+        [
+          3,
+          99
+        ],
+        [
+          -2,
+          94
+        ],
+        [
+          -3,
+          90
+        ],
+        [
+          0,
+          81
+        ],
+        [
+          4,
+          70
+        ]
+      ]
+    },
+    "score - 2025-08-07T214546.777": {
+      "role": "WALKING",
+      "n_patterns": 284,
+      "avg_walking_pct": 0.983568075117371,
+      "avg_rhythm_var": 0.029212310902451747,
+      "top_intervals": [
+        [
+          5,
+          131
+        ],
+        [
+          1,
+          107
+        ],
+        [
+          7,
+          56
+        ],
+        [
+          -7,
+          52
+        ],
+        [
+          -1,
+          50
+        ]
+      ]
+    },
+    "Song_Of_Storms_but_jazz-latin_fusion": {
+      "role": "WALKING",
+      "n_patterns": 219,
+      "avg_walking_pct": 0.9726027397260274,
+      "avg_rhythm_var": 0.05338731044591014,
+      "top_intervals": [
+        [
+          2,
+          75
+        ],
+        [
+          -2,
+          67
+        ],
+        [
+          5,
+          51
+        ],
+        [
+          -5,
+          33
+        ],
+        [
+          -7,
+          31
+        ]
+      ]
+    },
+    "Boogie_Woogie_Bugle_Boy": {
+      "role": "WALKING",
+      "n_patterns": 278,
+      "avg_walking_pct": 0.830855315747402,
+      "avg_rhythm_var": 0.007714269106027684,
+      "top_intervals": [
+        [
+          -2,
+          148
+        ],
+        [
+          -3,
+          127
+        ],
+        [
+          2,
+          69
+        ],
+        [
+          3,
+          64
+        ],
+        [
+          4,
+          64
+        ]
+      ]
+    },
+    "Ultime_Jazz_Manouche_Real_Book_-_Swing_Gitan": {
+      "role": "WALKING",
+      "n_patterns": 342,
+      "avg_walking_pct": 0.9532163742690059,
+      "avg_rhythm_var": 0.018110946623325932,
+      "top_intervals": [
+        [
+          5,
+          231
+        ],
+        [
+          -5,
+          84
+        ],
+        [
+          -1,
+          72
+        ],
+        [
+          1,
+          69
+        ],
+        [
+          7,
+          64
+        ]
+      ]
+    },
+    "The_Chicken": {
+      "role": "MIXED",
+      "n_patterns": 382,
+      "avg_walking_pct": 0.435704173012554,
+      "avg_rhythm_var": 0.40882338507731814,
+      "top_intervals": [
+        [
+          0,
+          1326
+        ],
+        [
+          2,
+          702
+        ],
+        [
+          1,
+          467
+        ],
+        [
+          3,
+          465
+        ],
+        [
+          -3,
+          226
+        ]
+      ]
+    },
+    "score - 2025-08-07T203309.212": {
+      "role": "WALKING",
+      "n_patterns": 501,
+      "avg_walking_pct": 0.900502779645126,
+      "avg_rhythm_var": 0.02989226687358002,
+      "top_intervals": [
+        [
+          -2,
+          831
+        ],
+        [
+          -1,
+          595
+        ],
+        [
+          2,
+          469
+        ],
+        [
+          3,
+          409
+        ],
+        [
+          1,
+          354
+        ]
+      ]
+    },
+    "score - 2025-08-07T215728.382": {
+      "role": "MIXED",
+      "n_patterns": 295,
+      "avg_walking_pct": 0.825881767136208,
+      "avg_rhythm_var": 0.5560081836107889,
+      "top_intervals": [
+        [
+          2,
+          942
+        ],
+        [
+          -2,
+          678
+        ],
+        [
+          0,
+          364
+        ],
+        [
+          -1,
+          229
+        ],
+        [
+          1,
+          192
+        ]
+      ]
+    },
+    "Sweet_Dreams_Sheet_New": {
+      "role": "MIXED",
+      "n_patterns": 767,
+      "avg_walking_pct": 0.5594784162124896,
+      "avg_rhythm_var": 0.22457050227342928,
+      "top_intervals": [
+        [
+          2,
+          565
+        ],
+        [
+          3,
+          523
+        ],
+        [
+          0,
+          401
+        ],
+        [
+          -5,
+          400
+        ],
+        [
+          12,
+          375
+        ]
+      ]
+    },
+    "Mysterious_Traveller-Weather_Report": {
+      "role": "MIXED",
+      "n_patterns": 90,
+      "avg_walking_pct": 0.6310475389779918,
+      "avg_rhythm_var": 9.553255409598101,
+      "top_intervals": [
+        [
+          -2,
+          99
+        ],
+        [
+          0,
+          97
+        ],
+        [
+          2,
+          91
+        ],
+        [
+          3,
+          44
+        ],
+        [
+          -3,
+          40
+        ]
+      ]
+    },
+    "Shake_Everything_Youve_Got": {
+      "role": "MIXED",
+      "n_patterns": 51,
+      "avg_walking_pct": 0.6592101750669525,
+      "avg_rhythm_var": 424.66536889931666,
+      "top_intervals": [
+        [
+          0,
+          74
+        ],
+        [
+          2,
+          49
+        ],
+        [
+          -5,
+          35
+        ],
+        [
+          1,
+          30
+        ],
+        [
+          3,
+          19
+        ]
+      ]
+    },
+    "Take_The_A_Train": {
+      "role": "WALKING",
+      "n_patterns": 122,
+      "avg_walking_pct": 0.9454333686620351,
+      "avg_rhythm_var": 0.027602493284449456,
+      "top_intervals": [
+        [
+          -2,
+          272
+        ],
+        [
+          2,
+          201
+        ],
+        [
+          3,
+          64
+        ],
+        [
+          -3,
+          63
+        ],
+        [
+          -1,
+          61
+        ]
+      ]
+    },
+    "Blossoms_of_Summer_Night_-_Genshin_Impact_Jazz_Combo_Arrangement": {
+      "role": "PEDAL",
+      "n_patterns": 446,
+      "avg_walking_pct": 0.3647406722468054,
+      "avg_rhythm_var": 7.122650756813832,
+      "top_intervals": [
+        [
+          0,
+          2920
+        ],
+        [
+          -1,
+          870
+        ],
+        [
+          -2,
+          700
+        ],
+        [
+          1,
+          573
+        ],
+        [
+          2,
+          488
+        ]
+      ]
+    },
+    "Chrono_Trigger_Main_Theme_-_The_8Bit_Big_Band_Transcription_No_solos_-_Commission_for_FoxX_Plague": {
+      "role": "MIXED",
+      "n_patterns": 1123,
+      "avg_walking_pct": 0.7389599623710305,
+      "avg_rhythm_var": 0.9520382937885643,
+      "top_intervals": [
+        [
+          2,
+          1345
+        ],
+        [
+          3,
+          1281
+        ],
+        [
+          0,
+          1250
+        ],
+        [
+          -3,
+          1156
+        ],
+        [
+          5,
+          522
+        ]
+      ]
+    },
+    "score - 2025-08-07T201210.457": {
+      "role": "WALKING",
+      "n_patterns": 398,
+      "avg_walking_pct": 0.8973024996060239,
+      "avg_rhythm_var": 0.30984364808199844,
+      "top_intervals": [
+        [
+          2,
+          624
+        ],
+        [
+          -5,
+          398
+        ],
+        [
+          5,
+          262
+        ],
+        [
+          -2,
+          226
+        ],
+        [
+          3,
+          188
+        ]
+      ]
+    },
+    "LOST_IN_PARADISE": {
+      "role": "MIXED",
+      "n_patterns": 322,
+      "avg_walking_pct": 0.4106306715559625,
+      "avg_rhythm_var": 2.2492195682581975,
+      "top_intervals": [
+        [
+          0,
+          1499
+        ],
+        [
+          2,
+          493
+        ],
+        [
+          -2,
+          380
+        ],
+        [
+          1,
+          221
+        ],
+        [
+          -1,
+          172
+        ]
+      ]
+    },
+    "Gonna_Fly_Now": {
+      "role": "PEDAL",
+      "n_patterns": 248,
+      "avg_walking_pct": 0.3773972553417585,
+      "avg_rhythm_var": 2.245722890597126,
+      "top_intervals": [
+        [
+          0,
+          1129
+        ],
+        [
+          -2,
+          227
+        ],
+        [
+          2,
+          155
+        ],
+        [
+          -3,
+          147
+        ],
+        [
+          5,
+          146
+        ]
+      ]
+    },
+    "score - 2025-08-07T194922.258": {
+      "role": "MIXED",
+      "n_patterns": 502,
+      "avg_walking_pct": 0.61841340729869,
+      "avg_rhythm_var": 0.531186485135767,
+      "top_intervals": [
+        [
+          1,
+          497
+        ],
+        [
+          12,
+          317
+        ],
+        [
+          -12,
+          242
+        ],
+        [
+          2,
+          230
+        ],
+        [
+          -2,
+          162
+        ]
+      ]
+    },
+    "Tombo_in_74_-_Jazz_Combo": {
+      "role": "MIXED",
+      "n_patterns": 778,
+      "avg_walking_pct": 0.4821961755482576,
+      "avg_rhythm_var": 2.4160942180391896,
+      "top_intervals": [
+        [
+          0,
+          1753
+        ],
+        [
+          7,
+          855
+        ],
+        [
+          -7,
+          787
+        ],
+        [
+          12,
+          414
+        ],
+        [
+          -12,
+          347
+        ]
+      ]
+    },
+    "The_Moment-_Kenny_G": {
+      "role": "MIXED",
+      "n_patterns": 253,
+      "avg_walking_pct": 0.23525035613945777,
+      "avg_rhythm_var": 8.534347340832698,
+      "top_intervals": [
+        [
+          0,
+          1096
+        ],
+        [
+          2,
+          262
+        ],
+        [
+          -3,
+          236
+        ],
+        [
+          -4,
+          222
+        ],
+        [
+          4,
+          169
+        ]
+      ]
+    },
+    "Seor_Blues": {
+      "role": "MIXED",
+      "n_patterns": 792,
+      "avg_walking_pct": 0.7864060694072557,
+      "avg_rhythm_var": 6.729616060532008,
+      "top_intervals": [
+        [
+          2,
+          3761
+        ],
+        [
+          -2,
+          2242
+        ],
+        [
+          0,
+          1367
+        ],
+        [
+          5,
+          935
+        ],
+        [
+          -5,
+          881
+        ]
+      ]
+    },
+    "score - 2025-08-07T211439.588": {
+      "role": "WALKING",
+      "n_patterns": 233,
+      "avg_walking_pct": 0.7724044928992178,
+      "avg_rhythm_var": 0.11491767360054853,
+      "top_intervals": [
+        [
+          1,
+          223
+        ],
+        [
+          2,
+          209
+        ],
+        [
+          0,
+          153
+        ],
+        [
+          -7,
+          126
+        ],
+        [
+          3,
+          51
+        ]
+      ]
+    },
+    "Molasses__Hiatus_Kaiyote_transcriptionarrangement": {
+      "role": "MIXED",
+      "n_patterns": 719,
+      "avg_walking_pct": 0.6816217416558337,
+      "avg_rhythm_var": 22.71957431750635,
+      "top_intervals": [
+        [
+          0,
+          1066
+        ],
+        [
+          2,
+          487
+        ],
+        [
+          -5,
+          462
+        ],
+        [
+          -1,
+          439
+        ],
+        [
+          1,
+          402
+        ]
+      ]
+    },
+    "The_Best_Of_The_Shaolin_Afronauts_for_Jazz_Band": {
+      "role": "MIXED",
+      "n_patterns": 1021,
+      "avg_walking_pct": 0.6168295245581393,
+      "avg_rhythm_var": 27.19874633123563,
+      "top_intervals": [
+        [
+          0,
+          2621
+        ],
+        [
+          2,
+          1645
+        ],
+        [
+          5,
+          1352
+        ],
+        [
+          -5,
+          979
+        ],
+        [
+          -7,
+          942
+        ]
+      ]
+    },
+    "score - 2025-08-07T165010.987": {
+      "role": "WALKING",
+      "n_patterns": 465,
+      "avg_walking_pct": 0.8510207769885705,
+      "avg_rhythm_var": 0.06659060569260727,
+      "top_intervals": [
+        [
+          2,
+          403
+        ],
+        [
+          3,
+          242
+        ],
+        [
+          -3,
+          159
+        ],
+        [
+          1,
+          134
+        ],
+        [
+          5,
+          102
+        ]
+      ]
+    },
+    "Tank__The_Seatbelts_arranged_for_concert_band": {
+      "role": "MIXED",
+      "n_patterns": 386,
+      "avg_walking_pct": 0.7538547083953621,
+      "avg_rhythm_var": 1.442602165216729,
+      "top_intervals": [
+        [
+          -1,
+          654
+        ],
+        [
+          7,
+          414
+        ],
+        [
+          -2,
+          408
+        ],
+        [
+          -5,
+          357
+        ],
+        [
+          2,
+          310
+        ]
+      ]
+    },
+    "Life_Goes_On_Live_at_BBG_Sakura_Matsuri_2019__J-Music_Ensemble_Solos_Transcription": {
+      "role": "WALKING",
+      "n_patterns": 255,
+      "avg_walking_pct": 0.8458923755982579,
+      "avg_rhythm_var": 0.31013407217675815,
+      "top_intervals": [
+        [
+          2,
+          156
+        ],
+        [
+          3,
+          100
+        ],
+        [
+          -3,
+          86
+        ],
+        [
+          -2,
+          83
+        ],
+        [
+          -1,
+          61
+        ]
+      ]
+    },
+    "score - 2025-08-07T205134.800": {
+      "role": "WALKING",
+      "n_patterns": 765,
+      "avg_walking_pct": 0.6524579831932773,
+      "avg_rhythm_var": 0.2729399712688792,
+      "top_intervals": [
+        [
+          0,
+          405
+        ],
+        [
+          3,
+          361
+        ],
+        [
+          2,
+          268
+        ],
+        [
+          1,
+          149
+        ],
+        [
+          4,
+          92
+        ]
+      ]
+    },
+    "Teen_Town_Jazz_Combo": {
+      "role": "MIXED",
+      "n_patterns": 280,
+      "avg_walking_pct": 0.7433268734782047,
+      "avg_rhythm_var": 83.50824947759341,
+      "top_intervals": [
+        [
+          -2,
+          216
+        ],
+        [
+          0,
+          189
+        ],
+        [
+          1,
+          171
+        ],
+        [
+          2,
+          131
+        ],
+        [
+          5,
+          101
+        ]
+      ]
+    },
+    "Ill_See_You_In_My_Dreams": {
+      "role": "MIXED",
+      "n_patterns": 156,
+      "avg_walking_pct": 0.8549030786222327,
+      "avg_rhythm_var": 0.7727016087096481,
+      "top_intervals": [
+        [
+          5,
+          201
+        ],
+        [
+          -5,
+          201
+        ],
+        [
+          -7,
+          141
+        ],
+        [
+          0,
+          118
+        ],
+        [
+          2,
+          113
+        ]
+      ]
+    },
+    "The_CaretakerAl_Bowlly_-_Its_Just_a_Burning_MemoryHeartaches_-_Jazz_Band": {
+      "role": "MIXED",
+      "n_patterns": 146,
+      "avg_walking_pct": 0.5335802776995134,
+      "avg_rhythm_var": 0.3990106129922177,
+      "top_intervals": [
+        [
+          0,
+          417
+        ],
+        [
+          5,
+          247
+        ],
+        [
+          -5,
+          216
+        ],
+        [
+          -1,
+          117
+        ],
+        [
+          -7,
+          38
+        ]
+      ]
+    },
+    "score - 2025-08-07T225854.442": {
+      "role": "MIXED",
+      "n_patterns": 278,
+      "avg_walking_pct": 0.6595396457101423,
+      "avg_rhythm_var": 3.004998618178115,
+      "top_intervals": [
+        [
+          0,
+          379
+        ],
+        [
+          7,
+          186
+        ],
+        [
+          5,
+          183
+        ],
+        [
+          -5,
+          177
+        ],
+        [
+          2,
+          176
+        ]
+      ]
+    },
+    "I_Know_You_Know": {
+      "role": "MIXED",
+      "n_patterns": 328,
+      "avg_walking_pct": 0.6933746316927526,
+      "avg_rhythm_var": 5.260557496686117,
+      "top_intervals": [
+        [
+          -1,
+          417
+        ],
+        [
+          0,
+          265
+        ],
+        [
+          -5,
+          157
+        ],
+        [
+          -3,
+          113
+        ],
+        [
+          7,
+          87
+        ]
+      ]
+    },
+    "Ancient_Egypt_PvZ_2": {
+      "role": "MIXED",
+      "n_patterns": 746,
+      "avg_walking_pct": 0.8777179621732215,
+      "avg_rhythm_var": 45.71713613721245,
+      "top_intervals": [
+        [
+          -3,
+          563
+        ],
+        [
+          -2,
+          500
+        ],
+        [
+          -1,
+          463
+        ],
+        [
+          3,
+          256
+        ],
+        [
+          2,
+          240
+        ]
+      ]
+    },
+    "Just_the_Two_of_Us.": {
+      "role": "MIXED",
+      "n_patterns": 271,
+      "avg_walking_pct": 0.8504434590056358,
+      "avg_rhythm_var": 0.7372070542191484,
+      "top_intervals": [
+        [
+          -1,
+          599
+        ],
+        [
+          1,
+          283
+        ],
+        [
+          4,
+          195
+        ],
+        [
+          -2,
+          180
+        ],
+        [
+          5,
+          162
+        ]
+      ]
+    },
+    "Moon_river": {
+      "role": "MIXED",
+      "n_patterns": 486,
+      "avg_walking_pct": 0.5546241514528727,
+      "avg_rhythm_var": 19.74442714273064,
+      "top_intervals": [
+        [
+          0,
+          576
+        ],
+        [
+          -2,
+          378
+        ],
+        [
+          12,
+          266
+        ],
+        [
+          2,
+          265
+        ],
+        [
+          -1,
+          148
+        ]
+      ]
+    },
+    "score - 2025-08-07T172415.592": {
+      "role": "PEDAL",
+      "n_patterns": 509,
+      "avg_walking_pct": 0.10782599519937096,
+      "avg_rhythm_var": 2.3948232042374484,
+      "top_intervals": [
+        [
+          0,
+          2329
+        ],
+        [
+          2,
+          253
+        ],
+        [
+          -2,
+          134
+        ],
+        [
+          5,
+          60
+        ],
+        [
+          1,
+          44
+        ]
+      ]
+    },
+    "Three_views_of_a_secret_-_Jaco_Pastorius": {
+      "role": "WALKING",
+      "n_patterns": 1263,
+      "avg_walking_pct": 0.7327659012932172,
+      "avg_rhythm_var": 0.4004976713351894,
+      "top_intervals": [
+        [
+          2,
+          933
+        ],
+        [
+          3,
+          389
+        ],
+        [
+          0,
+          354
+        ],
+        [
+          1,
+          238
+        ],
+        [
+          5,
+          104
+        ]
+      ]
+    },
+    "score - 2025-08-07T185430.671": {
+      "role": "MIXED",
+      "n_patterns": 494,
+      "avg_walking_pct": 0.4084284224233485,
+      "avg_rhythm_var": 4.874673214545539,
+      "top_intervals": [
+        [
+          0,
+          1859
+        ],
+        [
+          2,
+          355
+        ],
+        [
+          -5,
+          312
+        ],
+        [
+          7,
+          283
+        ],
+        [
+          5,
+          250
+        ]
+      ]
+    },
+    "Give_It_All_You_Got_-_Chuck_Mangione_WIP": {
+      "role": "MIXED",
+      "n_patterns": 212,
+      "avg_walking_pct": 0.5892187177303406,
+      "avg_rhythm_var": 1.439472662395359,
+      "top_intervals": [
+        [
+          0,
+          466
+        ],
+        [
+          5,
+          210
+        ],
+        [
+          -5,
+          173
+        ],
+        [
+          -2,
+          161
+        ],
+        [
+          -3,
+          145
+        ]
+      ]
+    },
+    "Peg_-_Steely_Dan_For_Jazz_Combo": {
+      "role": "MIXED",
+      "n_patterns": 610,
+      "avg_walking_pct": 0.39509947904958004,
+      "avg_rhythm_var": 1.3576634601279505,
+      "top_intervals": [
+        [
+          0,
+          2273
+        ],
+        [
+          12,
+          918
+        ],
+        [
+          3,
+          710
+        ],
+        [
+          -5,
+          689
+        ],
+        [
+          -8,
+          416
+        ]
+      ]
+    },
+    "Aquarela_do_Brasil_-_watercolor_of_Brazil": {
+      "role": "MIXED",
+      "n_patterns": 350,
+      "avg_walking_pct": 0.413946313370253,
+      "avg_rhythm_var": 2.0645891909767378,
+      "top_intervals": [
+        [
+          0,
+          747
+        ],
+        [
+          -5,
+          402
+        ],
+        [
+          5,
+          227
+        ],
+        [
+          1,
+          138
+        ],
+        [
+          -2,
+          39
+        ]
+      ]
+    },
+    "Peter_gunn_theme__Henry_Mancini_Peter_Gunn_Theme": {
+      "role": "MIXED",
+      "n_patterns": 398,
+      "avg_walking_pct": 0.6462919350872499,
+      "avg_rhythm_var": 6.5042203985754155,
+      "top_intervals": [
+        [
+          -4,
+          643
+        ],
+        [
+          0,
+          534
+        ],
+        [
+          -2,
+          517
+        ],
+        [
+          -1,
+          468
+        ],
+        [
+          2,
+          468
+        ]
+      ]
+    },
+    "Snarky_Puppy_Shofukan_for_Concert_Band": {
+      "role": "MIXED",
+      "n_patterns": 589,
+      "avg_walking_pct": 0.5853060748447861,
+      "avg_rhythm_var": 2.4628596880628106,
+      "top_intervals": [
+        [
+          0,
+          1244
+        ],
+        [
+          7,
+          444
+        ],
+        [
+          -7,
+          360
+        ],
+        [
+          2,
+          336
+        ],
+        [
+          -1,
+          241
+        ]
+      ]
+    },
+    "Im_still_standing__Taron_Egerton_Im_Still_Standing___Im_Still_Standing_-_Arranged_for_Big_Band": {
+      "role": "PEDAL",
+      "n_patterns": 187,
+      "avg_walking_pct": 0.10664676528713432,
+      "avg_rhythm_var": 45.466339930010385,
+      "top_intervals": [
+        [
+          0,
+          678
+        ],
+        [
+          2,
+          43
+        ],
+        [
+          12,
+          29
+        ],
+        [
+          -12,
+          21
+        ],
+        [
+          -2,
+          19
+        ]
+      ]
+    },
+    "score - 2025-08-07T175934.949": {
+      "role": "MIXED",
+      "n_patterns": 276,
+      "avg_walking_pct": 0.4546412556596337,
+      "avg_rhythm_var": 0.43507502321115665,
+      "top_intervals": [
+        [
+          0,
+          501
+        ],
+        [
+          -2,
+          165
+        ],
+        [
+          7,
+          124
+        ],
+        [
+          -5,
+          104
+        ],
+        [
+          3,
+          101
+        ]
+      ]
+    },
+    "Rolling_Down_The_Street_In_My_Katamari": {
+      "role": "MIXED",
+      "n_patterns": 639,
+      "avg_walking_pct": 0.3097218862658767,
+      "avg_rhythm_var": 0.9095936897431312,
+      "top_intervals": [
+        [
+          0,
+          899
+        ],
+        [
+          -1,
+          320
+        ],
+        [
+          -12,
+          233
+        ],
+        [
+          2,
+          186
+        ],
+        [
+          12,
+          186
+        ]
+      ]
+    },
+    "Everything__Michael_Bubl_Everything": {
+      "role": "WALKING",
+      "n_patterns": 279,
+      "avg_walking_pct": 0.7499260446658763,
+      "avg_rhythm_var": 0.4397393620189834,
+      "top_intervals": [
+        [
+          5,
+          353
+        ],
+        [
+          0,
+          324
+        ],
+        [
+          2,
+          281
+        ],
+        [
+          -5,
+          199
+        ],
+        [
+          -3,
+          170
+        ]
+      ]
+    },
+    "The_Chicken__Jaco_Pastorius": {
+      "role": "MIXED",
+      "n_patterns": 787,
+      "avg_walking_pct": 0.4436415157825812,
+      "avg_rhythm_var": 0.5195900457144633,
+      "top_intervals": [
+        [
+          0,
+          2578
+        ],
+        [
+          2,
+          1039
+        ],
+        [
+          1,
+          793
+        ],
+        [
+          3,
+          555
+        ],
+        [
+          4,
+          476
+        ]
+      ]
+    },
+    "Beirut": {
+      "role": "MIXED",
+      "n_patterns": 673,
+      "avg_walking_pct": 0.21184095963658164,
+      "avg_rhythm_var": 0.6261370066512412,
+      "top_intervals": [
+        [
+          12,
+          3050
+        ],
+        [
+          -12,
+          2776
+        ],
+        [
+          0,
+          2577
+        ],
+        [
+          -3,
+          259
+        ],
+        [
+          3,
+          240
+        ]
+      ]
+    },
+    "DJESSE_-_A_Jacob_Collier_Inspired_Outdoor_Program_Unfinished": {
+      "role": "MIXED",
+      "n_patterns": 29,
+      "avg_walking_pct": 0.8881619261524135,
+      "avg_rhythm_var": 23.994893133372088,
+      "top_intervals": [
+        [
+          2,
+          48
+        ],
+        [
+          3,
+          24
+        ],
+        [
+          -5,
+          23
+        ],
+        [
+          -2,
+          16
+        ],
+        [
+          7,
+          15
+        ]
+      ]
+    },
+    "Amado_Mio_-_Pink_Martini_kar": {
+      "role": "MIXED",
+      "n_patterns": 550,
+      "avg_walking_pct": 0.6091469308311463,
+      "avg_rhythm_var": 30.964169355381767,
+      "top_intervals": [
+        [
+          0,
+          1144
+        ],
+        [
+          5,
+          662
+        ],
+        [
+          -7,
+          626
+        ],
+        [
+          7,
+          559
+        ],
+        [
+          -5,
+          388
+        ]
+      ]
+    },
+    "score - 2025-08-07T222601.540": {
+      "role": "PEDAL",
+      "n_patterns": 111,
+      "avg_walking_pct": 0.44589974589974585,
+      "avg_rhythm_var": 0.24747433681803344,
+      "top_intervals": [
+        [
+          0,
+          198
+        ],
+        [
+          7,
+          69
+        ],
+        [
+          -2,
+          56
+        ],
+        [
+          5,
+          31
+        ],
+        [
+          -1,
+          24
+        ]
+      ]
+    },
+    "What_a_wonderful_world_-_Jazz_Band": {
+      "role": "WALKING",
+      "n_patterns": 80,
+      "avg_walking_pct": 0.7263818475126776,
+      "avg_rhythm_var": 0.19046376555016387,
+      "top_intervals": [
+        [
+          5,
+          68
+        ],
+        [
+          0,
+          60
+        ],
+        [
+          -7,
+          57
+        ],
+        [
+          -1,
+          50
+        ],
+        [
+          -2,
+          35
+        ]
+      ]
+    },
+    "score - 2025-08-07T213007.874": {
+      "role": "MIXED",
+      "n_patterns": 501,
+      "avg_walking_pct": 0.6672252942463538,
+      "avg_rhythm_var": 0.5878336985824328,
+      "top_intervals": [
+        [
+          0,
+          857
+        ],
+        [
+          5,
+          466
+        ],
+        [
+          2,
+          340
+        ],
+        [
+          -2,
+          312
+        ],
+        [
+          -3,
+          285
+        ]
+      ]
+    },
+    "Love_Theory__Kirk_Franklin": {
+      "role": "MIXED",
+      "n_patterns": 645,
+      "avg_walking_pct": 0.7279302588274073,
+      "avg_rhythm_var": 1.2352922813381813,
+      "top_intervals": [
+        [
+          0,
+          725
+        ],
+        [
+          5,
+          661
+        ],
+        [
+          -5,
+          509
+        ],
+        [
+          -7,
+          456
+        ],
+        [
+          -1,
+          295
+        ]
+      ]
+    },
+    "Newsies_OST__1._Overture__Prologue__CarryingTheBanner__CTBTag": {
+      "role": "PEDAL",
+      "n_patterns": 898,
+      "avg_walking_pct": 0.31729891621128725,
+      "avg_rhythm_var": 8.37700870682651,
+      "top_intervals": [
+        [
+          0,
+          3291
+        ],
+        [
+          1,
+          368
+        ],
+        [
+          2,
+          331
+        ],
+        [
+          -7,
+          218
+        ],
+        [
+          5,
+          199
+        ]
+      ]
+    },
+    "Karuselis_Flick_Flack_v2": {
+      "role": "MIXED",
+      "n_patterns": 355,
+      "avg_walking_pct": 0.8268944466613989,
+      "avg_rhythm_var": 1.301733709297668,
+      "top_intervals": [
+        [
+          5,
+          435
+        ],
+        [
+          -5,
+          405
+        ],
+        [
+          -7,
+          239
+        ],
+        [
+          7,
+          237
+        ],
+        [
+          4,
+          186
+        ]
+      ]
+    },
+    "Cantaloupe_Island (3)": {
+      "role": "MIXED",
+      "n_patterns": 288,
+      "avg_walking_pct": 0.8245635642522228,
+      "avg_rhythm_var": 0.9889363499935713,
+      "top_intervals": [
+        [
+          2,
+          434
+        ],
+        [
+          7,
+          434
+        ],
+        [
+          3,
+          371
+        ],
+        [
+          -12,
+          226
+        ],
+        [
+          0,
+          157
+        ]
+      ]
+    },
+    "Jumpin_Jive__The_bones_-_Cab_Calloway__Frank_Froeba_Jack_Palmer": {
+      "role": "MIXED",
+      "n_patterns": 494,
+      "avg_walking_pct": 0.871871535031748,
+      "avg_rhythm_var": 1.2156129855557085,
+      "top_intervals": [
+        [
+          -2,
+          529
+        ],
+        [
+          1,
+          461
+        ],
+        [
+          2,
+          398
+        ],
+        [
+          3,
+          238
+        ],
+        [
+          -1,
+          222
+        ]
+      ]
+    },
+    "Yardbird_Suite": {
+      "role": "MIXED",
+      "n_patterns": 261,
+      "avg_walking_pct": 0.9873802276549677,
+      "avg_rhythm_var": 240.1206449379139,
+      "top_intervals": [
+        [
+          -2,
+          643
+        ],
+        [
+          2,
+          313
+        ],
+        [
+          -1,
+          234
+        ],
+        [
+          3,
+          216
+        ],
+        [
+          1,
+          181
+        ]
+      ]
+    },
+    "I_WANT_TO_BE_LIKE_YOU": {
+      "role": "MIXED",
+      "n_patterns": 461,
+      "avg_walking_pct": 0.7976119196337321,
+      "avg_rhythm_var": 34.28134993290257,
+      "top_intervals": [
+        [
+          -2,
+          217
+        ],
+        [
+          -7,
+          207
+        ],
+        [
+          0,
+          201
+        ],
+        [
+          5,
+          198
+        ],
+        [
+          7,
+          197
+        ]
+      ]
+    },
+    "Katherine__Jeff_Lorber.mscz": {
+      "role": "WALKING",
+      "n_patterns": 255,
+      "avg_walking_pct": 0.8350763340855752,
+      "avg_rhythm_var": 0.4894899502464915,
+      "top_intervals": [
+        [
+          2,
+          248
+        ],
+        [
+          -2,
+          181
+        ],
+        [
+          1,
+          149
+        ],
+        [
+          -5,
+          143
+        ],
+        [
+          0,
+          99
+        ]
+      ]
+    },
+    "Time_to_know_-_Be_Waltz_-_Cowboy_Bebop_for_Jazz_Band": {
+      "role": "MIXED",
+      "n_patterns": 461,
+      "avg_walking_pct": 0.759821435796308,
+      "avg_rhythm_var": 0.5012436000544407,
+      "top_intervals": [
+        [
+          7,
+          333
+        ],
+        [
+          0,
+          302
+        ],
+        [
+          -2,
+          204
+        ],
+        [
+          5,
+          176
+        ],
+        [
+          -7,
+          169
+        ]
+      ]
+    },
+    "Youve_Got_a_Friend_in_Me__Randy_Newman": {
+      "role": "WALKING",
+      "n_patterns": 151,
+      "avg_walking_pct": 0.7149143130600084,
+      "avg_rhythm_var": 0.23960474880988428,
+      "top_intervals": [
+        [
+          5,
+          128
+        ],
+        [
+          0,
+          85
+        ],
+        [
+          1,
+          84
+        ],
+        [
+          -1,
+          38
+        ],
+        [
+          -3,
+          38
+        ]
+      ]
+    },
+    "In_Your_Eyes": {
+      "role": "MIXED",
+      "n_patterns": 661,
+      "avg_walking_pct": 0.7103836018324617,
+      "avg_rhythm_var": 1.654498759166325,
+      "top_intervals": [
+        [
+          0,
+          1352
+        ],
+        [
+          -5,
+          947
+        ],
+        [
+          5,
+          919
+        ],
+        [
+          -2,
+          530
+        ],
+        [
+          1,
+          466
+        ]
+      ]
+    },
+    "score - 2025-08-07T183113.298": {
+      "role": "MIXED",
+      "n_patterns": 255,
+      "avg_walking_pct": 0.803380678464584,
+      "avg_rhythm_var": 38.629925454196965,
+      "top_intervals": [
+        [
+          1,
+          170
+        ],
+        [
+          -2,
+          164
+        ],
+        [
+          0,
+          153
+        ],
+        [
+          2,
+          125
+        ],
+        [
+          5,
+          117
+        ]
+      ]
+    },
+    "Close_to_You__The_Carpenters": {
+      "role": "MIXED",
+      "n_patterns": 153,
+      "avg_walking_pct": 0.828336410784963,
+      "avg_rhythm_var": 0.8062981820337953,
+      "top_intervals": [
+        [
+          7,
+          183
+        ],
+        [
+          -7,
+          145
+        ],
+        [
+          0,
+          75
+        ],
+        [
+          2,
+          67
+        ],
+        [
+          -5,
+          45
+        ]
+      ]
+    },
+    "Hell_skaba": {
+      "role": "MIXED",
+      "n_patterns": 205,
+      "avg_walking_pct": 0.7616992841436109,
+      "avg_rhythm_var": 1.7611623649709156,
+      "top_intervals": [
+        [
+          5,
+          320
+        ],
+        [
+          -5,
+          197
+        ],
+        [
+          0,
+          194
+        ],
+        [
+          7,
+          150
+        ],
+        [
+          -7,
+          114
+        ]
+      ]
+    },
+    "Skip_Step__Nate_Smith": {
+      "role": "MIXED",
+      "n_patterns": 324,
+      "avg_walking_pct": 0.7949202674897118,
+      "avg_rhythm_var": 3.2668358844398617,
+      "top_intervals": [
+        [
+          2,
+          342
+        ],
+        [
+          -2,
+          181
+        ],
+        [
+          3,
+          117
+        ],
+        [
+          -1,
+          103
+        ],
+        [
+          -4,
+          89
+        ]
+      ]
+    },
+    "score - 2025-08-07T174134.884": {
+      "role": "PEDAL",
+      "n_patterns": 333,
+      "avg_walking_pct": 0.44943935265793367,
+      "avg_rhythm_var": 1.5498175405000698,
+      "top_intervals": [
+        [
+          0,
+          1084
+        ],
+        [
+          -5,
+          120
+        ],
+        [
+          2,
+          113
+        ],
+        [
+          -7,
+          104
+        ],
+        [
+          -2,
+          96
+        ]
+      ]
+    },
+    "score - 2025-08-07T210330.199": {
+      "role": "MIXED",
+      "n_patterns": 347,
+      "avg_walking_pct": 0.7076680654566292,
+      "avg_rhythm_var": 2.6043368924175496,
+      "top_intervals": [
+        [
+          2,
+          488
+        ],
+        [
+          0,
+          312
+        ],
+        [
+          3,
+          204
+        ],
+        [
+          -1,
+          108
+        ],
+        [
+          -2,
+          72
+        ]
+      ]
+    },
+    "Back_Pocket": {
+      "role": "PEDAL",
+      "n_patterns": 358,
+      "avg_walking_pct": 0.37994489482254834,
+      "avg_rhythm_var": 8.952988485014036,
+      "top_intervals": [
+        [
+          0,
+          1448
+        ],
+        [
+          -2,
+          256
+        ],
+        [
+          1,
+          221
+        ],
+        [
+          2,
+          176
+        ],
+        [
+          -1,
+          107
+        ]
+      ]
+    },
+    "Golden_Days_-_Copie": {
+      "role": "MIXED",
+      "n_patterns": 454,
+      "avg_walking_pct": 0.7506260258121639,
+      "avg_rhythm_var": 1.000966479697162,
+      "top_intervals": [
+        [
+          0,
+          831
+        ],
+        [
+          3,
+          596
+        ],
+        [
+          -7,
+          447
+        ],
+        [
+          4,
+          257
+        ],
+        [
+          2,
+          230
+        ]
+      ]
+    },
+    "Snarky_Puppy_-_Semente_work_in_progress": {
+      "role": "PEDAL",
+      "n_patterns": 578,
+      "avg_walking_pct": 0.3064047412382798,
+      "avg_rhythm_var": 3.3147281310473518,
+      "top_intervals": [
+        [
+          0,
+          2133
+        ],
+        [
+          -2,
+          216
+        ],
+        [
+          3,
+          85
+        ],
+        [
+          -1,
+          57
+        ],
+        [
+          5,
+          52
+        ]
+      ]
+    },
+    "Oye_Como_Va": {
+      "role": "MIXED",
+      "n_patterns": 421,
+      "avg_walking_pct": 0.5682667333989205,
+      "avg_rhythm_var": 1.5563186182876025,
+      "top_intervals": [
+        [
+          0,
+          3134
+        ],
+        [
+          7,
+          1444
+        ],
+        [
+          5,
+          1302
+        ],
+        [
+          -2,
+          1246
+        ],
+        [
+          -7,
+          1241
+        ]
+      ]
+    },
+    "150_Follower_Special_Staff_Roll_-_New_Super_Mario_Bros._Wii_-_Funk_Jazz_Band_Arrangement": {
+      "role": "MIXED",
+      "n_patterns": 502,
+      "avg_walking_pct": 0.7226403897767196,
+      "avg_rhythm_var": 132.48926130313018,
+      "top_intervals": [
+        [
+          1,
+          771
+        ],
+        [
+          0,
+          762
+        ],
+        [
+          -1,
+          737
+        ],
+        [
+          -5,
+          183
+        ],
+        [
+          2,
+          169
+        ]
+      ]
+    },
+    "Josie_-_Steely_Dan": {
+      "role": "MIXED",
+      "n_patterns": 358,
+      "avg_walking_pct": 0.8280983584458774,
+      "avg_rhythm_var": 0.5160602991689168,
+      "top_intervals": [
+        [
+          2,
+          274
+        ],
+        [
+          1,
+          163
+        ],
+        [
+          3,
+          136
+        ],
+        [
+          5,
+          125
+        ],
+        [
+          0,
+          106
+        ]
+      ]
+    },
+    "King_of_Swing": {
+      "role": "WALKING",
+      "n_patterns": 969,
+      "avg_walking_pct": 0.9752013911334536,
+      "avg_rhythm_var": 0.16534182054383592,
+      "top_intervals": [
+        [
+          2,
+          1895
+        ],
+        [
+          1,
+          1578
+        ],
+        [
+          -1,
+          1238
+        ],
+        [
+          -3,
+          1138
+        ],
+        [
+          -2,
+          801
+        ]
+      ]
+    },
+    "The_Entertainer_-_Scott_Joplin_-_Orchestral_version": {
+      "role": "WALKING",
+      "n_patterns": 319,
+      "avg_walking_pct": 0.6959549510494815,
+      "avg_rhythm_var": 0.36897791815872244,
+      "top_intervals": [
+        [
+          0,
+          318
+        ],
+        [
+          -2,
+          228
+        ],
+        [
+          -1,
+          194
+        ],
+        [
+          5,
+          189
+        ],
+        [
+          1,
+          164
+        ]
+      ]
+    },
+    "All_of_me__Seymour_Simons_and_Gerald_Marks": {
+      "role": "MIXED",
+      "n_patterns": 123,
+      "avg_walking_pct": 0.839391978747853,
+      "avg_rhythm_var": 64.14869888190945,
+      "top_intervals": [
+        [
+          -3,
+          295
+        ],
+        [
+          3,
+          229
+        ],
+        [
+          -2,
+          116
+        ],
+        [
+          4,
+          112
+        ],
+        [
+          2,
+          101
+        ]
+      ]
+    },
+    "score - 2025-08-07T230555.475": {
+      "role": "MIXED",
+      "n_patterns": 202,
+      "avg_walking_pct": 0.7070962360328488,
+      "avg_rhythm_var": 3.8555017644030958,
+      "top_intervals": [
+        [
+          0,
+          356
+        ],
+        [
+          1,
+          297
+        ],
+        [
+          2,
+          179
+        ],
+        [
+          -2,
+          165
+        ],
+        [
+          5,
+          129
+        ]
+      ]
+    },
+    "Monsters_Inc._Theme__Randy_Newman": {
+      "role": "MIXED",
+      "n_patterns": 327,
+      "avg_walking_pct": 0.8559685270462523,
+      "avg_rhythm_var": 0.5966886165978506,
+      "top_intervals": [
+        [
+          -2,
+          203
+        ],
+        [
+          5,
+          197
+        ],
+        [
+          -5,
+          148
+        ],
+        [
+          1,
+          126
+        ],
+        [
+          -7,
+          120
+        ]
+      ]
+    },
+    "The_Electro_Suite__Hans_Zimmer": {
+      "role": "MIXED",
+      "n_patterns": 1978,
+      "avg_walking_pct": 0.7151720204273627,
+      "avg_rhythm_var": 12.634915746079434,
+      "top_intervals": [
+        [
+          0,
+          9716
+        ],
+        [
+          2,
+          8014
+        ],
+        [
+          -3,
+          6929
+        ],
+        [
+          3,
+          5444
+        ],
+        [
+          1,
+          4518
+        ]
+      ]
+    },
+    "score - 2025-08-07T172727.675": {
+      "role": "WALKING",
+      "n_patterns": 607,
+      "avg_walking_pct": 0.9313546393837946,
+      "avg_rhythm_var": 0.429501911640246,
+      "top_intervals": [
+        [
+          -2,
+          833
+        ],
+        [
+          2,
+          657
+        ],
+        [
+          1,
+          565
+        ],
+        [
+          -1,
+          406
+        ],
+        [
+          3,
+          368
+        ]
+      ]
+    },
+    "Its_On (1)": {
+      "role": "PEDAL",
+      "n_patterns": 654,
+      "avg_walking_pct": 0.24251506741791923,
+      "avg_rhythm_var": 2.137252452136265,
+      "top_intervals": [
+        [
+          0,
+          3531
+        ],
+        [
+          1,
+          617
+        ],
+        [
+          -1,
+          256
+        ],
+        [
+          -2,
+          218
+        ],
+        [
+          -3,
+          123
+        ]
+      ]
+    },
+    "The_Red_One (1)": {
+      "role": "PEDAL",
+      "n_patterns": 450,
+      "avg_walking_pct": 0.446739687074661,
+      "avg_rhythm_var": 1.3625926036440437,
+      "top_intervals": [
+        [
+          0,
+          962
+        ],
+        [
+          -2,
+          317
+        ],
+        [
+          2,
+          142
+        ],
+        [
+          -1,
+          90
+        ],
+        [
+          3,
+          83
+        ]
+      ]
+    },
+    "speed_bumps": {
+      "role": "MIXED",
+      "n_patterns": 177,
+      "avg_walking_pct": 0.9161543129487124,
+      "avg_rhythm_var": 51.53532709168619,
+      "top_intervals": [
+        [
+          5,
+          103
+        ],
+        [
+          2,
+          97
+        ],
+        [
+          -7,
+          89
+        ],
+        [
+          -5,
+          70
+        ],
+        [
+          -2,
+          54
+        ]
+      ]
+    },
+    "Ancient_Egypt_Main_Theme__Plants_vs._Zombies_2": {
+      "role": "MIXED",
+      "n_patterns": 1048,
+      "avg_walking_pct": 0.8375765689538669,
+      "avg_rhythm_var": 1.2916088625731759,
+      "top_intervals": [
+        [
+          -1,
+          648
+        ],
+        [
+          -3,
+          622
+        ],
+        [
+          3,
+          552
+        ],
+        [
+          0,
+          483
+        ],
+        [
+          -2,
+          348
+        ]
+      ]
+    },
+    "score - 2025-08-07T174120.537": {
+      "role": "MIXED",
+      "n_patterns": 307,
+      "avg_walking_pct": 0.7153586489650506,
+      "avg_rhythm_var": 111.75077670613526,
+      "top_intervals": [
+        [
+          0,
+          259
+        ],
+        [
+          3,
+          134
+        ],
+        [
+          7,
+          118
+        ],
+        [
+          1,
+          100
+        ],
+        [
+          2,
+          97
+        ]
+      ]
+    },
+    "Super_Block_Land_-_Super_Mario_3D_World": {
+      "role": "WALKING",
+      "n_patterns": 284,
+      "avg_walking_pct": 0.9300984975302599,
+      "avg_rhythm_var": 0.25037992985621066,
+      "top_intervals": [
+        [
+          1,
+          439
+        ],
+        [
+          2,
+          364
+        ],
+        [
+          -2,
+          306
+        ],
+        [
+          -1,
+          187
+        ],
+        [
+          -3,
+          105
+        ]
+      ]
+    },
+    "score - 2025-08-07T202644.571": {
+      "role": "MIXED",
+      "n_patterns": 302,
+      "avg_walking_pct": 0.39137205786839696,
+      "avg_rhythm_var": 1.0712116498031987,
+      "top_intervals": [
+        [
+          0,
+          1637
+        ],
+        [
+          -2,
+          398
+        ],
+        [
+          -5,
+          397
+        ],
+        [
+          3,
+          369
+        ],
+        [
+          2,
+          335
+        ]
+      ]
+    },
+    "Chank": {
+      "role": "WALKING",
+      "n_patterns": 72,
+      "avg_walking_pct": 0.900182528488688,
+      "avg_rhythm_var": 0.4127051957244714,
+      "top_intervals": [
+        [
+          1,
+          187
+        ],
+        [
+          -3,
+          12
+        ],
+        [
+          -4,
+          12
+        ],
+        [
+          0,
+          11
+        ],
+        [
+          -2,
+          8
+        ]
+      ]
+    },
+    "score - 2025-08-07T233034.186": {
+      "role": "PEDAL",
+      "n_patterns": 936,
+      "avg_walking_pct": 0.4623954428412905,
+      "avg_rhythm_var": 10.361173154828592,
+      "top_intervals": [
+        [
+          0,
+          4191
+        ],
+        [
+          -5,
+          807
+        ],
+        [
+          2,
+          638
+        ],
+        [
+          7,
+          373
+        ],
+        [
+          5,
+          339
+        ]
+      ]
+    },
+    "Back_to_black__Amy_Winehouse": {
+      "role": "PEDAL",
+      "n_patterns": 715,
+      "avg_walking_pct": 0.2565021581828009,
+      "avg_rhythm_var": 3.3500957097781305,
+      "top_intervals": [
+        [
+          0,
+          4962
+        ],
+        [
+          1,
+          1389
+        ],
+        [
+          -2,
+          444
+        ],
+        [
+          -3,
+          229
+        ],
+        [
+          -1,
+          228
+        ]
+      ]
+    },
+    "Something__The_Beatles": {
+      "role": "MIXED",
+      "n_patterns": 550,
+      "avg_walking_pct": 0.6576229511728183,
+      "avg_rhythm_var": 1.219960314138175,
+      "top_intervals": [
+        [
+          -1,
+          1074
+        ],
+        [
+          0,
+          1015
+        ],
+        [
+          1,
+          700
+        ],
+        [
+          -2,
+          447
+        ],
+        [
+          2,
+          214
+        ]
+      ]
+    },
+    "Vabank": {
+      "role": "WALKING",
+      "n_patterns": 341,
+      "avg_walking_pct": 0.8819162211242492,
+      "avg_rhythm_var": 0.10183177573675654,
+      "top_intervals": [
+        [
+          2,
+          404
+        ],
+        [
+          -1,
+          304
+        ],
+        [
+          1,
+          292
+        ],
+        [
+          -5,
+          290
+        ],
+        [
+          -2,
+          197
+        ]
+      ]
+    },
+    "Partitur": {
+      "role": "PEDAL",
+      "n_patterns": 578,
+      "avg_walking_pct": 0.11783950349465717,
+      "avg_rhythm_var": 1.5637857249625793,
+      "top_intervals": [
+        [
+          0,
+          3433
+        ],
+        [
+          -2,
+          568
+        ],
+        [
+          2,
+          537
+        ],
+        [
+          -4,
+          438
+        ],
+        [
+          4,
+          378
+        ]
+      ]
+    },
+    "The_First_Circle": {
+      "role": "MIXED",
+      "n_patterns": 1064,
+      "avg_walking_pct": 0.4590745188728805,
+      "avg_rhythm_var": 36.250492224031156,
+      "top_intervals": [
+        [
+          0,
+          3460
+        ],
+        [
+          2,
+          664
+        ],
+        [
+          5,
+          577
+        ],
+        [
+          -2,
+          548
+        ],
+        [
+          7,
+          538
+        ]
+      ]
+    },
+    "Dont_Lose_Sight_-_Lawrence_arr._The_Foilist": {
+      "role": "MIXED",
+      "n_patterns": 463,
+      "avg_walking_pct": 0.4876118198516591,
+      "avg_rhythm_var": 6.425751042806445,
+      "top_intervals": [
+        [
+          0,
+          1055
+        ],
+        [
+          -1,
+          673
+        ],
+        [
+          1,
+          154
+        ],
+        [
+          2,
+          92
+        ],
+        [
+          4,
+          91
+        ]
+      ]
+    },
+    "Beyond_The_Sea_FULL": {
+      "role": "MIXED",
+      "n_patterns": 240,
+      "avg_walking_pct": 0.5849906355134437,
+      "avg_rhythm_var": 1.0391279811617025,
+      "top_intervals": [
+        [
+          0,
+          338
+        ],
+        [
+          2,
+          121
+        ],
+        [
+          -2,
+          118
+        ],
+        [
+          5,
+          105
+        ],
+        [
+          -7,
+          105
+        ]
+      ]
+    },
+    "Stratus__Billy_Cobham": {
+      "role": "MIXED",
+      "n_patterns": 461,
+      "avg_walking_pct": 0.8061152250770193,
+      "avg_rhythm_var": 6.349929437845956,
+      "top_intervals": [
+        [
+          2,
+          2111
+        ],
+        [
+          -2,
+          1350
+        ],
+        [
+          3,
+          809
+        ],
+        [
+          0,
+          754
+        ],
+        [
+          -5,
+          735
+        ]
+      ]
+    },
+    "Funky_Duck": {
+      "role": "MIXED",
+      "n_patterns": 857,
+      "avg_walking_pct": 0.3893820029178498,
+      "avg_rhythm_var": 0.9790602777164726,
+      "top_intervals": [
+        [
+          0,
+          2474
+        ],
+        [
+          1,
+          782
+        ],
+        [
+          2,
+          652
+        ],
+        [
+          3,
+          630
+        ],
+        [
+          -12,
+          139
+        ]
+      ]
+    },
+    "Overture_from_Whiplash_-_Justin_Hurwitz_Full_Big_Band_Transcription": {
+      "role": "MIXED",
+      "n_patterns": 695,
+      "avg_walking_pct": 0.7672974874230882,
+      "avg_rhythm_var": 67.99944642249127,
+      "top_intervals": [
+        [
+          -2,
+          712
+        ],
+        [
+          0,
+          552
+        ],
+        [
+          2,
+          499
+        ],
+        [
+          7,
+          259
+        ],
+        [
+          1,
+          237
+        ]
+      ]
+    },
+    "score - 2025-08-07T215102.055": {
+      "role": "PEDAL",
+      "n_patterns": 138,
+      "avg_walking_pct": 0.23720781267694718,
+      "avg_rhythm_var": 1.3020360134914868,
+      "top_intervals": [
+        [
+          0,
+          385
+        ],
+        [
+          1,
+          61
+        ],
+        [
+          5,
+          56
+        ],
+        [
+          -1,
+          45
+        ],
+        [
+          -7,
+          40
+        ]
+      ]
+    },
+    "En_aften_ved_svanefossen": {
+      "role": "WALKING",
+      "n_patterns": 7,
+      "avg_walking_pct": 0.8081632653061224,
+      "avg_rhythm_var": 0.4246793002915452,
+      "top_intervals": [
+        [
+          2,
+          10
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          -7,
+          2
+        ]
+      ]
+    },
+    "Coffee_Cold": {
+      "role": "MIXED",
+      "n_patterns": 465,
+      "avg_walking_pct": 0.48289218067781364,
+      "avg_rhythm_var": 17.384346929403346,
+      "top_intervals": [
+        [
+          0,
+          523
+        ],
+        [
+          -2,
+          293
+        ],
+        [
+          12,
+          273
+        ],
+        [
+          -12,
+          227
+        ],
+        [
+          2,
+          163
+        ]
+      ]
+    },
+    "score - 2025-08-07T220156.358": {
+      "role": "MIXED",
+      "n_patterns": 219,
+      "avg_walking_pct": 0.8486542272277829,
+      "avg_rhythm_var": 0.6305531991195408,
+      "top_intervals": [
+        [
+          2,
+          213
+        ],
+        [
+          1,
+          192
+        ],
+        [
+          0,
+          76
+        ],
+        [
+          5,
+          62
+        ],
+        [
+          -5,
+          31
+        ]
+      ]
+    },
+    "FM_\u2013_Steely_Dan": {
+      "role": "MIXED",
+      "n_patterns": 277,
+      "avg_walking_pct": 0.6731604551756901,
+      "avg_rhythm_var": 1.2437136799743853,
+      "top_intervals": [
+        [
+          0,
+          240
+        ],
+        [
+          2,
+          125
+        ],
+        [
+          1,
+          119
+        ],
+        [
+          -1,
+          85
+        ],
+        [
+          5,
+          72
+        ]
+      ]
+    },
+    "Tutu_1986__dbut": {
+      "role": "MIXED",
+      "n_patterns": 217,
+      "avg_walking_pct": 0.6548065117046223,
+      "avg_rhythm_var": 18.32522737759542,
+      "top_intervals": [
+        [
+          0,
+          373
+        ],
+        [
+          1,
+          142
+        ],
+        [
+          -1,
+          114
+        ],
+        [
+          3,
+          114
+        ],
+        [
+          -5,
+          109
+        ]
+      ]
+    },
+    "score - 2025-08-07T210105.279": {
+      "role": "WALKING",
+      "n_patterns": 628,
+      "avg_walking_pct": 0.8425210552046043,
+      "avg_rhythm_var": 0.23418280254779134,
+      "top_intervals": [
+        [
+          -3,
+          1708
+        ],
+        [
+          -2,
+          1606
+        ],
+        [
+          5,
+          908
+        ],
+        [
+          3,
+          797
+        ],
+        [
+          0,
+          610
+        ]
+      ]
+    },
+    "score - 2025-08-07T224452.606": {
+      "role": "MIXED",
+      "n_patterns": 494,
+      "avg_walking_pct": 0.9103209612437712,
+      "avg_rhythm_var": 31.967031867358482,
+      "top_intervals": [
+        [
+          1,
+          536
+        ],
+        [
+          2,
+          330
+        ],
+        [
+          -2,
+          306
+        ],
+        [
+          -3,
+          184
+        ],
+        [
+          -1,
+          177
+        ]
+      ]
+    },
+    "Strasbourg-St._Denis_Arr": {
+      "role": "MIXED",
+      "n_patterns": 152,
+      "avg_walking_pct": 0.5726109657118591,
+      "avg_rhythm_var": 1.5072338046410423,
+      "top_intervals": [
+        [
+          0,
+          338
+        ],
+        [
+          1,
+          179
+        ],
+        [
+          -1,
+          151
+        ],
+        [
+          -7,
+          119
+        ],
+        [
+          2,
+          113
+        ]
+      ]
+    },
+    "Summer_madness_\u2013_Kool_&_the_Gang": {
+      "role": "MIXED",
+      "n_patterns": 500,
+      "avg_walking_pct": 0.7313231852929589,
+      "avg_rhythm_var": 0.8211462401890696,
+      "top_intervals": [
+        [
+          5,
+          3966
+        ],
+        [
+          -5,
+          2501
+        ],
+        [
+          0,
+          1602
+        ],
+        [
+          -7,
+          767
+        ],
+        [
+          -3,
+          696
+        ]
+      ]
+    },
+    "Spain__Chick_Corea": {
+      "role": "MIXED",
+      "n_patterns": 709,
+      "avg_walking_pct": 0.4279657492808998,
+      "avg_rhythm_var": 0.8322789692569149,
+      "top_intervals": [
+        [
+          0,
+          1743
+        ],
+        [
+          -7,
+          535
+        ],
+        [
+          7,
+          525
+        ],
+        [
+          5,
+          245
+        ],
+        [
+          2,
+          132
+        ]
+      ]
+    },
+    "score - 2025-08-07T205411.955": {
+      "role": "MIXED",
+      "n_patterns": 769,
+      "avg_walking_pct": 0.6084078262188495,
+      "avg_rhythm_var": 64.11130512197462,
+      "top_intervals": [
+        [
+          0,
+          947
+        ],
+        [
+          -2,
+          529
+        ],
+        [
+          2,
+          288
+        ],
+        [
+          -5,
+          158
+        ],
+        [
+          3,
+          140
+        ]
+      ]
+    },
+    "score - 2025-08-07T213433.328": {
+      "role": "PEDAL",
+      "n_patterns": 165,
+      "avg_walking_pct": 0.05713616420865678,
+      "avg_rhythm_var": 26.1945773736904,
+      "top_intervals": [
+        [
+          0,
+          1269
+        ],
+        [
+          1,
+          86
+        ],
+        [
+          -1,
+          75
+        ],
+        [
+          -12,
+          11
+        ],
+        [
+          7,
+          10
+        ]
+      ]
+    },
+    "Breathless_\u2013_Kenny_G": {
+      "role": "MIXED",
+      "n_patterns": 412,
+      "avg_walking_pct": 0.5320132940911039,
+      "avg_rhythm_var": 0.5982550623442596,
+      "top_intervals": [
+        [
+          0,
+          959
+        ],
+        [
+          2,
+          547
+        ],
+        [
+          3,
+          323
+        ],
+        [
+          -5,
+          301
+        ],
+        [
+          -2,
+          155
+        ]
+      ]
+    },
+    "SMiLE": {
+      "role": "MIXED",
+      "n_patterns": 140,
+      "avg_walking_pct": 0.742349000206143,
+      "avg_rhythm_var": 15.496211858119857,
+      "top_intervals": [
+        [
+          0,
+          69
+        ],
+        [
+          -5,
+          64
+        ],
+        [
+          1,
+          36
+        ],
+        [
+          7,
+          35
+        ],
+        [
+          5,
+          34
+        ]
+      ]
+    },
+    "Watery_Graves_-_Plants_Vs._Zombies_-_Latin_Big_Band_Arrangement": {
+      "role": "MIXED",
+      "n_patterns": 666,
+      "avg_walking_pct": 0.6876824565771925,
+      "avg_rhythm_var": 3.2579377111104164,
+      "top_intervals": [
+        [
+          0,
+          537
+        ],
+        [
+          7,
+          487
+        ],
+        [
+          -7,
+          475
+        ],
+        [
+          -2,
+          365
+        ],
+        [
+          1,
+          319
+        ]
+      ]
+    },
+    "Peaches_En_Regalia_arr_for_JM": {
+      "role": "MIXED",
+      "n_patterns": 277,
+      "avg_walking_pct": 0.7898956255060967,
+      "avg_rhythm_var": 122.69319644613273,
+      "top_intervals": [
+        [
+          5,
+          365
+        ],
+        [
+          -5,
+          278
+        ],
+        [
+          7,
+          186
+        ],
+        [
+          0,
+          155
+        ],
+        [
+          -2,
+          154
+        ]
+      ]
+    },
+    "score - 2025-08-07T202842.407": {
+      "role": "MIXED",
+      "n_patterns": 336,
+      "avg_walking_pct": 0.8007170199960143,
+      "avg_rhythm_var": 19.44806734879535,
+      "top_intervals": [
+        [
+          3,
+          444
+        ],
+        [
+          4,
+          403
+        ],
+        [
+          -3,
+          350
+        ],
+        [
+          -2,
+          281
+        ],
+        [
+          -5,
+          167
+        ]
+      ]
+    },
+    "100_Follower_Special_Azalea_Town_-_Pokemon_Heartgold__FunkMotown_Jazz_Band_Arrangment": {
+      "role": "MIXED",
+      "n_patterns": 400,
+      "avg_walking_pct": 0.5552144667832168,
+      "avg_rhythm_var": 55.29109565742274,
+      "top_intervals": [
+        [
+          0,
+          166
+        ],
+        [
+          12,
+          130
+        ],
+        [
+          -1,
+          122
+        ],
+        [
+          1,
+          110
+        ],
+        [
+          -12,
+          96
+        ]
+      ]
+    },
+    "In_The_Mood_Glenn_Miller_-_Full_Big_Band_Arrangement (1)": {
+      "role": "MIXED",
+      "n_patterns": 364,
+      "avg_walking_pct": 0.8213520844007007,
+      "avg_rhythm_var": 1.426324545349746,
+      "top_intervals": [
+        [
+          3,
+          286
+        ],
+        [
+          -3,
+          196
+        ],
+        [
+          -2,
+          174
+        ],
+        [
+          0,
+          170
+        ],
+        [
+          2,
+          134
+        ]
+      ]
+    },
+    "Minecraft_Jukebox": {
+      "role": "MIXED",
+      "n_patterns": 115,
+      "avg_walking_pct": 0.7111076604554868,
+      "avg_rhythm_var": 56.622587288309255,
+      "top_intervals": [
+        [
+          12,
+          63
+        ],
+        [
+          -5,
+          57
+        ],
+        [
+          -12,
+          28
+        ],
+        [
+          3,
+          23
+        ],
+        [
+          5,
+          19
+        ]
+      ]
+    },
+    "Just_the_two_of_us__Grover_Washington_Jr.": {
+      "role": "MIXED",
+      "n_patterns": 414,
+      "avg_walking_pct": 0.8569803279369492,
+      "avg_rhythm_var": 9.816648536018084,
+      "top_intervals": [
+        [
+          1,
+          666
+        ],
+        [
+          -1,
+          459
+        ],
+        [
+          -7,
+          134
+        ],
+        [
+          5,
+          97
+        ],
+        [
+          4,
+          90
+        ]
+      ]
+    },
+    "dumpster_groove": {
+      "role": "MIXED",
+      "n_patterns": 163,
+      "avg_walking_pct": 0.9041369843517083,
+      "avg_rhythm_var": 192.60128416218518,
+      "top_intervals": [
+        [
+          3,
+          96
+        ],
+        [
+          -3,
+          81
+        ],
+        [
+          5,
+          63
+        ],
+        [
+          2,
+          55
+        ],
+        [
+          -5,
+          48
+        ]
+      ]
+    },
+    "Strasbourg__St._Denis": {
+      "role": "MIXED",
+      "n_patterns": 163,
+      "avg_walking_pct": 0.5255181452267341,
+      "avg_rhythm_var": 0.29204219494135036,
+      "top_intervals": [
+        [
+          0,
+          196
+        ],
+        [
+          1,
+          81
+        ],
+        [
+          -1,
+          76
+        ],
+        [
+          2,
+          57
+        ],
+        [
+          -2,
+          48
+        ]
+      ]
+    },
+    "score - 2025-08-07T201131.034": {
+      "role": "PEDAL",
+      "n_patterns": 127,
+      "avg_walking_pct": 0.43223972003499567,
+      "avg_rhythm_var": 2.694181752574759,
+      "top_intervals": [
+        [
+          0,
+          218
+        ],
+        [
+          1,
+          74
+        ],
+        [
+          -1,
+          64
+        ],
+        [
+          -2,
+          24
+        ],
+        [
+          3,
+          18
+        ]
+      ]
+    },
+    "score - 2025-08-07T164659.475": {
+      "role": "MIXED",
+      "n_patterns": 377,
+      "avg_walking_pct": 0.6687521971289874,
+      "avg_rhythm_var": 6.267377233240784,
+      "top_intervals": [
+        [
+          0,
+          311
+        ],
+        [
+          1,
+          160
+        ],
+        [
+          -2,
+          152
+        ],
+        [
+          5,
+          135
+        ],
+        [
+          -5,
+          110
+        ]
+      ]
+    },
+    "St._Thomas": {
+      "role": "PEDAL",
+      "n_patterns": 156,
+      "avg_walking_pct": 0.45237454983637104,
+      "avg_rhythm_var": 3.021155251673725,
+      "top_intervals": [
+        [
+          0,
+          333
+        ],
+        [
+          -2,
+          89
+        ],
+        [
+          5,
+          56
+        ],
+        [
+          -1,
+          52
+        ],
+        [
+          1,
+          51
+        ]
+      ]
+    },
+    "Feliz_Navidad__Jos_Feliciano_Arranged_for_East_High_Schools_Blue_Note_Jazz_Band": {
+      "role": "MIXED",
+      "n_patterns": 452,
+      "avg_walking_pct": 0.5107132750990117,
+      "avg_rhythm_var": 1.001962548771457,
+      "top_intervals": [
+        [
+          0,
+          558
+        ],
+        [
+          -2,
+          170
+        ],
+        [
+          1,
+          107
+        ],
+        [
+          -1,
+          69
+        ],
+        [
+          5,
+          67
+        ]
+      ]
+    },
+    "We_Wish_You_A_Merry_Christmas": {
+      "role": "WALKING",
+      "n_patterns": 684,
+      "avg_walking_pct": 0.7625870231133389,
+      "avg_rhythm_var": 0.2876297816686029,
+      "top_intervals": [
+        [
+          2,
+          345
+        ],
+        [
+          5,
+          243
+        ],
+        [
+          -2,
+          199
+        ],
+        [
+          0,
+          189
+        ],
+        [
+          3,
+          113
+        ]
+      ]
+    },
+    "AllTheKingsSwing": {
+      "role": "PEDAL",
+      "n_patterns": 243,
+      "avg_walking_pct": 0.4759003436673861,
+      "avg_rhythm_var": 34.22653102442946,
+      "top_intervals": [
+        [
+          0,
+          359
+        ],
+        [
+          -2,
+          114
+        ],
+        [
+          2,
+          38
+        ],
+        [
+          -1,
+          37
+        ],
+        [
+          1,
+          26
+        ]
+      ]
+    },
+    "score - 2025-08-08T160316.569": {
+      "role": "MIXED",
+      "n_patterns": 480,
+      "avg_walking_pct": 0.25300617784992785,
+      "avg_rhythm_var": 49.78237560426796,
+      "top_intervals": [
+        [
+          12,
+          426
+        ],
+        [
+          0,
+          172
+        ],
+        [
+          -12,
+          155
+        ],
+        [
+          1,
+          56
+        ],
+        [
+          3,
+          55
+        ]
+      ]
+    },
+    "Black_Cow_-_Steely_Dan": {
+      "role": "MIXED",
+      "n_patterns": 540,
+      "avg_walking_pct": 0.44183432879597306,
+      "avg_rhythm_var": 1.4318633850717781,
+      "top_intervals": [
+        [
+          0,
+          672
+        ],
+        [
+          -5,
+          254
+        ],
+        [
+          5,
+          229
+        ],
+        [
+          2,
+          167
+        ],
+        [
+          -2,
+          86
+        ]
+      ]
+    },
+    "Funky_Cha_Cha_by_Arturo_Sandoval_Arranged_by_Manish_Lamport_for_Big_Band": {
+      "role": "WALKING",
+      "n_patterns": 468,
+      "avg_walking_pct": 0.7945750237416903,
+      "avg_rhythm_var": 0.2991887849563132,
+      "top_intervals": [
+        [
+          -2,
+          155
+        ],
+        [
+          1,
+          153
+        ],
+        [
+          2,
+          129
+        ],
+        [
+          0,
+          115
+        ],
+        [
+          -1,
+          57
+        ]
+      ]
+    },
+    "Rhapsody_in_Blue-_Jazz_Band_": {
+      "role": "PEDAL",
+      "n_patterns": 134,
+      "avg_walking_pct": 0.5047590350380745,
+      "avg_rhythm_var": 2.6223104086561175,
+      "top_intervals": [
+        [
+          0,
+          351
+        ],
+        [
+          5,
+          87
+        ],
+        [
+          -5,
+          74
+        ],
+        [
+          2,
+          26
+        ],
+        [
+          1,
+          21
+        ]
+      ]
+    },
+    "Credits_Theme_-_Super_Mario_World": {
+      "role": "MIXED",
+      "n_patterns": 360,
+      "avg_walking_pct": 0.5736640211640212,
+      "avg_rhythm_var": 0.48028027871809653,
+      "top_intervals": [
+        [
+          0,
+          277
+        ],
+        [
+          2,
+          79
+        ],
+        [
+          1,
+          77
+        ],
+        [
+          -2,
+          72
+        ],
+        [
+          5,
+          50
+        ]
+      ]
+    },
+    "Fukashigi_no_Carte": {
+      "role": "PEDAL",
+      "n_patterns": 466,
+      "avg_walking_pct": 0.22621034514119104,
+      "avg_rhythm_var": 1.6689181347091093,
+      "top_intervals": [
+        [
+          0,
+          792
+        ],
+        [
+          5,
+          64
+        ],
+        [
+          -5,
+          61
+        ],
+        [
+          1,
+          60
+        ],
+        [
+          -1,
+          15
+        ]
+      ]
+    },
+    "Hideaway_-_Jacob_Collier_Full_Insane_Transcription_WIP_42716": {
+      "role": "PEDAL",
+      "n_patterns": 22,
+      "avg_walking_pct": 0.1575757575757576,
+      "avg_rhythm_var": 2.9277807597295347,
+      "top_intervals": [
+        [
+          0,
+          62
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          -5,
+          3
+        ],
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    "Dean_Town": {
+      "role": "PEDAL",
+      "n_patterns": 878,
+      "avg_walking_pct": 0.25746611652078627,
+      "avg_rhythm_var": 12.511318733502478,
+      "top_intervals": [
+        [
+          0,
+          2493
+        ],
+        [
+          -2,
+          108
+        ],
+        [
+          2,
+          95
+        ],
+        [
+          -3,
+          44
+        ],
+        [
+          1,
+          39
+        ]
+      ]
+    },
+    "score - 2025-08-07T205145.457": {
+      "role": "WALKING",
+      "n_patterns": 268,
+      "avg_walking_pct": 0.7493781094527362,
+      "avg_rhythm_var": 0.17885471370001846,
+      "top_intervals": [
+        [
+          2,
+          136
+        ],
+        [
+          0,
+          65
+        ],
+        [
+          5,
+          53
+        ],
+        [
+          1,
+          50
+        ],
+        [
+          -2,
+          23
+        ]
+      ]
+    },
+    "The_Video_Game_Jazz_Medley": {
+      "role": "MIXED",
+      "n_patterns": 450,
+      "avg_walking_pct": 0.6059188712522046,
+      "avg_rhythm_var": 0.8986699538913869,
+      "top_intervals": [
+        [
+          0,
+          361
+        ],
+        [
+          5,
+          159
+        ],
+        [
+          -5,
+          93
+        ],
+        [
+          -1,
+          83
+        ],
+        [
+          1,
+          42
+        ]
+      ]
+    },
+    "Tank_cowboy_bebop": {
+      "role": "WALKING",
+      "n_patterns": 364,
+      "avg_walking_pct": 0.6588522588522588,
+      "avg_rhythm_var": 0.49756532673928217,
+      "top_intervals": [
+        [
+          0,
+          220
+        ],
+        [
+          -1,
+          169
+        ],
+        [
+          2,
+          72
+        ],
+        [
+          -5,
+          71
+        ],
+        [
+          7,
+          28
+        ]
+      ]
+    },
+    "score - 2025-08-07T225959.293": {
+      "role": "MIXED",
+      "n_patterns": 246,
+      "avg_walking_pct": 0.5168855534709194,
+      "avg_rhythm_var": 1.4374216810780702,
+      "top_intervals": [
+        [
+          0,
+          193
+        ],
+        [
+          12,
+          59
+        ],
+        [
+          2,
+          57
+        ],
+        [
+          -2,
+          57
+        ],
+        [
+          1,
+          23
+        ]
+      ]
+    },
+    "All_The_Things_You_Are_-_Jerome_Kern": {
+      "role": "MIXED",
+      "n_patterns": 174,
+      "avg_walking_pct": 0.940544608648057,
+      "avg_rhythm_var": 90.48601204019155,
+      "top_intervals": [
+        [
+          2,
+          69
+        ],
+        [
+          1,
+          63
+        ],
+        [
+          -2,
+          46
+        ],
+        [
+          -1,
+          35
+        ],
+        [
+          3,
+          20
+        ]
+      ]
+    },
+    "score - 2025-08-07T202753.050": {
+      "role": "MIXED",
+      "n_patterns": 323,
+      "avg_walking_pct": 0.5406604747162023,
+      "avg_rhythm_var": 2.744064920313402,
+      "top_intervals": [
+        [
+          0,
+          240
+        ],
+        [
+          5,
+          88
+        ],
+        [
+          -5,
+          50
+        ],
+        [
+          -7,
+          46
+        ],
+        [
+          -1,
+          45
+        ]
+      ]
+    },
+    "score - 2025-08-07T222544.985": {
+      "role": "PEDAL",
+      "n_patterns": 556,
+      "avg_walking_pct": 0.4099970023980815,
+      "avg_rhythm_var": 1.4959600619485374,
+      "top_intervals": [
+        [
+          0,
+          660
+        ],
+        [
+          2,
+          108
+        ],
+        [
+          5,
+          66
+        ],
+        [
+          -2,
+          48
+        ],
+        [
+          -1,
+          47
+        ]
+      ]
+    },
+    "Hurricane_season__Trombone_Shorty_for_BTJU": {
+      "role": "MIXED",
+      "n_patterns": 183,
+      "avg_walking_pct": 0.5081967213114755,
+      "avg_rhythm_var": 0.7002128459700979,
+      "top_intervals": [
+        [
+          0,
+          142
+        ],
+        [
+          1,
+          88
+        ],
+        [
+          -2,
+          49
+        ],
+        [
+          -1,
+          33
+        ],
+        [
+          2,
+          15
+        ]
+      ]
+    },
+    "Sir_duke__Stevie_Wonder_SIR_DUKE__Stevie_Wonder": {
+      "role": "WALKING",
+      "n_patterns": 263,
+      "avg_walking_pct": 0.7661596958174905,
+      "avg_rhythm_var": 0.1294984565474362,
+      "top_intervals": [
+        [
+          0,
+          76
+        ],
+        [
+          -2,
+          68
+        ],
+        [
+          2,
+          56
+        ],
+        [
+          5,
+          54
+        ],
+        [
+          -5,
+          48
+        ]
+      ]
+    },
+    "Tu_Vuo_Fa_LAmericano": {
+      "role": "MIXED",
+      "n_patterns": 198,
+      "avg_walking_pct": 0.9612794612794613,
+      "avg_rhythm_var": 158.6211391914948,
+      "top_intervals": [
+        [
+          -2,
+          132
+        ],
+        [
+          2,
+          66
+        ],
+        [
+          -1,
+          39
+        ],
+        [
+          -3,
+          16
+        ],
+        [
+          3,
+          15
+        ]
+      ]
+    },
+    "Dinners_The_Big_City_-_Lena_Raine_Chicory_A_Colorful_Tale_OST": {
+      "role": "MIXED",
+      "n_patterns": 252,
+      "avg_walking_pct": 0.375,
+      "avg_rhythm_var": 0.6952307346618244,
+      "top_intervals": [
+        [
+          0,
+          186
+        ],
+        [
+          2,
+          57
+        ],
+        [
+          12,
+          34
+        ],
+        [
+          1,
+          31
+        ],
+        [
+          -1,
+          14
+        ]
+      ]
+    },
+    "The_Yellow_Jacket": {
+      "role": "MIXED",
+      "n_patterns": 123,
+      "avg_walking_pct": 0.6937669376693767,
+      "avg_rhythm_var": 0.8106078856565209,
+      "top_intervals": [
+        [
+          0,
+          48
+        ],
+        [
+          2,
+          42
+        ],
+        [
+          -5,
+          19
+        ],
+        [
+          -7,
+          19
+        ],
+        [
+          -1,
+          16
+        ]
+      ]
+    },
+    "Better_Call_Saul": {
+      "role": "MIXED",
+      "n_patterns": 391,
+      "avg_walking_pct": 0.7154305200341007,
+      "avg_rhythm_var": 0.5118275868458304,
+      "top_intervals": [
+        [
+          -1,
+          179
+        ],
+        [
+          0,
+          144
+        ],
+        [
+          1,
+          128
+        ],
+        [
+          2,
+          88
+        ],
+        [
+          -2,
+          57
+        ]
+      ]
+    },
+    "The_Way_You_Look_Tonight": {
+      "role": "WALKING",
+      "n_patterns": 548,
+      "avg_walking_pct": 0.9540754257907541,
+      "avg_rhythm_var": 0.059092433021956964,
+      "top_intervals": [
+        [
+          -2,
+          223
+        ],
+        [
+          3,
+          150
+        ],
+        [
+          -3,
+          115
+        ],
+        [
+          1,
+          114
+        ],
+        [
+          2,
+          96
+        ]
+      ]
+    },
+    "Beneath_the_Mask": {
+      "role": "MIXED",
+      "n_patterns": 362,
+      "avg_walking_pct": 0.9659300184162062,
+      "avg_rhythm_var": 0.5124513535891544,
+      "top_intervals": [
+        [
+          -2,
+          197
+        ],
+        [
+          -3,
+          117
+        ],
+        [
+          2,
+          85
+        ],
+        [
+          3,
+          85
+        ],
+        [
+          -7,
+          27
+        ]
+      ]
+    },
+    "I_put_a_spell_on_you__Jay_Hawkins_-_for_Vocals__Bigband": {
+      "role": "PEDAL",
+      "n_patterns": 227,
+      "avg_walking_pct": 0.36123348017621143,
+      "avg_rhythm_var": 0.8501037148481411,
+      "top_intervals": [
+        [
+          0,
+          228
+        ],
+        [
+          -2,
+          52
+        ],
+        [
+          2,
+          27
+        ],
+        [
+          5,
+          19
+        ],
+        [
+          -5,
+          16
+        ]
+      ]
+    },
+    "score - 2025-08-07T202551.036": {
+      "role": "PEDAL",
+      "n_patterns": 403,
+      "avg_walking_pct": 0.3341191066997518,
+      "avg_rhythm_var": 0.7581434257325325,
+      "top_intervals": [
+        [
+          0,
+          450
+        ],
+        [
+          -5,
+          89
+        ],
+        [
+          5,
+          59
+        ],
+        [
+          2,
+          29
+        ],
+        [
+          7,
+          24
+        ]
+      ]
+    },
+    "Soul_Intro_The_Chicken": {
+      "role": "MIXED",
+      "n_patterns": 787,
+      "avg_walking_pct": 0.4436415157825812,
+      "avg_rhythm_var": 0.5195900457144633,
+      "top_intervals": [
+        [
+          0,
+          2578
+        ],
+        [
+          2,
+          1039
+        ],
+        [
+          1,
+          793
+        ],
+        [
+          3,
+          555
+        ],
+        [
+          4,
+          476
+        ]
+      ]
+    },
+    "score - 2025-08-07T211418.363": {
+      "role": "PEDAL",
+      "n_patterns": 415,
+      "avg_walking_pct": 0.5237751004016065,
+      "avg_rhythm_var": 2.424877491264808,
+      "top_intervals": [
+        [
+          0,
+          581
+        ],
+        [
+          2,
+          135
+        ],
+        [
+          -2,
+          61
+        ],
+        [
+          -5,
+          31
+        ],
+        [
+          -3,
+          28
+        ]
+      ]
+    },
+    "Snake_Eater_-_Metal_Gear_Solid_3_-_The_8-Bit_Big_Band_Transcription": {
+      "role": "PEDAL",
+      "n_patterns": 286,
+      "avg_walking_pct": 0.4911780527165142,
+      "avg_rhythm_var": 1.0802167121331896,
+      "top_intervals": [
+        [
+          0,
+          298
+        ],
+        [
+          5,
+          90
+        ],
+        [
+          -5,
+          45
+        ],
+        [
+          -3,
+          23
+        ],
+        [
+          2,
+          17
+        ]
+      ]
+    },
+    "Caravan__Duke_Ellington": {
+      "role": "MIXED",
+      "n_patterns": 863,
+      "avg_walking_pct": 0.70737460685317,
+      "avg_rhythm_var": 1.4228624235018952,
+      "top_intervals": [
+        [
+          0,
+          780
+        ],
+        [
+          1,
+          249
+        ],
+        [
+          -1,
+          200
+        ],
+        [
+          -2,
+          198
+        ],
+        [
+          2,
+          152
+        ]
+      ]
+    },
+    "Second_Line_or_Joe_Averys_Blues": {
+      "role": "WALKING",
+      "n_patterns": 224,
+      "avg_walking_pct": 0.7578869047619047,
+      "avg_rhythm_var": 0.46578792282049125,
+      "top_intervals": [
+        [
+          0,
+          92
+        ],
+        [
+          1,
+          76
+        ],
+        [
+          2,
+          68
+        ],
+        [
+          -2,
+          45
+        ],
+        [
+          5,
+          45
+        ]
+      ]
+    },
+    "score - 2025-08-07T220504.349": {
+      "role": "MIXED",
+      "n_patterns": 616,
+      "avg_walking_pct": 0.2883116883116883,
+      "avg_rhythm_var": 0.4151188662367406,
+      "top_intervals": [
+        [
+          0,
+          428
+        ],
+        [
+          -12,
+          160
+        ],
+        [
+          -2,
+          149
+        ],
+        [
+          12,
+          121
+        ],
+        [
+          10,
+          52
+        ]
+      ]
+    },
+    "Takarajima": {
+      "role": "PEDAL",
+      "n_patterns": 286,
+      "avg_walking_pct": 0.3446969696969696,
+      "avg_rhythm_var": 1.5362715730481744,
+      "top_intervals": [
+        [
+          0,
+          266
+        ],
+        [
+          12,
+          48
+        ],
+        [
+          -2,
+          44
+        ],
+        [
+          5,
+          32
+        ],
+        [
+          2,
+          24
+        ]
+      ]
+    },
+    "Indian_summer__Pasquale_Losito_Stuart_Ward_Toto_Cutugno_Vito_Pallavicini": {
+      "role": "PEDAL",
+      "n_patterns": 395,
+      "avg_walking_pct": 0.45869901547116737,
+      "avg_rhythm_var": 40.33261125291157,
+      "top_intervals": [
+        [
+          0,
+          345
+        ],
+        [
+          -1,
+          51
+        ],
+        [
+          1,
+          50
+        ],
+        [
+          -2,
+          47
+        ],
+        [
+          -5,
+          47
+        ]
+      ]
+    },
+    "Cantaloupe_Island_Colab": {
+      "role": "MIXED",
+      "n_patterns": 166,
+      "avg_walking_pct": 0.7651688629163745,
+      "avg_rhythm_var": 0.8840567507891308,
+      "top_intervals": [
+        [
+          2,
+          121
+        ],
+        [
+          7,
+          112
+        ],
+        [
+          3,
+          92
+        ],
+        [
+          0,
+          75
+        ],
+        [
+          -12,
+          37
+        ]
+      ]
+    },
+    "Jamaica_Heartbeat": {
+      "role": "WALKING",
+      "n_patterns": 153,
+      "avg_walking_pct": 0.6764705882352942,
+      "avg_rhythm_var": 0.34434990840196467,
+      "top_intervals": [
+        [
+          0,
+          80
+        ],
+        [
+          2,
+          53
+        ],
+        [
+          -1,
+          36
+        ],
+        [
+          -2,
+          35
+        ],
+        [
+          3,
+          12
+        ]
+      ]
+    },
+    "Zoot_suit_riot__Cherry_Poppin_Daddies": {
+      "role": "WALKING",
+      "n_patterns": 437,
+      "avg_walking_pct": 0.6708619374523265,
+      "avg_rhythm_var": 0.09092261526400543,
+      "top_intervals": [
+        [
+          0,
+          125
+        ],
+        [
+          2,
+          116
+        ],
+        [
+          3,
+          80
+        ],
+        [
+          1,
+          77
+        ],
+        [
+          4,
+          69
+        ]
+      ]
+    },
+    "Lingus_We_Like_it_Here_WORK_IN_PROGRESS": {
+      "role": "PEDAL",
+      "n_patterns": 1154,
+      "avg_walking_pct": 0.3084691863410666,
+      "avg_rhythm_var": 2.8151347673065428,
+      "top_intervals": [
+        [
+          0,
+          2586
+        ],
+        [
+          2,
+          498
+        ],
+        [
+          -2,
+          221
+        ],
+        [
+          3,
+          162
+        ],
+        [
+          -1,
+          133
+        ]
+      ]
+    },
+    "score - 2025-08-07T233036.588": {
+      "role": "PEDAL",
+      "n_patterns": 347,
+      "avg_walking_pct": 0.32229998627693157,
+      "avg_rhythm_var": 0.9919673670084572,
+      "top_intervals": [
+        [
+          0,
+          399
+        ],
+        [
+          -5,
+          65
+        ],
+        [
+          5,
+          61
+        ],
+        [
+          -7,
+          41
+        ],
+        [
+          -2,
+          21
+        ]
+      ]
+    },
+    "score - 2025-08-07T174910.616": {
+      "role": "MIXED",
+      "n_patterns": 341,
+      "avg_walking_pct": 0.744379276637341,
+      "avg_rhythm_var": 8.286244684064608,
+      "top_intervals": [
+        [
+          0,
+          141
+        ],
+        [
+          -1,
+          108
+        ],
+        [
+          -2,
+          107
+        ],
+        [
+          2,
+          55
+        ],
+        [
+          1,
+          54
+        ]
+      ]
+    },
+    "Home_At_Last_-_Steely_Dan": {
+      "role": "PEDAL",
+      "n_patterns": 367,
+      "avg_walking_pct": 0.4438692098092644,
+      "avg_rhythm_var": 0.5857927507269892,
+      "top_intervals": [
+        [
+          0,
+          332
+        ],
+        [
+          2,
+          95
+        ],
+        [
+          -2,
+          38
+        ],
+        [
+          1,
+          23
+        ],
+        [
+          5,
+          23
+        ]
+      ]
+    },
+    "Chameleon_Herbie_Hancock": {
+      "role": "MIXED",
+      "n_patterns": 522,
+      "avg_walking_pct": 0.8267879948914433,
+      "avg_rhythm_var": 0.5754788276401095,
+      "top_intervals": [
+        [
+          1,
+          476
+        ],
+        [
+          0,
+          94
+        ],
+        [
+          2,
+          62
+        ],
+        [
+          -2,
+          60
+        ],
+        [
+          3,
+          55
+        ]
+      ]
+    },
+    "Forever_In_Love__Kenny_G": {
+      "role": "WALKING",
+      "n_patterns": 87,
+      "avg_walking_pct": 0.9434942284307074,
+      "avg_rhythm_var": 0.0,
+      "top_intervals": [
+        [
+          2,
+          139
+        ],
+        [
+          1,
+          104
+        ],
+        [
+          -7,
+          74
+        ],
+        [
+          4,
+          62
+        ],
+        [
+          7,
+          9
+        ]
+      ]
+    },
+    "Songbird": {
+      "role": "MIXED",
+      "n_patterns": 74,
+      "avg_walking_pct": 0.9985349480580005,
+      "avg_rhythm_var": 1.2680417890707003,
+      "top_intervals": [
+        [
+          2,
+          177
+        ],
+        [
+          -2,
+          108
+        ],
+        [
+          -7,
+          41
+        ],
+        [
+          1,
+          34
+        ],
+        [
+          -1,
+          28
+        ]
+      ]
+    },
+    "score - 2025-08-07T210154.049": {
+      "role": "MIXED",
+      "n_patterns": 377,
+      "avg_walking_pct": 0.8686855290303566,
+      "avg_rhythm_var": 1.8983075615910205,
+      "top_intervals": [
+        [
+          2,
+          499
+        ],
+        [
+          3,
+          214
+        ],
+        [
+          -2,
+          110
+        ],
+        [
+          -5,
+          104
+        ],
+        [
+          12,
+          66
+        ]
+      ]
+    },
+    "Hang_Up_Your_Hang_Ups": {
+      "role": "WALKING",
+      "n_patterns": 112,
+      "avg_walking_pct": 1.0,
+      "avg_rhythm_var": 0.0,
+      "top_intervals": [
+        [
+          2,
+          101
+        ],
+        [
+          7,
+          33
+        ],
+        [
+          -2,
+          11
+        ]
+      ]
+    },
+    "N64_Royal_Raceway___Mario_Kart_8": {
+      "role": "MIXED",
+      "n_patterns": 293,
+      "avg_walking_pct": 0.012846270396855554,
+      "avg_rhythm_var": 0.11879424970890533,
+      "top_intervals": [
+        [
+          4,
+          1648
+        ],
+        [
+          -4,
+          1344
+        ],
+        [
+          1,
+          18
+        ]
+      ]
+    }
+  },
+  "summary": {
+    "total_pieces": 321,
+    "walking": 116,
+    "pedal": 49,
+    "mixed": 156
+  }
+}

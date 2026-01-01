@@ -1,0 +1,17 @@
+{
+  "leader_gm": 57,
+  "leader_name": "trombone",
+  "follower_gms": [
+    56,
+    66,
+    65
+  ],
+  "follower_names": [
+    "trumpet",
+    "tenor_sax",
+    "alto_sax"
+  ],
+  "n_patterns": 16,
+  "n_events": 112,
+  "tempo": 120
+}

@@ -1,0 +1,15 @@
+{
+  "leader_gm": 0,
+  "leader_name": "piano",
+  "follower_gms": [
+    27,
+    25
+  ],
+  "follower_names": [
+    "clean_guitar",
+    "steel_guitar"
+  ],
+  "n_patterns": 12,
+  "n_events": 48,
+  "tempo": 120
+}

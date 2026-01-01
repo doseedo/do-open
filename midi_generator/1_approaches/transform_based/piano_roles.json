@@ -1,0 +1,220 @@
+{
+  "piece_roles": {
+    "score - 2025-08-07T225555.375": {
+      "role": "COMPING",
+      "n_patterns": 8537,
+      "avg_notes": 9.4119714185311,
+      "pct_simultaneous": 0.4530865643668736,
+      "avg_rhythm": 0.8974716820909365
+    },
+    "Rhapsody_in_Blue (1)": {
+      "role": "COMPING",
+      "n_patterns": 8665,
+      "avg_notes": 9.49798038084247,
+      "pct_simultaneous": 0.46474321984997113,
+      "avg_rhythm": 0.8567931778111659
+    },
+    "score - 2025-08-07T204344.144": {
+      "role": "COMPING",
+      "n_patterns": 6781,
+      "avg_notes": 9.548296711399498,
+      "pct_simultaneous": 0.5488865948975078,
+      "avg_rhythm": 0.7408449355094814
+    },
+    "Rhapsody_in_Blue__George_Gershwin (2)": {
+      "role": "COMPING",
+      "n_patterns": 3625,
+      "avg_notes": 7.100413793103448,
+      "pct_simultaneous": 0.44910344827586207,
+      "avg_rhythm": 0.9436225600877407
+    },
+    "Rhapsody_in_blue__George_Gershwin": {
+      "role": "COMPING",
+      "n_patterns": 6049,
+      "avg_notes": 8.07042486361382,
+      "pct_simultaneous": 0.4567697140023144,
+      "avg_rhythm": 0.8957468886304409
+    },
+    "Honeycomb_Herald": {
+      "role": "COMPING",
+      "n_patterns": 3041,
+      "avg_notes": 36.56593225912529,
+      "pct_simultaneous": 0.6534034856954949,
+      "avg_rhythm": 0.6578350851613192
+    },
+    "Newsies_OST__1._Overture__Prologue__CarryingTheBanner__CTBTag": {
+      "role": "COMPING",
+      "n_patterns": 3005,
+      "avg_notes": 10.022296173044925,
+      "pct_simultaneous": 0.5394342762063228,
+      "avg_rhythm": 0.7742308974484676
+    },
+    "score - 2025-08-07T185721.014": {
+      "role": "COMPING",
+      "n_patterns": 5180,
+      "avg_notes": 10.315830115830115,
+      "pct_simultaneous": 0.4158301158301158,
+      "avg_rhythm": 0.8842233970483572
+    },
+    "jazz_quartet": {
+      "role": "COMPING",
+      "n_patterns": 2505,
+      "avg_notes": 8.231137724550898,
+      "pct_simultaneous": 0.3397205588822355,
+      "avg_rhythm": 1.035697489441086
+    },
+    "Friend_Like_Me_2015_Broadway_Transcription": {
+      "role": "COMPING",
+      "n_patterns": 2604,
+      "avg_notes": 10.54800307219662,
+      "pct_simultaneous": 0.5752688172043011,
+      "avg_rhythm": 0.7775131528692799
+    },
+    "Caravan__Duke_Ellington": {
+      "role": "COMPING",
+      "n_patterns": 2433,
+      "avg_notes": 6.881627620221948,
+      "pct_simultaneous": 0.5803534730785039,
+      "avg_rhythm": 0.742930101397856
+    },
+    "Five_Nights_At_Freddys__The_Living_Tombstone": {
+      "role": "COMPING",
+      "n_patterns": 4391,
+      "avg_notes": 7.019357777271692,
+      "pct_simultaneous": 0.3279435208380779,
+      "avg_rhythm": 1.0073764307289066
+    },
+    "Pedro_Navaja_-_Ruben_Blades__Willie_Colon": {
+      "role": "COMPING",
+      "n_patterns": 2300,
+      "avg_notes": 8.753043478260869,
+      "pct_simultaneous": 0.578695652173913,
+      "avg_rhythm": 0.7439461191878961
+    },
+    "Castaways": {
+      "role": "COMPING",
+      "n_patterns": 2146,
+      "avg_notes": 4.728797763280522,
+      "pct_simultaneous": 0.4748369058713886,
+      "avg_rhythm": 0.8076645604877676
+    },
+    "score - 2025-08-07T232215.969": {
+      "role": "COMPING",
+      "n_patterns": 2278,
+      "avg_notes": 7.825285338015803,
+      "pct_simultaneous": 0.6536435469710272,
+      "avg_rhythm": 0.7849843833080092
+    },
+    "Concerto_for_Clarinet__full__-_Shaw": {
+      "role": "COMPING",
+      "n_patterns": 2321,
+      "avg_notes": 19.48341232227488,
+      "pct_simultaneous": 0.8009478672985783,
+      "avg_rhythm": 0.5086659954636871
+    },
+    "score - 2025-08-07T182949.766": {
+      "role": "COMPING",
+      "n_patterns": 2049,
+      "avg_notes": 6.353343094192289,
+      "pct_simultaneous": 0.4568081991215227,
+      "avg_rhythm": 0.8271205317509132
+    },
+    "Everywhere_at_the_End_of_Time_EATEOT_WIP_-_The_CareTaker-_Big_Band_Arrangement_for_performance": {
+      "role": "COMPING",
+      "n_patterns": 3562,
+      "avg_notes": 4.235261089275688,
+      "pct_simultaneous": 0.4825940482874789,
+      "avg_rhythm": 0.8081975822501568
+    },
+    "score - 2025-08-07T202842.407": {
+      "role": "COMPING",
+      "n_patterns": 2069,
+      "avg_notes": 7.237312711454809,
+      "pct_simultaneous": 0.6868052199130015,
+      "avg_rhythm": 0.6142641479252987
+    },
+    "Just_a_Gigolo__ORMA_2020-2021": {
+      "role": "COMPING",
+      "n_patterns": 1960,
+      "avg_notes": 5.793877551020408,
+      "pct_simultaneous": 0.6571428571428571,
+      "avg_rhythm": 0.6040569988884258
+    },
+    "Daahoud__Clifford_Brown_Daahoud": {
+      "role": "MIXED",
+      "n_patterns": 1395,
+      "avg_notes": 2.891756272401434,
+      "pct_simultaneous": 0.3741935483870968,
+      "avg_rhythm": 0.7670341254781482
+    },
+    "My_Way": {
+      "role": "COMPING",
+      "n_patterns": 1882,
+      "avg_notes": 4.605738575982997,
+      "pct_simultaneous": 0.6875664187035069,
+      "avg_rhythm": 0.5734823940365243
+    },
+    "BLUE_RONDO_A_LA_TURK (1)": {
+      "role": "COMPING",
+      "n_patterns": 1611,
+      "avg_notes": 3.3022967101179392,
+      "pct_simultaneous": 0.4053382991930478,
+      "avg_rhythm": 0.7404310717107468
+    },
+    "Time_to_know_-_Be_Waltz_-_Cowboy_Bebop_for_Jazz_Band": {
+      "role": "MIXED",
+      "n_patterns": 1201,
+      "avg_notes": 2.8151540383014155,
+      "pct_simultaneous": 0.2980849292256453,
+      "avg_rhythm": 0.7929965769266353
+    },
+    "score - 2025-08-07T233034.186": {
+      "role": "MIXED",
+      "n_patterns": 1275,
+      "avg_notes": 2.659607843137255,
+      "pct_simultaneous": 0.2196078431372549,
+      "avg_rhythm": 0.9037227471507943
+    },
+    "Toads_Factory": {
+      "role": "MIXED",
+      "n_patterns": 1342,
+      "avg_notes": 2.860655737704918,
+      "pct_simultaneous": 0.23323397913561847,
+      "avg_rhythm": 0.9049615988140579
+    },
+    "Jessica__Sax": {
+      "role": "COMPING",
+      "n_patterns": 1466,
+      "avg_notes": 3.053206002728513,
+      "pct_simultaneous": 0.5266030013642565,
+      "avg_rhythm": 0.6441424642394835
+    },
+    "score - 2025-08-07T185450.958": {
+      "role": "MIXED",
+      "n_patterns": 1335,
+      "avg_notes": 2.8794007490636706,
+      "pct_simultaneous": 0.5588014981273408,
+      "avg_rhythm": 0.711324536623598
+    },
+    "Romcom__A_Scherzo_for_Piano_and_Strings": {
+      "role": "MIXED",
+      "n_patterns": 1270,
+      "avg_notes": 2.9070866141732283,
+      "pct_simultaneous": 0.378740157480315,
+      "avg_rhythm": 0.8674034304605045
+    },
+    "Battle_Torna_Big_Band_Arrangement": {
+      "role": "MIXED",
+      "n_patterns": 1307,
+      "avg_notes": 2.9502677888293802,
+      "pct_simultaneous": 0.3175210405508799,
+      "avg_rhythm": 0.888097024124703
+    }
+  },
+  "summary": {
+    "total_pieces": 30,
+    "comping": 23,
+    "melody": 0,
+    "mixed": 7
+  }
+}

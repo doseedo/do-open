@@ -1,0 +1,17 @@
+{
+  "leader_gm": 65,
+  "leader_name": "alto_sax",
+  "follower_gms": [
+    66,
+    67,
+    71
+  ],
+  "follower_names": [
+    "tenor_sax",
+    "baritone_sax",
+    "clarinet"
+  ],
+  "n_patterns": 16,
+  "n_events": 64,
+  "tempo": 120
+}

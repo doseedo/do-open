@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reverb Plugins Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+
+        h1 {
+            color: #4CAF50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .plugin-section {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        h2 {
+            color: #2196F3;
+            margin-top: 0;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .control {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            margin-bottom: 5px;
+            color: #b0b0b0;
+            font-size: 14px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+        }
+
+        .value {
+            color: #4CAF50;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        .preset-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .preset-btn {
+            background: #2196F3;
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+
+        .preset-btn:hover {
+            background: #1976D2;
+        }
+
+        #console {
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .log-success {
+            color: #4CAF50;
+        }
+
+        .log-error {
+            color: #f44336;
+        }
+
+        .log-info {
+            color: #2196F3;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎵 Reverb Plugins Test Suite</h1>
+
+    <!-- Algorithmic Reverb -->
+    <div class="plugin-section">
+        <h2>Algorithmic Reverb (Freeverb-style)</h2>
+
+        <div>
+            <button id="initReverb">Initialize Plugin</button>
+            <button id="testReverb" disabled>Play Test Tone</button>
+            <button id="stopReverb" disabled>Stop</button>
+        </div>
+
+        <div class="preset-buttons">
+            <button class="preset-btn" data-preset="smallRoom">Small Room</button>
+            <button class="preset-btn" data-preset="mediumHall">Medium Hall</button>
+            <button class="preset-btn" data-preset="largeHall">Large Hall</button>
+            <button class="preset-btn" data-preset="cathedral">Cathedral</button>
+            <button class="preset-btn" data-preset="plate">Plate</button>
+            <button class="preset-btn" data-preset="spring">Spring</button>
+        </div>
+
+        <div class="controls">
+            <div class="control">
+                <label>Room Size</label>
+                <input type="range" id="roomSize" min="0" max="100" value="50">
+                <div class="value" id="roomSizeValue">50%</div>
+            </div>
+            <div class="control">
+                <label>Decay Time</label>
+                <input type="range" id="decayTime" min="0.1" max="10" step="0.1" value="2.0">
+                <div class="value" id="decayTimeValue">2.0s</div>
+            </div>
+            <div class="control">
+                <label>Damping</label>
+                <input type="range" id="damping" min="0" max="100" value="50">
+                <div class="value" id="dampingValue">50%</div>
+            </div>
+            <div class="control">
+                <label>Width</label>
+                <input type="range" id="width" min="0" max="100" value="100">
+                <div class="value" id="widthValue">100%</div>
+            </div>
+            <div class="control">
+                <label>Pre-delay</label>
+                <input type="range" id="predelay" min="0" max="250" value="0">
+                <div class="value" id="predelayValue">0ms</div>
+            </div>
+            <div class="control">
+                <label>Mix</label>
+                <input type="range" id="mix" min="0" max="100" value="30">
+                <div class="value" id="mixValue">30%</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Convolution Reverb -->
+    <div class="plugin-section">
+        <h2>Convolution Reverb</h2>
+
+        <div>
+            <button id="initConvolution">Initialize Plugin</button>
+            <button id="testConvolution" disabled>Play Test Tone</button>
+            <button id="stopConvolution" disabled>Stop</button>
+        </div>
+
+        <div class="controls">
+            <div class="control">
+                <label>Mix</label>
+                <input type="range" id="convMix" min="0" max="100" value="30">
+                <div class="value" id="convMixValue">30%</div>
+            </div>
+            <div class="control">
+                <label>Pre-delay</label>
+                <input type="range" id="convPredelay" min="0" max="250" value="0">
+                <div class="value" id="convPredelayValue">0ms</div>
+            </div>
+        </div>
+
+        <div style="margin-top: 15px; color: #b0b0b0; font-size: 14px;">
+            Note: Convolution reverb uses a generated impulse response for testing
+        </div>
+    </div>
+
+    <!-- Console Output -->
+    <div id="console"></div>
+
+    <script type="module">
+        import { ReverbPlugin, ConvolutionReverbPlugin, ReverbPresets } from './index.js';
+
+        // Console output
+        function log(message, type = 'info') {
+            const console = document.getElementById('console');
+            const className = type === 'error' ? 'log-error' : type === 'success' ? 'log-success' : 'log-info';
+            console.innerHTML += `<span class="${className}">${new Date().toLocaleTimeString()}: ${message}</span>\n`;
+            console.scrollTop = console.scrollHeight;
+        }
+
+        // Create test impulse
+        function createTestImpulse(context, duration = 0.5) {
+            const sampleRate = context.sampleRate;
+            const length = Math.floor(sampleRate * duration);
+            const buffer = context.createBuffer(1, length, sampleRate);
+            const data = buffer.getChannelData(0);
+
+            data[0] = 1.0;
+            for (let i = 1; i < length; i++) {
+                data[i] = Math.exp(-i / (sampleRate * 0.1)) * (Math.random() * 0.1);
+            }
+
+            return buffer;
+        }
+
+        // Algorithmic Reverb
+        let audioContext = null;
+        let reverbPlugin = null;
+        let reverbOscillator = null;
+
+        document.getElementById('initReverb').addEventListener('click', async () => {
+            try {
+                log('Initializing Algorithmic Reverb...', 'info');
+                audioContext = new AudioContext();
+                reverbPlugin = new ReverbPlugin(audioContext);
+
+                const success = await reverbPlugin.initialize();
+                if (success) {
+                    log('✓ Reverb plugin initialized successfully', 'success');
+                    document.getElementById('initReverb').disabled = true;
+                    document.getElementById('testReverb').disabled = false;
+
+                    // Connect plugin to destination
+                    reverbPlugin.connect(audioContext.destination);
+
+                    // Enable parameter controls
+                    setupReverbControls();
+                } else {
+                    log('✗ Failed to initialize reverb plugin', 'error');
+                }
+            } catch (error) {
+                log(`✗ Error: ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('testReverb').addEventListener('click', () => {
+            if (!audioContext || !reverbPlugin) return;
+
+            log('Playing test tone through reverb...', 'info');
+
+            // Create oscillator
+            reverbOscillator = audioContext.createOscillator();
+            reverbOscillator.frequency.value = 440;
+            reverbOscillator.type = 'sine';
+
+            // Connect oscillator -> plugin
+            reverbOscillator.connect(reverbPlugin.input);
+            reverbOscillator.start();
+
+            document.getElementById('testReverb').disabled = true;
+            document.getElementById('stopReverb').disabled = false;
+
+            log('✓ Test tone playing', 'success');
+        });
+
+        document.getElementById('stopReverb').addEventListener('click', () => {
+            if (reverbOscillator) {
+                reverbOscillator.stop();
+                reverbOscillator = null;
+
+                document.getElementById('testReverb').disabled = false;
+                document.getElementById('stopReverb').disabled = true;
+
+                log('Test tone stopped', 'info');
+            }
+        });
+
+        function setupReverbControls() {
+            const controls = {
+                roomSize: (val) => { reverbPlugin.setRoomSize(val); log(`Room Size: ${val}%`); },
+                decayTime: (val) => { reverbPlugin.setDecayTime(val); log(`Decay Time: ${val}s`); },
+                damping: (val) => { reverbPlugin.setDamping(val); log(`Damping: ${val}%`); },
+                width: (val) => { reverbPlugin.setWidth(val); log(`Width: ${val}%`); },
+                predelay: (val) => { reverbPlugin.setPreDelay(val); log(`Pre-delay: ${val}ms`); },
+                mix: (val) => { reverbPlugin.setMix(val); log(`Mix: ${val}%`); }
+            };
+
+            Object.entries(controls).forEach(([param, handler]) => {
+                const input = document.getElementById(param);
+                const display = document.getElementById(`${param}Value`);
+
+                input.addEventListener('input', (e) => {
+                    const value = parseFloat(e.target.value);
+                    handler(value);
+
+                    if (param === 'decayTime') {
+                        display.textContent = `${value}s`;
+                    } else if (param === 'predelay') {
+                        display.textContent = `${value}ms`;
+                    } else {
+                        display.textContent = `${value}%`;
+                    }
+                });
+            });
+
+            // Preset buttons
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const presetName = btn.dataset.preset;
+                    const preset = ReverbPresets[presetName];
+
+                    if (preset) {
+                        reverbPlugin.loadPreset(preset);
+
+                        // Update UI
+                        const params = preset.parameters;
+                        document.getElementById('roomSize').value = params.roomSize;
+                        document.getElementById('roomSizeValue').textContent = `${params.roomSize}%`;
+                        document.getElementById('decayTime').value = params.decayTime;
+                        document.getElementById('decayTimeValue').textContent = `${params.decayTime}s`;
+                        document.getElementById('damping').value = params.damping;
+                        document.getElementById('dampingValue').textContent = `${params.damping}%`;
+                        document.getElementById('width').value = params.width;
+                        document.getElementById('widthValue').textContent = `${params.width}%`;
+                        document.getElementById('predelay').value = params.predelay;
+                        document.getElementById('predelayValue').textContent = `${params.predelay}ms`;
+                        document.getElementById('mix').value = params.mix;
+                        document.getElementById('mixValue').textContent = `${params.mix}%`;
+
+                        log(`✓ Loaded preset: ${preset.name}`, 'success');
+                    }
+                });
+            });
+        }
+
+        // Convolution Reverb
+        let convAudioContext = null;
+        let convPlugin = null;
+        let convOscillator = null;
+
+        document.getElementById('initConvolution').addEventListener('click', async () => {
+            try {
+                log('Initializing Convolution Reverb...', 'info');
+                convAudioContext = new AudioContext();
+                convPlugin = new ConvolutionReverbPlugin(convAudioContext);
+
+                const success = await convPlugin.initialize();
+                if (success) {
+                    log('✓ Convolution plugin initialized', 'success');
+
+                    // Create and load test impulse
+                    const impulse = createTestImpulse(convAudioContext, 0.5);
+                    convPlugin.setImpulseResponse(impulse);
+                    log('✓ Test impulse response loaded', 'success');
+
+                    document.getElementById('initConvolution').disabled = true;
+                    document.getElementById('testConvolution').disabled = false;
+
+                    // Connect plugin to destination
+                    convPlugin.connect(convAudioContext.destination);
+
+                    // Setup controls
+                    setupConvolutionControls();
+                } else {
+                    log('✗ Failed to initialize convolution plugin', 'error');
+                }
+            } catch (error) {
+                log(`✗ Error: ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('testConvolution').addEventListener('click', () => {
+            if (!convAudioContext || !convPlugin) return;
+
+            log('Playing test tone through convolution...', 'info');
+
+            convOscillator = convAudioContext.createOscillator();
+            convOscillator.frequency.value = 440;
+            convOscillator.type = 'sine';
+
+            convOscillator.connect(convPlugin.input);
+            convOscillator.start();
+
+            document.getElementById('testConvolution').disabled = true;
+            document.getElementById('stopConvolution').disabled = false;
+
+            log('✓ Test tone playing', 'success');
+        });
+
+        document.getElementById('stopConvolution').addEventListener('click', () => {
+            if (convOscillator) {
+                convOscillator.stop();
+                convOscillator = null;
+
+                document.getElementById('testConvolution').disabled = false;
+                document.getElementById('stopConvolution').disabled = true;
+
+                log('Test tone stopped', 'info');
+            }
+        });
+
+        function setupConvolutionControls() {
+            const convMix = document.getElementById('convMix');
+            const convMixValue = document.getElementById('convMixValue');
+
+            convMix.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                convPlugin.setMix(value);
+                convMixValue.textContent = `${value}%`;
+                log(`Convolution Mix: ${value}%`);
+            });
+
+            const convPredelay = document.getElementById('convPredelay');
+            const convPredelayValue = document.getElementById('convPredelayValue');
+
+            convPredelay.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                convPlugin.setPreDelay(value);
+                convPredelayValue.textContent = `${value}ms`;
+                log(`Convolution Pre-delay: ${value}ms`);
+            });
+        }
+
+        log('Reverb Plugins Test Suite Ready', 'success');
+        log('Click "Initialize Plugin" to begin testing', 'info');
+    </script>
+</body>
+</html>

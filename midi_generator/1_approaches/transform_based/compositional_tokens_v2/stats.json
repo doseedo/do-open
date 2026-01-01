@@ -1,0 +1,12 @@
+{
+  "n_sequences": 9954,
+  "total_tokens": 3519198,
+  "vocab_size": 242,
+  "avg_length": 353.54611211573234,
+  "max_length": 12070,
+  "n_unique_intervals": 77,
+  "interval_range": [
+    -54,
+    54
+  ]
+}

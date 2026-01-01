@@ -1,0 +1,17 @@
+{
+  "leader_gm": 33,
+  "leader_name": "electric_bass",
+  "follower_gms": [
+    67,
+    57,
+    60
+  ],
+  "follower_names": [
+    "baritone_sax",
+    "trombone",
+    "french_horn"
+  ],
+  "n_patterns": 12,
+  "n_events": 72,
+  "tempo": 120
+}

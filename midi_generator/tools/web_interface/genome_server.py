@@ -410,7 +410,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                     'pitch': midi_pitch,
                     'velocity': midi_vel,
                     'duration': dur_ticks * ticks_to_sec,
-                    'pattern_id': 0
+                    'pattern_id': rule_id if rule_id is not None else 0
                 })
 
                 # Advance time using rhythm ratios (for next note)
@@ -784,6 +784,13 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                                       'rhythm_ratios', 'duration_ratios', 'velocity_ratios']:
                             if field in rule:
                                 result[field] = rule[field]
+                    # Override with pattern_edits if available (user edits from note picker)
+                    if str(pid) in GenomeGraphHandler.pattern_edits:
+                        edited = GenomeGraphHandler.pattern_edits[str(pid)]
+                        for field in ['pitch_classes', 'octaves', 'durations', 'velocities',
+                                      'canonical_pitches', 'pitch_intervals']:
+                            if field in edited:
+                                result[field] = edited[field]
                     self.send_json(result)
                 else:
                     self.send_json({'error': 'Pattern not found'}, 404)
@@ -1601,15 +1608,33 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         }
         #sidebar {
             width: 320px;
+            min-width: 200px;
+            max-width: 600px;
             background: #16213e;
             padding: 20px;
             overflow-y: auto;
             border-right: 1px solid #0f3460;
+            flex-shrink: 0;
+            position: relative;
+        }
+        #sidebar-resizer {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 5px;
+            height: 100%;
+            cursor: ew-resize;
+            background: transparent;
+            z-index: 100;
+        }
+        #sidebar-resizer:hover {
+            background: #e94560;
         }
         #graph-container {
             flex: 1;
             display: flex;
             flex-direction: column;
+            min-width: 0;
         }
         #toolbar {
             background: #0f3460;
@@ -1618,7 +1643,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             gap: 15px;
             align-items: center;
         }
-        #cy { flex: 1; }
+        #cy { flex: 1; min-height: 0; }
         h1 { font-size: 18px; margin-bottom: 20px; color: #e94560; }
         h2 { font-size: 14px; margin: 15px 0 10px; color: #0f4c75; }
         .stat {
@@ -1671,6 +1696,14 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             border-radius: 4px;
             font-size: 12px;
             font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.1s;
+            position: relative;
+        }
+        .pitch:hover {
+            transform: scale(1.15);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            z-index: 1;
         }
         .pitch-0 { background: #e94560; }
         .pitch-1 { background: #ff6b6b; }
@@ -1684,6 +1717,45 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         .pitch-9 { background: #673ab7; }
         .pitch-10 { background: #9c27b0; }
         .pitch-11 { background: #e91e63; }
+        /* Note picker popup */
+        .note-picker {
+            position: fixed;
+            background: #1a1a2e;
+            border: 2px solid #4fc3f7;
+            border-radius: 8px;
+            padding: 10px;
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        .note-picker-title {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        .note-picker-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+        }
+        .note-picker-item {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .note-picker-item:hover {
+            transform: scale(1.1);
+        }
+        .note-picker-item.current {
+            border: 2px solid white;
+        }
         .edge-list { margin-top: 15px; }
         .edge-item {
             padding: 8px;
@@ -1695,6 +1767,17 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         }
         .edge-item:hover { background: #1a1a2e; }
         .edge-transform { color: #e94560; font-weight: bold; }
+        .pattern-link {
+            color: #4fc3f7;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 3px;
+            transition: background 0.15s, color 0.15s;
+        }
+        .pattern-link:hover {
+            background: #4fc3f7;
+            color: #1a1a2e;
+        }
         .legend {
             display: flex;
             gap: 15px;
@@ -1712,6 +1795,141 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             border-radius: 2px;
         }
         .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
+        /* View toggle buttons */
+        .view-toggle {
+            display: flex;
+            gap: 4px;
+            background: #1a1a2e;
+            border-radius: 4px;
+            padding: 2px;
+        }
+        .view-toggle button {
+            background: transparent;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            color: #888;
+            transition: all 0.2s;
+        }
+        .view-toggle button:hover {
+            background: #0f3460;
+            color: #e0e0e0;
+        }
+        .view-toggle button.active {
+            background: #0f4c75;
+            color: #e0e0e0;
+        }
+        .view-toggle button svg {
+            width: 16px;
+            height: 16px;
+        }
+        /* Split view layout */
+        #graph-container.split-view {
+            display: flex;
+            flex-direction: column;
+        }
+        #graph-container.split-view #cy {
+            flex: 1;
+            min-height: 200px;
+        }
+        #piano-roll-container {
+            display: none;
+            height: 300px;
+            background: #1a1a2e;
+            border-top: 2px solid #0f3460;
+            position: relative;
+            overflow: hidden;
+        }
+        #graph-container.split-view #piano-roll-container {
+            display: flex;
+        }
+        #piano-roll-keys {
+            width: 50px;
+            background: #16213e;
+            border-right: 1px solid #0f3460;
+            overflow-y: hidden;
+            flex-shrink: 0;
+        }
+        .piano-key {
+            height: var(--note-height, 12px);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 4px;
+            font-size: 9px;
+            color: #666;
+            box-sizing: border-box;
+            border-bottom: 1px solid #0f3460;
+        }
+        .piano-key.black {
+            background: #0a0a15;
+            color: #555;
+        }
+        .piano-key.white {
+            background: #1e2a4a;
+        }
+        .piano-key.c-note {
+            color: #e94560;
+            font-weight: bold;
+        }
+        #piano-roll-scroll {
+            flex: 1;
+            overflow: auto;
+            position: relative;
+        }
+        #piano-roll-canvas {
+            display: block;
+        }
+        #piano-roll-header {
+            position: absolute;
+            top: 0;
+            left: 50px;
+            right: 0;
+            height: 20px;
+            background: #16213e;
+            border-bottom: 1px solid #0f3460;
+            z-index: 10;
+            overflow: hidden;
+        }
+        #piano-roll-grid {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        #piano-roll-zoom {
+            position: absolute;
+            bottom: 10px;
+            left: 60px;
+            background: rgba(15, 52, 96, 0.9);
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            z-index: 20;
+            font-size: 11px;
+        }
+        #piano-roll-zoom label {
+            color: #888;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        #piano-roll-zoom input[type="range"] {
+            width: 80px;
+            height: 4px;
+            cursor: pointer;
+        }
+        #piano-roll-zoom span {
+            color: #e0e0e0;
+            min-width: 35px;
+        }
         #playback-section {
             background: #0f3460;
             border-radius: 8px;
@@ -1835,6 +2053,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
 </head>
 <body>
     <div id="sidebar">
+        <div id="sidebar-resizer"></div>
         <h1>Genome Graph Editor</h1>
 
         <div class="stats">
@@ -1889,9 +2108,10 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             </div>
             <div class="pattern-swap">
                 <label style="font-size:11px;color:#888;margin-bottom:5px;display:block">Swap with Pattern:</label>
-                <select id="pattern-swap-select" onchange="swapPattern(this.value)">
+                <select id="pattern-swap-select" onchange="handlePatternSwapChange(this.value)" onmouseover="setupDropdownPreview()">
                     <option value="">-- Select pattern to swap --</option>
                 </select>
+                <button id="swap-confirm-btn" style="display:none;margin-top:5px;background:#f59e0b;border-color:#f59e0b;font-size:11px;padding:4px 10px" onclick="confirmPatternSwap()">Confirm Swap</button>
             </div>
             <div class="edge-list">
                 <h2>Outgoing Edges</h2>
@@ -1982,8 +2202,45 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             <div style="flex:1"></div>
             <button class="secondary" onclick="resetView()">Reset View</button>
             <button class="secondary" onclick="runLayout()">Relayout</button>
+            <div class="view-toggle">
+                <button id="view-graph-btn" class="active" onclick="setViewMode('graph')" title="Graph View">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="5" cy="5" r="3"/><circle cx="19" cy="5" r="3"/>
+                        <circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/>
+                        <line x1="8" y1="5" x2="16" y2="5"/><line x1="5" y1="8" x2="5" y2="16"/>
+                        <line x1="19" y1="8" x2="19" y2="16"/><line x1="8" y1="19" x2="16" y2="19"/>
+                    </svg>
+                </button>
+                <button id="view-midi-btn" onclick="setViewMode('split')" title="MIDI Piano Roll">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="18" rx="2"/>
+                        <line x1="2" y1="12" x2="22" y2="12"/>
+                        <rect x="4" y="14" width="3" height="5" fill="currentColor"/>
+                        <rect x="9" y="14" width="5" height="5" fill="currentColor"/>
+                        <rect x="16" y="14" width="4" height="5" fill="currentColor"/>
+                    </svg>
+                </button>
+            </div>
         </div>
         <div id="cy"></div>
+        <div id="piano-roll-container">
+            <div id="piano-roll-keys"></div>
+            <div id="piano-roll-scroll">
+                <canvas id="piano-roll-canvas"></canvas>
+            </div>
+            <div id="piano-roll-zoom">
+                <label>
+                    X:
+                    <input type="range" id="zoom-x" min="0.01" max="0.3" step="0.005" value="0.05">
+                    <span id="zoom-x-val">1.0x</span>
+                </label>
+                <label>
+                    Y:
+                    <input type="range" id="zoom-y" min="6" max="24" step="1" value="12">
+                    <span id="zoom-y-val">12px</span>
+                </label>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -2012,6 +2269,332 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         let allPatterns = [];  // All patterns for swap dropdown
         let currentGraphData = null;  // Store graph data for track info
         const TRACK_COLORS = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9', '#fd79a8', '#a29bfe', '#00b894', '#e17055'];
+
+        // ======== Piano Roll View ========
+        let currentViewMode = 'graph';  // 'graph' or 'split'
+        let pianoRollData = null;  // Cached playback data for piano roll
+        let pianoRollNotes = [];  // Flattened note data with pattern colors
+        let noteHeight = 12;  // Adjustable via zoom Y
+        let pixelsPerTick = 0.05;  // Adjustable via zoom X
+        const MIN_PITCH = 21;   // A0
+        const MAX_PITCH = 108;  // C8
+        const PATTERN_COLORS = [
+            '#e94560', '#ff6b6b', '#f9a825', '#fdd835', '#8bc34a', '#4caf50',
+            '#00bcd4', '#2196f3', '#3f51b5', '#673ab7', '#9c27b0', '#e91e63',
+            '#ff5722', '#795548', '#607d8b', '#00e676', '#ffea00', '#ff4081'
+        ];
+        let patternColorMap = {};  // pattern_id -> color
+
+        // ======== Sidebar Resize ========
+        (function() {
+            const sidebar = document.getElementById('sidebar');
+            const resizer = document.getElementById('sidebar-resizer');
+            if (!resizer) return;
+            let isResizing = false;
+
+            resizer.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                document.body.style.cursor = 'ew-resize';
+                document.body.style.userSelect = 'none';
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+                const newWidth = e.clientX;
+                if (newWidth >= 200 && newWidth <= 600) {
+                    sidebar.style.width = newWidth + 'px';
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                    if (cy) cy.resize();
+                }
+            });
+        })();
+
+        // ======== Zoom Controls ========
+        function setupZoomControls() {
+            const zoomX = document.getElementById('zoom-x');
+            const zoomY = document.getElementById('zoom-y');
+            const zoomXVal = document.getElementById('zoom-x-val');
+            const zoomYVal = document.getElementById('zoom-y-val');
+
+            if (zoomX) {
+                zoomX.addEventListener('input', () => {
+                    pixelsPerTick = parseFloat(zoomX.value);
+                    const displayVal = (pixelsPerTick / 0.05).toFixed(1);
+                    zoomXVal.textContent = displayVal + 'x';
+                    if (pianoRollNotes.length > 0) {
+                        renderPianoRoll(playbackData || pianoRollData);
+                        if (selectedPattern !== null) {
+                            highlightPatternInPianoRoll(selectedPattern);
+                        }
+                    }
+                });
+            }
+
+            if (zoomY) {
+                zoomY.addEventListener('input', () => {
+                    noteHeight = parseInt(zoomY.value);
+                    zoomYVal.textContent = noteHeight + 'px';
+                    // Update piano key heights via CSS variable
+                    document.getElementById('piano-roll-keys').style.setProperty('--note-height', noteHeight + 'px');
+                    document.querySelectorAll('.piano-key').forEach(key => {
+                        key.style.height = noteHeight + 'px';
+                    });
+                    if (pianoRollNotes.length > 0) {
+                        renderPianoRoll(playbackData || pianoRollData);
+                        if (selectedPattern !== null) {
+                            highlightPatternInPianoRoll(selectedPattern);
+                        }
+                    }
+                });
+            }
+        }
+        // Initialize zoom controls after DOM ready
+        setTimeout(setupZoomControls, 0);
+
+        function setViewMode(mode) {
+            currentViewMode = mode;
+            const container = document.getElementById('graph-container');
+            const graphBtn = document.getElementById('view-graph-btn');
+            const midiBtn = document.getElementById('view-midi-btn');
+
+            if (mode === 'split') {
+                container.classList.add('split-view');
+                graphBtn.classList.remove('active');
+                midiBtn.classList.add('active');
+                // Render piano roll if we have data
+                if (playbackData || pianoRollData) {
+                    renderPianoRoll(playbackData || pianoRollData);
+                } else if (currentPiece) {
+                    loadPianoRollData();
+                }
+                // Resize cytoscape
+                if (cy) cy.resize();
+            } else {
+                container.classList.remove('split-view');
+                graphBtn.classList.add('active');
+                midiBtn.classList.remove('active');
+                // Resize cytoscape
+                if (cy) cy.resize();
+            }
+        }
+
+        async function loadPianoRollData() {
+            if (!currentPiece) return;
+            try {
+                const resp = await fetch(`${API_BASE}/playback/${encodeURIComponent(currentPiece)}`);
+                pianoRollData = await resp.json();
+                if (!pianoRollData.error) {
+                    renderPianoRoll(pianoRollData);
+                }
+            } catch (e) {
+                console.error('Failed to load piano roll data:', e);
+            }
+        }
+
+        function buildPatternColorMap(data) {
+            patternColorMap = {};
+            let colorIndex = 0;
+            for (const track of data.tracks || []) {
+                for (const event of track.events || []) {
+                    const pid = event.pattern_id;
+                    if (pid !== undefined && !(pid in patternColorMap)) {
+                        patternColorMap[pid] = PATTERN_COLORS[colorIndex % PATTERN_COLORS.length];
+                        colorIndex++;
+                    }
+                }
+            }
+        }
+
+        function renderPianoRoll(data) {
+            if (!data || !data.tracks) return;
+
+            // Build pattern color map
+            buildPatternColorMap(data);
+
+            // Build piano keys
+            const keysDiv = document.getElementById('piano-roll-keys');
+            keysDiv.innerHTML = '';
+            const blackKeys = [1, 3, 6, 8, 10];
+            for (let pitch = MAX_PITCH; pitch >= MIN_PITCH; pitch--) {
+                const pc = pitch % 12;
+                const octave = Math.floor(pitch / 12) - 1;
+                const keyDiv = document.createElement('div');
+                keyDiv.className = 'piano-key ' + (blackKeys.includes(pc) ? 'black' : 'white');
+                if (pc === 0) keyDiv.classList.add('c-note');
+                keyDiv.textContent = pc === 0 ? `C${octave}` : '';
+                keysDiv.appendChild(keyDiv);
+            }
+
+            // Flatten notes
+            pianoRollNotes = [];
+            for (const track of data.tracks) {
+                const trackColor = TRACK_COLORS[track.track_id % TRACK_COLORS.length];
+                for (const event of track.events || []) {
+                    pianoRollNotes.push({
+                        time: event.time,
+                        pitch: event.pitch,
+                        duration: event.duration,
+                        velocity: event.velocity,
+                        pattern_id: event.pattern_id,
+                        track_id: track.track_id,
+                        is_drum: track.is_drum,
+                        color: patternColorMap[event.pattern_id] || trackColor
+                    });
+                }
+            }
+
+            // Calculate canvas size
+            const maxTime = data.duration_ticks || Math.max(...pianoRollNotes.map(n => n.time + n.duration), 0);
+            const canvasWidth = Math.max(800, maxTime * pixelsPerTick);
+            const canvasHeight = (MAX_PITCH - MIN_PITCH + 1) * noteHeight;
+
+            const canvas = document.getElementById('piano-roll-canvas');
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+            const ctx = canvas.getContext('2d');
+
+            // Clear canvas
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+            // Draw grid lines
+            ctx.strokeStyle = '#2a2a4e';
+            ctx.lineWidth = 1;
+            // Horizontal lines for each pitch
+            for (let i = 0; i <= MAX_PITCH - MIN_PITCH; i++) {
+                const y = i * noteHeight;
+                const pitch = MAX_PITCH - i;
+                const pc = pitch % 12;
+                // Darker line for C notes
+                ctx.strokeStyle = pc === 0 ? '#3a3a6e' : '#2a2a4e';
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvasWidth, y);
+                ctx.stroke();
+            }
+            // Vertical lines for beats (assuming 480 ticks per beat)
+            const ticksPerBeat = data.ticks_per_beat || 480;
+            ctx.strokeStyle = '#2a2a4e';
+            for (let tick = 0; tick < maxTime; tick += ticksPerBeat) {
+                const x = tick * pixelsPerTick;
+                ctx.strokeStyle = tick % (ticksPerBeat * 4) === 0 ? '#4a4a8e' : '#2a2a4e';
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvasHeight);
+                ctx.stroke();
+            }
+
+            // Draw notes
+            for (const note of pianoRollNotes) {
+                if (note.pitch < MIN_PITCH || note.pitch > MAX_PITCH) continue;
+                const x = note.time * pixelsPerTick;
+                const y = (MAX_PITCH - note.pitch) * noteHeight;
+                const width = Math.max(2, note.duration * pixelsPerTick);
+                const height = noteHeight - 1;
+
+                ctx.fillStyle = note.color;
+                ctx.globalAlpha = 0.7 + (note.velocity / 127) * 0.3;
+                ctx.fillRect(x, y, width, height);
+
+                // Border
+                ctx.strokeStyle = note.color;
+                ctx.globalAlpha = 1;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x, y, width, height);
+            }
+
+            ctx.globalAlpha = 1;
+
+            // Sync scroll with keys
+            const scrollDiv = document.getElementById('piano-roll-scroll');
+            scrollDiv.onscroll = () => {
+                keysDiv.scrollTop = scrollDiv.scrollTop;
+            };
+        }
+
+        function highlightPatternInPianoRoll(patternId) {
+            if (!pianoRollNotes.length) return;
+
+            const canvas = document.getElementById('piano-roll-canvas');
+            const ctx = canvas.getContext('2d');
+
+            // Re-render with highlighting
+            const data = playbackData || pianoRollData;
+            if (!data) return;
+
+            // Debug: log pattern_id values
+            const uniquePatternIds = [...new Set(pianoRollNotes.map(n => n.pattern_id))];
+            console.log('Highlight patternId:', patternId, 'type:', typeof patternId);
+            console.log('Notes pattern_ids (first 10 unique):', uniquePatternIds.slice(0, 10));
+            const matchCount = pianoRollNotes.filter(n => n.pattern_id == patternId).length;
+            console.log('Matching notes:', matchCount);
+
+            const maxTime = data.duration_ticks || Math.max(...pianoRollNotes.map(n => n.time + n.duration), 0);
+            const canvasHeight = (MAX_PITCH - MIN_PITCH + 1) * noteHeight;
+            const ticksPerBeat = data.ticks_per_beat || 480;
+
+            // Clear and redraw grid
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= MAX_PITCH - MIN_PITCH; i++) {
+                const y = i * noteHeight;
+                const pitch = MAX_PITCH - i;
+                const pc = pitch % 12;
+                ctx.strokeStyle = pc === 0 ? '#3a3a6e' : '#2a2a4e';
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            for (let tick = 0; tick < maxTime; tick += ticksPerBeat) {
+                const x = tick * pixelsPerTick;
+                ctx.strokeStyle = tick % (ticksPerBeat * 4) === 0 ? '#4a4a8e' : '#2a2a4e';
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvasHeight);
+                ctx.stroke();
+            }
+
+            // Draw notes with highlighting
+            for (const note of pianoRollNotes) {
+                if (note.pitch < MIN_PITCH || note.pitch > MAX_PITCH) continue;
+                const x = note.time * pixelsPerTick;
+                const y = (MAX_PITCH - note.pitch) * noteHeight;
+                const width = Math.max(2, note.duration * pixelsPerTick);
+                const height = noteHeight - 1;
+
+                const isHighlighted = patternId !== null && note.pattern_id == patternId;
+
+                if (patternId !== null && !isHighlighted) {
+                    // Dim non-highlighted notes
+                    ctx.fillStyle = note.color;
+                    ctx.globalAlpha = 0.15;
+                    ctx.fillRect(x, y, width, height);
+                } else {
+                    // Normal or highlighted note
+                    ctx.fillStyle = note.color;
+                    ctx.globalAlpha = isHighlighted ? 1 : (0.7 + (note.velocity / 127) * 0.3);
+                    ctx.fillRect(x, y, width, height);
+
+                    ctx.strokeStyle = isHighlighted ? '#ffffff' : note.color;
+                    ctx.globalAlpha = 1;
+                    ctx.lineWidth = isHighlighted ? 2 : 1;
+                    ctx.strokeRect(x, y, width, height);
+                }
+            }
+
+            ctx.globalAlpha = 1;
+            ctx.lineWidth = 1;
+        }
 
         // Drum samples (noise-based synthesis for simplicity)
         const DRUM_MAP = {
@@ -2174,6 +2757,11 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 if (playbackData.error) {
                     document.getElementById('playback-status').textContent = 'Error: ' + playbackData.error;
                     return;
+                }
+
+                // Update piano roll if in split view
+                if (currentViewMode === 'split') {
+                    renderPianoRoll(playbackData);
                 }
 
                 // Use current tempo slider value (user can adjust before pressing Play)
@@ -2458,6 +3046,10 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 selectedEdge = null;
                 showPatternDetail(selectedPattern);
                 document.getElementById('edge-detail').style.display = 'none';
+                // Highlight pattern in piano roll
+                if (currentViewMode === 'split') {
+                    highlightPatternInPianoRoll(selectedPattern);
+                }
             });
 
             // Edge click handler
@@ -2474,6 +3066,10 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                     selectedEdge = null;
                     document.getElementById('pattern-detail').classList.remove('active');
                     document.getElementById('edge-detail').style.display = 'none';
+                    // Clear piano roll highlighting
+                    if (currentViewMode === 'split') {
+                        highlightPatternInPianoRoll(null);
+                    }
                 }
             });
         }
@@ -2513,6 +3109,92 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             initGraph(data);
         }
 
+        // Note picker for editing pattern pitches
+        let currentNotePicker = null;
+        let currentPatternPitches = null;  // Cache of current pattern's pitch_classes
+
+        function openNotePicker(event, patternId, noteIndex, currentPitch) {
+            event.stopPropagation();
+            closeNotePicker();
+
+            const picker = document.createElement('div');
+            picker.className = 'note-picker';
+            picker.innerHTML = `
+                <div class="note-picker-title">Change note ${noteIndex + 1}</div>
+                <div class="note-picker-grid">
+                    ${[0,1,2,3,4,5,6,7,8,9,10,11].map(pc => `
+                        <div class="note-picker-item pitch-${pc} ${pc === currentPitch ? 'current' : ''}"
+                             onclick="selectNote(${patternId}, ${noteIndex}, ${pc})">${NOTE_NAMES[pc]}</div>
+                    `).join('')}
+                </div>
+            `;
+
+            // Position near the clicked element
+            const rect = event.target.getBoundingClientRect();
+            picker.style.left = Math.min(rect.left, window.innerWidth - 180) + 'px';
+            picker.style.top = (rect.bottom + 5) + 'px';
+
+            document.body.appendChild(picker);
+            currentNotePicker = picker;
+
+            // Close on outside click
+            setTimeout(() => {
+                document.addEventListener('click', closeNotePicker, { once: true });
+            }, 0);
+        }
+
+        function closeNotePicker() {
+            if (currentNotePicker) {
+                currentNotePicker.remove();
+                currentNotePicker = null;
+            }
+        }
+
+        async function selectNote(patternId, noteIndex, newPitch) {
+            closeNotePicker();
+
+            // Fetch current pattern data
+            const resp = await fetch(`${API_BASE}/pattern/${patternId}`);
+            const pattern = await resp.json();
+
+            // Update the pitch class at the specified index
+            const newPitchClasses = [...pattern.pitch_classes];
+            const oldPitch = newPitchClasses[noteIndex];
+            newPitchClasses[noteIndex] = newPitch;
+
+            // Save the edit
+            const saveResp = await fetch(`${API_BASE}/pattern_edit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pattern_id: patternId,
+                    pattern: {
+                        ...pattern,
+                        pitch_classes: newPitchClasses
+                    }
+                })
+            });
+
+            const result = await saveResp.json();
+            if (result.success) {
+                // Update status
+                document.getElementById('save-status').textContent =
+                    `✓ Changed note ${noteIndex + 1}: ${NOTE_NAMES[oldPitch]} → ${NOTE_NAMES[newPitch]} (unsaved)`;
+                document.getElementById('save-status').style.color = '#f59e0b';
+
+                // Refresh the pattern detail to show updated pitches
+                await showPatternDetail(patternId);
+
+                // Mark pattern as modified in graph
+                const node = cy.$(`#P${patternId}`);
+                node.style('border-color', '#f59e0b');
+                node.style('border-width', 4);
+
+                // Force playback data refresh
+                playbackData = null;
+            }
+        }
+
         // Show pattern detail
         async function showPatternDetail(pid) {
             const resp = await fetch(`${API_BASE}/pattern/${pid}`);
@@ -2530,10 +3212,11 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 `<span style="width:10px;height:10px;border-radius:50%;background:${trackColor}"></span>` +
                 `Track ${trackId}</span>`;
 
-            // Render pitch classes
+            // Render pitch classes (clickable for editing)
             const pitchDiv = document.getElementById('detail-pitches');
-            pitchDiv.innerHTML = pattern.pitch_classes.map(pc =>
-                `<div class="pitch pitch-${pc}" title="${NOTE_NAMES[pc]}">${NOTE_NAMES[pc]}</div>`
+            pitchDiv.innerHTML = pattern.pitch_classes.map((pc, idx) =>
+                `<div class="pitch pitch-${pc}" title="Click to change ${NOTE_NAMES[pc]}"
+                     onclick="openNotePicker(event, ${pid}, ${idx}, ${pc})">${NOTE_NAMES[pc]}</div>`
             ).join('');
 
             // Populate pattern swap dropdown - show patterns from same track first
@@ -2559,7 +3242,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             edgeDiv.innerHTML = edges.slice(0, 20).map(e => `
                 <div class="edge-item" onclick="selectEdge(${e.id})">
                     <span class="edge-transform">${e.transform}</span>
-                    → P${e.target}
+                    → <span class="pattern-link" onclick="event.stopPropagation(); selectAndHighlightPattern(${e.target})" onmouseenter="previewPattern(${e.target})" onmouseleave="clearPatternPreview()">P${e.target}</span>
                 </div>
             `).join('') + (edges.length > 20 ? `<div style="color:#888">${edges.length - 20} more...</div>` : '');
 
@@ -2622,6 +3305,88 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         function selectEdge(eid) {
             selectedEdge = eid;
             cy.$(`#E${eid}`).select();
+        }
+
+        // Preview pattern in piano roll (on hover)
+        let previewPatternId = null;
+        function previewPattern(pid) {
+            previewPatternId = pid;
+            if (currentViewMode === 'split' || currentViewMode === 'midi') {
+                highlightPatternInPianoRoll(pid);
+            }
+        }
+
+        // Clear pattern preview (restore to selected pattern or none)
+        function clearPatternPreview() {
+            previewPatternId = null;
+            if (currentViewMode === 'split' || currentViewMode === 'midi') {
+                highlightPatternInPianoRoll(selectedPattern);
+            }
+        }
+
+        // Select and highlight a pattern (on click)
+        function selectAndHighlightPattern(pid) {
+            selectedPattern = pid;
+            previewPatternId = null;
+            // Select node in graph
+            cy.$(`#P${pid}`).select();
+            // Show pattern detail panel
+            showPatternDetail(pid);
+            // Highlight in piano roll
+            if (currentViewMode === 'split' || currentViewMode === 'midi') {
+                highlightPatternInPianoRoll(pid);
+            }
+        }
+
+        // Handle pattern swap dropdown change - preview the selected pattern
+        let pendingSwapTarget = null;
+        function handlePatternSwapChange(value) {
+            const confirmBtn = document.getElementById('swap-confirm-btn');
+            if (value) {
+                // Extract pattern ID from value (e.g., "P123" -> 123)
+                const pid = parseInt(value.replace('P', ''));
+                pendingSwapTarget = value;
+                // Preview the pattern's notes in piano roll
+                if (currentViewMode === 'split' || currentViewMode === 'midi') {
+                    highlightPatternInPianoRoll(pid);
+                }
+                // Flash the target node in graph
+                cy.$(`#${value}`).flashClass('highlighted', 500);
+                // Show confirm button
+                confirmBtn.style.display = 'inline-block';
+            } else {
+                pendingSwapTarget = null;
+                confirmBtn.style.display = 'none';
+                // Restore original pattern highlight
+                if (currentViewMode === 'split' || currentViewMode === 'midi') {
+                    highlightPatternInPianoRoll(selectedPattern);
+                }
+            }
+        }
+
+        // Confirm the swap action
+        function confirmPatternSwap() {
+            if (pendingSwapTarget) {
+                swapPattern(pendingSwapTarget);
+                pendingSwapTarget = null;
+                document.getElementById('swap-confirm-btn').style.display = 'none';
+            }
+        }
+
+        // Setup dropdown preview (adds listeners for option hover where supported)
+        let dropdownPreviewSetup = false;
+        function setupDropdownPreview() {
+            if (dropdownPreviewSetup) return;
+            dropdownPreviewSetup = true;
+            const select = document.getElementById('pattern-swap-select');
+            // Reset preview when dropdown closes without selection
+            select.addEventListener('blur', () => {
+                if (!pendingSwapTarget) {
+                    if (currentViewMode === 'split' || currentViewMode === 'midi') {
+                        highlightPatternInPianoRoll(selectedPattern);
+                    }
+                }
+            });
         }
 
         // Factor edge
@@ -2687,6 +3452,11 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
             loadGraph(currentPiece);
             if (currentPiece) {
                 document.getElementById('playback-status').textContent = 'Ready to play: ' + currentPiece.substring(0, 30);
+                // Load piano roll data if in split view
+                if (currentViewMode === 'split') {
+                    pianoRollData = null;
+                    loadPianoRollData();
+                }
             } else {
                 document.getElementById('playback-status').textContent = 'Select a piece to enable playback';
             }
@@ -4049,6 +4819,8 @@ def main():
     parser.add_argument('--dag', help='Path to DAG checkpoint (optional)')
     parser.add_argument('--v24', help='Path to original v24 checkpoint (for full playback reconstruction)')
     parser.add_argument('--port', type=int, default=8080, help='Server port')
+    parser.add_argument('--skip-edges', action='store_true', help='Skip temporal edge extraction (faster loading)')
+    parser.add_argument('--gpu', action='store_true', help='Use GPU acceleration for edge extraction')
     args = parser.parse_args()
 
     # Load graph
@@ -4058,7 +4830,7 @@ def main():
         print(f"Loaded genome graph format")
     except ValueError:
         print(f"Converting v24 checkpoint to genome graph...")
-        graph = convert_v24_to_genome_graph(args.checkpoint)
+        graph = convert_v24_to_genome_graph(args.checkpoint, skip_edges=args.skip_edges, use_gpu=args.gpu)
 
     GenomeGraphHandler.graph = graph
     # Store checkpoint path for save functionality

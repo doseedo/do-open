@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, useNavigate, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
 import { useKeyboardControls } from './hooks/useKeyboardControls';
+import * as authService from './services/authService';
 import * as sessionService from './services/sessionService';
 import Navbar from './components/Navbar/Navbar';
 import LeftSidebar from './components/Sidebar/LeftSidebar/LeftSidebar';
@@ -25,6 +26,8 @@ import UserInfo from './components/UserInfo/UserInfo';
 import Tools from './components/Tools/Tools';
 import WhatsNew from './components/WhatsNew/WhatsNew';
 import ChordWindow from './components/ChordWindow/ChordWindow';
+import AudioLabeler from './components/AudioLabeler/AudioLabeler';
+import DataMonitor from './components/DataMonitor/DataMonitor';
 // Real-time theme editor UI enabled:
 import ThemeEditor from './components/ThemeEditor/ThemeEditor';
 import LiquidGlassFilters from './components/LiquidGlassFilters/LiquidGlassFilters';
@@ -98,12 +101,34 @@ function AppContent() {
                       location.pathname === '/tools' ? 'tools' :
                       location.pathname === '/whats-new' ? 'whatsnew' :
                       location.pathname === '/studio' ? 'daw' :
+                      location.pathname === '/label' ? 'label' :
+                      location.pathname === '/monitor' ? 'monitor' :
                       location.pathname === '/' ? 'home' : 'home';
 
-  // Redirect root to dashboard
+  // Redirect root based on auth status - retry multiple times to handle cookie timing
   useEffect(() => {
     if (location.pathname === '/') {
-      navigate('/dashboard', { replace: true });
+      let attempts = 0;
+      const maxAttempts = 5;
+      const checkInterval = 150; // ms between checks
+
+      const checkAuth = () => {
+        attempts++;
+        if (authService.isAuthenticated()) {
+          // Authenticated users go to dashboard
+          navigate('/dashboard', { replace: true });
+        } else if (attempts >= maxAttempts) {
+          // After 750ms of retries, assume not authenticated
+          window.location.href = '/home';
+        } else {
+          // Try again
+          setTimeout(checkAuth, checkInterval);
+        }
+      };
+
+      // Start checking after initial 100ms delay
+      const timeoutId = setTimeout(checkAuth, 100);
+      return () => clearTimeout(timeoutId);
     }
   }, [location.pathname, navigate]);
 
@@ -400,6 +425,24 @@ function AppContent() {
         <WhatsNew />
         {/* Real-time theme editor enabled: */}
         <ThemeEditor />
+      </div>
+    );
+  }
+
+  // Show audio labeler view (standalone, no sidebar needed)
+  if (currentView === 'label') {
+    return (
+      <div className="App">
+        <AudioLabeler />
+      </div>
+    );
+  }
+
+  // Show data monitor view (standalone, no sidebar needed)
+  if (currentView === 'monitor') {
+    return (
+      <div className="App">
+        <DataMonitor />
       </div>
     );
   }
