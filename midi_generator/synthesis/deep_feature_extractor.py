@@ -47,13 +47,19 @@ except ImportError:
 
 # Import existing analysis components
 try:
-    from analysis.midi_analyzer import MIDIAnalyzer, KeyDetector, ChordRecognizer, NoteEvent
-    from learning.pattern_extractor import PatternExtractor, NGramExtractor
+    from analysis.midi_analyzer import MidiAnalyzer, KeyDetector, ChordRecognizer, NoteEvent
+    MIDIAnalyzer = MidiAnalyzer  # Alias for compatibility
 except ImportError:
     print("Warning: Could not import analysis components. Using minimal feature extraction.")
     MIDIAnalyzer = None
+    MidiAnalyzer = None
+    NoteEvent = None
+
+try:
+    from learning.pattern_extractor import PatternExtractor, NGramExtractor
+except ImportError:
     PatternExtractor = None
-    NoteEvent = None  # Fallback
+    NGramExtractor = None
 
 
 @dataclass

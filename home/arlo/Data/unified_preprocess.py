@@ -40,10 +40,23 @@ Outputs per audio file:
 """
 
 import os
+import signal
+import sys
+
 os.environ.setdefault("OMP_NUM_THREADS", "4")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "4")
 os.environ.setdefault("MKL_NUM_THREADS", "4")
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:512"
+
+# OOM crash protection: auto-restart on failure
+_RESTART_EXIT_CODE = 42
+
+def _handle_oom_signal(signum, frame):
+    """Handle OOM killer signal gracefully"""
+    print(f"\n[OOM] Caught signal {signum}, exiting for restart...")
+    sys.exit(_RESTART_EXIT_CODE)
+
+signal.signal(signal.SIGUSR1, _handle_oom_signal)
 
 import argparse
 import json
@@ -93,16 +106,7 @@ class Config:
     min_note_length_ms: int = 6
 
     # Exclude patterns (drums, etc.)
-    exclude_keywords: List[str] = field(default_factory=lambda: [
-        "Kick", "KICK", "KickIn", "KickOut", "kick",
-        "Snare", "Snr", "SNR", "SNARE", "snare",
-        "HiHat", "HH", "Hat", "HAT", "hihat",
-        "Tom", "RackTom", "FloorTom", "TOM",
-        "Cymbal", "Cym", "Crash", "Ride", "CYM",
-        "OH", "Overhead", "OHL", "OHR",
-        "Perc", "Tamb", "Cowbell", "Clap", "Shaker",
-        "Drum", "Drums", "Drumkit", "Kit", "DRUM"
-    ])
+    exclude_keywords: List[str] = field(default_factory=lambda: [])
 
     @property
     def frame_rate(self) -> float:
@@ -421,7 +425,7 @@ class UnifiedProcessor:
         self.exclude_pattern = re.compile(
             "|".join(re.escape(w) for w in config.exclude_keywords),
             re.IGNORECASE
-        )
+        ) if config.exclude_keywords else None
 
         self.stats = defaultdict(int)
 
@@ -468,7 +472,7 @@ class UnifiedProcessor:
     def _should_skip(self, audio_path: Path, out_paths: Dict[str, Path]) -> Optional[str]:
         """Check if file should be skipped"""
         # Check exclude pattern
-        if self.exclude_pattern.search(str(audio_path)):
+        if self.exclude_pattern and self.exclude_pattern.search(str(audio_path)):
             return "excluded_pattern"
 
         # Check if all requested outputs exist
@@ -577,7 +581,10 @@ def gpu_worker(
     progress_queue: Queue,
     result_queue: Queue
 ):
-    """Worker process for a single GPU"""
+    """Worker process for a single GPU with parallel I/O"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     device = torch.device("cuda:0")
 
@@ -591,10 +598,80 @@ def gpu_worker(
     )
 
     results = []
-    for i, audio_path in enumerate(audio_paths):
-        status, result = processor.process_file(Path(audio_path))
-        results.append({"path": audio_path, "status": status, **result})
-        progress_queue.put((gpu_id, i + 1, len(audio_paths), status))
+    results_lock = threading.Lock()
+
+    # Pre-load audio files in parallel while GPU processes
+    NUM_PRELOAD = 8  # Number of files to preload
+
+    def load_audio_task(audio_path):
+        """Load audio and check skip conditions"""
+        path = Path(audio_path)
+        out_paths = processor._get_output_paths(path)
+        skip_reason = processor._should_skip(path, out_paths)
+        if skip_reason:
+            return (audio_path, None, None, skip_reason, out_paths)
+        try:
+            waveform, sr = load_audio(path, processor.config.sample_rate)
+            return (audio_path, waveform, sr, None, out_paths)
+        except Exception as e:
+            return (audio_path, None, None, f"load_error: {e}", out_paths)
+
+    def process_loaded(audio_path, waveform, sr, out_paths):
+        """Process pre-loaded audio on GPU"""
+        try:
+            processor._init_models()
+
+            # Validate duration
+            duration = waveform.shape[-1] / sr
+            if duration < processor.config.min_duration_sec:
+                raise ValueError(f"Too short: {duration:.2f}s")
+            if duration > processor.config.max_duration_sec:
+                raise ValueError(f"Too long: {duration:.2f}s")
+            if waveform.abs().max() < processor.config.silence_threshold:
+                raise ValueError("Silent audio")
+            if not torch.isfinite(waveform).all():
+                raise ValueError("Audio contains NaN/inf")
+
+            result = {"audio_path": str(audio_path)}
+
+            if "dcae_latents" in processor.formats:
+                latents = extract_dcae_latents(waveform, sr, processor.model_cache, processor.config)
+                torch.save({
+                    "latents": latents,
+                    "length": latents.shape[-1],
+                    "original_path": str(audio_path),
+                    "original_duration": duration
+                }, out_paths["dcae_latents"])
+                result["latent_path"] = str(out_paths["dcae_latents"])
+
+            processor.stats["success"] += 1
+            return "success", result
+        except Exception as e:
+            processor.stats["failed"] += 1
+            return "failed", {"error": str(e)}
+        finally:
+            torch.cuda.empty_cache()
+
+    # Use thread pool for parallel loading
+    with ThreadPoolExecutor(max_workers=NUM_PRELOAD) as loader:
+        # Submit all load tasks
+        load_futures = {loader.submit(load_audio_task, p): p for p in audio_paths}
+
+        for i, future in enumerate(as_completed(load_futures)):
+            audio_path, waveform, sr, skip_reason, out_paths = future.result()
+
+            if skip_reason:
+                if skip_reason.startswith("load_error"):
+                    processor.stats["failed"] += 1
+                    status, result = "failed", {"error": skip_reason}
+                else:
+                    processor.stats[f"skipped_{skip_reason}"] += 1
+                    status, result = "skipped", {"reason": skip_reason}
+            else:
+                status, result = process_loaded(audio_path, waveform, sr, out_paths)
+
+            results.append({"path": audio_path, "status": status, **result})
+            progress_queue.put((gpu_id, i + 1, len(audio_paths), status))
 
     result_queue.put((gpu_id, results, dict(processor.stats)))
 
@@ -655,8 +732,45 @@ Format groups:
     parser.add_argument("--manifest", type=str, help="Output manifest JSON path")
     parser.add_argument("--group", type=str, help="Instrument group for manifest")
     parser.add_argument("--subgroup", type=str, help="Instrument subgroup for manifest")
+    parser.add_argument("--auto-restart", action="store_true",
+                        help="Auto-restart on crash (OOM protection)")
 
     args = parser.parse_args()
+
+    # Auto-restart wrapper
+    if args.auto_restart:
+        import subprocess
+        restart_count = 0
+        max_restarts = 1000  # Limit restarts
+
+        # Build command without --auto-restart to avoid recursion
+        cmd = [sys.executable] + [a for a in sys.argv if a != "--auto-restart"]
+
+        while restart_count < max_restarts:
+            print(f"\n{'='*50}")
+            print(f"[AUTO-RESTART] Run #{restart_count + 1}")
+            print(f"{'='*50}\n")
+
+            result = subprocess.run(cmd)
+
+            if result.returncode == 0:
+                print("\n[AUTO-RESTART] Completed successfully!")
+                sys.exit(0)
+
+            restart_count += 1
+            print(f"\n[AUTO-RESTART] Crashed with code {result.returncode}, restarting in 5s... ({restart_count}/{max_restarts})")
+            import time
+            time.sleep(5)
+
+            # Clear any GPU memory before restart
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except:
+                pass
+
+        print(f"[AUTO-RESTART] Max restarts ({max_restarts}) reached, giving up.")
+        sys.exit(1)
 
     # Parse formats
     formats = parse_formats(args.formats)
@@ -668,13 +782,15 @@ Format groups:
 
     # Load audio paths
     input_path = Path(args.input)
-    if input_path.is_file() and input_path.suffix == ".txt":
+    if input_path.is_file() and input_path.suffix in (".wav", ".mp3", ".flac", ".ogg"):
+        # Single audio file
+        audio_paths = [str(input_path)]
+    elif input_path.is_file():
+        # Text file with list of paths (any extension or no extension)
         with open(input_path) as f:
             audio_paths = [line.strip() for line in f if line.strip().endswith(".wav")]
-    elif input_path.is_file():
-        audio_paths = [str(input_path)]
     else:
-        raise ValueError(f"Input must be a .txt file or audio file: {input_path}")
+        raise ValueError(f"Input must be a text file or audio file: {input_path}")
 
     print(f"Found {len(audio_paths)} audio files")
 

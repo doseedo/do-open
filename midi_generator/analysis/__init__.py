@@ -12,43 +12,78 @@ Modules:
 - feature_correlation_analyzer: Feature correlation analysis (Agent 25)
 """
 
-# Core analysis tools
-from .midi_analyzer import MidiAnalyzer, NoteEvent, ChordEvent
-from .genre_detector import GenreDetector, RhythmicFeatureExtractor
-from .dataset_analyzer import DatasetAnalyzer
+# Core analysis tools - these are essential
+try:
+    from .midi_analyzer import MidiAnalyzer, NoteEvent, ChordEvent
+except ImportError as e:
+    print(f"Warning: midi_analyzer import failed: {e}")
+    MidiAnalyzer = None
+    NoteEvent = None
+    ChordEvent = None
 
-# Agent 10: Intelligent Gap Detector
-from .intelligent_gap_detector import (
-    # Core classes
-    IntelligentGapDetector,
-    FeatureToParameterMapper,
-    FeatureParameterMapping,
-    ParameterSuggestion,
+try:
+    from .genre_detector import GenreDetector, RhythmicFeatureExtractor
+except ImportError as e:
+    print(f"Warning: genre_detector import failed: {e}")
+    GenreDetector = None
+    RhythmicFeatureExtractor = None
 
-    # Advanced analysis
-    GapPredictor,
-    GapTracker,
-    AdvancedCorrelationAnalyzer,
-    GapVisualizationHelper,
-    XGBoostIntegration,
+try:
+    from .dataset_analyzer import DatasetAnalyzer
+except ImportError as e:
+    DatasetAnalyzer = None
 
-    # Convenience functions
-    detect_gaps_from_errors,
-    analyze_systematic_gaps,
-    create_full_pipeline,
-)
+# Agent 10: Intelligent Gap Detector (optional)
+try:
+    from .intelligent_gap_detector import (
+        IntelligentGapDetector,
+        FeatureToParameterMapper,
+        FeatureParameterMapping,
+        ParameterSuggestion,
+        GapPredictor,
+        GapTracker,
+        AdvancedCorrelationAnalyzer,
+        GapVisualizationHelper,
+        XGBoostIntegration,
+        detect_gaps_from_errors,
+        analyze_systematic_gaps,
+        create_full_pipeline,
+    )
+except ImportError as e:
+    IntelligentGapDetector = None
+    FeatureToParameterMapper = None
+    FeatureParameterMapping = None
+    ParameterSuggestion = None
+    GapPredictor = None
+    GapTracker = None
+    AdvancedCorrelationAnalyzer = None
+    GapVisualizationHelper = None
+    XGBoostIntegration = None
+    detect_gaps_from_errors = None
+    analyze_systematic_gaps = None
+    create_full_pipeline = None
 
-# Agent 25: Feature Correlation Analyzer
-from .feature_correlation_analyzer import (
-    FeatureCorrelationAnalyzer,
-    CorrelationResult,
-    RedundantFeaturePair,
-    FeatureSubset,
-    FeatureInteraction,
-    CorrelationAnalysisReport,
-    quick_correlation_analysis,
-    find_best_features_for_parameter,
-)
+# Agent 25: Feature Correlation Analyzer (optional)
+try:
+    from .feature_correlation_analyzer import (
+        FeatureCorrelationAnalyzer,
+        CorrelationResult,
+        RedundantFeaturePair,
+        FeatureSubset,
+        FeatureInteraction,
+        CorrelationAnalysisReport,
+        quick_correlation_analysis,
+        find_best_features_for_parameter,
+    )
+except ImportError as e:
+    FeatureCorrelationAnalyzer = None
+    CorrelationResult = None
+    RedundantFeaturePair = None
+    FeatureSubset = None
+    FeatureInteraction = None
+    CorrelationAnalysisReport = None
+    quick_correlation_analysis = None
+    find_best_features_for_parameter = None
 
 __all__ = [
     # Core analysis

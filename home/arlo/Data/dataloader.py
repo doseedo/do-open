@@ -449,3 +449,164 @@ def collate_latent_cond(batch: List[Dict[str,Any]]) -> Dict[str,Any]:
         },
         "meta": metas,
     }
+
+
+# ============== Simple Dataloader for unified_manifest.json ==============
+
+class SimpleLatentDataset(Dataset):
+    """
+    Minimal dataloader for unified_manifest.json format.
+    Only requires latent_path + group/subgroup. Creates zero conditioning.
+    """
+    def __init__(self,
+                 json_path: str,
+                 window_slow: int = 256,
+                 seed: Optional[int] = None,
+                 filter_groups: Optional[List[str]] = None):
+        super().__init__()
+        import orjson
+        import time
+
+        print(f"[SimpleLatentDataset] Loading manifest: {json_path}")
+        t0 = time.time()
+        with open(json_path, 'rb') as f:
+            data = orjson.loads(f.read())
+        print(f"[SimpleLatentDataset] JSON parsed in {time.time()-t0:.1f}s")
+
+        # Handle both list and dict-with-entries formats
+        if isinstance(data, list):
+            entries = data
+        elif isinstance(data, dict) and 'entries' in data:
+            entries = data['entries']
+        else:
+            raise ValueError(f"Unknown manifest format: {type(data)}")
+
+        print(f"[SimpleLatentDataset] Filtering {len(entries)} entries (groups={filter_groups})...")
+
+        # Filter to entries with latents and optionally by group
+        self.items = []
+        skip_no_latent = 0
+        skip_missing_file = 0
+        skip_wrong_group = 0
+        t0 = time.time()
+
+        for i, e in enumerate(entries):
+            if i > 0 and i % 20000 == 0:
+                print(f"[SimpleLatentDataset] ... processed {i}/{len(entries)} entries ({len(self.items)} valid)")
+
+            if not e.get('has_latent', False):
+                skip_no_latent += 1
+                continue
+            lat_path = e.get('latent_path')
+            if not lat_path or not Path(lat_path).exists():
+                skip_missing_file += 1
+                continue
+            grp = (e.get('group') or 'undefined').lower()
+            if filter_groups and grp not in filter_groups:
+                skip_wrong_group += 1
+                continue
+            self.items.append(e)
+
+        print(f"[SimpleLatentDataset] Filtering done in {time.time()-t0:.1f}s")
+        print(f"[SimpleLatentDataset] Skipped: no_latent={skip_no_latent}, missing_file={skip_missing_file}, wrong_group={skip_wrong_group}")
+
+        self.window_slow = window_slow
+        self.rng = np.random.default_rng(seed)
+
+        self.group2id = {g: i for i, g in enumerate(APPROVED_GROUPS)}
+        all_subs = sorted({sg for subs in APPROVED_SUBGROUPS.values() for sg in subs})
+        self.sub2id = {sg: i for i, sg in enumerate(all_subs)}
+
+        print(f"[SimpleLatentDataset] Loaded {len(self.items)} items with latents")
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        meta = self.items[idx]
+
+        # Load latent
+        lat_path = meta['latent_path']
+        latents = torch.load(lat_path, map_location='cpu')
+        if isinstance(latents, dict):
+            for k in ('latents', 'latent', 'z', 'data'):
+                if k in latents and isinstance(latents[k], torch.Tensor):
+                    latents = latents[k]
+                    break
+
+        # Ensure shape [8, 16, T] or [C, H, T]
+        if latents.dim() == 2:
+            latents = latents.unsqueeze(0)
+        if latents.dim() == 4 and latents.shape[0] == 1:
+            latents = latents.squeeze(0)
+
+        T_slow = latents.shape[-1]
+
+        # Random window crop
+        W = min(self.window_slow, T_slow)
+        max_start = max(0, T_slow - W)
+        start = int(self.rng.integers(0, max_start + 1)) if max_start > 0 else 0
+        latents = latents[..., start:start + W]
+        T_final = latents.shape[-1]
+
+        # Group/subgroup
+        group = (meta.get('group') or 'undefined').lower()
+        subgroup = (meta.get('subgroup') or 'undefined').lower()
+        if group not in self.group2id:
+            group = 'guitar'
+        if subgroup not in self.sub2id:
+            subgroup = 'undefined'
+
+        # Zero conditioning (no piano roll, amp, etc.)
+        return {
+            "latents": latents.float(),
+            "encodec_tokens": torch.zeros(8, int(T_final * FAST_PER_SLOW), dtype=torch.long),
+            "conds": {
+                "piano_roll": torch.zeros(128, T_final),
+                "amp": torch.zeros(T_final),
+                "rbend": torch.zeros(T_final),
+                "rframe": torch.zeros(T_final),
+                "rbend_mask": torch.zeros(T_final),
+            },
+            "instrument": {
+                "group": group,
+                "subgroup": subgroup,
+                "group_id": torch.tensor(self.group2id.get(group, 0), dtype=torch.long),
+                "subgroup_id": torch.tensor(self.sub2id.get(subgroup, 0), dtype=torch.long),
+            },
+            "meta": {
+                "audio_path": meta.get('audio_path', ''),
+                "latent_path": lat_path,
+            }
+        }
+
+
+def collate_simple(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Collate for SimpleLatentDataset - pads to max length in batch."""
+    maxT_slow = max(it["latents"].shape[-1] for it in batch)
+    maxT_fast = max(it["encodec_tokens"].shape[-1] for it in batch)
+
+    lat_list, enc_list = [], []
+    cond_keys = list(batch[0]["conds"].keys())
+    cond_lists = {k: [] for k in cond_keys}
+    group_ids, subgroup_ids, metas = [], [], []
+
+    for it in batch:
+        lat_list.append(_pad_dim(it["latents"], maxT_slow, dim=-1))
+        enc_list.append(_pad_last(it["encodec_tokens"], maxT_fast))
+        for k in cond_keys:
+            cond_lists[k].append(_pad_last(it["conds"][k], maxT_slow))
+        group_ids.append(it["instrument"]["group_id"])
+        subgroup_ids.append(it["instrument"]["subgroup_id"])
+        metas.append(it["meta"])
+
+    return {
+        "latents": torch.stack(lat_list, 0),
+        "encodec_tokens": torch.stack(enc_list, 0),
+        "conds": {k: torch.stack(v, 0) for k, v in cond_lists.items()},
+        "instrument": {
+            "group_id": torch.stack(group_ids, 0),
+            "subgroup_id": torch.stack(subgroup_ids, 0),
+        },
+        "meta": metas,
+    }

@@ -101,7 +101,8 @@ INSTRUMENT_PATTERNS = {
         "trumpet", "tpt", "trombone", "bone", "horn", "flugel", "tuba",
         "trmpt", "tromb", "tb", "tpt", "fh", "hrn", "tp", "brass", "cornet"
     ],
-    "winds": ["sax", "tenor", "bari", "flute", "clari", "oboe", "alto", "bassoon", "piccolo", "recorder", "flt", "cl", "ob"],
+    # Note: removed "tenor", "bari", "alto" (need "sax" suffix), removed "cl", "ob", "flt" (too short, false positives)
+    "winds": ["sax", "saxophone", "flute", "clarinet", "clari", "oboe", "bassoon", "piccolo", "recorder", "woodwind"],
     "mallets": ["glock", "marimba", "xylo", "vibes", "vibraphone", "bells", "chimes"],
     "plucked": ["banjo", "mandolin", "ukelele", "uke", "harp", "sitar", "dulcimer"],
     "percussion": [
@@ -120,10 +121,11 @@ SUBCATEGORY_PATTERNS = {
         "tuba":        ["tuba"],
     },
     "winds": {
-        "sax":      ["sax", "tenor", "bari", "alto", "soprano"],
-        "flute":    ["flute", "flt", "piccolo", "picc", "recorder", "fl"],
-        "clarinet": ["clarinet", "clari", "clar", "cl"],
-        "oboe":     ["oboe", "obo", "ob"],
+        # Note: "tenor sax", "bari sax", "alto sax" handled via compound matching
+        "sax":      ["sax", "saxophone", "tenor sax", "bari sax", "alto sax", "soprano sax"],
+        "flute":    ["flute", "piccolo", "picc", "recorder"],
+        "clarinet": ["clarinet", "clari"],
+        "oboe":     ["oboe"],
         "bassoon":  ["bassoon", "bsn"],
     },
     "strings": {

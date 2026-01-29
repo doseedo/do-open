@@ -3,9 +3,9 @@ import './AudioLabeler.css';
 
 // Available instrument groups
 const INSTRUMENT_GROUPS = [
-  'drums', 'voice', 'guitar', 'piano', 'bass', 'room',
+  'drums', 'voice', 'guitar', 'piano', 'bass',
   'strings', 'winds', 'brass', 'synth', 'percussion',
-  'fx', 'plucked', 'organ', 'mallets', 'click', 'undefined'
+  'plucked', 'organ', 'mallets', 'undefined'
 ];
 
 // Subgroups per group
@@ -23,24 +23,24 @@ const SUBGROUPS = {
  * Review classifier predictions and correct labels
  */
 const AudioLabeler = () => {
-  // Manifest state
-  const [manifests, setManifests] = useState([]);
-  const [selectedManifest, setSelectedManifest] = useState(null);
-  const [manifestData, setManifestData] = useState(null);
+  // View mode: 'predictions' or 'flagged'
+  const [viewMode, setViewMode] = useState('predictions');
+
+  // Classifier state
+  const [classifiers, setClassifiers] = useState([]);
+  const [selectedClassifier, setSelectedClassifier] = useState('instrument');
 
   // Entry state
   const [entries, setEntries] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [corrections, setCorrections] = useState({});
+  const [summary, setSummary] = useState(null);
 
   // Filter state
+  const [confidenceFilter, setConfidenceFilter] = useState('low'); // Start with low confidence (needs review)
   const [groupFilter, setGroupFilter] = useState('all');
-  const [subgroupFilter, setSubgroupFilter] = useState('all');
-  const [confidenceFilter, setConfidenceFilter] = useState('all'); // all, high, medium, low
-
-  // Available filter options (from manifest)
+  const [flagFilter, setFlagFilter] = useState('all');
   const [availableGroups, setAvailableGroups] = useState([]);
-  const [availableSubgroups, setAvailableSubgroups] = useState([]);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -51,67 +51,80 @@ const AudioLabeler = () => {
 
   const audioRef = useRef(null);
 
-  // Load manifests list
-  const loadManifests = useCallback(async () => {
+  // Load classifiers list
+  const loadClassifiers = useCallback(async () => {
     try {
-      const response = await fetch('/api/monitor/manifests');
+      const response = await fetch('/api/monitor/classifiers');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      setManifests(data.manifests || []);
+      setClassifiers(data.classifiers || []);
 
-      // Auto-select first classifier result manifest
-      const classifierManifest = data.manifests.find(m => m.is_classifier_result);
-      if (classifierManifest) {
-        setSelectedManifest(classifierManifest.filename);
-      } else if (data.manifests.length > 0) {
-        setSelectedManifest(data.manifests[0].filename);
+      // Auto-select first classifier with predictions
+      const withPredictions = data.classifiers.find(c => c.has_predictions);
+      if (withPredictions) {
+        setSelectedClassifier(withPredictions.type);
       }
     } catch (err) {
-      console.error('Failed to load manifests:', err);
-      setError(`Failed to load manifests: ${err.message}`);
+      console.error('Failed to load classifiers:', err);
+      setError(`Failed to load classifiers: ${err.message}`);
     }
   }, []);
 
-  // Load manifest entries
-  const loadManifestEntries = useCallback(async () => {
-    if (!selectedManifest) return;
+  // Load predictions
+  const loadPredictions = useCallback(async () => {
+    if (!selectedClassifier) return;
 
     try {
       setLoading(true);
-
-      // Build query params
       const params = new URLSearchParams();
+      params.append('confidence', confidenceFilter);
       if (groupFilter !== 'all') params.append('group', groupFilter);
-      if (subgroupFilter !== 'all') params.append('subgroup', subgroupFilter);
+      params.append('limit', '1000');
 
-      // Confidence filter
-      if (confidenceFilter === 'high') params.append('confidence_min', '0.85');
-      if (confidenceFilter === 'medium') {
-        params.append('confidence_min', '0.65');
-        params.append('confidence_max', '0.85');
-      }
-      if (confidenceFilter === 'low') params.append('confidence_max', '0.65');
-
-      params.append('limit', '5000');
-
-      const url = `/api/monitor/manifest/${selectedManifest}?${params.toString()}`;
+      const url = `/api/monitor/classifier/${selectedClassifier}/predictions?${params.toString()}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const data = await response.json();
-      setManifestData(data);
       setEntries(data.entries || []);
       setAvailableGroups(data.available_groups || []);
-      setAvailableSubgroups(data.available_subgroups || []);
+      setSummary(data.summary || null);
       setCurrentIndex(0);
       setError(null);
     } catch (err) {
-      console.error('Failed to load manifest:', err);
-      setError(`Failed to load manifest: ${err.message}`);
+      console.error('Failed to load predictions:', err);
+      setError(`Failed to load predictions: ${err.message}`);
     } finally {
       setLoading(false);
     }
-  }, [selectedManifest, groupFilter, subgroupFilter, confidenceFilter]);
+  }, [selectedClassifier, confidenceFilter, groupFilter]);
+
+  // Load flagged entries
+  const loadFlagged = useCallback(async () => {
+    if (!selectedClassifier) return;
+
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      params.append('flag_type', flagFilter);
+      params.append('limit', '1000');
+
+      const url = `/api/monitor/classifier/${selectedClassifier}/flagged?${params.toString()}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const data = await response.json();
+      setEntries(data.entries || []);
+      setSummary(data.summary || null);
+      setCurrentIndex(0);
+      setError(null);
+    } catch (err) {
+      console.error('Failed to load flagged:', err);
+      setError(`Failed to load flagged entries: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedClassifier, flagFilter]);
 
   // Load corrections
   const loadCorrections = useCallback(async () => {
@@ -128,18 +141,23 @@ const AudioLabeler = () => {
 
   // Initial load
   useEffect(() => {
-    loadManifests();
+    loadClassifiers();
     loadCorrections();
-  }, [loadManifests, loadCorrections]);
+  }, [loadClassifiers, loadCorrections]);
 
-  // Load entries when manifest or filters change
+  // Load entries when classifier or filters change
   useEffect(() => {
-    if (selectedManifest) {
-      loadManifestEntries();
+    if (selectedClassifier) {
+      if (viewMode === 'predictions') {
+        loadPredictions();
+      } else {
+        loadFlagged();
+      }
     }
-  }, [selectedManifest, loadManifestEntries]);
+  }, [selectedClassifier, viewMode, loadPredictions, loadFlagged]);
 
   const currentEntry = entries[currentIndex];
+  const currentClassifier = classifiers.find(c => c.type === selectedClassifier);
 
   // Get correction for current item
   const getCurrentCorrection = () => {
@@ -176,11 +194,8 @@ const AudioLabeler = () => {
   // Confirm prediction as correct
   const confirmPrediction = () => {
     if (!currentEntry) return;
-    saveCorrection(
-      currentEntry.path,
-      currentEntry.group,
-      currentEntry.subgroup || 'undefined'
-    );
+    const group = currentEntry.predicted_group || currentEntry.true_label;
+    saveCorrection(currentEntry.path, group, 'undefined');
     goNext();
   };
 
@@ -254,7 +269,7 @@ const AudioLabeler = () => {
       const response = await fetch('/api/monitor/corrections/export');
       if (response.ok) {
         const data = await response.json();
-        setSaveMessage(`Exported ${data.count} corrections to ${data.path}`);
+        setSaveMessage(`Exported ${data.count} corrections`);
         setTimeout(() => setSaveMessage(null), 3000);
       }
     } catch (err) {
@@ -263,157 +278,156 @@ const AudioLabeler = () => {
   };
 
   // Get filename from path
-  const getFilename = (path) => {
-    return path ? path.split('/').pop() : '';
-  };
+  const getFilename = (path) => path ? path.split('/').pop() : '';
 
   // Get session from path
   const getSession = (path) => {
     if (!path) return '';
     const parts = path.split('/');
     const audioIdx = parts.indexOf('Audio Files');
-    if (audioIdx > 0) {
-      return parts[audioIdx - 1];
-    }
+    if (audioIdx > 0) return parts[audioIdx - 1];
     return parts[parts.length - 2] || '';
   };
 
-  // Handle manifest change
-  const handleManifestChange = (e) => {
-    setSelectedManifest(e.target.value);
-    setGroupFilter('all');
-    setSubgroupFilter('all');
-    setConfidenceFilter('all');
+  // Confidence color
+  const getConfidenceColor = (conf) => {
+    if (conf >= 0.85) return '#4ade80';
+    if (conf >= 0.65) return '#fbbf24';
+    return '#f87171';
   };
 
-  if (loading && manifests.length === 0) {
-    return (
-      <div className="audio-labeler">
-        <div className="loading">Loading manifests...</div>
-      </div>
-    );
-  }
-
-  if (error && manifests.length === 0) {
-    return (
-      <div className="audio-labeler">
-        <div className="error">
-          <h2>Error</h2>
-          <p>{error}</p>
-          <button onClick={loadManifests}>Retry</button>
-        </div>
-      </div>
-    );
-  }
-
   const correction = getCurrentCorrection();
-  const effectiveGroup = correction?.group || currentEntry?.group;
+  const effectiveGroup = correction?.group || currentEntry?.predicted_group || currentEntry?.true_label;
   const allSubgroups = SUBGROUPS[effectiveGroup] || ['undefined'];
+
+  if (loading && classifiers.length === 0) {
+    return (
+      <div className="audio-labeler">
+        <div className="loading">Loading classifiers...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="audio-labeler">
       {/* Header */}
       <div className="labeler-header">
-        <h1>Audio Labeler</h1>
-        <p className="subtitle">Review and correct classifier predictions</p>
+        <h1>Classifier Review</h1>
 
-        <div className="header-controls">
-          {/* Manifest Selector */}
-          <div className="filter-group manifest-selector">
-            <label>Manifest:</label>
-            <select value={selectedManifest || ''} onChange={handleManifestChange}>
-              <option value="">Select manifest...</option>
-              {manifests.map(m => (
-                <option key={m.filename} value={m.filename}>
-                  {m.filename} ({m.entries} entries)
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Group Filter */}
-          <div className="filter-group">
-            <label>Group:</label>
-            <select
-              value={groupFilter}
-              onChange={(e) => { setGroupFilter(e.target.value); setSubgroupFilter('all'); }}
+        {/* Classifier Status Cards */}
+        <div className="classifier-cards">
+          {classifiers.map(c => (
+            <div
+              key={c.type}
+              className={`classifier-card ${selectedClassifier === c.type ? 'selected' : ''} ${!c.has_model ? 'no-model' : ''}`}
+              onClick={() => c.has_model && setSelectedClassifier(c.type)}
             >
-              <option value="all">All Groups</option>
-              {availableGroups.map(g => (
-                <option key={g} value={g}>{g}</option>
-              ))}
-            </select>
-          </div>
+              <div className="card-title">{c.name}</div>
+              {c.has_model ? (
+                <>
+                  <div className="card-stats">
+                    {c.has_predictions && (
+                      <span className="stat predictions">{c.predictions_count.toLocaleString()} predictions</span>
+                    )}
+                    {c.has_validation && c.flagged_count > 0 && (
+                      <span className="stat flagged">{c.flagged_count.toLocaleString()} flagged</span>
+                    )}
+                  </div>
+                  {!c.has_predictions && <div className="card-hint">Run classifier to get predictions</div>}
+                </>
+              ) : (
+                <div className="card-hint">Model not trained yet</div>
+              )}
+            </div>
+          ))}
+        </div>
 
-          {/* Subgroup Filter */}
-          {availableSubgroups.length > 0 && (
+        {/* View Mode Tabs */}
+        {currentClassifier?.has_model && (
+          <div className="view-tabs">
+            <button
+              className={`tab ${viewMode === 'predictions' ? 'active' : ''}`}
+              onClick={() => setViewMode('predictions')}
+              disabled={!currentClassifier?.has_predictions}
+            >
+              Predictions {currentClassifier?.predictions_count ? `(${currentClassifier.predictions_count.toLocaleString()})` : ''}
+            </button>
+            <button
+              className={`tab ${viewMode === 'flagged' ? 'active' : ''}`}
+              onClick={() => setViewMode('flagged')}
+              disabled={!currentClassifier?.has_validation}
+            >
+              Flagged {currentClassifier?.flagged_count ? `(${currentClassifier.flagged_count.toLocaleString()})` : ''}
+            </button>
+          </div>
+        )}
+
+        {/* Filters */}
+        <div className="filters">
+          {viewMode === 'predictions' ? (
+            <>
+              <div className="filter-group">
+                <label>Confidence:</label>
+                <select value={confidenceFilter} onChange={(e) => setConfidenceFilter(e.target.value)}>
+                  <option value="all">All</option>
+                  <option value="low">Low (&lt;65%) - Review First</option>
+                  <option value="medium">Medium (65-85%)</option>
+                  <option value="high">High (85%+)</option>
+                </select>
+              </div>
+              <div className="filter-group">
+                <label>Group:</label>
+                <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
+                  <option value="all">All Groups</option>
+                  {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
+            </>
+          ) : (
             <div className="filter-group">
-              <label>Subgroup:</label>
-              <select
-                value={subgroupFilter}
-                onChange={(e) => setSubgroupFilter(e.target.value)}
-              >
-                <option value="all">All Subgroups</option>
-                {availableSubgroups.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
+              <label>Flag Type:</label>
+              <select value={flagFilter} onChange={(e) => setFlagFilter(e.target.value)}>
+                <option value="all">All Flags</option>
+                <option value="disagreement">Disagreement (wrong label?)</option>
+                <option value="uncertain">Uncertain (ambiguous)</option>
+                <option value="outlier">Outlier (unusual)</option>
               </select>
             </div>
           )}
 
-          {/* Confidence Filter */}
-          <div className="filter-group">
-            <label>Confidence:</label>
-            <select
-              value={confidenceFilter}
-              onChange={(e) => setConfidenceFilter(e.target.value)}
-            >
-              <option value="all">All</option>
-              <option value="high">High (85%+)</option>
-              <option value="medium">Medium (65-85%)</option>
-              <option value="low">Low (&lt;65%)</option>
-            </select>
-          </div>
-
           <button className="export-btn" onClick={exportCorrections}>
-            Export Corrections
+            Export ({Object.keys(corrections).length})
           </button>
         </div>
 
-        <div className="stats">
-          <span>Showing {entries.length} entries</span>
+        <div className="stats-bar">
+          <span>{entries.length} entries to review</span>
           <span>|</span>
-          <span>{Object.keys(corrections).length} corrected</span>
-          {manifestData?.total > entries.length && (
-            <>
-              <span>|</span>
-              <span>{manifestData.total} total in manifest</span>
-            </>
-          )}
+          <span>{Object.keys(corrections).length} corrected this session</span>
         </div>
       </div>
 
       {/* Main Content */}
       {loading ? (
         <div className="loading">Loading entries...</div>
+      ) : !currentClassifier?.has_model ? (
+        <div className="no-results">
+          <h2>No Model Available</h2>
+          <p>Train the {selectedClassifier} classifier first:</p>
+          <code>python latent_instrument_classifier.py --mode train ...</code>
+        </div>
       ) : entries.length === 0 ? (
         <div className="no-results">
-          <p>No entries match the current filter.</p>
-          {selectedManifest && <p>Try changing the filters or selecting a different manifest.</p>}
+          <h2>No Entries</h2>
+          <p>{viewMode === 'predictions' ? 'Run the classifier to generate predictions.' : 'Run validation to find flagged entries.'}</p>
         </div>
       ) : (
         <div className="labeler-content">
           {/* Navigation */}
           <div className="navigation">
-            <button onClick={goPrev} disabled={currentIndex === 0}>
-              Prev (P)
-            </button>
-            <span className="position">
-              {currentIndex + 1} / {entries.length}
-            </span>
-            <button onClick={goNext} disabled={currentIndex >= entries.length - 1}>
-              Next (N)
-            </button>
+            <button onClick={goPrev} disabled={currentIndex === 0}>← Prev (P)</button>
+            <span className="position">{currentIndex + 1} / {entries.length}</span>
+            <button onClick={goNext} disabled={currentIndex >= entries.length - 1}>Next (N) →</button>
           </div>
 
           {/* Current Item */}
@@ -423,58 +437,60 @@ const AudioLabeler = () => {
               <div className="file-info">
                 <div className="filename">{getFilename(currentEntry.path)}</div>
                 <div className="session">{getSession(currentEntry.path)}</div>
-                <div className="path">{currentEntry.path}</div>
               </div>
 
               {/* Audio Player */}
               <div className="audio-section">
-                <button
-                  className="play-btn"
-                  onClick={() => playAudio(currentEntry.path)}
-                >
-                  {playingPath === currentEntry.path ? 'Playing...' : 'Play (Space)'}
+                <button className="play-btn" onClick={() => playAudio(currentEntry.path)}>
+                  {playingPath === currentEntry.path ? '▶ Playing...' : '▶ Play (Space)'}
                 </button>
                 <audio ref={audioRef} controls onEnded={() => setPlayingPath(null)} />
               </div>
 
-              {/* Prediction Info */}
+              {/* Prediction/Flag Info */}
               <div className="prediction-info">
-                <div className="prediction-row">
-                  <span className="label">Group:</span>
-                  <span className={`value group-${currentEntry.group}`}>
-                    {currentEntry.group}
-                  </span>
-                </div>
-                <div className="prediction-row">
-                  <span className="label">Subgroup:</span>
-                  <span className="value">
-                    {currentEntry.subgroup || 'undefined'}
-                  </span>
-                </div>
-                {currentEntry.confidence !== undefined && currentEntry.confidence !== 1.0 && (
-                  <div className="prediction-row">
-                    <span className="label">Confidence:</span>
-                    <span className={`value confidence-${
-                      currentEntry.confidence >= 0.85 ? 'high' :
-                      currentEntry.confidence >= 0.65 ? 'medium' : 'low'
-                    }`}>
-                      {(currentEntry.confidence * 100).toFixed(1)}%
-                    </span>
-                  </div>
-                )}
-                {currentEntry.all_probabilities && Object.keys(currentEntry.all_probabilities).length > 0 && (
-                  <div className="all-probs">
-                    <span className="label">All predictions:</span>
-                    <div className="prob-bars">
-                      {Object.entries(currentEntry.all_probabilities)
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([label, prob]) => (
-                          <div key={label} className="prob-bar">
-                            <span className="prob-label">{label}</span>
-                            <div className="prob-fill" style={{ width: `${prob * 100}%` }} />
-                            <span className="prob-value">{(prob * 100).toFixed(0)}%</span>
-                          </div>
-                        ))}
+                {viewMode === 'predictions' ? (
+                  <>
+                    <div className="prediction-main">
+                      <span className="predicted-label">{currentEntry.predicted_group}</span>
+                      <span
+                        className="confidence-badge"
+                        style={{ backgroundColor: getConfidenceColor(currentEntry.confidence) }}
+                      >
+                        {(currentEntry.confidence * 100).toFixed(0)}%
+                      </span>
+                    </div>
+
+                    {currentEntry.all_probabilities && Object.keys(currentEntry.all_probabilities).length > 0 && (
+                      <div className="prob-bars">
+                        {Object.entries(currentEntry.all_probabilities)
+                          .sort((a, b) => b[1] - a[1])
+                          .slice(0, 5)
+                          .map(([label, prob]) => (
+                            <div key={label} className="prob-bar">
+                              <span className="prob-label">{label}</span>
+                              <div className="prob-track">
+                                <div className="prob-fill" style={{ width: `${prob * 100}%` }} />
+                              </div>
+                              <span className="prob-value">{(prob * 100).toFixed(0)}%</span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flag-info">
+                    <div className={`flag-badge ${currentEntry.flag_type}`}>
+                      {currentEntry.flag_type}
+                    </div>
+                    <div className="flag-details">
+                      <div>Current label: <strong>{currentEntry.true_label}</strong></div>
+                      {currentEntry.predicted_label && (
+                        <div>Classifier says: <strong>{currentEntry.predicted_label}</strong> ({(currentEntry.confidence * 100).toFixed(0)}%)</div>
+                      )}
+                      {currentEntry.entropy && (
+                        <div>Entropy: {currentEntry.entropy.toFixed(2)}</div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -483,38 +499,41 @@ const AudioLabeler = () => {
               {/* Correction Status */}
               {correction && (
                 <div className="correction-status">
-                  Corrected to: <strong>{correction.group}</strong>
+                  ✓ Corrected to: <strong>{correction.group}</strong>
                   {correction.subgroup !== 'undefined' && ` / ${correction.subgroup}`}
                 </div>
               )}
 
+              {/* Quick Actions */}
+              <div className="quick-actions">
+                <button className="confirm-btn" onClick={confirmPrediction}>
+                  ✓ Correct - Next (Enter)
+                </button>
+              </div>
+
               {/* Label Selection */}
               <div className="label-section">
-                <h3>Correct Label</h3>
-
-                <div className="group-selector">
-                  <label>Group:</label>
-                  <div className="group-buttons">
-                    {INSTRUMENT_GROUPS.map(group => (
-                      <button
-                        key={group}
-                        className={`group-btn ${effectiveGroup === group ? 'selected' : ''}`}
-                        onClick={() => saveCorrection(currentEntry.path, group, 'undefined')}
-                      >
-                        {group}
-                      </button>
-                    ))}
-                  </div>
+                <h3>Change Label</h3>
+                <div className="group-buttons">
+                  {INSTRUMENT_GROUPS.map(group => (
+                    <button
+                      key={group}
+                      className={`group-btn ${effectiveGroup === group ? 'selected' : ''}`}
+                      onClick={() => { saveCorrection(currentEntry.path, group, 'undefined'); goNext(); }}
+                    >
+                      {group}
+                    </button>
+                  ))}
                 </div>
 
                 {allSubgroups.length > 1 && (
-                  <div className="subgroup-selector">
-                    <label>Subgroup:</label>
+                  <div className="subgroup-section">
+                    <h4>Subgroup</h4>
                     <div className="subgroup-buttons">
                       {allSubgroups.map(subgroup => (
                         <button
                           key={subgroup}
-                          className={`subgroup-btn ${(correction?.subgroup || currentEntry.subgroup) === subgroup ? 'selected' : ''}`}
+                          className={`subgroup-btn ${(correction?.subgroup || 'undefined') === subgroup ? 'selected' : ''}`}
                           onClick={() => saveCorrection(currentEntry.path, effectiveGroup, subgroup)}
                         >
                           {subgroup}
@@ -523,33 +542,19 @@ const AudioLabeler = () => {
                     </div>
                   </div>
                 )}
-
-                <div className="action-buttons">
-                  <button
-                    className="confirm-btn"
-                    onClick={confirmPrediction}
-                  >
-                    Confirm & Next (Enter)
-                  </button>
-                </div>
               </div>
 
               {/* Save Message */}
-              {saveMessage && (
-                <div className="save-message">{saveMessage}</div>
-              )}
+              {saveMessage && <div className="save-message">{saveMessage}</div>}
             </div>
           )}
 
           {/* Keyboard Shortcuts */}
           <div className="shortcuts">
-            <h4>Keyboard Shortcuts</h4>
-            <ul>
-              <li><kbd>Space</kbd> - Play audio</li>
-              <li><kbd>P</kbd> - Previous</li>
-              <li><kbd>N</kbd> - Next</li>
-              <li><kbd>Enter</kbd> - Confirm & Next</li>
-            </ul>
+            <kbd>Space</kbd> Play &nbsp;
+            <kbd>P</kbd> Prev &nbsp;
+            <kbd>N</kbd> Next &nbsp;
+            <kbd>Enter</kbd> Confirm
           </div>
         </div>
       )}

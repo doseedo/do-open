@@ -38,6 +38,7 @@ async function decryptResponse(encryptedData, keyBase64) {
  */
 const Monitor = () => {
   const [stats, setStats] = useState(null);
+  const [formats, setFormats] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -90,18 +91,36 @@ const Monitor = () => {
     }
   }, [fetchDecryptKey]);
 
+  // Fetch formats data
+  const fetchFormats = useCallback(async () => {
+    try {
+      const response = await fetch('/api/monitor/formats');
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data.status === 'ok') {
+        setFormats(data);
+      }
+    } catch (err) {
+      console.error('Formats fetch error:', err);
+    }
+  }, []);
+
   // Initial fetch and auto-refresh
   useEffect(() => {
     fetchStats();
-  }, [fetchStats]);
+    fetchFormats();
+  }, [fetchStats, fetchFormats]);
 
   useEffect(() => {
     let interval;
     if (autoRefresh) {
-      interval = setInterval(fetchStats, 30000); // 30 seconds
+      interval = setInterval(() => {
+        fetchStats();
+        fetchFormats();
+      }, 30000); // 30 seconds
     }
     return () => clearInterval(interval);
-  }, [autoRefresh, fetchStats]);
+  }, [autoRefresh, fetchStats, fetchFormats]);
 
   // Format time for display
   const formatTime = (date) => {
@@ -201,6 +220,73 @@ const Monitor = () => {
           </div>
         </div>
       </div>
+
+      {/* Formats Coverage Section */}
+      {formats && (
+        <div className="formats-section">
+          <h2>Format Coverage</h2>
+          <div className="formats-grid">
+            <div className="format-card">
+              <div className="format-header">
+                <span className="format-icon">🧠</span>
+                <span className="format-name">Latent</span>
+                <span className="format-pct">{formats.pct_latent}%</span>
+              </div>
+              <div className="format-bar">
+                <div className="format-bar-fill latent" style={{ width: `${formats.pct_latent}%` }} />
+              </div>
+              <div className="format-stats">
+                <span>{formats.with_latent?.toLocaleString()} have</span>
+                <span className="needs">{formats.needs_latent?.toLocaleString()} need</span>
+              </div>
+            </div>
+
+            <div className="format-card">
+              <div className="format-header">
+                <span className="format-icon">🎛️</span>
+                <span className="format-name">Conditioning</span>
+                <span className="format-pct">{formats.pct_conditioning}%</span>
+              </div>
+              <div className="format-bar">
+                <div className="format-bar-fill conditioning" style={{ width: `${formats.pct_conditioning}%` }} />
+              </div>
+              <div className="format-stats">
+                <span>{formats.with_conditioning?.toLocaleString()} have</span>
+                <span className="needs">{formats.needs_conditioning?.toLocaleString()} need</span>
+              </div>
+            </div>
+
+            <div className="format-card">
+              <div className="format-header">
+                <span className="format-icon">🎹</span>
+                <span className="format-name">MIDI</span>
+                <span className="format-pct">{formats.pct_midi}%</span>
+              </div>
+              <div className="format-bar">
+                <div className="format-bar-fill midi" style={{ width: `${formats.pct_midi}%` }} />
+              </div>
+              <div className="format-stats">
+                <span>{formats.with_midi?.toLocaleString()} have</span>
+                <span className="needs">{formats.needs_midi?.toLocaleString()} need</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Completeness Breakdown */}
+          <div className="completeness-section">
+            <h3>Completeness</h3>
+            <div className="completeness-grid">
+              {formats.breakdown?.map((item) => (
+                <div key={item.key} className={`completeness-item ${item.key}`}>
+                  <span className="completeness-short">{item.short}</span>
+                  <span className="completeness-count">{item.count?.toLocaleString()}</span>
+                  <span className="completeness-pct">{item.pct}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Folders Section */}
       <div className="folders-section">

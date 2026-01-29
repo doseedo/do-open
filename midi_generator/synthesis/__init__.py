@@ -26,7 +26,7 @@ Neural Program Synthesis (Agent 8):
 Author: Agent 10 - Integration & API
 """
 
-from .deep_feature_extractor import DeepFeatureExtractor, extract_features
+from .deep_feature_extractor import DeepFeatureExtractor, FeatureVector
 
 # Neural Program Synthesis (DSL + Dataset)
 try:
@@ -95,7 +95,7 @@ except ImportError:
 __all__ = [
     # Feature extraction
     'DeepFeatureExtractor',
-    'extract_features',
+    'FeatureVector',
 
     # Neural Program Synthesis - DSL
     'DSLProgram',

@@ -14,14 +14,45 @@ Usage:
   # Classify undefined files
   python latent_instrument_classifier.py --mode classify \
     --model /home/arlo/Data/latent_classifier/model.pt \
-    --input /home/arlo/undefined_audio_paths.txt \
-    --output /home/arlo/Data/latent_classifier/predictions.json
+    --manifest /home/arlo/gcs-bucket/Manifests/combined_manifest.json \
+    --output-dir /home/arlo/Data/latent_classifier
 
-  # Full pipeline
+  # Validate labels & flag potential mislabels
+  python latent_instrument_classifier.py --mode validate \
+    --model /home/arlo/Data/latent_classifier/model.pt \
+    --manifest /home/arlo/gcs-bucket/Manifests/combined_manifest.json \
+    --output-dir /home/arlo/Data/latent_classifier
+
+  # Full pipeline (train + classify undefined)
   python latent_instrument_classifier.py --mode full \
     --manifest /home/arlo/gcs-bucket/Manifests/combined_manifest.json \
     --undefined /home/arlo/undefined_audio_paths.txt \
     --output-dir /home/arlo/Data/latent_classifier
+
+  # Temporal analysis - detect instrument changes over time
+  python latent_instrument_classifier.py --mode temporal \
+    --model /home/arlo/Data/latent_classifier/model.pt \
+    --manifest /home/arlo/gcs-bucket/Manifests/unified_manifest.json \
+    --output-dir /home/arlo/Data/latent_classifier \
+    --window-sec 2.0 --hop-sec 1.0
+
+  # Temporal analysis on specific group
+  python latent_instrument_classifier.py --mode temporal \
+    --model /home/arlo/Data/latent_classifier/model.pt \
+    --manifest /home/arlo/gcs-bucket/Manifests/unified_manifest.json \
+    --group ensemble \
+    --output-dir /home/arlo/Data/latent_classifier
+
+Validation flags entries as:
+  - disagreement: classifier confident in different class than label
+  - uncertain: high entropy (possible ensemble/ambiguous sound)
+  - outlier: feature vector far from class centroid
+
+Temporal analysis:
+  - Splits audio into overlapping time windows
+  - Classifies each window independently
+  - Detects if instruments change over time (temporal ensemble)
+  - Outputs segments with timestamps and confidence
 """
 
 import argparse
@@ -54,8 +85,14 @@ CONFIDENCE_HIGH = 0.85
 CONFIDENCE_MEDIUM = 0.65
 
 # Training settings
-MAX_SAMPLES_PER_CLASS = 3000
-MIN_SAMPLES_PER_CLASS = 50
+MAX_SAMPLES_PER_CLASS = 15000  # Use more data, class weights handle imbalance
+MIN_SAMPLES_PER_CLASS = 100
+# Filter these out from training (meta-groups, not instruments)
+# Note: 'dialogue' is a valid class for speech detection
+EXCLUDED_CLASSES = {'undefined', 'room', 'fx', 'click', 'silent', 'junk', 'review_vocals', 'ensemble', 'full-track'}
+
+# Silent frame detection threshold (frames with energy below this are masked)
+SILENT_FRAME_THRESHOLD = 0.01  # RMS threshold for considering a frame silent
 BATCH_SIZE = 64
 LEARNING_RATE = 1e-3
 NUM_EPOCHS = 30
@@ -67,8 +104,12 @@ POOL_METHODS = ['mean', 'std', 'max']  # Results in 8*16*3 = 384 features
 
 # ===================== PATH CONVERSION =====================
 
-def audio_path_to_latent_path(audio_path: str) -> Path:
-    """Convert audio file path to corresponding latent path."""
+def audio_path_to_latent_path(audio_path: str) -> Optional[Path]:
+    """Convert audio file path to corresponding latent path.
+
+    Checks for both .dcae.pt (new) and .pt (old) extensions.
+    Returns None if no latent file exists.
+    """
     audio_path = Path(audio_path)
 
     # Find the relative path from gcs-bucket
@@ -91,9 +132,17 @@ def audio_path_to_latent_path(audio_path: str) -> Path:
             else:
                 rel_path = audio_path
 
-    # Change extension to .pt
-    latent_path = LATENTS_ROOT / rel_path.with_suffix('.pt')
-    return latent_path
+    # Check for both extensions - prefer .dcae.pt (newer format)
+    stem = rel_path.with_suffix('')
+    dcae_path = LATENTS_ROOT / f"{stem}.dcae.pt"
+    pt_path = LATENTS_ROOT / f"{stem}.pt"
+
+    if dcae_path.exists():
+        return dcae_path
+    elif pt_path.exists():
+        return pt_path
+    else:
+        return None
 
 
 def load_latent(latent_path: Path) -> Optional[torch.Tensor]:
@@ -107,9 +156,39 @@ def load_latent(latent_path: Path) -> Optional[torch.Tensor]:
         return None
 
 
-def pool_latent(latent: torch.Tensor) -> torch.Tensor:
-    """Pool latent [8, 16, T] to fixed-size feature vector."""
+def detect_silent_frames(latent: torch.Tensor, threshold: float = SILENT_FRAME_THRESHOLD) -> torch.Tensor:
+    """Detect silent frames in latent based on energy.
+
+    Args:
+        latent: [8, 16, T] tensor
+        threshold: RMS threshold for considering a frame silent
+
+    Returns:
+        Boolean mask [T] where True = non-silent frame
+    """
+    # Compute energy per frame (RMS across all channels)
+    # latent shape: [8, 16, T]
+    energy = torch.sqrt((latent ** 2).mean(dim=(0, 1)))  # [T]
+    return energy > threshold
+
+
+def pool_latent(latent: torch.Tensor, mask_silent: bool = True) -> torch.Tensor:
+    """Pool latent [8, 16, T] to fixed-size feature vector.
+
+    Args:
+        latent: [8, 16, T] tensor
+        mask_silent: If True, exclude silent frames from pooling
+    """
     # latent shape: [8, 16, T] - 8 codebook groups, 16 channels, T time steps
+
+    # Mask silent frames if requested
+    if mask_silent and latent.shape[-1] > 1:
+        non_silent_mask = detect_silent_frames(latent)
+        if non_silent_mask.sum() > 0:
+            # Only keep non-silent frames
+            latent = latent[:, :, non_silent_mask]
+        # If all frames are silent, use original (will classify as silent/undefined)
+
     features = []
 
     if 'mean' in POOL_METHODS:
@@ -124,6 +203,347 @@ def pool_latent(latent: torch.Tensor) -> torch.Tensor:
     # Concatenate and flatten: [8, 16, num_pools] -> [8*16*num_pools]
     stacked = torch.stack(features, dim=-1)  # [8, 16, num_pools]
     return stacked.flatten()
+
+
+# ===================== TEMPORAL WINDOWING =====================
+
+# ACE-Step latent frame rate: 44100 / 512 ≈ 86.13 frames/sec
+LATENT_FRAMES_PER_SEC = 44100 / 512
+
+def window_latent(latent: torch.Tensor, window_sec: float = 2.0,
+                  hop_sec: float = 1.0) -> List[Tuple[float, float, torch.Tensor]]:
+    """Split latent into overlapping time windows.
+
+    Args:
+        latent: [8, 16, T] tensor
+        window_sec: window size in seconds
+        hop_sec: hop size in seconds
+
+    Returns:
+        List of (start_sec, end_sec, window_latent) tuples
+    """
+    T = latent.shape[-1]
+    window_frames = int(window_sec * LATENT_FRAMES_PER_SEC)
+    hop_frames = int(hop_sec * LATENT_FRAMES_PER_SEC)
+
+    # Ensure minimum window size
+    window_frames = max(window_frames, 32)
+    hop_frames = max(hop_frames, 16)
+
+    windows = []
+    for start in range(0, T - window_frames + 1, hop_frames):
+        end = start + window_frames
+        window = latent[:, :, start:end]
+
+        start_sec = start / LATENT_FRAMES_PER_SEC
+        end_sec = end / LATENT_FRAMES_PER_SEC
+        windows.append((start_sec, end_sec, window))
+
+    # Handle short files - use whole latent as single window
+    if len(windows) == 0 and T > 0:
+        windows.append((0, T / LATENT_FRAMES_PER_SEC, latent))
+
+    return windows
+
+
+def classify_temporal(
+    latent: torch.Tensor,
+    model: nn.Module,
+    mean: torch.Tensor,
+    std: torch.Tensor,
+    classes: List[str],
+    window_sec: float = 2.0,
+    hop_sec: float = 1.0,
+    device: str = 'cpu'
+) -> List[Dict]:
+    """Classify latent in time windows.
+
+    Args:
+        latent: [8, 16, T] tensor
+        model: trained classifier
+        mean, std: normalization params
+        classes: class names
+        window_sec: window size in seconds
+        hop_sec: hop size in seconds
+
+    Returns:
+        List of dicts with start, end, predicted_class, confidence, all_probs
+    """
+    windows = window_latent(latent, window_sec, hop_sec)
+
+    if len(windows) == 0:
+        return []
+
+    # Pool all windows
+    features = torch.stack([pool_latent(w[2]) for w in windows])
+
+    # Normalize
+    features = (features - mean) / std
+
+    # Predict
+    model.eval()
+    with torch.no_grad():
+        features = features.to(device)
+        logits = model(features)
+        probs = F.softmax(logits, dim=1).cpu().numpy()
+
+    results = []
+    for i, (start_sec, end_sec, _) in enumerate(windows):
+        pred_idx = probs[i].argmax()
+        results.append({
+            'start': round(start_sec, 2),
+            'end': round(end_sec, 2),
+            'predicted_class': classes[pred_idx],
+            'confidence': float(probs[i][pred_idx]),
+            'all_probs': {c: float(p) for c, p in zip(classes, probs[i])}
+        })
+
+    return results
+
+
+def detect_temporal_changes(
+    temporal_results: List[Dict],
+    min_confidence: float = 0.6,
+    min_duration_sec: float = 1.0
+) -> Dict:
+    """Analyze temporal classification results to detect instrument changes.
+
+    Args:
+        temporal_results: output from classify_temporal
+        min_confidence: minimum confidence to count a prediction
+        min_duration_sec: minimum duration for an instrument to be counted
+
+    Returns:
+        Dict with analysis results
+    """
+    if not temporal_results:
+        return {'is_temporal_ensemble': False, 'reason': 'no_results'}
+
+    # Filter by confidence
+    confident = [r for r in temporal_results if r['confidence'] >= min_confidence]
+
+    if not confident:
+        return {'is_temporal_ensemble': None, 'reason': 'low_confidence'}
+
+    # Group consecutive predictions by class
+    segments = []
+    current_class = None
+    current_start = None
+    current_end = None
+    current_confidences = []
+
+    for r in confident:
+        if r['predicted_class'] != current_class:
+            # Save previous segment
+            if current_class is not None:
+                duration = current_end - current_start
+                if duration >= min_duration_sec:
+                    segments.append({
+                        'class': current_class,
+                        'start': current_start,
+                        'end': current_end,
+                        'duration': round(duration, 2),
+                        'avg_confidence': round(np.mean(current_confidences), 3)
+                    })
+            # Start new segment
+            current_class = r['predicted_class']
+            current_start = r['start']
+            current_confidences = [r['confidence']]
+
+        current_end = r['end']
+        current_confidences.append(r['confidence'])
+
+    # Don't forget last segment
+    if current_class is not None:
+        duration = current_end - current_start
+        if duration >= min_duration_sec:
+            segments.append({
+                'class': current_class,
+                'start': current_start,
+                'end': current_end,
+                'duration': round(duration, 2),
+                'avg_confidence': round(np.mean(current_confidences), 3)
+            })
+
+    # Analyze segments
+    unique_classes = list(set(s['class'] for s in segments))
+    total_duration = temporal_results[-1]['end'] if temporal_results else 0
+
+    # Calculate time per instrument
+    class_durations = {}
+    for s in segments:
+        cls = s['class']
+        class_durations[cls] = class_durations.get(cls, 0) + s['duration']
+
+    # Determine if temporal ensemble
+    is_temporal_ensemble = len(unique_classes) > 1
+
+    result = {
+        'is_temporal_ensemble': is_temporal_ensemble,
+        'total_duration': round(total_duration, 2),
+        'num_segments': len(segments),
+        'unique_instruments': unique_classes,
+        'num_instruments': len(unique_classes),
+        'segments': segments,
+        'instrument_durations': class_durations,
+    }
+
+    # Add dominant instrument
+    if class_durations:
+        dominant = max(class_durations.items(), key=lambda x: x[1])
+        result['dominant_instrument'] = dominant[0]
+        result['dominant_duration'] = round(dominant[1], 2)
+        result['dominant_ratio'] = round(dominant[1] / total_duration, 2) if total_duration > 0 else 0
+
+    return result
+
+
+def segments_to_ui_regions(segments: List[Dict]) -> List[Dict]:
+    """Convert temporal segments to UI-compatible regions format.
+
+    Args:
+        segments: List of {'class': str, 'start': float, 'end': float, ...}
+
+    Returns:
+        List of {'labels': [str], 'start': float, 'end': float} for UI display
+    """
+    regions = []
+    for seg in segments:
+        regions.append({
+            'labels': [seg['class']],  # UI expects array of labels
+            'start': seg['start'],
+            'end': seg['end'],
+            'confidence': seg.get('avg_confidence', 0)
+        })
+    return regions
+
+
+def run_temporal_classification(
+    model_path: Path,
+    audio_paths: List[str],
+    output_path: Path,
+    window_sec: float = 2.0,
+    hop_sec: float = 1.0,
+    min_confidence: float = 0.6,
+    num_workers: int = 8,
+    device: str = 'cuda'
+) -> Dict:
+    """Run temporal classification on a list of audio files.
+
+    Detects if instruments change over time within each file.
+    """
+    if device == 'cuda' and not torch.cuda.is_available():
+        device = 'cpu'
+    device_obj = torch.device(device)
+
+    # Load model
+    logging.info(f"Loading model from {model_path}...")
+    model_data = torch.load(model_path, map_location='cpu', weights_only=False)
+
+    input_dim = model_data['input_dim']
+    num_classes = model_data['num_classes']
+    hidden_dim = model_data.get('hidden_dim', HIDDEN_DIM)
+    mean = model_data['mean']
+    std = model_data['std']
+    classes = model_data['label_encoder_classes']
+
+    model = InstrumentClassifier(input_dim, num_classes, hidden_dim)
+    model.load_state_dict(model_data['model_state'])
+    model.to(device_obj)
+    model.eval()
+
+    logging.info(f"Processing {len(audio_paths)} files with temporal analysis...")
+    logging.info(f"  Window: {window_sec}s, Hop: {hop_sec}s, Min confidence: {min_confidence}")
+
+    results = []
+    temporal_ensembles = []
+    single_instrument = []
+    failed = []
+
+    for i, audio_path in enumerate(audio_paths):
+        if (i + 1) % 100 == 0:
+            logging.info(f"  Processed {i+1}/{len(audio_paths)}...")
+
+        # Load latent
+        latent_path = audio_path_to_latent_path(audio_path)
+        if latent_path is None:
+            failed.append({'path': audio_path, 'reason': 'no_latent'})
+            continue
+
+        latent = load_latent(latent_path)
+        if latent is None:
+            failed.append({'path': audio_path, 'reason': 'load_failed'})
+            continue
+
+        # Temporal classification
+        temporal = classify_temporal(
+            latent, model, mean, std, classes,
+            window_sec=window_sec, hop_sec=hop_sec, device=device
+        )
+
+        # Detect changes
+        analysis = detect_temporal_changes(temporal, min_confidence=min_confidence)
+
+        # Convert segments to UI regions format
+        ui_regions = segments_to_ui_regions(analysis.get('segments', []))
+
+        result = {
+            'path': audio_path,
+            'filename': Path(audio_path).name,
+            'temporal_windows': temporal,
+            'analysis': analysis,
+            'regions': ui_regions,  # UI-compatible format
+            'predicted_labels': analysis.get('unique_instruments', []),
+            'is_temporal_ensemble': analysis.get('is_temporal_ensemble', False),
+            'dominant_instrument': analysis.get('dominant_instrument'),
+        }
+        results.append(result)
+
+        if analysis.get('is_temporal_ensemble'):
+            temporal_ensembles.append(result)
+        elif analysis.get('is_temporal_ensemble') == False:
+            single_instrument.append(result)
+
+    # Summary
+    logging.info("\n" + "=" * 60)
+    logging.info("TEMPORAL CLASSIFICATION RESULTS")
+    logging.info("=" * 60)
+    logging.info(f"Total processed: {len(results)}")
+    logging.info(f"  Single instrument: {len(single_instrument)}")
+    logging.info(f"  Temporal ensemble (instrument changes): {len(temporal_ensembles)}")
+    logging.info(f"  Failed: {len(failed)}")
+
+    if temporal_ensembles:
+        logging.info("\nTemporal ensembles found:")
+        for r in temporal_ensembles[:20]:
+            instruments = r['analysis']['unique_instruments']
+            logging.info(f"  {r['filename']}: {' -> '.join(instruments)}")
+
+    # Save results
+    output_data = {
+        'settings': {
+            'window_sec': window_sec,
+            'hop_sec': hop_sec,
+            'min_confidence': min_confidence,
+        },
+        'summary': {
+            'total': len(results),
+            'single_instrument': len(single_instrument),
+            'temporal_ensemble': len(temporal_ensembles),
+            'failed': len(failed),
+        },
+        'temporal_ensembles': temporal_ensembles,
+        'single_instrument': single_instrument,
+        'failed': failed,
+        'all_results': results,
+        'analyzed_at': datetime.now().isoformat()
+    }
+
+    with open(output_path, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    logging.info(f"\nResults saved to {output_path}")
+
+    return output_data
 
 
 # ===================== DATASET =====================
@@ -149,13 +569,16 @@ class LatentDataset(Dataset):
             features = self.cache[audio_path]
         else:
             latent_path = audio_path_to_latent_path(audio_path)
-            latent = load_latent(latent_path)
 
-            if latent is None:
+            if latent_path is None:
                 # Return zeros if latent not found
                 features = torch.zeros(8 * 16 * len(POOL_METHODS))
             else:
-                features = pool_latent(latent)
+                latent = load_latent(latent_path)
+                if latent is None:
+                    features = torch.zeros(8 * 16 * len(POOL_METHODS))
+                else:
+                    features = pool_latent(latent)
 
             self.cache[audio_path] = features
 
@@ -209,6 +632,8 @@ def extract_features_batch(audio_paths: List[str],
 
     def process_one(audio_path: str) -> Tuple[Optional[torch.Tensor], str]:
         latent_path = audio_path_to_latent_path(audio_path)
+        if latent_path is None:
+            return None, audio_path
         latent = load_latent(latent_path)
         if latent is not None:
             return pool_latent(latent), audio_path
@@ -245,8 +670,16 @@ def extract_features_batch(audio_paths: List[str],
 # ===================== TRAINING =====================
 
 def train_classifier(manifest_path: Path, output_dir: Path,
-                    num_workers: int = 8, device: str = 'cuda') -> Dict:
-    """Train the latent-space instrument classifier using manifest labels."""
+                    corrections_path: Path = None, num_workers: int = 8, device: str = 'cuda') -> Dict:
+    """Train the latent-space instrument classifier using manifest labels.
+
+    Args:
+        manifest_path: Path to unified manifest JSON
+        output_dir: Output directory for model and stats
+        corrections_path: Optional path to corrections JSON (overrides manifest labels)
+        num_workers: Number of parallel workers for feature extraction
+        device: 'cuda' or 'cpu'
+    """
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -262,6 +695,19 @@ def train_classifier(manifest_path: Path, output_dir: Path,
     with open(manifest_path) as f:
         manifest = json.load(f)
 
+    # Load corrections if provided
+    corrections = {}
+    if corrections_path and corrections_path.exists():
+        logging.info(f"Loading corrections from {corrections_path}...")
+        with open(corrections_path) as f:
+            corrections = json.load(f)
+        logging.info(f"  Loaded {len(corrections)} corrections")
+
+    # Support both formats:
+    # - combined_manifest: dict keyed by path, value has 'group'
+    # - unified_manifest: has 'entries' list with 'audio_path', 'group', 'latent_path'
+    is_unified = 'entries' in manifest and isinstance(manifest.get('entries'), list)
+
     # Group by label (using 'group' field from manifest)
     # Only include paths that actually have latents (verify existence)
     file_label_pairs = []
@@ -269,36 +715,69 @@ def train_classifier(manifest_path: Path, output_dir: Path,
     skipped_undefined = 0
     skipped_no_latent = 0
 
-    logging.info("Checking latent existence for manifest paths...")
-    total_checked = 0
-    for audio_path, meta in manifest.items():
-        total_checked += 1
-        if total_checked % 50000 == 0:
-            logging.info(f"  Checked {total_checked}/{len(manifest)}...")
+    if is_unified:
+        logging.info("Detected unified manifest format")
+        entries = manifest['entries']
+        total_checked = 0
+        for entry in entries:
+            total_checked += 1
+            if total_checked % 50000 == 0:
+                logging.info(f"  Checked {total_checked}/{len(entries)}...")
 
-        # Get group label
-        if isinstance(meta, dict):
-            label = meta.get('group', 'undefined')
-        else:
-            label = 'undefined'
+            audio_path = entry.get('audio_path', '')
+            label = entry.get('group', 'undefined')
+            has_latent = entry.get('has_latent', False)
+            latent_path_str = entry.get('latent_path')
 
-        if label == 'undefined' or not label:
-            skipped_undefined += 1
-            continue
+            # Apply correction if exists (single-label only for this classifier)
+            if audio_path in corrections:
+                corr = corrections[audio_path]
+                # Use corrected group if not multi-label
+                if not corr.get('multi_label') and corr.get('group'):
+                    label = corr['group']
 
-        # Quick filter: latents only exist for /New/ paths, not /Prev/
-        if '/New/' not in audio_path:
-            skipped_no_latent += 1
-            continue
+            if not label or label in EXCLUDED_CLASSES:
+                skipped_undefined += 1
+                continue
 
-        # Verify latent actually exists
-        latent_path = audio_path_to_latent_path(audio_path)
-        if not latent_path.exists():
-            skipped_no_latent += 1
-            continue
+            if not has_latent or not latent_path_str:
+                skipped_no_latent += 1
+                continue
 
-        file_label_pairs.append((audio_path, label))
-        class_counts[label] += 1
+            file_label_pairs.append((audio_path, label))
+            class_counts[label] += 1
+    else:
+        logging.info("Detected combined manifest format (dict keyed by path)")
+        logging.info("Checking latent existence for manifest paths...")
+        total_checked = 0
+        for audio_path, meta in manifest.items():
+            total_checked += 1
+            if total_checked % 50000 == 0:
+                logging.info(f"  Checked {total_checked}/{len(manifest)}...")
+
+            # Get group label
+            if isinstance(meta, dict):
+                label = meta.get('group', 'undefined')
+            else:
+                label = 'undefined'
+
+            if not label or label in EXCLUDED_CLASSES:
+                skipped_undefined += 1
+                continue
+
+            # Quick filter: latents only exist for /New/ paths, not /Prev/
+            if '/New/' not in audio_path:
+                skipped_no_latent += 1
+                continue
+
+            # Verify latent actually exists
+            latent_path = audio_path_to_latent_path(audio_path)
+            if latent_path is None:
+                skipped_no_latent += 1
+                continue
+
+            file_label_pairs.append((audio_path, label))
+            class_counts[label] += 1
 
     logging.info(f"Loaded {len(file_label_pairs)} labeled files with verified latents")
     logging.info(f"  Skipped {skipped_undefined} undefined, {skipped_no_latent} without latents")
@@ -527,21 +1006,36 @@ def classify_undefined(model_path: Path, undefined_paths: List[str],
         with open(manifest_path) as f:
             manifest = json.load(f)
 
+        # Support both formats
+        is_unified = 'entries' in manifest and isinstance(manifest.get('entries'), list)
+
         undefined_paths = []
         skipped_no_latent = 0
-        for path, meta in manifest.items():
-            if not isinstance(meta, dict):
-                continue
-            if meta.get('group') != 'undefined':
-                continue
-            if '/New/' not in path:
-                continue
-            # Check latent exists
-            latent_path = audio_path_to_latent_path(path)
-            if latent_path.exists():
-                undefined_paths.append(path)
-            else:
-                skipped_no_latent += 1
+
+        if is_unified:
+            logging.info("Detected unified manifest format")
+            for entry in manifest['entries']:
+                label = entry.get('group', 'undefined')
+                if label != 'undefined':
+                    continue
+                if not entry.get('has_latent') or not entry.get('latent_path'):
+                    skipped_no_latent += 1
+                    continue
+                undefined_paths.append(entry['audio_path'])
+        else:
+            for path, meta in manifest.items():
+                if not isinstance(meta, dict):
+                    continue
+                if meta.get('group') != 'undefined':
+                    continue
+                if '/New/' not in path:
+                    continue
+                # Check latent exists
+                latent_path = audio_path_to_latent_path(path)
+                if latent_path is not None:
+                    undefined_paths.append(path)
+                else:
+                    skipped_no_latent += 1
 
         logging.info(f"Found {len(undefined_paths)} undefined paths with latents")
         logging.info(f"Skipped {skipped_no_latent} without latents")
@@ -660,6 +1154,289 @@ def classify_undefined(model_path: Path, undefined_paths: List[str],
     return output_data
 
 
+# ===================== VALIDATION / MISLABEL DETECTION =====================
+
+def validate_labels(model_path: Path, manifest_path: Path, output_dir: Path,
+                   num_workers: int = 8, device: str = 'cuda',
+                   disagreement_threshold: float = 0.7,
+                   entropy_threshold: float = 1.5,
+                   outlier_percentile: float = 95) -> Dict:
+    """
+    Validate existing labels and flag potential mislabels.
+
+    Flags entries based on:
+    1. High-confidence disagreement: classifier confident in different class
+    2. High entropy: classifier uncertain (possible ensemble/ambiguous)
+    3. Feature outlier: entry far from its class centroid
+
+    Args:
+        model_path: Path to trained model
+        manifest_path: Manifest with labeled entries
+        output_dir: Where to save validation results
+        disagreement_threshold: Min confidence to flag disagreement (default 0.7)
+        entropy_threshold: Max entropy before flagging uncertainty (default 1.5)
+        outlier_percentile: Percentile for outlier detection (default 95)
+    """
+    from scipy.spatial.distance import cdist
+
+    if device == 'cuda' and not torch.cuda.is_available():
+        device = 'cpu'
+    device_obj = torch.device(device)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load model
+    logging.info(f"Loading model from {model_path}...")
+    model_data = torch.load(model_path, map_location='cpu', weights_only=False)
+
+    input_dim = model_data['input_dim']
+    num_classes = model_data['num_classes']
+    hidden_dim = model_data.get('hidden_dim', HIDDEN_DIM)
+    mean = model_data['mean']
+    std = model_data['std']
+    classes = model_data['label_encoder_classes']
+
+    model = InstrumentClassifier(input_dim, num_classes, hidden_dim)
+    model.load_state_dict(model_data['model_state'])
+    model.to(device_obj)
+    model.eval()
+
+    # Load manifest
+    logging.info(f"Loading manifest from {manifest_path}...")
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+
+    # Support both formats
+    is_unified = 'entries' in manifest and isinstance(manifest.get('entries'), list)
+
+    # Get labeled entries (excluding undefined and room)
+    labeled_entries = []
+
+    if is_unified:
+        logging.info("Detected unified manifest format")
+        for entry in manifest['entries']:
+            label = entry.get('group', 'undefined')
+            if label in ['undefined', 'room']:
+                continue
+            if label not in classes:
+                continue
+            if not entry.get('has_latent') or not entry.get('latent_path'):
+                continue
+            labeled_entries.append((entry['audio_path'], label))
+    else:
+        for path, meta in manifest.items():
+            if not isinstance(meta, dict):
+                continue
+            label = meta.get('group', 'undefined')
+            if label in ['undefined', 'room']:  # Skip these
+                continue
+            if label not in classes:  # Skip classes not in training
+                continue
+            if '/New/' not in path:  # Only entries that could have latents
+                continue
+
+            latent_path = audio_path_to_latent_path(path)
+            if latent_path is not None:
+                labeled_entries.append((path, label))
+
+    logging.info(f"Found {len(labeled_entries):,} labeled entries with latents to validate")
+
+    if len(labeled_entries) == 0:
+        logging.error("No labeled entries found!")
+        return {}
+
+    # Extract features
+    audio_paths = [p for p, _ in labeled_entries]
+    true_labels = [l for _, l in labeled_entries]
+
+    X, valid_paths, failed = extract_features_batch(audio_paths, num_workers=num_workers)
+
+    if len(X) == 0:
+        logging.error("No features extracted!")
+        return {}
+
+    # Filter labels to match valid paths
+    path_to_label = dict(labeled_entries)
+    valid_labels = [path_to_label[p] for p in valid_paths]
+
+    # Normalize features
+    X_norm = (X - mean) / std
+
+    # Get predictions
+    logging.info("Running inference...")
+    all_probs = []
+    all_features = []
+
+    with torch.no_grad():
+        for i in range(0, len(X_norm), BATCH_SIZE):
+            batch = X_norm[i:i+BATCH_SIZE].to(device_obj)
+            logits = model(batch)
+            probs = F.softmax(logits, dim=1)
+            all_probs.append(probs.cpu())
+            all_features.append(batch.cpu())
+
+    all_probs = torch.cat(all_probs, dim=0).numpy()
+    all_features = torch.cat(all_features, dim=0).numpy()
+
+    # Calculate entropy for each prediction
+    entropy = -np.sum(all_probs * np.log(all_probs + 1e-10), axis=1)
+
+    # Calculate class centroids
+    logging.info("Computing class centroids for outlier detection...")
+    class_to_idx = {c: i for i, c in enumerate(classes)}
+    class_features = {c: [] for c in classes}
+
+    for i, label in enumerate(valid_labels):
+        class_features[label].append(all_features[i])
+
+    centroids = {}
+    class_distances = {}
+    for c in classes:
+        if len(class_features[c]) > 0:
+            centroids[c] = np.mean(class_features[c], axis=0)
+            # Calculate distances to centroid for this class
+            dists = cdist([centroids[c]], class_features[c], metric='euclidean')[0]
+            class_distances[c] = dists
+
+    # Calculate outlier thresholds per class
+    outlier_thresholds = {}
+    for c, dists in class_distances.items():
+        if len(dists) > 10:
+            outlier_thresholds[c] = np.percentile(dists, outlier_percentile)
+        else:
+            outlier_thresholds[c] = float('inf')
+
+    # Analyze each entry
+    logging.info("Analyzing entries for potential mislabels...")
+
+    flagged_disagreement = []
+    flagged_uncertain = []
+    flagged_outlier = []
+    all_results = []
+
+    for i, (path, true_label) in enumerate(zip(valid_paths, valid_labels)):
+        probs = all_probs[i]
+        pred_idx = probs.argmax()
+        pred_label = classes[pred_idx]
+        pred_conf = probs[pred_idx]
+        entry_entropy = entropy[i]
+
+        # Calculate distance to true class centroid
+        if true_label in centroids:
+            dist_to_centroid = np.linalg.norm(all_features[i] - centroids[true_label])
+            is_outlier = dist_to_centroid > outlier_thresholds.get(true_label, float('inf'))
+        else:
+            dist_to_centroid = None
+            is_outlier = False
+
+        # Determine flags
+        flags = []
+        flag_reasons = []
+
+        # Flag 1: High-confidence disagreement
+        if pred_label != true_label and pred_conf >= disagreement_threshold:
+            flags.append('disagreement')
+            flag_reasons.append(f"Labeled '{true_label}' but classifier says '{pred_label}' ({pred_conf:.1%})")
+            flagged_disagreement.append({
+                'path': path,
+                'true_label': true_label,
+                'predicted_label': pred_label,
+                'confidence': float(pred_conf),
+                'entropy': float(entry_entropy),
+            })
+
+        # Flag 2: High uncertainty
+        if entry_entropy >= entropy_threshold:
+            flags.append('uncertain')
+            top3 = sorted(zip(classes, probs), key=lambda x: -x[1])[:3]
+            top3_str = ', '.join([f"{c}:{p:.1%}" for c, p in top3])
+            flag_reasons.append(f"High uncertainty (entropy={entry_entropy:.2f}): {top3_str}")
+            flagged_uncertain.append({
+                'path': path,
+                'true_label': true_label,
+                'entropy': float(entry_entropy),
+                'top_predictions': {c: float(p) for c, p in top3},
+            })
+
+        # Flag 3: Outlier in feature space
+        if is_outlier:
+            flags.append('outlier')
+            flag_reasons.append(f"Outlier in '{true_label}' class (dist={dist_to_centroid:.2f}, threshold={outlier_thresholds.get(true_label, 0):.2f})")
+            flagged_outlier.append({
+                'path': path,
+                'true_label': true_label,
+                'distance_to_centroid': float(dist_to_centroid),
+                'threshold': float(outlier_thresholds.get(true_label, 0)),
+            })
+
+        result = {
+            'path': path,
+            'true_label': true_label,
+            'predicted_label': pred_label,
+            'confidence': float(pred_conf),
+            'entropy': float(entry_entropy),
+            'distance_to_centroid': float(dist_to_centroid) if dist_to_centroid else None,
+            'flags': flags,
+            'flag_reasons': flag_reasons,
+        }
+        all_results.append(result)
+
+    # Summary
+    total_flagged = len(set(r['path'] for r in all_results if r['flags']))
+
+    logging.info("\n" + "=" * 60)
+    logging.info("VALIDATION SUMMARY")
+    logging.info("=" * 60)
+    logging.info(f"Total validated: {len(all_results):,}")
+    logging.info(f"Total flagged: {total_flagged:,} ({100*total_flagged/len(all_results):.1f}%)")
+    logging.info(f"  - Disagreement (confident misprediction): {len(flagged_disagreement):,}")
+    logging.info(f"  - Uncertain (high entropy): {len(flagged_uncertain):,}")
+    logging.info(f"  - Outlier (far from class centroid): {len(flagged_outlier):,}")
+
+    # Disagreement breakdown by class
+    if flagged_disagreement:
+        logging.info("\nDisagreement breakdown (true -> predicted):")
+        confusion = Counter((r['true_label'], r['predicted_label']) for r in flagged_disagreement)
+        for (true, pred), count in confusion.most_common(20):
+            logging.info(f"  {true} -> {pred}: {count}")
+
+    # Save results
+    output_data = {
+        'summary': {
+            'total_validated': len(all_results),
+            'total_flagged': total_flagged,
+            'flagged_disagreement': len(flagged_disagreement),
+            'flagged_uncertain': len(flagged_uncertain),
+            'flagged_outlier': len(flagged_outlier),
+            'thresholds': {
+                'disagreement_confidence': disagreement_threshold,
+                'entropy': entropy_threshold,
+                'outlier_percentile': outlier_percentile,
+            }
+        },
+        'flagged_disagreement': flagged_disagreement,
+        'flagged_uncertain': flagged_uncertain,
+        'flagged_outlier': flagged_outlier,
+        'all_results': all_results,
+        'validated_at': datetime.now().isoformat(),
+    }
+
+    output_path = output_dir / 'validation_results.json'
+    with open(output_path, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    logging.info(f"\nResults saved to {output_path}")
+
+    # Also save just the flagged paths for easy review
+    flagged_paths_file = output_dir / 'flagged_paths.txt'
+    with open(flagged_paths_file, 'w') as f:
+        for r in all_results:
+            if r['flags']:
+                f.write(f"{r['path']}\t{r['true_label']}\t{','.join(r['flags'])}\t{r['predicted_label']}:{r['confidence']:.2f}\n")
+    logging.info(f"Flagged paths saved to {flagged_paths_file}")
+
+    return output_data
+
+
 def update_manifest(manifest_path: Path, predictions_path: Path,
                     min_confidence: float = CONFIDENCE_MEDIUM) -> int:
     """Update manifest with predictions above confidence threshold."""
@@ -702,9 +1479,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    parser.add_argument('--mode', choices=['train', 'classify', 'full'], required=True)
+    parser.add_argument('--mode', choices=['train', 'classify', 'validate', 'temporal', 'full'], required=True)
     parser.add_argument('--manifest', type=str,
                         help='Manifest JSON with audio paths and group labels')
+    parser.add_argument('--corrections', type=str,
+                        help='Corrections JSON to override manifest labels during training')
     parser.add_argument('--undefined', type=str,
                         help='File with undefined audio paths to classify')
     parser.add_argument('--model', type=str,
@@ -717,6 +1496,19 @@ def main():
     parser.add_argument('--device', type=str, default='cuda',
                         choices=['cuda', 'cpu'])
     parser.add_argument('--min-confidence', type=float, default=CONFIDENCE_MEDIUM)
+    parser.add_argument('--disagreement-threshold', type=float, default=0.7,
+                        help='Min confidence to flag label disagreement (validate mode)')
+    parser.add_argument('--entropy-threshold', type=float, default=1.5,
+                        help='Max entropy before flagging as uncertain (validate mode)')
+    parser.add_argument('--outlier-percentile', type=float, default=95,
+                        help='Percentile for outlier detection (validate mode)')
+    # Temporal mode options
+    parser.add_argument('--window-sec', type=float, default=2.0,
+                        help='Window size in seconds for temporal mode')
+    parser.add_argument('--hop-sec', type=float, default=1.0,
+                        help='Hop size in seconds for temporal mode')
+    parser.add_argument('--group', type=str,
+                        help='Filter to specific group for temporal analysis')
 
     args = parser.parse_args()
 
@@ -732,9 +1524,11 @@ def main():
     if args.mode == 'train':
         if not args.manifest:
             parser.error("--manifest required for train mode")
+        corrections_path = Path(args.corrections) if args.corrections else None
         train_classifier(
             Path(args.manifest),
             output_dir,
+            corrections_path=corrections_path,
             num_workers=args.workers,
             device=args.device
         )
@@ -768,6 +1562,76 @@ def main():
 
         if args.output_manifest:
             update_manifest(Path(args.output_manifest), predictions_path, args.min_confidence)
+
+    elif args.mode == 'validate':
+        if not args.model:
+            parser.error("--model required for validate mode")
+        if not args.manifest:
+            parser.error("--manifest required for validate mode")
+
+        validate_labels(
+            Path(args.model),
+            Path(args.manifest),
+            output_dir,
+            num_workers=args.workers,
+            device=args.device,
+            disagreement_threshold=args.disagreement_threshold,
+            entropy_threshold=args.entropy_threshold,
+            outlier_percentile=args.outlier_percentile,
+        )
+
+    elif args.mode == 'temporal':
+        if not args.model:
+            parser.error("--model required for temporal mode")
+        if not args.manifest and not args.undefined:
+            parser.error("--manifest or --undefined required for temporal mode")
+
+        # Get paths to analyze
+        audio_paths = []
+
+        if args.undefined:
+            with open(args.undefined) as f:
+                audio_paths = [l.strip() for l in f if l.strip() and not l.startswith('#')]
+        elif args.manifest:
+            logging.info(f"Loading paths from manifest: {args.manifest}")
+            with open(args.manifest) as f:
+                manifest = json.load(f)
+
+            # Support unified manifest format
+            if 'entries' in manifest:
+                for entry in manifest['entries']:
+                    if not entry.get('has_latent'):
+                        continue
+                    # Optional: filter by group
+                    if args.group and entry.get('group') != args.group:
+                        continue
+                    audio_paths.append(entry['audio_path'])
+            else:
+                for path, meta in manifest.items():
+                    if isinstance(meta, dict):
+                        if args.group and meta.get('group') != args.group:
+                            continue
+                    audio_paths.append(path)
+
+            logging.info(f"Found {len(audio_paths)} paths to analyze")
+
+        if len(audio_paths) == 0:
+            logging.error("No audio paths to analyze!")
+        else:
+            # Limit for testing if needed
+            # audio_paths = audio_paths[:1000]
+
+            temporal_output = output_dir / 'temporal_analysis.json'
+            run_temporal_classification(
+                Path(args.model),
+                audio_paths,
+                temporal_output,
+                window_sec=args.window_sec,
+                hop_sec=args.hop_sec,
+                min_confidence=args.min_confidence,
+                num_workers=args.workers,
+                device=args.device
+            )
 
     elif args.mode == 'full':
         if not args.manifest or not args.undefined:

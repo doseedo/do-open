@@ -37,8 +37,16 @@ from pathlib import Path
 import math
 
 # Import existing analysis tools
-from midi_generator.analysis.midi_analyzer import MidiAnalyzer, NoteEvent, ChordEvent
-from midi_generator.generators.style_fusion import GenreFeatures, GENRE_PROFILES
+try:
+    from analysis.midi_analyzer import MidiAnalyzer, NoteEvent, ChordEvent
+except ImportError:
+    from .midi_analyzer import MidiAnalyzer, NoteEvent, ChordEvent
+
+try:
+    from generators.style_fusion import GenreFeatures, GENRE_PROFILES
+except ImportError:
+    GenreFeatures = None
+    GENRE_PROFILES = {}
 
 
 # ==============================================================================

@@ -181,6 +181,13 @@ def build_cache_gcs_api():
         "audio_seconds": 0,
         "audio_hours_formatted": "0 hrs",
         "instrument_hours": {},  # { group: { seconds, subgroups: { subgroup: seconds } } }
+        "file_type_breakdown": {  # Breakdown by processing type
+            "audio": {"count": 0, "size": 0, "label": "Audio Files"},
+            "latent": {"count": 0, "size": 0, "label": "Latent Files"},
+            "midi": {"count": 0, "size": 0, "label": "MIDI Files"},
+            "conditioning": {"count": 0, "size": 0, "label": "Conditioning Files", "raw_count": 0}
+        },
+        "total_sessions": 0,  # Count of session folders (subfolders in date folders)
         "folders": {},
         "scan_method": "gcs_api"
     }
@@ -190,6 +197,9 @@ def build_cache_gcs_api():
         "seconds": 0,
         "subgroups": defaultdict(float)
     })
+
+    # Track unique sessions (folder/date/session paths)
+    unique_sessions = set()
 
     # Initialize folder stats
     folder_stats = defaultdict(lambda: {
@@ -301,6 +311,27 @@ def build_cache_gcs_api():
             instrument_stats[group]["seconds"] += estimated_seconds
             instrument_stats[group]["subgroups"][subgroup] += estimated_seconds
 
+        # Track file type breakdown by folder
+        ftb = cache_data["file_type_breakdown"]
+        if folder in ("protools", "protoolsA") and ext in AUDIO_EXTENSIONS:
+            ftb["audio"]["count"] += 1
+            ftb["audio"]["size"] += blob.size or 0
+            # Track sessions: protools/date/newOrPrev/session_name/...
+            if len(parts) >= 4:
+                session_path = f"{parts[0]}/{parts[1]}/{parts[2]}/{parts[3]}"
+                unique_sessions.add(session_path)
+        elif folder == "Latents":
+            ftb["latent"]["count"] += 1
+            ftb["latent"]["size"] += blob.size or 0
+        elif folder == "BasicPitch":
+            ftb["midi"]["count"] += 1
+            ftb["midi"]["size"] += blob.size or 0
+        elif folder == "Conditioning":
+            ftb["conditioning"]["raw_count"] += 1
+            ftb["conditioning"]["size"] += blob.size or 0
+            # Display count is raw_count / 6 (6 conditioning files per audio file)
+            ftb["conditioning"]["count"] = ftb["conditioning"]["raw_count"] // 6
+
         # Update totals
         cache_data["total_files"] += 1
         cache_data["total_size"] += blob.size or 0
@@ -341,6 +372,22 @@ def build_cache_gcs_api():
 
     cache_data["total_size_formatted"] = format_size(cache_data["total_size"])
     cache_data["audio_hours_formatted"] = format_audio_duration(cache_data["audio_seconds"])
+
+    # Format file type breakdown sizes
+    for key, data in cache_data["file_type_breakdown"].items():
+        data["size_formatted"] = format_size(data["size"])
+
+    # Save session count
+    cache_data["total_sessions"] = len(unique_sessions)
+
+    print(f"\nFile type breakdown:")
+    for key, data in cache_data["file_type_breakdown"].items():
+        count_display = data["count"]
+        if key == "conditioning":
+            print(f"  {data['label']}: {count_display:,} ({data['raw_count']:,} raw / 6), {data['size_formatted']}")
+        else:
+            print(f"  {data['label']}: {count_display:,}, {data['size_formatted']}")
+    print(f"\nTotal sessions: {cache_data['total_sessions']:,}")
 
     # Build instrument hours data
     for group, data in sorted(instrument_stats.items(), key=lambda x: -x[1]["seconds"]):

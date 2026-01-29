@@ -105,3 +105,18 @@ var/www/html/*.mp3
 *backup*
 *test_*
 *.html.save*
+
+# Large Modulo directories
+home/arlo/Modulo/RemFx/
+home/arlo/Modulo/effect_samples/
+home/arlo/Modulo/inverse_afx/
+home/arlo/soundspace/
+
+# Large MIDI generator data
+midi_generator/allharmony/
+midi_generator/1_approaches/transform_based/*.json
+
+# Additional Data directories
+home/arlo/Data/OpenVoice/
+home/arlo/Data/latent_classifier/
+home/arlo/Data/mix_classifier/

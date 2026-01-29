@@ -92,15 +92,26 @@ except ImportError:
 # ============================================================================
 
 try:
-    from midi_generator.parameters.universal_registry import (
+    from parameters.universal_registry import (
         UniversalParameterRegistry,
         ParameterDefinition,
         ParameterType
     )
     REGISTRY = UniversalParameterRegistry()
 except ImportError:
-    REGISTRY = None
-    print("WARNING: Could not import UniversalParameterRegistry")
+    try:
+        from midi_generator.parameters.universal_registry import (
+            UniversalParameterRegistry,
+            ParameterDefinition,
+            ParameterType
+        )
+        REGISTRY = UniversalParameterRegistry()
+    except ImportError:
+        REGISTRY = None
+        UniversalParameterRegistry = None  # For type hints
+        ParameterDefinition = None
+        ParameterType = None
+        print("WARNING: Could not import UniversalParameterRegistry")
 
 
 # ============================================================================

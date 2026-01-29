@@ -246,3 +246,143 @@
   font-size: 0.8rem;
   margin-top: 1rem;
 }
+
+/* Formats Section */
+.formats-section {
+  margin-bottom: 2rem;
+}
+
+.formats-section h2 {
+  font-size: 1.25rem;
+  font-weight: 500;
+  margin: 0 0 1rem 0;
+}
+
+.formats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.format-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.format-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.format-icon {
+  font-size: 1.25rem;
+}
+
+.format-name {
+  font-weight: 500;
+  flex: 1;
+}
+
+.format-pct {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.format-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.format-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.format-bar-fill.latent {
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+}
+
+.format-bar-fill.conditioning {
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+}
+
+.format-bar-fill.midi {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.format-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.format-stats .needs {
+  color: rgba(251, 191, 36, 0.8);
+}
+
+/* Completeness Section */
+.completeness-section {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.completeness-section h3 {
+  font-size: 1rem;
+  font-weight: 500;
+  margin: 0 0 1rem 0;
+}
+
+.completeness-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.75rem;
+}
+
+.completeness-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.completeness-item.all_formats {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.completeness-item.audio_only {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.completeness-short {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 0.25rem;
+}
+
+.completeness-count {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.completeness-pct {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+}

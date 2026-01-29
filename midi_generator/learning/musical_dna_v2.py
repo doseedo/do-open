@@ -59,9 +59,6 @@ class MusicalDNA:
     Total: 300 interpretable parameters organized hierarchically
     """
 
-    # Version control
-    version: str = "2.0"
-
     # GLOBAL LEVEL (60D) - Musical context
     key_context_params: np.ndarray      # 12D: tonal center, modulations
     tempo_feel_params: np.ndarray       # 8D: tempo, variations, feel
@@ -78,7 +75,8 @@ class MusicalDNA:
     texture_params: np.ndarray          # 30D: density, independence (expanded from 20D)
     orchestration_params: np.ndarray    # 40D: instrumentation, balance (expanded from 25D)
 
-    # Metadata
+    # Metadata (fields with defaults must come last)
+    version: str = "2.0"
     source_file: Optional[str] = None
     extraction_timestamp: Optional[str] = None
 

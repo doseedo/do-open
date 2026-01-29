@@ -78,6 +78,11 @@ class ChordEvent:
     bass_note: int      # Bass note (for inversions)
     confidence: float   # Confidence score (0-1)
 
+    @property
+    def end_time(self) -> float:
+        """Get chord end time in seconds."""
+        return self.start_time + self.duration
+
     def __str__(self) -> str:
         note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
         return f"{note_names[self.root]}{self.quality}"

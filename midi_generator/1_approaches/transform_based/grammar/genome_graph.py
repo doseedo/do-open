@@ -21,8 +21,6 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple, Iterator, Any
 from collections import defaultdict
 from itertools import groupby
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import multiprocessing
 
 
 # ============================================================================
@@ -665,12 +663,6 @@ class GenomeGraph:
                 edge = self.edges[eid]
                 pattern_ids.add(edge.source)
                 pattern_ids.add(edge.target)
-            # Also include patterns from occurrences (for --skip-edges mode)
-            for pid, occs in self.occurrences.items():
-                for occ in occs:
-                    if occ.get('piece_id') == piece_filter:
-                        pattern_ids.add(pid)
-                        break
         else:
             pattern_ids = set(self.patterns.keys())
             edge_ids = list(self.edges.keys())
@@ -786,332 +778,104 @@ class GenomeGraph:
 # Convert from v24 checkpoint to GenomeGraph
 # ============================================================================
 
-def _process_temporal_group(args):
-    """Process a single (piece, track) group for temporal edge extraction.
-
-    This is a module-level function to enable multiprocessing pickling.
-    """
-    piece_id, track_id, group_list, patterns, time_resolution = args
-    edges = []
-
-    for i in range(len(group_list) - 1):
-        curr = group_list[i]
-        next_occ = group_list[i + 1]
-
-        if curr['onset_time'] is None or next_occ['onset_time'] is None:
-            continue
-
-        # Compute time delta
-        delta = next_occ['onset_time'] - curr['onset_time']
-        delta_q = quantize_time_delta(delta, time_resolution)
-
-        if delta_q <= 0:
-            continue  # Skip simultaneous or backwards
-
-        # Find pitch transform between patterns
-        src_pc = patterns.get(curr['pattern_id'], {}).get('pitch_classes', [])
-        tgt_pc = patterns.get(next_occ['pattern_id'], {}).get('pitch_classes', [])
-
-        pitch_t = find_pitch_transform(src_pc, tgt_pc)
-
-        # Create edge - entangled pitch and time
-        if pitch_t != 'none' and pitch_t != 'identity':
-            transform = f"{pitch_t}∘τ{delta_q}"
-        else:
-            transform = f"τ{delta_q}"
-
-        edges.append({
-            'source': curr['pattern_id'],
-            'target': next_occ['pattern_id'],
-            'transform': transform,
-            'edge_type': 'temporal',
-            'piece_id': piece_id,
-            'track_id': track_id,
-            'source_onset': curr['onset_time'],
-        })
-
-    return edges
-
-
-def _batch_find_transforms_gpu(src_pcs_list: List[List[int]], tgt_pcs_list: List[List[int]], device='cuda') -> List[str]:
-    """GPU-accelerated batch transform finding using PyTorch.
-
-    Checks all transpositions (T0-T11) and inversions (I0-I11) in parallel.
-
-    Args:
-        src_pcs_list: List of source pitch class sequences
-        tgt_pcs_list: List of target pitch class sequences (same length as src)
-        device: 'cuda' or 'cpu'
-
-    Returns:
-        List of transform strings (one per pair)
-    """
-    import torch
-
-    n_pairs = len(src_pcs_list)
-    if n_pairs == 0:
-        return []
-
-    # Find max sequence length for padding
-    max_len = max(max(len(s) for s in src_pcs_list), max(len(t) for t in tgt_pcs_list))
-
-    # Pad sequences and convert to tensors
-    src_padded = []
-    tgt_padded = []
-    lengths = []
-    for src, tgt in zip(src_pcs_list, tgt_pcs_list):
-        if len(src) != len(tgt) or len(src) == 0:
-            # Different lengths - will be marked as 'none'
-            src_padded.append([0] * max_len)
-            tgt_padded.append([-1] * max_len)  # -1 ensures no match
-            lengths.append(0)
-        else:
-            src_padded.append(src + [0] * (max_len - len(src)))
-            tgt_padded.append(tgt + [0] * (max_len - len(tgt)))
-            lengths.append(len(src))
-
-    src_t = torch.tensor(src_padded, dtype=torch.int32, device=device)  # [n_pairs, max_len]
-    tgt_t = torch.tensor(tgt_padded, dtype=torch.int32, device=device)
-    lens_t = torch.tensor(lengths, dtype=torch.int32, device=device)
-
-    results = ['none'] * n_pairs
-
-    # Check transpositions T0-T11
-    for n in range(12):
-        # transposed = (src + n) % 12
-        transposed = (src_t + n) % 12
-        # Check if all positions match (within length)
-        matches = (transposed == tgt_t)  # [n_pairs, max_len]
-        # Mask out padding positions
-        mask = torch.arange(max_len, device=device).unsqueeze(0) < lens_t.unsqueeze(1)
-        masked_matches = matches | ~mask
-        all_match = masked_matches.all(dim=1) & (lens_t > 0)
-
-        # Update results for matching pairs
-        match_indices = torch.where(all_match)[0].cpu().tolist()
-        for idx in match_indices:
-            if results[idx] == 'none':
-                results[idx] = 'identity' if n == 0 else f'T{n}'
-
-    # Check inversions I0-I11 (only if not already matched)
-    for axis in range(12):
-        # inverted = (2 * axis - src) % 12
-        inverted = (2 * axis - src_t) % 12
-        matches = (inverted == tgt_t)
-        mask = torch.arange(max_len, device=device).unsqueeze(0) < lens_t.unsqueeze(1)
-        masked_matches = matches | ~mask
-        all_match = masked_matches.all(dim=1) & (lens_t > 0)
-
-        match_indices = torch.where(all_match)[0].cpu().tolist()
-        for idx in match_indices:
-            if results[idx] == 'none':
-                results[idx] = f'I{axis}'
-
-    return results
-
-
 def extract_temporal_edges(patterns: Dict, occurrences_by_pattern: Dict,
-                           time_resolution: int = 120, n_workers: int = None, use_gpu: bool = False) -> List[Dict]:
-    """Extract τ transform edges from occurrence data (parallelized, optionally GPU-accelerated).
+                           time_resolution: int = 120) -> List[Dict]:
+    """Extract τ transform edges from occurrence data.
 
     Args:
         patterns: Dict of pattern_id -> pattern data
         occurrences_by_pattern: Dict of pattern_id -> list of occurrences
         time_resolution: Quantization resolution for τ values
-        n_workers: Number of parallel workers (default: CPU count)
-        use_gpu: If True, use GPU for batch transform finding
 
     Returns:
         List of edge dicts ready for GenomeGraph
     """
-    if n_workers is None:
-        n_workers = multiprocessing.cpu_count()
+    edges = []
 
     # Group all occurrences by (piece_id, track_id)
-    print(f"  Collecting occurrences...")
-    groups_by_key = defaultdict(list)
-    total_occs = 0
+    all_occurrences = []
     for pid, occs in occurrences_by_pattern.items():
         for occ in occs:
-            total_occs += 1
-            key = (
-                occ.get('piece_id', occ[0] if isinstance(occ, tuple) else None),
-                occ.get('track_id', occ[1] if isinstance(occ, tuple) else None)
-            )
-            groups_by_key[key].append({
+            all_occurrences.append({
                 'pattern_id': pid,
-                'piece_id': key[0],
-                'track_id': key[1],
+                'piece_id': occ.get('piece_id', occ[0] if isinstance(occ, tuple) else None),
+                'track_id': occ.get('track_id', occ[1] if isinstance(occ, tuple) else None),
                 'onset_time': occ.get('onset_time', occ[2] if isinstance(occ, tuple) else None),
             })
 
-    print(f"  {total_occs:,} occurrences in {len(groups_by_key):,} (piece, track) groups")
+    # Sort by piece, track, time
+    all_occurrences.sort(key=lambda x: (
+        x['piece_id'] or '',
+        x['track_id'] or 0,
+        x['onset_time'] or 0
+    ))
 
-    # Sort each group by onset time
-    for key in groups_by_key:
-        groups_by_key[key].sort(key=lambda x: x['onset_time'] or 0)
+    # Group by (piece, track)
+    for (piece_id, track_id), group in groupby(
+        all_occurrences,
+        key=lambda x: (x['piece_id'], x['track_id'])
+    ):
+        group_list = list(group)
 
-    all_edges = []
+        for i in range(len(group_list) - 1):
+            curr = group_list[i]
+            next_occ = group_list[i + 1]
 
-    if use_gpu:
-        # GPU-accelerated: batch all consecutive pairs
-        print(f"  Building consecutive pairs for GPU batch processing...")
-        pair_data = []  # List of (piece_id, track_id, curr, next_occ, delta_q)
+            if curr['onset_time'] is None or next_occ['onset_time'] is None:
+                continue
 
-        for (piece_id, track_id), group_list in groups_by_key.items():
-            for i in range(len(group_list) - 1):
-                curr = group_list[i]
-                next_occ = group_list[i + 1]
+            # Compute time delta
+            delta = next_occ['onset_time'] - curr['onset_time']
+            delta_q = quantize_time_delta(delta, time_resolution)
 
-                if curr['onset_time'] is None or next_occ['onset_time'] is None:
-                    continue
+            if delta_q <= 0:
+                continue  # Skip simultaneous or backwards
 
-                delta = next_occ['onset_time'] - curr['onset_time']
-                delta_q = quantize_time_delta(delta, time_resolution)
+            # Find pitch transform between patterns
+            src_pc = patterns.get(curr['pattern_id'], {}).get('pitch_classes', [])
+            tgt_pc = patterns.get(next_occ['pattern_id'], {}).get('pitch_classes', [])
 
-                if delta_q <= 0:
-                    continue
+            pitch_t = find_pitch_transform(src_pc, tgt_pc)
 
-                pair_data.append((piece_id, track_id, curr, next_occ, delta_q))
+            # Create edge - entangled pitch and time
+            if pitch_t != 'none' and pitch_t != 'identity':
+                transform = f"{pitch_t}∘τ{delta_q}"
+            else:
+                transform = f"τ{delta_q}"
 
-        print(f"  {len(pair_data):,} consecutive pairs to process")
-
-        if pair_data:
-            # Extract pitch classes for GPU batch
-            src_pcs_list = [patterns.get(p[2]['pattern_id'], {}).get('pitch_classes', []) for p in pair_data]
-            tgt_pcs_list = [patterns.get(p[3]['pattern_id'], {}).get('pitch_classes', []) for p in pair_data]
-
-            # Batch GPU transform finding
-            BATCH_SIZE = 100000  # Process in chunks to manage GPU memory
-            print(f"  Finding transforms on GPU (batch_size={BATCH_SIZE})...")
-
-            transforms = []
-            for batch_start in range(0, len(src_pcs_list), BATCH_SIZE):
-                batch_end = min(batch_start + BATCH_SIZE, len(src_pcs_list))
-                batch_transforms = _batch_find_transforms_gpu(
-                    src_pcs_list[batch_start:batch_end],
-                    tgt_pcs_list[batch_start:batch_end]
-                )
-                transforms.extend(batch_transforms)
-                if batch_end % BATCH_SIZE == 0 or batch_end == len(src_pcs_list):
-                    print(f"    Processed {batch_end:,}/{len(src_pcs_list):,} pairs")
-
-            # Build edges with transforms
-            for (piece_id, track_id, curr, next_occ, delta_q), pitch_t in zip(pair_data, transforms):
-                if pitch_t != 'none' and pitch_t != 'identity':
-                    transform = f"{pitch_t}∘τ{delta_q}"
-                else:
-                    transform = f"τ{delta_q}"
-
-                all_edges.append({
-                    'source': curr['pattern_id'],
-                    'target': next_occ['pattern_id'],
-                    'transform': transform,
-                    'edge_type': 'temporal',
-                    'piece_id': piece_id,
-                    'track_id': track_id,
-                    'source_onset': curr['onset_time'],
-                })
-    else:
-        # CPU parallel processing
-        work_items = [
-            (piece_id, track_id, group_list, patterns, time_resolution)
-            for (piece_id, track_id), group_list in groups_by_key.items()
-        ]
-
-        print(f"  Extracting edges with {n_workers} workers...")
-
-        if n_workers > 1 and len(work_items) > 10:
-            # Use multiprocessing for large workloads
-            with ProcessPoolExecutor(max_workers=n_workers) as executor:
-                futures = [executor.submit(_process_temporal_group, item) for item in work_items]
-                for i, future in enumerate(as_completed(futures)):
-                    edges = future.result()
-                    all_edges.extend(edges)
-                    if (i + 1) % 500 == 0:
-                        print(f"    Processed {i + 1}/{len(work_items)} groups, {len(all_edges):,} edges so far")
-        else:
-            # Sequential for small workloads or single worker
-            for i, item in enumerate(work_items):
-                edges = _process_temporal_group(item)
-                all_edges.extend(edges)
-                if (i + 1) % 500 == 0:
-                    print(f"    Processed {i + 1}/{len(work_items)} groups, {len(all_edges):,} edges so far")
-
-    print(f"  Extracted {len(all_edges):,} temporal edges")
-    return all_edges
-
-
-def _process_cross_track_group(args):
-    """Process a single time point for cross-track edge extraction."""
-    from itertools import combinations
-
-    piece_id, onset_time, track_patterns, patterns = args
-    edges = []
-
-    # Skip if only one track has a pattern at this time
-    if len(track_patterns) < 2:
-        return edges
-
-    # Get unique tracks at this time
-    tracks = set(tp['track_id'] for tp in track_patterns)
-    if len(tracks) < 2:
-        return edges
-
-    # Compare all pairs of patterns from different tracks
-    for tp_a, tp_b in combinations(track_patterns, 2):
-        if tp_a['track_id'] == tp_b['track_id']:
-            continue  # Same track, skip
-
-        pid_a = tp_a['pattern_id']
-        pid_b = tp_b['pattern_id']
-
-        # Get pitch classes
-        pcs_a = patterns.get(pid_a, {}).get('pitch_classes', [])
-        pcs_b = patterns.get(pid_b, {}).get('pitch_classes', [])
-
-        if not pcs_a or not pcs_b:
-            continue
-
-        # Check if related by transform (skip identity)
-        transform = find_pitch_transform(pcs_a, pcs_b)
-        if transform and transform not in ('none', 'identity'):
             edges.append({
-                'source': pid_a,
-                'target': pid_b,
+                'source': curr['pattern_id'],
+                'target': next_occ['pattern_id'],
                 'transform': transform,
-                'edge_type': 'cross-track',
+                'edge_type': 'temporal',
                 'piece_id': piece_id,
-                'track_id': None,
-                'source_track': tp_a['track_id'],
-                'target_track': tp_b['track_id'],
+                'track_id': track_id,
+                'source_onset': curr['onset_time'],  # Absolute onset time for reconstruction
             })
 
     return edges
 
 
-def extract_cross_track_edges(patterns: Dict, occurrences_by_pattern: Dict, n_workers: int = None, use_gpu: bool = False) -> List[Dict]:
-    """Extract cross-track edges: patterns in different tracks related by T, I, R (parallelized).
+def extract_cross_track_edges(patterns: Dict, occurrences_by_pattern: Dict) -> List[Dict]:
+    """Extract cross-track edges: patterns in different tracks related by T, I, R.
 
     For patterns occurring at the same time in different tracks, checks if
     one is a pitch transformation of the other (T5, I7, etc.).
 
+    This captures relationships like "sax plays trumpet part transposed up a fifth"
+
     Args:
         patterns: Dict of pattern_id -> pattern data
         occurrences_by_pattern: Dict of pattern_id -> list of occurrences
-        n_workers: Number of parallel workers (default: CPU count)
-        use_gpu: If True, use GPU for batch transform finding
 
     Returns:
         List of edge dicts with edge_type='cross-track'
     """
     from itertools import combinations
 
-    if n_workers is None:
-        n_workers = multiprocessing.cpu_count()
+    edges = []
 
     # Group all occurrences by (piece_id, onset_time) to find simultaneous patterns
-    print(f"  Grouping by time for cross-track analysis...")
     patterns_by_time = defaultdict(list)
     for pid, occs in occurrences_by_pattern.items():
         for occ in occs:
@@ -1125,99 +889,56 @@ def extract_cross_track_edges(patterns: Dict, occurrences_by_pattern: Dict, n_wo
                     'track_id': track_id,
                 })
 
-    # Filter to only time points with multiple tracks
-    multi_track_times = {k: v for k, v in patterns_by_time.items() if len(set(tp['track_id'] for tp in v)) >= 2}
-    print(f"  {len(multi_track_times):,} time points with patterns in multiple tracks")
+    # For each time point, compare patterns across tracks
+    for (piece_id, onset_time), track_patterns in patterns_by_time.items():
+        # Skip if only one track has a pattern at this time
+        if len(track_patterns) < 2:
+            continue
 
-    if not multi_track_times:
-        return []
+        # Get unique tracks at this time
+        tracks = set(tp['track_id'] for tp in track_patterns)
+        if len(tracks) < 2:
+            continue
 
-    all_edges = []
+        # Compare all pairs of patterns from different tracks
+        for tp_a, tp_b in combinations(track_patterns, 2):
+            if tp_a['track_id'] == tp_b['track_id']:
+                continue  # Same track, skip
 
-    if use_gpu:
-        # GPU-accelerated: batch all cross-track pairs
-        print(f"  Building cross-track pairs for GPU batch processing...")
-        pair_data = []  # List of (piece_id, tp_a, tp_b)
+            pid_a = tp_a['pattern_id']
+            pid_b = tp_b['pattern_id']
 
-        for (piece_id, onset_time), track_patterns in multi_track_times.items():
-            # Compare all pairs of patterns from different tracks
-            for tp_a, tp_b in combinations(track_patterns, 2):
-                if tp_a['track_id'] == tp_b['track_id']:
-                    continue  # Same track, skip
-                pair_data.append((piece_id, tp_a, tp_b))
+            # Get pitch classes
+            pcs_a = patterns.get(pid_a, {}).get('pitch_classes', [])
+            pcs_b = patterns.get(pid_b, {}).get('pitch_classes', [])
 
-        print(f"  {len(pair_data):,} cross-track pairs to process")
+            if not pcs_a or not pcs_b:
+                continue
 
-        if pair_data:
-            # Extract pitch classes for GPU batch
-            src_pcs_list = [patterns.get(p[1]['pattern_id'], {}).get('pitch_classes', []) for p in pair_data]
-            tgt_pcs_list = [patterns.get(p[2]['pattern_id'], {}).get('pitch_classes', []) for p in pair_data]
+            # Check if related by transform (skip identity)
+            transform = find_pitch_transform(pcs_a, pcs_b)
+            if transform and transform not in ('none', 'identity'):
+                edges.append({
+                    'source': pid_a,
+                    'target': pid_b,
+                    'transform': transform,
+                    'edge_type': 'cross-track',
+                    'piece_id': piece_id,
+                    'track_id': None,  # Cross-track has no single track
+                    'source_track': tp_a['track_id'],
+                    'target_track': tp_b['track_id'],
+                })
 
-            # Batch GPU transform finding
-            BATCH_SIZE = 100000
-            print(f"  Finding transforms on GPU (batch_size={BATCH_SIZE})...")
-
-            transforms = []
-            for batch_start in range(0, len(src_pcs_list), BATCH_SIZE):
-                batch_end = min(batch_start + BATCH_SIZE, len(src_pcs_list))
-                batch_transforms = _batch_find_transforms_gpu(
-                    src_pcs_list[batch_start:batch_end],
-                    tgt_pcs_list[batch_start:batch_end]
-                )
-                transforms.extend(batch_transforms)
-                if batch_end % BATCH_SIZE == 0 or batch_end == len(src_pcs_list):
-                    print(f"    Processed {batch_end:,}/{len(src_pcs_list):,} pairs")
-
-            # Build edges with transforms (skip identity and none)
-            for (piece_id, tp_a, tp_b), transform in zip(pair_data, transforms):
-                if transform and transform not in ('none', 'identity'):
-                    all_edges.append({
-                        'source': tp_a['pattern_id'],
-                        'target': tp_b['pattern_id'],
-                        'transform': transform,
-                        'edge_type': 'cross-track',
-                        'piece_id': piece_id,
-                        'track_id': None,
-                        'source_track': tp_a['track_id'],
-                        'target_track': tp_b['track_id'],
-                    })
-    else:
-        # CPU parallel processing
-        work_items = [
-            (piece_id, onset_time, track_patterns, patterns)
-            for (piece_id, onset_time), track_patterns in multi_track_times.items()
-        ]
-
-        print(f"  Extracting cross-track edges with {n_workers} workers...")
-
-        if n_workers > 1 and len(work_items) > 100:
-            with ProcessPoolExecutor(max_workers=n_workers) as executor:
-                futures = [executor.submit(_process_cross_track_group, item) for item in work_items]
-                for i, future in enumerate(as_completed(futures)):
-                    edges = future.result()
-                    all_edges.extend(edges)
-                    if (i + 1) % 1000 == 0:
-                        print(f"    Processed {i + 1}/{len(work_items)} time points")
-        else:
-            for i, item in enumerate(work_items):
-                edges = _process_cross_track_group(item)
-                all_edges.extend(edges)
-                if (i + 1) % 1000 == 0:
-                    print(f"    Processed {i + 1}/{len(work_items)} time points")
-
-    print(f"  Extracted {len(all_edges):,} cross-track edges")
-    return all_edges
+    return edges
 
 
-def convert_v24_to_genome_graph(checkpoint_path: str, include_cross_track: bool = True, skip_edges: bool = False, use_gpu: bool = False) -> GenomeGraph:
+def convert_v24_to_genome_graph(checkpoint_path: str, include_cross_track: bool = True) -> GenomeGraph:
     """Convert a v24 factored checkpoint to GenomeGraph format.
 
     Args:
         checkpoint_path: Path to v24 .npz checkpoint
         include_cross_track: If True, extract cross-track edges (patterns related
                             by T, I, R across different tracks at same time)
-        skip_edges: If True, skip edge extraction for faster loading
-        use_gpu: If True, use GPU acceleration for edge extraction
 
     Returns:
         GenomeGraph instance
@@ -1278,41 +999,34 @@ def convert_v24_to_genome_graph(checkpoint_path: str, include_cross_track: bool 
                     # Also store in graph for full reconstruction
                     graph.occurrences[int(rule_id)] = rule_data['occurrences']
 
-        # Extract temporal edges (skip if requested for faster loading)
-        if not skip_edges:
-            if use_gpu:
-                print("  Using GPU acceleration for edge extraction")
-            temporal_edges = extract_temporal_edges(
-                {pid: p.to_dict() for pid, p in graph.patterns.items()},
-                occurrences_by_pattern,
-                use_gpu=use_gpu
+        # Extract temporal edges
+        temporal_edges = extract_temporal_edges(
+            {pid: p.to_dict() for pid, p in graph.patterns.items()},
+            occurrences_by_pattern
+        )
+
+        for e in temporal_edges:
+            graph.add_edge(
+                e['source'], e['target'], e['transform'],
+                e['edge_type'], e['piece_id'], e['track_id'],
+                e.get('source_onset')  # Pass onset time for reconstruction
             )
 
-            for e in temporal_edges:
+        # Extract cross-track edges if enabled
+        if include_cross_track:
+            cross_track_edges = extract_cross_track_edges(
+                {pid: p.to_dict() for pid, p in graph.patterns.items()},
+                occurrences_by_pattern
+            )
+
+            for e in cross_track_edges:
                 graph.add_edge(
                     e['source'], e['target'], e['transform'],
-                    e['edge_type'], e['piece_id'], e['track_id'],
-                    e.get('source_onset')  # Pass onset time for reconstruction
+                    e['edge_type'], e['piece_id'], e['track_id']
                 )
 
-            # Extract cross-track edges if enabled
-            if include_cross_track:
-                cross_track_edges = extract_cross_track_edges(
-                    {pid: p.to_dict() for pid, p in graph.patterns.items()},
-                    occurrences_by_pattern,
-                    use_gpu=use_gpu
-                )
-
-                for e in cross_track_edges:
-                    graph.add_edge(
-                        e['source'], e['target'], e['transform'],
-                        e['edge_type'], e['piece_id'], e['track_id']
-                    )
-
-                if cross_track_edges:
-                    print(f"  Extracted {len(cross_track_edges)} cross-track edges")
-        else:
-            print("  Skipping edge extraction (--skip-edges)")
+            if cross_track_edges:
+                print(f"  Extracted {len(cross_track_edges)} cross-track edges")
 
     # Load transform vocabulary
     if 'transform_vocabulary_json' in data:
