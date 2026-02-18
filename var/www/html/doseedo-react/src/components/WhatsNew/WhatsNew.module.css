@@ -112,10 +112,10 @@
 /* Responsive */
 @media (max-width: 768px) {
   .whatsNewContainer {
-    width: calc(100% - 60px);
-    margin-left: 60px;
-    padding: 20px;
-    padding-top: 100px;
+    width: 100%;
+    margin-left: 0;
+    padding: 16px;
+    padding-top: 70px;
   }
 
   .title {

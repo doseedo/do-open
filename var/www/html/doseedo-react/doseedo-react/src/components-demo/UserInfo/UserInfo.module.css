@@ -1,0 +1,313 @@
+/* UserInfo Component Styles */
+
+.userInfoContainer {
+  width: 80%;
+  max-width: 1000px;
+  margin: 0 auto;
+  margin-left: 220px;
+  padding: 40px;
+  color: white;
+  min-height: 100vh;
+  padding-top: 100px;
+}
+
+.userInfoHeader {
+  margin-bottom: 40px;
+}
+
+.userInfoTitle {
+  font-size: 36px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 12px 0;
+  letter-spacing: -0.5px;
+}
+
+.userInfoSubtitle {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
+}
+
+/* Profile Section */
+.profileSection {
+  margin-bottom: 40px;
+}
+
+.profileCard {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(186, 156, 255, 0.2);
+  border-radius: 16px;
+  padding: 40px;
+  display: flex;
+  gap: 40px;
+  align-items: flex-start;
+}
+
+.avatarSection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.avatarLarge {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(186, 156, 255, 0.3), rgba(156, 130, 200, 0.2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 48px;
+}
+
+.changeAvatarBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(186, 156, 255, 0.3);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.changeAvatarBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(186, 156, 255, 0.5);
+  color: #fff;
+}
+
+.profileDetails {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.detailRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detailRow label {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detailValue {
+  font-size: 16px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.planBadge {
+  padding: 6px 14px;
+  background: linear-gradient(135deg, rgba(186, 156, 255, 0.3), rgba(156, 130, 200, 0.2));
+  border: 1px solid rgba(186, 156, 255, 0.4);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(230, 224, 255, 0.95);
+}
+
+.statusBadge {
+  padding: 6px 14px;
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(134, 239, 172, 0.95);
+}
+
+.upgradeLink {
+  color: rgba(186, 156, 255, 0.9);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.upgradeLink:hover {
+  color: rgba(186, 156, 255, 1);
+  text-decoration: underline;
+}
+
+/* Settings Section */
+.settingsSection {
+  margin-bottom: 40px;
+}
+
+.sectionTitle {
+  font-size: 20px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0 0 20px 0;
+}
+
+.settingsCard {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(186, 156, 255, 0.2);
+  border-radius: 16px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.settingRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 30px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.settingRow:last-child {
+  border-bottom: none;
+}
+
+.settingInfo h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 6px 0;
+}
+
+.settingInfo p {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+}
+
+/* Toggle Switch */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 26px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.1);
+  transition: 0.3s;
+  border-radius: 26px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 1), rgba(118, 75, 162, 1));
+}
+
+input:checked + .slider:before {
+  transform: translateX(24px);
+}
+
+/* Actions Section */
+.actionsSection {
+  display: flex;
+  gap: 16px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.logoutBtn,
+.deleteAccountBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+}
+
+.logoutBtn {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(186, 156, 255, 0.3);
+}
+
+.logoutBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(186, 156, 255, 0.5);
+  color: #fff;
+}
+
+.deleteAccountBtn {
+  background: rgba(239, 68, 68, 0.1);
+  color: rgba(248, 113, 113, 0.9);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.deleteAccountBtn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: rgba(248, 113, 113, 1);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .userInfoContainer {
+    width: 90%;
+    margin-left: 10%;
+    padding: 20px;
+    padding-top: 80px;
+  }
+
+  .userInfoTitle {
+    font-size: 28px;
+  }
+
+  .profileCard {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .actionsSection {
+    flex-direction: column;
+  }
+
+  .logoutBtn,
+  .deleteAccountBtn {
+    width: 100%;
+    justify-content: center;
+  }
+}

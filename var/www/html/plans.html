@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link rel="stylesheet" href="style4.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=none">
+    <script src="https://kit.fontawesome.com/0de3cb0a73.js" crossorigin="anonymous"></script>
+    <meta http-equiv=”Pragma” content=”no-cache”>
+    <meta http-equiv=”Expires” content=”-1″>
+    <meta http-equiv=”CACHE-CONTROL” content=”NO-CACHE”>
+    <meta name="openai-domain-verification" content="dv-Kde8XyGetaPIsXP25QnDvZum" />
+    <script src="https://kit.fontawesome.com/0de3cb0a73.js" crossorigin="anonymous"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Secular+One&display=swap" rel="stylesheet">
+    
+
+</head>
+<body>
+
+  <div id="navbar">
+    <div id="imageContainer">
+      <img id="logomove" src="logomove.png" />
+      <img id="rotatingImage" src="logomove2.png" />
+  </div>
+
+    <img id="doseedo" src="logo.png" alt="">
+    
+
+
+    <a href="home.html" class="nav-link">Home</a>
+    <a href="doseedo1.html" class="nav-link">Create</a>
+    <a href="about.html" class="nav-link">About</a>
+
+
+
+
+
+        <!-- <canvas id="canvas"></canvas> -->
+        <!-- Sign Up Form -->
+          <!-- Sign Up Button -->
+
+          <button id="signupbutton" type="button" onclick="showSignUp()">Sign Up</button>
+          <!-- Sign In Button -->
+          <button id="loginbutton" type="button" onclick="showSignIn()">Sign In</button>
+          <button id="sign-out-button" onclick="signOut()" style="display: none;">Sign Out</button>
+        <button id="sign-out-button" style="display: none;">Sign Out</button>
+        <!-- Sign Up Form (Initially Hidden) -->
+  
+
+
+                <a href="plans.html" class="nav-link">Pro+</a>
+        <div class="userform">
+          <!-- <label class="switch">
+            <input type="checkbox" id="theme-switch">
+            <span class="slider round"></span> -->
+        </label>
+        
+
+
+
+        
+
+
+      </div>
+
+      
+
+
+      
+        <!-- User Info (Initially Hidden) -->
+
+        <!-- Rest of your HTML content -->
+        <!-- ... -->
+        
+
+</div>
+<!-- <div class="formdiv">
+  <a onclick="exitregistration()">
+    <i class="fa-solid fa-x"></i>
+
+  </a>
+
+<form id="register-form" style="display: none;">
+  <img src="logo.png" style="width: 150px;" alt="">
+
+  <p>Start creating today.</p>
+
+  <br>
+  <input type="text" id="register-username" placeholder="Username" required>
+  <input type="email" id="register-email" placeholder="Email" required>
+  <input type="password" id="register-password" placeholder="Password" required>
+
+  <button type="button" onclick="registerUser()">Sign Up</button>
+  <div id="signup-error-message" style="color: red; display: none;"></div>
+
+
+ 
+</form>
+
+<!-- Sign In Form (Initially Hidden) -->
+
+<form id="login-form" style="display: none;">
+<img src="logo.png" style="width: 150px;" alt="">
+  <p>Welcome Back!</p>
+
+    <br>
+
+  <input type="text" id="login-username" placeholder="Email" required>
+  <input type="password" id="login-password" placeholder="Password" required>
+  <div style="display: none;" class="g-signin2" data-onsuccess="onSignIn"></div>
+
+  <button type="button" onclick="loginUser()">Sign In</button>
+  <div  id="signin-error-message" style="color: red; display: none;"></div>
+  <a onclick="showSignUp()">
+  <p>Don't have an account? Sign Up</p>
+</a>
+
+<a style="color: white;" href="forgotpassword.html">
+  <p>Forgot your password?</p>
+</a>
+  
+
+</form>
+
+</div>
+<div id="user-info" style="margin-top: 100px;">
+    <!-- <img id="user" src="user.png" alt=""> -->
+    <p>Welcome, <span id="user-username"></span>!</p>
+    <p>Plan: <span id="user-subscription-status"></span></p>
+    <a style="color: rgb(144, 130, 247);" href="account.html">
+    <!-- <i style="float: right;" class="fa-solid fa-arrow-right"></i> -->
+  </a>
+    <br>
+
+  </div>
+
+
+
+
+  <style>
+    #resizable-sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 50px;
+      background-color: #1a1a1a;
+      color: white;
+      overflow-y: auto;
+      padding: 20px;
+      border-right: 1px solid #444;
+      z-index: 1000;
+      margin-top: 50px;
+      transition: width 0.3s ease;
+    }
+  
+    #main-content {
+      margin-left: 20px;
+      padding: 20px;
+      transition: margin-left 0.3s ease;
+    }
+  
+    #resizable-sidebar.expanded {
+      width: 170px;
+    }
+  
+  
+    #main-content.expanded {
+      margin-left: 145px;
+    }
+  </style>
+  
+  <div id="resizable-sidebar">
+    <h3 class="nav-link" id="expand-toggle">
+      <i class="fa-solid fa-bars"></i>
+  
+  
+    </h3>
+  
+    <div class="menulinks" style="display: none;">
+  
+  
+  
+    <a href="dashboard.html" class="nav-link">Dashboard</a>
+    <a href="dashboard.html" class="nav-link">Projects</a>
+  
+    <a href="dashboard.html" class="nav-link">Campaigns</a>
+    <br>
+  
+      <hr>
+      <br>
+  
+    <a href="dashboard.html" class="nav-link">My Profile</a>
+    <a href="dashboard.html" class="nav-link"></a>
+  
+  </div>
+  
+  
+  <div class="toolbar" style="display: block;">
+  
+    <!-- <button>    <i class=""></i></button>
+    <br>
+    <button>    <i class="fa-solid fa-bookmark"></i></button>
+  <br>
+    <button>    <i class="fa-solid fa-wand-magic-sparkles"></i></button>
+    <br>
+    <button>    <i class="fa-solid fa-magnifying-glass"></i></button>
+    <br>
+    <button>    <i class=""></i></button> -->
+  
+  
+  
+  
+  
+  
+  </div>
+  
+  
+  </div>
+  
+  
+  <div id="main-content">
+  
+  <script>
+    const sidebar = document.getElementById('resizable-sidebar');
+    const mainContent = document.getElementById('main-content');
+    const menuContent = document.querySelector('.menulinks');
+    const toggle = document.getElementById('expand-toggle');
+    const toolbar = document.querySelector('.toolbar');
+    
+    
+    let u = false
+  
+  
+  
+    sidebar.classList.toggle('expanded');
+    mainContent.classList.toggle('expanded');
+  
+    if(u == false){
+    menuContent.style.display = 'block'
+    toolbar.style.display = 'none'
+  
+    u = true
+    }else{
+      menuContent.style.display = 'none'
+      toolbar.style.display = 'block'
+      u = false
+    }
+  
+  
+  
+  
+    toggle.addEventListener('click', () => {
+  
+  
+      sidebar.classList.toggle('expanded');
+      mainContent.classList.toggle('expanded');
+  
+      if(u == false){
+      menuContent.style.display = 'block'
+      toolbar.style.display = 'none'
+  
+      u = true
+      }else{
+        menuContent.style.display = 'none'
+        toolbar.style.display = 'block'
+        u = false
+      }
+    });
+  </script>
+
+
+
+
+
+  <div id='plansbackground'>
+
+    <center>    
+
+<div class="notsubbed">
+    <h2 id="hook">Unlock Pro <i class="fa-solid fa-lock"></i></h1>
+        <h2>Try 7 days free</h2>
+
+        <br>
+
+
+
+
+        <div class="paycontainer">
+
+          <div class="paypalbuttons" id="paypal-button-container-P-7F521664GH219381MMXC2WEQ"></div>
+          <script src="https://www.paypal.com/sdk/js?client-id=AbWUGLVQR6ejs9A-cuf8sORRVnbTHJQCuwbASRzAJ4I8Qew_JCcrfyG1je1KVVoaXbk4RE2CgDk1uVK1&vault=true&intent=subscription" data-sdk-integration-source="button-factory"></script>
+          <script>
+            paypal.Buttons({
+                style: {
+                    shape: 'rect',
+                    color: 'black',
+                    layout: 'vertical',
+                    label: 'subscribe'
+                },
+                createSubscription: function(data, actions) {
+                  return actions.subscription.create({
+                    /* Creates the subscription */
+                    plan_id: 'P-7F521664GH219381MMXC2WEQ'
+                  });
+                },
+                onApprove: function(data, actions) {
+                  alert(data.subscriptionID); // You can add optional success message for the subscriber here
+                  postSubscriptionData(data.subscriptionID)
+                }
+            }).render('#paypal-button-container-P-7F521664GH219381MMXC2WEQ'); // Renders the PayPal button
+          </script>
+        
+        
+        <script>
+        
+        function postSubscriptionData(subscriptionID) {
+            const formData = new FormData();
+            formData.append('username', username);
+            formData.append('subscription_id', subscriptionID);
+        
+            fetch('https://doseedo.com/store-subscription/', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to store subscription information');
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Subscription stored successfully:', data);
+                // You can add additional code here to handle successful subscription storage
+            })
+            .catch(error => console.error('Error storing subscription:', error));
+        }
+        
+        
+        
+            //const mockSubscriptionID = 'mock-subscription-id';
+            //const username = 'testuser'; // Replace with a valid username for testing
+            //postSubscriptionData(mockSubscriptionID, username);
+        
+        
+        
+        </script>
+        
+        
+        </div>
+
+        <div class="plans-container">
+          <br>
+          <div class="plan">
+              <h2>Free Plan: Ideal for Personal Use</h2>
+              <ul>
+                <h4>- Unlock your creativity with free access to our cutting-edge models,
+                   perfect for personal projects, social media, and exploration. 
+                   This plan allows you to experiment and create with all of our 
+                   AI’s capabilities:
+                </h4>
+
+                <li>- Video to Sound Effects: Create sound effects that perfectly match the visuals and mood of your video.</li>
+                <li>- Video to Music: Produce a musical score that resonates with your video's content and atmosphere.</li>
+                <li>- Text to Music: Convert written text into captivating musical compositions.</li>
+                <li>- Text to Sound Effects: Transform text descriptions into realistic sound effects.</li>
+                <li>- Upload a Reference Track: Personalize your creations by uploading a reference
+                  track to guide the generated audio</li>
+                <li>- Sound and Music Generation: Produce up to 10 seconds of sound effects and
+                  music</li>
+    
+    
+    
+              </ul>
+    
+    
+    
+              <h2>Pro+ Plan: Perfect for Commercial Use</h2>
+              <ul>
+                  <h4>- Elevate your professional projects with the Pro+ Plan, 
+                    offering comprehensive access to all the features of the Free Plan, 
+                    plus advanced capabilities designed for commercial use: </h4>
+                  <li>- Extended Audio Generation: Create up to 5 minutes of high-quality sound effects and music, perfect for more extensive projects.</li>
+                  <li>- Full Ownership Rights: Gain complete ownership of the audio you create, ensuring you can use it commercially without any limitations.</li>
+
+           
+    
+              </ul>
+    
+    
+            </div>
+    
+              
+              
+    
+    
+    
+     
+ 
+    
+              
+              
+    
+    
+    
+     
+      </div>
+
+
+
+  
+</div>
+
+
+<div class="subbed" style="display: none; position: relative; top: 150px;">
+  <i class="fa-solid fa-unlock"></i>
+  <h1>You are subscribed</h1>
+  <a href="account.html">
+    <p>manage subscription</p>
+
+    </a>
+</div>
+
+</div>
+<!-- <div class="notsignedin">
+
+  <h2 id="hook">Unlock Pro <i class="fa-solid fa-lock"></i></h1>
+    <h2>Try 7 days free</h2>
+    <h1><a onclick="showSignIn()">Sign In </a>to continue</h1>
+
+    <div class="plans-container">
+      <br>
+      <div class="plan">
+          <h2>Free Plan</h2>
+          <ul>
+            <h4>- for personal, non comercial use</h4>
+            <h4>  Limited access to all our models: </h4>
+            <li>- Generate up to 10 seconds of Audio and Music</li>
+            <li>- Text to music</li>
+            <li>- Text to audio</li>
+            <li>- Video to Music</li>
+            <li>- Video to Music</li>
+
+
+
+          </ul>
+
+
+
+          <h2>Doseedo Pro</h2>
+          <ul>
+              <h4>- For social media creators, freelancers, businesses and agencies looking for royalty-free background music to use for-profit.</h4>
+              <h4>  Unlimitted access to all our models: </h4>
+              <li>- Generate up to 5 minutes of Audio and Music</li>
+              <li>- Text to music</li>
+              <li>- Text to audio</li>
+                <li>- Video to Music</li>
+                <li>- Video to Music</li>
+       
+
+          </ul>
+
+
+        </div>
+
+          
+          
+
+
+
+ 
+  </div>
+
+
+
+
+
+</div> -->
+
+
+
+
+
+
+
+
+
+
+
+</center>
+</div>
+
+
+<footer>
+    <p>Copyright © 2024 by Doseedo.com</p>
+    <p>Contact us: <a href="mailto:support@doseedo.com">support@doseedo.com</a></p>
+    <p><a href="privacy.html">Privacy Policy</a> | <a href="terms.html">Terms of Use</a></p>
+</footer>
+<script src="javascript.js"></script>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-F4J9PFTG9D"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-F4J9PFTG9D');
+</script>    
+</body>
+</html>
+

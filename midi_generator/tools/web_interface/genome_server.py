@@ -41,7 +41,7 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '1_approaches', 'transform_based'))
 
-from grammar.genome_graph import GenomeGraph, convert_v24_to_genome_graph
+from grammar.genome_graph import GenomeGraph, convert_v24_to_genome_graph, Pattern, find_pitch_transform, apply_pitch_transform
 from grammar.music_dag import MusicDAG, build_dag_from_checkpoint, compress_dag_mdl, evaluate
 
 
@@ -54,6 +54,7 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
     pattern_edits: dict = {}  # pattern_id -> modified pattern data (pitch_classes, octaves, etc.)
     v24_rules: dict = None  # grammar_rules from v24 checkpoint (for playback reconstruction)
     track_info: list = None  # track_info from checkpoint (for is_drum detection)
+    builder_mode: bool = False  # True when no checkpoint loaded (builder mode)
     # v43 additions
     multi_factor: dict = None  # τ, v, d transform vocabulary
     track_derives: list = None  # Cross-track arrangement derivations
@@ -736,7 +737,72 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
 
         if path == '/' or path == '/index.html':
-            self.serve_editor()
+            if GenomeGraphHandler.builder_mode:
+                self.serve_builder()
+            else:
+                self.serve_editor()
+        elif path == '/builder':
+            self.serve_builder()
+        elif path == '/api/builder/cytoscape':
+            # Builder-specific: includes ALL patterns even unconnected ones, with colors
+            base = self.graph.to_cytoscape(None)
+            existing_ids = {n['data']['id'] for n in base['elements']['nodes']}
+            colors = ['#58a6ff','#f0883e','#3fb950','#d2a8ff','#f778ba','#a5d6ff','#ffc680','#7ee787']
+            for pid, p in self.graph.patterns.items():
+                nid = f'P{pid}'
+                c = colors[pid % len(colors)]
+                if nid not in existing_ids:
+                    base['elements']['nodes'].append({
+                        'data': {'id': nid, 'label': nid, 'length': p.length,
+                                 'pitch_classes': p.pitch_classes, 'color': c}
+                    })
+                else:
+                    for n in base['elements']['nodes']:
+                        if n['data']['id'] == nid:
+                            n['data']['color'] = c
+                            break
+            self.send_json(base)
+        elif path == '/api/builder/playback':
+            piece_id = query.get('piece', ['builder'])[0]
+            tpb = 480
+            events_by_track = defaultdict(list)
+            max_time = 0
+            for pid, occ_list in self.graph.occurrences.items():
+                pattern = self.graph.get_pattern(pid)
+                if not pattern:
+                    continue
+                for occ in occ_list:
+                    if occ.get('piece_id') != piece_id:
+                        continue
+                    track_id = occ.get('track_id', 0)
+                    onset = occ.get('onset_time', 0)
+                    current_time = onset
+                    for i, pc in enumerate(pattern.pitch_classes):
+                        oct_val = pattern.octaves[i] if i < len(pattern.octaves) else 5
+                        vel = pattern.velocities[i] if i < len(pattern.velocities) else 80
+                        dur = pattern.durations[i] if i < len(pattern.durations) else 480
+                        midi_pitch = pc + (oct_val + 1) * 12
+                        events_by_track[track_id].append({
+                            'time': current_time,
+                            'pitch': midi_pitch,
+                            'velocity': vel,
+                            'duration': dur,
+                            'pattern_id': pid,
+                        })
+                        if i < len(pattern.rhythm_ioi) and pattern.rhythm_ioi[i] > 0:
+                            current_time += pattern.rhythm_ioi[i]
+                        elif i < len(pattern.pitch_classes) - 1:
+                            current_time += dur
+                        end_time = current_time + dur
+                        max_time = max(max_time, end_time)
+            tracks = []
+            for tid, events in sorted(events_by_track.items()):
+                events.sort(key=lambda e: e['time'])
+                tracks.append({'track_id': tid, 'is_drum': False, 'events': events})
+            self.send_json({
+                'piece': piece_id, 'tracks': tracks,
+                'duration_ticks': max_time, 'ticks_per_beat': tpb, 'estimated_tempo': 120,
+            })
         elif path == '/api/stats':
             stats = self.graph.stats()
             # Merge in v43 checkpoint stats
@@ -1040,6 +1106,118 @@ class GenomeGraphHandler(BaseHTTPRequestHandler):
                 'target': target_id
             }
             self.send_json({'success': True, 'source': source_id, 'target': target_id})
+
+        elif path == '/api/create_pattern':
+            pitch_classes = data.get('pitch_classes', [])
+            octaves = data.get('octaves', [])
+            velocities = data.get('velocities', [])
+            durations = data.get('durations', [])
+            rhythm_ioi = data.get('rhythm_ioi', [])
+            piece_id = data.get('piece_id', 'builder')
+            onset_time = data.get('onset_time', 0)
+            if not pitch_classes:
+                self.send_json({'error': 'pitch_classes required'}, 400)
+                return
+            n = len(pitch_classes)
+            if len(octaves) < n:
+                octaves = octaves + [5] * (n - len(octaves))
+            if len(velocities) < n:
+                velocities = velocities + [80] * (n - len(velocities))
+            if len(durations) < n:
+                durations = durations + [480] * (n - len(durations))
+            pattern = Pattern(
+                id=None,
+                pitch_classes=[pc % 12 for pc in pitch_classes],
+                octaves=octaves[:n],
+                velocities=velocities[:n],
+                durations=durations[:n],
+                rhythm_ioi=rhythm_ioi,
+            )
+            pid = self.graph.add_pattern(pattern)
+            self.graph.occurrences[pid].append({
+                'piece_id': piece_id, 'track_id': 0, 'onset_time': onset_time,
+            })
+            self.send_json({'pattern_id': pid, 'pattern': pattern.to_dict()})
+
+        elif path == '/api/delete_pattern':
+            pattern_id = data.get('pattern_id')
+            if pattern_id is None:
+                self.send_json({'error': 'pattern_id required'}, 400)
+                return
+            pattern_id = int(pattern_id)
+            edges_to_remove = [eid for eid, e in self.graph.edges.items()
+                               if e.source == pattern_id or e.target == pattern_id]
+            for eid in edges_to_remove:
+                self.graph.remove_edge(eid)
+            if pattern_id in self.graph.patterns:
+                del self.graph.patterns[pattern_id]
+            if pattern_id in self.graph.occurrences:
+                del self.graph.occurrences[pattern_id]
+            self.send_json({'success': True, 'removed_edges': len(edges_to_remove)})
+
+        elif path == '/api/connect_patterns':
+            source_id = data.get('source_id')
+            target_id = data.get('target_id')
+            tau = data.get('tau', 480)
+            piece_id = data.get('piece_id', 'builder')
+            track_id = data.get('track_id', 0)
+            if source_id is None or target_id is None:
+                self.send_json({'error': 'source_id and target_id required'}, 400)
+                return
+            source_id, target_id = int(source_id), int(target_id)
+            source = self.graph.get_pattern(source_id)
+            target = self.graph.get_pattern(target_id)
+            if not source or not target:
+                self.send_json({'error': 'Pattern not found'}, 404)
+                return
+            pitch_t = find_pitch_transform(source.pitch_classes, target.pitch_classes)
+            if pitch_t not in ('none', 'identity'):
+                transform = f"{pitch_t}\u2218\u03c4{tau}"
+            else:
+                transform = f"\u03c4{tau}"
+            edge_id = self.graph.add_edge(
+                source_id, target_id, transform,
+                edge_type='temporal', piece_id=piece_id, track_id=track_id,
+            )
+            self.send_json({'edge_id': edge_id, 'transform': transform})
+
+        elif path == '/api/delete_edge':
+            edge_id = data.get('edge_id')
+            if edge_id is None:
+                self.send_json({'error': 'edge_id required'}, 400)
+                return
+            try:
+                self.graph.remove_edge(int(edge_id))
+                self.send_json({'success': True})
+            except (ValueError, KeyError) as e:
+                self.send_json({'error': str(e)}, 400)
+
+        elif path == '/api/update_occurrence':
+            pattern_id = data.get('pattern_id')
+            onset_time = data.get('onset_time')
+            piece_id = data.get('piece_id', 'builder')
+            if pattern_id is None or onset_time is None:
+                self.send_json({'error': 'pattern_id and onset_time required'}, 400)
+                return
+            pattern_id = int(pattern_id)
+            found = False
+            for occ in self.graph.occurrences.get(pattern_id, []):
+                if occ.get('piece_id') == piece_id:
+                    occ['onset_time'] = onset_time
+                    found = True
+                    break
+            if not found:
+                # Create occurrence if it doesn't exist
+                self.graph.occurrences[pattern_id].append({
+                    'piece_id': piece_id, 'track_id': 0, 'onset_time': onset_time,
+                })
+            self.send_json({'success': True})
+
+        elif path == '/api/save_genome':
+            filename = data.get('filename', 'genome_builder.npz')
+            save_path = os.path.join('/tmp', filename)
+            self.graph.to_checkpoint(save_path)
+            self.send_json({'success': True, 'path': save_path})
 
         else:
             self.send_json({'error': 'Not found'}, 404)
@@ -4037,6 +4215,790 @@ loadPieces();
 </html>'''
         self.send_html(html)
 
+    def serve_builder(self):
+        """Serve the genome builder interface (no checkpoint needed)."""
+        html = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Genome Builder</title>
+<script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { display: flex; background: #0d1117; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; height: 100vh; overflow: hidden; }
+
+/* Sidebar */
+#sidebar { width: 300px; min-width: 300px; background: #161b22; border-right: 1px solid #30363d; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+#sidebar h1 { font-size: 18px; font-weight: 600; color: #f0f6fc; margin-bottom: 4px; }
+.section { background: #1c2128; border: 1px solid #30363d; border-radius: 8px; padding: 12px; }
+.section h2 { font-size: 13px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+.section p.hint { font-size: 11px; color: #484f58; margin-bottom: 8px; line-height: 1.4; }
+
+/* Mini keyboard */
+.keyboard { display: flex; gap: 2px; margin-bottom: 8px; }
+.key-btn { width: 22px; height: 36px; border: 1px solid #30363d; border-radius: 3px; cursor: pointer; font-size: 8px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px; transition: all 0.1s; color: #8b949e; }
+.key-btn:hover { border-color: #58a6ff; }
+.key-btn.active { border-color: #58a6ff; box-shadow: 0 0 6px rgba(88,166,255,0.3); }
+.key-btn.black { background: #21262d; }
+.key-btn.white { background: #30363d; }
+
+/* Note colors by pitch class */
+.pc-0  { background: #e74c3c !important; } .pc-1  { background: #e67e22 !important; }
+.pc-2  { background: #f1c40f !important; } .pc-3  { background: #2ecc71 !important; }
+.pc-4  { background: #27ae60 !important; } .pc-5  { background: #1abc9c !important; }
+.pc-6  { background: #3498db !important; } .pc-7  { background: #2980b9 !important; }
+.pc-8  { background: #9b59b6 !important; } .pc-9  { background: #8e44ad !important; }
+.pc-10 { background: #e84393 !important; } .pc-11 { background: #fd79a8 !important; }
+
+/* Controls */
+.row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.row label { font-size: 12px; color: #8b949e; white-space: nowrap; }
+select, input[type="number"] { background: #21262d; border: 1px solid #30363d; color: #e0e0e0; border-radius: 4px; padding: 4px 6px; font-size: 12px; }
+select { min-width: 50px; }
+input[type="number"] { width: 70px; }
+
+/* Note sequence display */
+#note-seq { display: flex; flex-wrap: wrap; gap: 3px; min-height: 28px; padding: 4px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; margin-bottom: 8px; }
+.note-chip { padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; color: #fff; cursor: pointer; }
+.note-chip:hover { opacity: 0.7; }
+
+/* Buttons */
+.btn { padding: 6px 12px; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.15s; }
+.btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
+.btn-primary:hover { background: #2ea043; }
+.btn-secondary { background: #21262d; color: #c9d1d9; }
+.btn-secondary:hover { background: #30363d; }
+.btn-danger { background: #da3633; border-color: #f85149; color: #fff; }
+.btn-danger:hover { background: #f85149; }
+.btn-sm { padding: 3px 8px; font-size: 11px; }
+.btn-group { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* Preset buttons */
+.preset-btn { padding: 4px 8px; background: #1c2128; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; cursor: pointer; font-size: 11px; transition: all 0.15s; }
+.preset-btn:hover { background: #30363d; color: #e0e0e0; }
+
+/* Transform buttons */
+.transform-btn { padding: 5px 10px; background: #0d419d; border: 1px solid #1f6feb; border-radius: 4px; color: #79c0ff; cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.15s; }
+.transform-btn:hover { background: #1f6feb; color: #fff; }
+.transform-btn.inversion { background: #6e1c1c; border-color: #da3633; color: #ffa198; }
+.transform-btn.inversion:hover { background: #da3633; color: #fff; }
+.transform-btn.retrograde { background: #512a84; border-color: #8957e5; color: #d2a8ff; }
+.transform-btn.retrograde:hover { background: #8957e5; color: #fff; }
+
+/* Pattern list */
+.pattern-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: background 0.1s; }
+.pattern-item:hover { background: #30363d; }
+.pattern-item.selected { background: #1f6feb33; border: 1px solid #1f6feb; }
+.pattern-id { font-weight: 600; color: #58a6ff; min-width: 30px; }
+.pattern-notes { display: flex; gap: 1px; }
+.pattern-note-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+/* Main area */
+#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#toolbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 8px 16px; display: flex; align-items: center; gap: 12px; }
+.legend { display: flex; gap: 12px; font-size: 11px; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+/* Graph + Piano Roll */
+#graph-area { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#cy { flex: 1; min-height: 200px; background: #0d1117; }
+#piano-container { height: 280px; min-height: 150px; border-top: 2px solid #30363d; position: relative; background: #0d1117; }
+#piano-roll { width: 100%; height: 100%; display: block; }
+#piano-label { position: absolute; top: 6px; left: 50px; font-size: 10px; color: #484f58; pointer-events: none; }
+
+/* Playback */
+.playback-row { display: flex; align-items: center; gap: 8px; }
+input[type="range"] { flex: 1; accent-color: #238636; }
+.tempo-val { font-size: 12px; color: #58a6ff; min-width: 55px; }
+
+/* Connect mode indicator */
+#connect-status { font-size: 11px; padding: 4px 8px; border-radius: 4px; }
+#connect-status.active { background: #1f6feb33; color: #58a6ff; }
+
+/* Scrollbar */
+#sidebar::-webkit-scrollbar { width: 6px; }
+#sidebar::-webkit-scrollbar-track { background: transparent; }
+#sidebar::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h1>Genome Builder</h1>
+
+    <!-- Pattern Creator -->
+    <div class="section">
+        <h2>Create Pattern</h2>
+        <div class="keyboard" id="keyboard"></div>
+        <div class="row">
+            <label>Oct:</label>
+            <select id="octave-sel">
+                <option value="3">3</option><option value="4">4</option>
+                <option value="5" selected>5</option><option value="6">6</option>
+            </select>
+            <label>Dur:</label>
+            <select id="dur-sel">
+                <option value="120">16th</option><option value="240">8th</option>
+                <option value="480" selected>1/4</option><option value="960">1/2</option>
+                <option value="1920">whole</option>
+            </select>
+            <label>Vel:</label>
+            <input type="number" id="vel-input" value="80" min="1" max="127" style="width:45px">
+        </div>
+        <div id="note-seq"></div>
+        <div class="btn-group">
+            <button class="btn btn-primary btn-sm" onclick="finishPattern()">Create Pattern</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearPending()">Clear</button>
+        </div>
+        <div style="margin-top:8px">
+            <p class="hint">Presets:</p>
+            <div class="btn-group">
+                <button class="preset-btn" onclick="addPreset('major')">Maj</button>
+                <button class="preset-btn" onclick="addPreset('minor')">Min</button>
+                <button class="preset-btn" onclick="addPreset('dim')">Dim</button>
+                <button class="preset-btn" onclick="addPreset('aug')">Aug</button>
+                <button class="preset-btn" onclick="addPreset('sus4')">Sus4</button>
+                <button class="preset-btn" onclick="addPreset('7th')">7th</button>
+                <button class="preset-btn" onclick="addPreset('scale')">Scale</button>
+                <button class="preset-btn" onclick="addPreset('chromatic')">Chrom</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transform Controls -->
+    <div class="section">
+        <h2>Transform</h2>
+        <p class="hint">Select a pattern node, then apply a transform.</p>
+        <div class="btn-group" style="margin-bottom:6px">
+            <button class="transform-btn" onclick="doTransform('T1')">T+1</button>
+            <button class="transform-btn" onclick="doTransform('T2')">T+2</button>
+            <button class="transform-btn" onclick="doTransform('T3')">T+3</button>
+            <button class="transform-btn" onclick="doTransform('T4')">T+4</button>
+            <button class="transform-btn" onclick="doTransform('T5')">T+5</button>
+            <button class="transform-btn" onclick="doTransform('T7')">T+7</button>
+        </div>
+        <div class="btn-group" style="margin-bottom:6px">
+            <button class="transform-btn inversion" onclick="doTransform('I0')">I0</button>
+            <button class="transform-btn inversion" onclick="doTransform('I3')">I3</button>
+            <button class="transform-btn inversion" onclick="doTransform('I6')">I6</button>
+            <button class="transform-btn inversion" onclick="doTransform('I9')">I9</button>
+            <button class="transform-btn retrograde" onclick="doTransform('R')">R</button>
+        </div>
+        <div class="row">
+            <input type="text" id="custom-tf" placeholder="T5, I7, R..." style="flex:1;background:#21262d;border:1px solid #30363d;color:#e0e0e0;border-radius:4px;padding:4px 6px;font-size:12px">
+            <button class="btn btn-secondary btn-sm" onclick="doTransform(document.getElementById('custom-tf').value)">Apply</button>
+        </div>
+    </div>
+
+    <!-- Connect -->
+    <div class="section">
+        <h2>Connect</h2>
+        <p class="hint">Link two patterns with a temporal edge.</p>
+        <div class="row">
+            <label>Gap:</label>
+            <select id="tau-sel">
+                <option value="0">0 (simultaneous)</option>
+                <option value="120">16th</option><option value="240">8th</option>
+                <option value="480" selected>1/4 beat</option><option value="960">1/2 beat</option>
+                <option value="1920">1 bar</option><option value="3840">2 bars</option>
+            </select>
+        </div>
+        <div class="row">
+            <button class="btn btn-secondary btn-sm" onclick="startConnect()" id="connect-btn">Connect Mode</button>
+            <span id="connect-status"></span>
+        </div>
+    </div>
+
+    <!-- Pattern List -->
+    <div class="section" style="flex:1;min-height:0;display:flex;flex-direction:column">
+        <h2>Patterns <span id="pattern-count" style="color:#58a6ff">(0)</span></h2>
+        <div id="pattern-list" style="flex:1;overflow-y:auto;max-height:200px"></div>
+    </div>
+
+    <!-- Playback -->
+    <div class="section">
+        <h2>Playback</h2>
+        <div class="playback-row">
+            <button class="btn btn-primary btn-sm" onclick="playAll()" id="play-btn">Play</button>
+            <button class="btn btn-secondary btn-sm" onclick="stopPlay()" id="stop-btn" disabled>Stop</button>
+            <input type="range" id="tempo" min="40" max="300" value="120">
+            <span class="tempo-val" id="tempo-val">120 BPM</span>
+        </div>
+    </div>
+</div>
+
+<div id="main">
+    <div id="toolbar">
+        <div class="legend">
+            <span class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>Transposition</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#f85149"></span>Inversion</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#d2a8ff"></span>Retrograde</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#3fb950"></span>Temporal</span>
+        </div>
+        <div style="flex:1"></div>
+        <button class="btn btn-secondary btn-sm" onclick="cy.fit()" title="Fit graph to view">Fit</button>
+        <button class="btn btn-secondary btn-sm" onclick="doLayout()">Relayout</button>
+    </div>
+    <div id="graph-area">
+        <div id="cy"></div>
+        <div id="piano-container">
+            <canvas id="piano-roll"></canvas>
+            <span id="piano-label">MIDI Piano Roll</span>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = '';
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const BLACK_KEYS = [1,3,6,8,10];
+const PATTERN_COLORS = [
+    '#58a6ff','#f0883e','#3fb950','#d2a8ff','#f778ba',
+    '#a5d6ff','#ffc680','#7ee787','#e2c5ff','#ffadd6',
+    '#79c0ff','#d18616','#56d364','#bc8cff','#db61a2',
+];
+
+// ── State ──
+let pendingNotes = [];
+let selectedNode = null;
+let connectMode = false;
+let connectSource = null;
+let cy = null;
+let audioCtx = null;
+let playbackActive = false;
+let scheduledNodes = [];
+let pianoData = null;
+let playStartTime = 0;
+let playStartTick = 0;
+let animFrame = null;
+
+// ── Keyboard ──
+(function buildKeyboard() {
+    const kb = document.getElementById('keyboard');
+    NOTE_NAMES.forEach((name, pc) => {
+        const btn = document.createElement('div');
+        btn.className = 'key-btn ' + (BLACK_KEYS.includes(pc) ? 'black' : 'white');
+        btn.textContent = name;
+        btn.dataset.pc = pc;
+        btn.onclick = () => addNote(pc);
+        kb.appendChild(btn);
+    });
+})();
+
+function addNote(pc) {
+    const oct = parseInt(document.getElementById('octave-sel').value);
+    const dur = parseInt(document.getElementById('dur-sel').value);
+    const vel = parseInt(document.getElementById('vel-input').value) || 80;
+    pendingNotes.push({ pc, octave: oct, duration: dur, velocity: Math.min(127, Math.max(1, vel)) });
+    renderPending();
+}
+
+function renderPending() {
+    const el = document.getElementById('note-seq');
+    el.innerHTML = pendingNotes.map((n, i) =>
+        `<span class="note-chip pc-${n.pc}" onclick="pendingNotes.splice(${i},1);renderPending()" title="Click to remove">${NOTE_NAMES[n.pc]}${n.octave}</span>`
+    ).join('');
+}
+
+function clearPending() { pendingNotes = []; renderPending(); }
+
+// ── Presets ──
+function addPreset(type) {
+    const oct = parseInt(document.getElementById('octave-sel').value);
+    const dur = parseInt(document.getElementById('dur-sel').value);
+    const vel = parseInt(document.getElementById('vel-input').value) || 80;
+    const presets = {
+        'major': [0,4,7], 'minor': [0,3,7], 'dim': [0,3,6], 'aug': [0,4,8],
+        'sus4': [0,5,7], '7th': [0,4,7,10],
+        'scale': [0,2,4,5,7,9,11], 'chromatic': [0,1,2,3,4,5,6,7,8,9,10,11],
+    };
+    const rootPC = pendingNotes.length > 0 ? pendingNotes[pendingNotes.length-1].pc : 0;
+    (presets[type] || []).forEach(interval => {
+        pendingNotes.push({ pc: (rootPC + interval) % 12, octave: oct, duration: dur, velocity: vel });
+    });
+    renderPending();
+}
+
+// ── Create Pattern ──
+async function finishPattern() {
+    if (pendingNotes.length === 0) return alert('Add notes first');
+    const rhythm_ioi = pendingNotes.slice(0, -1).map(n => n.duration);
+    const onset = computeNextOnset();
+    const resp = await fetch(API + '/api/create_pattern', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            pitch_classes: pendingNotes.map(n => n.pc),
+            octaves: pendingNotes.map(n => n.octave),
+            velocities: pendingNotes.map(n => n.velocity),
+            durations: pendingNotes.map(n => n.duration),
+            rhythm_ioi: rhythm_ioi,
+            onset_time: onset,
+            piece_id: 'builder',
+        })
+    });
+    const result = await resp.json();
+    if (result.error) return alert(result.error);
+    pendingNotes = [];
+    renderPending();
+    await refreshAll();
+}
+
+function computeNextOnset() {
+    if (!pianoData || !pianoData.tracks) return 0;
+    let maxEnd = 0;
+    for (const t of pianoData.tracks)
+        for (const e of t.events)
+            maxEnd = Math.max(maxEnd, e.time + e.duration);
+    return maxEnd;
+}
+
+// ── Transform ──
+async function doTransform(tf) {
+    tf = tf.trim();
+    if (!tf) return;
+    if (selectedNode === null) return alert('Select a pattern in the graph first');
+    const resp = await fetch(API + '/api/apply', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ pattern_id: selectedNode, transform: tf })
+    });
+    const result = await resp.json();
+    if (result.error) return alert(result.error);
+    const newId = result.new_pattern_id;
+    // Register occurrence for the new pattern
+    const sourceOnset = getPatternOnset(selectedNode);
+    const sourceDur = getPatternDuration(selectedNode);
+    const tau = sourceDur > 0 ? sourceDur : 480;
+    const newOnset = sourceOnset + tau;
+    // Create occurrence
+    await fetch(API + '/api/update_occurrence', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ pattern_id: newId, onset_time: newOnset, piece_id: 'builder' })
+    });
+    // Connect with temporal edge
+    await fetch(API + '/api/connect_patterns', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ source_id: selectedNode, target_id: newId, tau: tau, piece_id: 'builder' })
+    });
+    await refreshAll();
+}
+
+function getPatternOnset(pid) {
+    if (!pianoData || !pianoData.tracks) return 0;
+    for (const t of pianoData.tracks)
+        for (const e of t.events)
+            if (e.pattern_id === pid) return e.time;
+    return 0;
+}
+
+function getPatternDuration(pid) {
+    if (!pianoData || !pianoData.tracks) return 480;
+    let minT = Infinity, maxEnd = 0;
+    for (const t of pianoData.tracks)
+        for (const e of t.events)
+            if (e.pattern_id === pid) {
+                minT = Math.min(minT, e.time);
+                maxEnd = Math.max(maxEnd, e.time + e.duration);
+            }
+    return maxEnd > minT ? maxEnd - minT : 480;
+}
+
+// ── Connect Mode ──
+function startConnect() {
+    connectMode = !connectMode;
+    connectSource = null;
+    const el = document.getElementById('connect-status');
+    const btn = document.getElementById('connect-btn');
+    if (connectMode) {
+        el.textContent = 'Click source node...';
+        el.className = 'active';
+        btn.textContent = 'Cancel';
+        btn.className = 'btn btn-danger btn-sm';
+    } else {
+        el.textContent = '';
+        el.className = '';
+        btn.textContent = 'Connect Mode';
+        btn.className = 'btn btn-secondary btn-sm';
+    }
+}
+
+async function doConnect(sourceId, targetId) {
+    const tau = parseInt(document.getElementById('tau-sel').value) || 480;
+    await fetch(API + '/api/connect_patterns', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ source_id: sourceId, target_id: targetId, tau: tau, piece_id: 'builder' })
+    });
+    connectMode = false;
+    connectSource = null;
+    document.getElementById('connect-status').textContent = '';
+    document.getElementById('connect-status').className = '';
+    document.getElementById('connect-btn').textContent = 'Connect Mode';
+    document.getElementById('connect-btn').className = 'btn btn-secondary btn-sm';
+    await refreshAll();
+}
+
+// ── Delete Pattern ──
+async function deletePattern(pid) {
+    await fetch(API + '/api/delete_pattern', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ pattern_id: pid })
+    });
+    if (selectedNode === pid) selectedNode = null;
+    await refreshAll();
+}
+
+// ── Cytoscape Graph ──
+function initGraph(data) {
+    if (cy) cy.destroy();
+    cy = cytoscape({
+        container: document.getElementById('cy'),
+        elements: data.elements || [],
+        style: [
+            { selector: 'node', style: {
+                'label': 'data(label)', 'color': '#c9d1d9', 'font-size': '10px',
+                'text-valign': 'center', 'text-halign': 'center',
+                'background-color': 'data(color)', 'border-width': 2,
+                'border-color': 'data(color)',
+                'width': 'mapData(length, 1, 12, 28, 60)',
+                'height': 'mapData(length, 1, 12, 28, 60)',
+            }},
+            { selector: 'node:selected', style: {
+                'border-width': 3, 'border-color': '#f0f6fc',
+                'background-color': '#f0f6fc', 'color': '#0d1117',
+            }},
+            { selector: 'edge', style: {
+                'width': 2, 'line-color': 'data(color)',
+                'target-arrow-color': 'data(color)', 'target-arrow-shape': 'triangle',
+                'curve-style': 'bezier', 'opacity': 0.7,
+                'label': 'data(transform)', 'font-size': '8px', 'color': '#8b949e',
+                'text-rotation': 'autorotate', 'text-margin-y': -8,
+            }},
+            { selector: 'edge:selected', style: { 'width': 4, 'opacity': 1 }},
+        ],
+        layout: { name: 'cose', animate: false, nodeRepulsion: 6000, idealEdgeLength: 80, edgeElasticity: 80 },
+        minZoom: 0.2, maxZoom: 4,
+    });
+
+    cy.on('tap', 'node', (e) => {
+        const nodeId = e.target.id();
+        const pid = parseInt(nodeId.replace('P', ''));
+        if (connectMode) {
+            if (connectSource === null) {
+                connectSource = pid;
+                document.getElementById('connect-status').textContent = 'P' + pid + ' -> click target...';
+            } else {
+                doConnect(connectSource, pid);
+            }
+        } else {
+            selectedNode = pid;
+            highlightPatternInRoll(pid);
+            updatePatternList();
+        }
+    });
+
+    cy.on('tap', (e) => {
+        if (e.target === cy) {
+            selectedNode = null;
+            updatePatternList();
+            drawPianoRoll();
+        }
+    });
+}
+
+function doLayout() {
+    if (!cy) return;
+    cy.layout({ name: 'cose', animate: true, animationDuration: 500, nodeRepulsion: 6000, idealEdgeLength: 80 }).run();
+}
+
+async function refreshGraph() {
+    try {
+        const resp = await fetch(API + '/api/builder/cytoscape');
+        const data = await resp.json();
+        initGraph(data);
+    } catch(e) {
+        console.error('Failed to load graph:', e);
+        initGraph({ elements: [] });
+    }
+}
+
+// ── Piano Roll ──
+const PR = {
+    minPitch: 48, maxPitch: 84, keyW: 36, headerH: 0,
+    bg: '#0d1117', grid: '#161b22', gridBar: '#21262d',
+    whiteRow: '#0d1117', blackRow: '#0a0e14',
+};
+
+async function refreshPianoRoll() {
+    try {
+        const resp = await fetch(API + '/api/builder/playback?piece=builder');
+        pianoData = await resp.json();
+    } catch(e) {
+        pianoData = { tracks: [], duration_ticks: 0 };
+    }
+    // Auto-adjust pitch range
+    if (pianoData.tracks && pianoData.tracks.length > 0) {
+        let lo = 127, hi = 0;
+        for (const t of pianoData.tracks)
+            for (const e of t.events) { lo = Math.min(lo, e.pitch); hi = Math.max(hi, e.pitch); }
+        PR.minPitch = Math.max(0, lo - 4);
+        PR.maxPitch = Math.min(127, hi + 4);
+        if (PR.maxPitch - PR.minPitch < 12) {
+            PR.minPitch = Math.max(0, lo - 6);
+            PR.maxPitch = PR.minPitch + 12;
+        }
+    }
+    drawPianoRoll();
+}
+
+function drawPianoRoll(highlightPid) {
+    const canvas = document.getElementById('piano-roll');
+    const container = document.getElementById('piano-container');
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = container.clientWidth * dpr;
+    canvas.height = container.clientHeight * dpr;
+    canvas.style.width = container.clientWidth + 'px';
+    canvas.style.height = container.clientHeight + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const W = container.clientWidth;
+    const H = container.clientHeight;
+
+    const pitchRange = PR.maxPitch - PR.minPitch;
+    const noteH = H / pitchRange;
+    const maxTick = pianoData ? Math.max(pianoData.duration_ticks + 960, 3840) : 3840;
+    const ppt = (W - PR.keyW) / maxTick;
+
+    // Background
+    ctx.fillStyle = PR.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Pitch rows
+    for (let p = PR.minPitch; p < PR.maxPitch; p++) {
+        const y = H - (p - PR.minPitch + 1) * noteH;
+        ctx.fillStyle = BLACK_KEYS.includes(p % 12) ? PR.blackRow : PR.whiteRow;
+        ctx.fillRect(PR.keyW, y, W - PR.keyW, noteH);
+        ctx.strokeStyle = PR.grid;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath(); ctx.moveTo(PR.keyW, y + noteH); ctx.lineTo(W, y + noteH); ctx.stroke();
+    }
+
+    // Beat lines
+    for (let tick = 0; tick <= maxTick; tick += 480) {
+        const x = PR.keyW + tick * ppt;
+        ctx.strokeStyle = tick % 1920 === 0 ? PR.gridBar : PR.grid;
+        ctx.lineWidth = tick % 1920 === 0 ? 1.5 : 0.5;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+        if (tick % 1920 === 0) {
+            ctx.fillStyle = '#30363d';
+            ctx.font = '9px monospace';
+            ctx.fillText('' + (tick / 480), x + 2, 10);
+        }
+    }
+
+    // Piano key labels
+    ctx.fillStyle = '#161b22';
+    ctx.fillRect(0, 0, PR.keyW, H);
+    for (let p = PR.minPitch; p < PR.maxPitch; p++) {
+        const y = H - (p - PR.minPitch + 1) * noteH;
+        if (p % 12 === 0 || p === PR.minPitch) {
+            ctx.fillStyle = '#484f58';
+            ctx.font = '9px monospace';
+            ctx.fillText(NOTE_NAMES[p % 12] + (Math.floor(p / 12) - 1), 3, y + noteH - 2);
+        }
+        // Key shading
+        if (BLACK_KEYS.includes(p % 12)) {
+            ctx.fillStyle = '#0a0e14';
+            ctx.fillRect(0, y, PR.keyW - 1, noteH);
+        }
+    }
+    ctx.strokeStyle = '#30363d';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PR.keyW, 0); ctx.lineTo(PR.keyW, H); ctx.stroke();
+
+    // Notes
+    if (!pianoData || !pianoData.tracks) return;
+    const colorMap = {};
+    let ci = 0;
+    for (const track of pianoData.tracks) {
+        for (const ev of track.events) {
+            if (ev.pitch < PR.minPitch || ev.pitch >= PR.maxPitch) continue;
+            if (!(ev.pattern_id in colorMap)) {
+                colorMap[ev.pattern_id] = PATTERN_COLORS[ci % PATTERN_COLORS.length];
+                ci++;
+            }
+            const x = PR.keyW + ev.time * ppt;
+            const y = H - (ev.pitch - PR.minPitch + 1) * noteH;
+            const w = Math.max(3, ev.duration * ppt - 1);
+            const h = noteH - 1;
+            const alpha = 0.5 + 0.5 * (ev.velocity / 127);
+            ctx.globalAlpha = highlightPid != null && ev.pattern_id !== highlightPid ? 0.2 : alpha;
+            ctx.fillStyle = colorMap[ev.pattern_id];
+            ctx.fillRect(x, y, w, h);
+            // Top edge highlight
+            ctx.fillStyle = '#fff';
+            ctx.globalAlpha = ctx.globalAlpha * 0.3;
+            ctx.fillRect(x, y, w, 1);
+            ctx.globalAlpha = 1;
+        }
+    }
+}
+
+function highlightPatternInRoll(pid) {
+    drawPianoRoll(pid);
+}
+
+// ── Playback (Web Audio) ──
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playTone(freq, startTime, duration, velocity) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const vol = (velocity / 127) * 0.25;
+    gain.gain.setValueAtTime(0, startTime);
+    gain.gain.linearRampToValueAtTime(vol, startTime + 0.01);
+    gain.gain.setValueAtTime(vol, startTime + duration - 0.02);
+    gain.gain.linearRampToValueAtTime(0, startTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+    scheduledNodes.push(osc);
+}
+
+async function playAll() {
+    initAudio();
+    stopPlay();
+    const resp = await fetch(API + '/api/builder/playback?piece=builder');
+    const data = await resp.json();
+    if (!data.tracks || data.tracks.length === 0) return alert('No patterns to play');
+
+    playbackActive = true;
+    document.getElementById('play-btn').disabled = true;
+    document.getElementById('stop-btn').disabled = false;
+
+    const bpm = parseInt(document.getElementById('tempo').value) || 120;
+    const tpb = data.ticks_per_beat || 480;
+    const tickToSec = 60.0 / (bpm * tpb);
+
+    const allEvents = [];
+    for (const track of data.tracks)
+        for (const ev of track.events)
+            allEvents.push(ev);
+    allEvents.sort((a, b) => a.time - b.time);
+
+    const now = audioCtx.currentTime + 0.1;
+    playStartTime = now;
+    playStartTick = 0;
+
+    for (const ev of allEvents) {
+        if (!playbackActive) break;
+        const t = now + ev.time * tickToSec;
+        const dur = Math.max(0.05, ev.duration * tickToSec);
+        const freq = 440 * Math.pow(2, (ev.pitch - 69) / 12);
+        playTone(freq, t, dur, ev.velocity);
+    }
+
+    // Animate playhead
+    const totalDur = (data.duration_ticks || 0) * tickToSec;
+    const animate = () => {
+        if (!playbackActive) return;
+        const elapsed = audioCtx.currentTime - playStartTime;
+        if (elapsed > totalDur + 0.5) { stopPlay(); return; }
+        drawPianoRoll();
+        // Draw playhead
+        const canvas = document.getElementById('piano-roll');
+        const container = document.getElementById('piano-container');
+        const dpr = window.devicePixelRatio || 1;
+        const ctx = canvas.getContext('2d');
+        const W = container.clientWidth;
+        const H = container.clientHeight;
+        const maxTick = Math.max(data.duration_ticks + 960, 3840);
+        const ppt = (W - PR.keyW) / maxTick;
+        const bpmNow = parseInt(document.getElementById('tempo').value) || 120;
+        const tts = 60.0 / (bpmNow * tpb);
+        const currentTick = elapsed / tts;
+        const x = PR.keyW + currentTick * ppt;
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        ctx.strokeStyle = '#3fb950';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+        ctx.restore();
+        animFrame = requestAnimationFrame(animate);
+    };
+    animFrame = requestAnimationFrame(animate);
+}
+
+function stopPlay() {
+    playbackActive = false;
+    for (const node of scheduledNodes) {
+        try { node.stop(); } catch(e) {}
+    }
+    scheduledNodes = [];
+    if (animFrame) cancelAnimationFrame(animFrame);
+    document.getElementById('play-btn').disabled = false;
+    document.getElementById('stop-btn').disabled = true;
+    drawPianoRoll();
+}
+
+document.getElementById('tempo').addEventListener('input', (e) => {
+    document.getElementById('tempo-val').textContent = e.target.value + ' BPM';
+});
+
+// ── Pattern List ──
+function updatePatternList() {
+    if (!cy) return;
+    const nodes = cy.nodes();
+    const el = document.getElementById('pattern-list');
+    document.getElementById('pattern-count').textContent = '(' + nodes.length + ')';
+    if (nodes.length === 0) {
+        el.innerHTML = '<p class="hint">No patterns yet. Create one above.</p>';
+        return;
+    }
+    el.innerHTML = nodes.map(n => {
+        const d = n.data();
+        const pid = parseInt(d.id.replace('P', ''));
+        const sel = pid === selectedNode ? ' selected' : '';
+        return `<div class="pattern-item${sel}" onclick="selectPattern(${pid})">
+            <span class="pattern-id">P${pid}</span>
+            <span style="color:#8b949e;font-size:11px">${d.length || '?'}n</span>
+            <div style="flex:1"></div>
+            <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deletePattern(${pid})" title="Delete">&times;</button>
+        </div>`;
+    }).join('');
+}
+
+function selectPattern(pid) {
+    selectedNode = pid;
+    if (cy) cy.$('#P' + pid).select();
+    highlightPatternInRoll(pid);
+    updatePatternList();
+}
+
+// ── Refresh All ──
+async function refreshAll() {
+    await refreshPianoRoll();
+    await refreshGraph();
+    updatePatternList();
+}
+
+// ── Init ──
+(async () => {
+    await refreshAll();
+})();
+
+window.addEventListener('resize', () => { if (pianoData) drawPianoRoll(); });
+</script>
+</body>
+</html>'''
+        self.send_html(html)
+
     def log_message(self, format, *args):
         """Suppress default logging."""
         pass
@@ -4045,27 +5007,34 @@ loadPieces();
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Genome Graph Server')
-    parser.add_argument('checkpoint', help='Path to checkpoint file')
+    parser.add_argument('checkpoint', nargs='?', default=None, help='Path to checkpoint file (optional - starts empty builder mode if omitted)')
     parser.add_argument('--dag', help='Path to DAG checkpoint (optional)')
     parser.add_argument('--v24', help='Path to original v24 checkpoint (for full playback reconstruction)')
     parser.add_argument('--port', type=int, default=8080, help='Server port')
     args = parser.parse_args()
 
-    # Load graph
-    print(f"Loading checkpoint: {args.checkpoint}")
-    try:
-        graph = GenomeGraph.from_checkpoint(args.checkpoint)
-        print(f"Loaded genome graph format")
-    except ValueError:
-        print(f"Converting v24 checkpoint to genome graph...")
-        graph = convert_v24_to_genome_graph(args.checkpoint)
+    if args.checkpoint:
+        # Load graph from checkpoint
+        print(f"Loading checkpoint: {args.checkpoint}")
+        try:
+            graph = GenomeGraph.from_checkpoint(args.checkpoint)
+            print(f"Loaded genome graph format")
+        except ValueError:
+            print(f"Converting v24 checkpoint to genome graph...")
+            graph = convert_v24_to_genome_graph(args.checkpoint)
 
-    GenomeGraphHandler.graph = graph
-    # Store checkpoint path for save functionality
-    GenomeGraphHandler.graph._checkpoint_path = os.path.abspath(args.checkpoint)
+        GenomeGraphHandler.graph = graph
+        # Store checkpoint path for save functionality
+        GenomeGraphHandler.graph._checkpoint_path = os.path.abspath(args.checkpoint)
 
-    stats = graph.stats()
-    print(f"Graph loaded: {stats['n_patterns']} patterns, {stats['n_edges']} edges")
+        stats = graph.stats()
+        print(f"Graph loaded: {stats['n_patterns']} patterns, {stats['n_edges']} edges")
+    else:
+        # Builder mode: start with empty graph
+        graph = GenomeGraph()
+        GenomeGraphHandler.graph = graph
+        GenomeGraphHandler.builder_mode = True
+        print("Starting in builder mode (empty graph)")
 
     # Load DAG if provided
     if args.dag:
@@ -4083,7 +5052,7 @@ def main():
 
     # Load v24 rules if provided (for playback reconstruction with full occurrences)
     # Also check if the main checkpoint has patterns_json (v33 format)
-    if args.v24:
+    if args.checkpoint and args.v24:
         print(f"\nLoading v24 rules from: {args.v24}")
         try:
             v24_data = np.load(args.v24, allow_pickle=True)
@@ -4096,7 +5065,7 @@ def main():
             print(f"Warning: Could not load v24 rules: {e}")
 
     # Try to load patterns from main checkpoint if v24_rules not loaded
-    if GenomeGraphHandler.v24_rules is None:
+    if args.checkpoint and GenomeGraphHandler.v24_rules is None:
         try:
             main_data = np.load(args.checkpoint, allow_pickle=True)
             checkpoint_dir = os.path.dirname(args.checkpoint)
@@ -4205,7 +5174,10 @@ def main():
 
     # Start server
     server = HTTPServer(('0.0.0.0', args.port), GenomeGraphHandler)
-    print(f"\nGenome Graph Editor running at http://localhost:{args.port}")
+    if GenomeGraphHandler.builder_mode:
+        print(f"\nGenome Builder running at http://localhost:{args.port}")
+    else:
+        print(f"\nGenome Graph Editor running at http://localhost:{args.port}")
     if GenomeGraphHandler.dag:
         print(f"DAG Editor available at http://localhost:{args.port}/dag")
     print("Press Ctrl+C to stop")

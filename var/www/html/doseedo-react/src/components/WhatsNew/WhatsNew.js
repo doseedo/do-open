@@ -8,9 +8,21 @@ import styles from './WhatsNew.module.css';
 const WhatsNew = () => {
   const updates = [
     {
-      version: 'Open Beta',
+      version: 'v1.0',
+      date: 'February 2026',
+      title: 'Brass Mute V1',
+      features: [
+        'Multiple mute types: Straight, Cup, Harmon, Plunger, Bucket',
+        'Real-time acoustic modeling for authentic mute tones',
+        'Low-latency processing suitable for live performance',
+        'VST3 and AU formats included',
+        'Adjustable mute depth and resonance controls',
+      ]
+    },
+    {
+      version: 'Private Beta',
       date: 'November 2025',
-      title: 'Open Beta Launch',
+      title: 'Private Beta Launch',
       features: [
         'Video to Music - Transform your videos into professional music',
         'Lyric Edit - Edit and generate lyrics with AI assistance',

@@ -298,10 +298,10 @@
 /* Responsive */
 @media (max-width: 768px) {
   .searchContainer {
-    width: 90%;
-    margin-left: 10%;
-    padding: 20px;
-    padding-top: 80px;
+    width: 100%;
+    margin-left: 0;
+    padding: 16px;
+    padding-top: 70px;
   }
 
   .searchTitle {

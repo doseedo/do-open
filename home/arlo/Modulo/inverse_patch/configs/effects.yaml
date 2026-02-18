@@ -1,0 +1,233 @@
+# Effect Definitions and Parameter Ranges
+
+effects:
+  eq:
+    display_name: "Parametric EQ"
+    category: "eq_filter"
+    invertibility: "full"
+    parameters:
+      low_shelf_gain:
+        min: -12.0
+        max: 12.0
+        default: 0.0
+        unit: "dB"
+      low_shelf_freq:
+        min: 20.0
+        max: 500.0
+        default: 100.0
+        unit: "Hz"
+      band1_gain:
+        min: -12.0
+        max: 12.0
+        default: 0.0
+        unit: "dB"
+      band1_freq:
+        min: 100.0
+        max: 1000.0
+        default: 400.0
+        unit: "Hz"
+      band1_q:
+        min: 0.5
+        max: 10.0
+        default: 1.0
+      band2_gain:
+        min: -12.0
+        max: 12.0
+        default: 0.0
+        unit: "dB"
+      band2_freq:
+        min: 500.0
+        max: 4000.0
+        default: 1000.0
+        unit: "Hz"
+      band2_q:
+        min: 0.5
+        max: 10.0
+        default: 1.0
+      band3_gain:
+        min: -12.0
+        max: 12.0
+        default: 0.0
+        unit: "dB"
+      band3_freq:
+        min: 2000.0
+        max: 10000.0
+        default: 4000.0
+        unit: "Hz"
+      band3_q:
+        min: 0.5
+        max: 10.0
+        default: 1.0
+      high_shelf_gain:
+        min: -12.0
+        max: 12.0
+        default: 0.0
+        unit: "dB"
+      high_shelf_freq:
+        min: 4000.0
+        max: 16000.0
+        default: 8000.0
+        unit: "Hz"
+
+  compressor:
+    display_name: "Compressor"
+    category: "dynamics"
+    invertibility: "partial"
+    parameters:
+      threshold:
+        min: -60.0
+        max: 0.0
+        default: -20.0
+        unit: "dB"
+      ratio:
+        min: 1.0
+        max: 20.0
+        default: 4.0
+      attack:
+        min: 0.1
+        max: 100.0
+        default: 10.0
+        unit: "ms"
+      release:
+        min: 10.0
+        max: 1000.0
+        default: 100.0
+        unit: "ms"
+      knee:
+        min: 0.0
+        max: 12.0
+        default: 6.0
+        unit: "dB"
+      makeup_gain:
+        min: 0.0
+        max: 24.0
+        default: 0.0
+        unit: "dB"
+
+  reverb:
+    display_name: "Reverb"
+    category: "time_based"
+    invertibility: "challenging"
+    parameters:
+      decay_time:
+        min: 0.1
+        max: 10.0
+        default: 1.5
+        unit: "s"
+      pre_delay:
+        min: 0.0
+        max: 100.0
+        default: 20.0
+        unit: "ms"
+      wet_mix:
+        min: 0.0
+        max: 1.0
+        default: 0.3
+      damping:
+        min: 0.0
+        max: 1.0
+        default: 0.5
+      room_size:
+        min: 0.0
+        max: 1.0
+        default: 0.5
+
+  distortion:
+    display_name: "Distortion"
+    category: "nonlinear"
+    invertibility: "challenging"
+    parameters:
+      drive:
+        min: 0.0
+        max: 1.0
+        default: 0.5
+      tone:
+        min: 0.0
+        max: 1.0
+        default: 0.5
+      mix:
+        min: 0.0
+        max: 1.0
+        default: 1.0
+      output_gain:
+        min: -12.0
+        max: 12.0
+        default: 0.0
+        unit: "dB"
+
+  chorus:
+    display_name: "Chorus"
+    category: "modulation"
+    invertibility: "mostly"
+    parameters:
+      rate:
+        min: 0.1
+        max: 10.0
+        default: 1.0
+        unit: "Hz"
+      depth:
+        min: 0.0
+        max: 1.0
+        default: 0.5
+      mix:
+        min: 0.0
+        max: 1.0
+        default: 0.5
+      feedback:
+        min: 0.0
+        max: 0.9
+        default: 0.0
+
+  delay:
+    display_name: "Delay"
+    category: "time_based"
+    invertibility: "partial"
+    parameters:
+      delay_time:
+        min: 1.0
+        max: 2000.0
+        default: 250.0
+        unit: "ms"
+      feedback:
+        min: 0.0
+        max: 0.95
+        default: 0.3
+      mix:
+        min: 0.0
+        max: 1.0
+        default: 0.3
+      filter_freq:
+        min: 200.0
+        max: 8000.0
+        default: 4000.0
+        unit: "Hz"
+
+# Plugin mappings for DAW export
+plugin_mappings:
+  eq:
+    - "FabFilter Pro-Q 3"
+    - "ReaEQ"
+    - "TDR Nova"
+    - "Waves F6"
+  compressor:
+    - "FabFilter Pro-C 2"
+    - "ReaComp"
+    - "TDR Kotelnikov"
+    - "Waves CLA-76"
+  reverb:
+    - "Valhalla Room"
+    - "ReaVerb"
+    - "FabFilter Pro-R"
+    - "Waves H-Reverb"
+  distortion:
+    - "FabFilter Saturn 2"
+    - "Soundtoys Decapitator"
+    - "iZotope Trash 2"
+  chorus:
+    - "Valhalla SpaceModulator"
+    - "Waves Reel ADT"
+    - "TAL-Chorus-LX"
+  delay:
+    - "Valhalla Delay"
+    - "Waves H-Delay"
+    - "ReaDelay"

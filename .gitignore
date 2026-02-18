@@ -120,3 +120,19 @@ midi_generator/1_approaches/transform_based/*.json
 home/arlo/Data/OpenVoice/
 home/arlo/Data/latent_classifier/
 home/arlo/Data/mix_classifier/
+
+# Secrets
+client_secret_*.json
+token.json
+*.db
+
+# Gradio cache
+.gradio/
+
+# Virtual envs / tool dirs synced by accident
+var/www/html/pyaafenv/
+var/www/html/soundfonts/
+var/www/html/soundfont_tests/
+
+# Archives
+*.tar.gz

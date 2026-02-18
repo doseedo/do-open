@@ -419,9 +419,10 @@
 
 @media (max-width: 768px) {
   .dashboard {
-    margin-left: 10%;
-    padding: 20px;
-    padding-top: 100px;
+    margin-left: 0;
+    width: 100%;
+    padding: 16px;
+    padding-top: 70px;
   }
 
   .header {

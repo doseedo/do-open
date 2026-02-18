@@ -205,6 +205,40 @@ def get_manifest_groups():
         return _manifest_groups_cache.get("data") or {}
 
 
+_manifest_is_mix_cache = {"data": None, "mtime": 0}
+
+def get_manifest_is_mix():
+    """Get cached is_mix lookup (path -> bool). Loads once on first call."""
+    global _manifest_is_mix_cache
+    manifest_path = MANIFESTS_DIR / "unified_manifest.json"
+
+    if not manifest_path.exists():
+        return {}
+
+    try:
+        current_mtime = manifest_path.stat().st_mtime
+    except Exception:
+        return _manifest_is_mix_cache.get("data") or {}
+
+    if _manifest_is_mix_cache["data"] is not None and _manifest_is_mix_cache["mtime"] == current_mtime:
+        return _manifest_is_mix_cache["data"]
+
+    try:
+        with open(manifest_path, 'rb') as f:
+            manifest = orjson.loads(f.read())
+        is_mix_lookup = {}
+        for entry in manifest.get('entries', []):
+            if entry.get('is_mix'):
+                is_mix_lookup[entry.get('audio_path', '')] = True
+        _manifest_is_mix_cache["data"] = is_mix_lookup
+        _manifest_is_mix_cache["mtime"] = current_mtime
+        print(f"Loaded is_mix lookup: {len(is_mix_lookup)} mix files")
+        return is_mix_lookup
+    except Exception as e:
+        print(f"Error loading is_mix lookup: {e}")
+        return _manifest_is_mix_cache.get("data") or {}
+
+
 def get_session_instruments():
     """Get cached session -> instruments map. Loads once on first call."""
     global _session_instruments_cache
@@ -1194,6 +1228,7 @@ async def get_classifier_predictions(
     multi_filter: str = Query(None, description="Filter: multi, single"),
     mix_filter: str = Query(None, description="Filter by filename: mix, room, mix_or_room"),
     isolated_filter: str = Query(None, description="Filter by mix/isolated: isolated, mix, unknown"),
+    is_mix_filter: str = Query(None, description="Filter by manifest is_mix flag: true, false"),
     session_instrument: str = Query(None, description="Filter by session instrument"),
     sort_by: str = Query(None, description="Sort by: confidence_asc, confidence_desc"),
     limit: int = Query(500, description="Max entries"),
@@ -1234,6 +1269,7 @@ async def get_classifier_predictions(
     session_instruments_map = get_session_instruments()
     mix_isolated_lookup = get_mix_isolated_lookup()
     silent_files = get_silent_files()
+    is_mix_lookup = get_manifest_is_mix()
 
     entries = []
 
@@ -1275,6 +1311,7 @@ async def get_classifier_predictions(
                 "filename": pred.get("filename", os.path.basename(path)),
                 "is_isolated": is_isolated,
                 "ensemble_probability": ensemble_prob,
+                "is_mix": is_mix_lookup.get(audio_path, False),
             }
             entries.append(entry)
     else:
@@ -1325,6 +1362,7 @@ async def get_classifier_predictions(
                 "session_instruments": session_instruments,
                 "is_isolated": is_isolated,
                 "ensemble_probability": ensemble_prob,
+                "is_mix": is_mix_lookup.get(audio_path, False),
             }
             # For subgroup classifier
             if "predicted_subgroup" in pred:
@@ -1352,10 +1390,13 @@ async def get_classifier_predictions(
     multi_count = sum(1 for e in entries if e.get("is_multi"))
     single_count = len(entries) - multi_count
 
-    # Count isolated vs mix vs unknown
+    # Count isolated vs mix vs unknown (from ensemble detector)
     isolated_count = sum(1 for e in entries if e.get("is_isolated") is True)
     mix_count = sum(1 for e in entries if e.get("is_isolated") is False)
     unknown_count = sum(1 for e in entries if e.get("is_isolated") is None)
+
+    # Count is_mix flag (from manifest: room, ensemble, full-track, 'mix' filename)
+    is_mix_count = sum(1 for e in entries if e.get("is_mix") is True)
 
     # Apply filters
     filtered = entries
@@ -1409,6 +1450,12 @@ async def get_classifier_predictions(
         filtered = [e for e in filtered if e.get("is_isolated") is False]
     elif isolated_filter == "unknown":
         filtered = [e for e in filtered if e.get("is_isolated") is None]
+
+    # Filter by is_mix flag from manifest (room, ensemble, full-track, 'mix' filename)
+    if is_mix_filter == "true":
+        filtered = [e for e in filtered if e.get("is_mix") is True]
+    elif is_mix_filter == "false":
+        filtered = [e for e in filtered if not e.get("is_mix")]
 
     # Filter by session instrument
     if session_instrument:
@@ -1474,6 +1521,10 @@ async def get_classifier_predictions(
             "mix": mix_count,
             "unknown": unknown_count,
             "analyzed_rate": round((isolated_count + mix_count) / len(entries) * 100, 1) if entries else 0
+        },
+        "is_mix_stats": {
+            "is_mix_true": is_mix_count,
+            "is_mix_false": len(entries) - is_mix_count,
         },
         "available_session_instruments": all_session_instruments,
         "available_subgroups": all_subgroups,

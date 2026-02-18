@@ -97,9 +97,12 @@ class PerformanceConditionEncoder(nn.Module):
         return ids
 
     def _downsample_encodec_to_slow(self, enc_tokens, T_slow, group_id, subgroup_id):
+        # Get model dtype for proper conversion
+        model_dtype = next(self.parameters()).dtype
+
         # Detect index-like inputs and scale to [-1,1] safely before any conv
         is_index = not torch.is_floating_point(enc_tokens)
-        x = enc_tokens.to(torch.float32)
+        x = enc_tokens.to(dtype=model_dtype)
 
         # Heuristic: if these look like raw indices (max >> 64), map to [-1,1]
         with torch.no_grad():
@@ -138,14 +141,24 @@ class PerformanceConditionEncoder(nn.Module):
         group_id: torch.Tensor,       # [B]
         subgroup_id: torch.Tensor,    # [B]
     ):
+        # Convert all inputs to match model dtype
+        model_dtype = next(self.parameters()).dtype
+        piano_roll = piano_roll.to(dtype=model_dtype)
+        amp = amp.to(dtype=model_dtype)
+        rframe = rframe.to(dtype=model_dtype)
+        rbend = rbend.to(dtype=model_dtype)
+        rbend_mask = rbend_mask.to(dtype=model_dtype)
+        encodec_tokens = encodec_tokens.to(dtype=model_dtype)
+        # group_id and subgroup_id should stay as long for embeddings
+
         B, _, T_slow = piano_roll.shape
         D = self.d_text
 
         # ----- voiced + onset from PR -----
         # voiced if any pitch active at frame
-        voiced = (piano_roll > 0).any(dim=1, keepdim=False).float()            # [B, T]
+        voiced = (piano_roll > 0).any(dim=1, keepdim=False).to(dtype=model_dtype)            # [B, T]
         # crude onset: rising edge of any note
-        onset = F.pad((piano_roll[:, :, 1:] > piano_roll[:, :, :-1]).any(dim=1).float(),
+        onset = F.pad((piano_roll[:, :, 1:] > piano_roll[:, :, :-1]).any(dim=1).to(dtype=model_dtype),
                       (1, 0))                                                  # [B, T]
         
         # ----- PR path (louder, normalized) -----
@@ -194,8 +207,8 @@ class PerformanceConditionEncoder(nn.Module):
         # Global instrument token (strong, configurable)
         inst = self.inst_fuse(inst_cat).unsqueeze(1) * self.inst_strength  # [B,1,D]
 
-        # Global timbre token from encodec
-        enc_glb    = self.enc_global_pool(encodec_tokens.float()).squeeze(-1)  # [B, C_fast]
+        # Global timbre token from encodec (already converted to model_dtype)
+        enc_glb    = self.enc_global_pool(encodec_tokens).squeeze(-1)  # [B, C_fast]
         timbre_glb = self.timbre_global(enc_glb).unsqueeze(1)                  # [B,1,D]
 
         # Compose token stream: [INST, TIMBRE_GLB, FRAME_0..T-1]

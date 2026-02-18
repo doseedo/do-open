@@ -33,6 +33,50 @@ from generation_trajectory_logger import GenerationLogger, get_logger
 sys.path.append('/home/arlo/Data')  # folder that has trainer_performer.py
 sys.path.append('/home/arlo/Data/dø')  # Add dø directory first (has DoTrainComponents for generate-do endpoint)
 sys.path.append('/home/arlo/Data/ACE-Step')  # Add ACE-Step directory for schedulers and generate-ace-step endpoint
+sys.path.append('/home/arlo/ScoreAI')  # GCS storage utilities
+
+# GCS Storage for audio files
+from gcs_storage import upload_to_gcs, get_gcs_url, BUCKET_NAME, BUCKET_URI
+
+def upload_audio_to_gcs(local_path: str, process_id: str, filename: str = None, prefix: str = "audiofiles") -> str:
+    """
+    Upload audio file to GCS and return the public URL.
+    Falls back to local download URL if upload fails.
+
+    Args:
+        local_path: Path to local audio file
+        process_id: Unique process ID for this generation
+        filename: Optional filename (defaults to local file name)
+        prefix: GCS prefix folder (default: audiofiles)
+
+    Returns:
+        GCS URL or fallback local download URL
+    """
+    from pathlib import Path
+    import shutil
+
+    local_file = Path(local_path)
+    if not local_file.exists():
+        print(f"⚠️ File not found for GCS upload: {local_path}")
+        return f"/download-ace-step/{process_id}/{filename or local_file.name}"
+
+    filename = filename or local_file.name
+    gcs_path = f"gs://score-ai-generations/{prefix}/ace_step_output_{process_id}/{filename}"
+
+    try:
+        upload_to_gcs(str(local_file), gcs_path=gcs_path, make_public=True)
+        gcs_url = get_gcs_url(gcs_path)
+        print(f"   ✅ Uploaded to GCS: {gcs_url}")
+        return gcs_url
+    except Exception as e:
+        print(f"   ⚠️ GCS upload failed, using local fallback: {e}")
+        # Ensure local file is in the expected location for download endpoint
+        fallback_dir = Path("/home/arlo/ScoreAI/audiofiles") / f"ace_step_output_{process_id}"
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        fallback_path = fallback_dir / filename
+        if str(local_file) != str(fallback_path):
+            shutil.copy(local_file, fallback_path)
+        return f"/download-ace-step/{process_id}/{filename}"
 
 try:
     from trainer_performerCN2 import Pipeline  # Use the actual training script
@@ -636,412 +680,6 @@ def sum_audio_tracks(audio_file_paths: list, output_path: str, normalize: bool =
     print(f"   Channels: {mixed.shape[0]}")
 
     return output_path
-
-# ------------------------------------------------------------------------------
-# Sliding Window Generation for Fast Passages
-# ------------------------------------------------------------------------------
-def compute_note_density(piano_roll: np.ndarray, window_frames: int = 43) -> np.ndarray:
-    """
-    Compute note density (notes per second) across the piano roll.
-
-    Args:
-        piano_roll: Piano roll array of shape [128, T] or [88, T]
-        window_frames: Frames to average over (~1 second at 43fps)
-
-    Returns:
-        density: Array of shape [T] with notes-per-second at each frame
-    """
-    # Count active notes at each frame
-    active_notes = (piano_roll > 0.1).sum(axis=0).astype(np.float32)  # [T]
-
-    # Detect note onsets (new notes appearing)
-    note_onsets = np.zeros_like(active_notes)
-    note_onsets[1:] = np.maximum(0, np.diff((piano_roll > 0.1).astype(np.float32), axis=1).sum(axis=0))
-    note_onsets[0] = active_notes[0]
-
-    # Smooth with moving average to get density
-    kernel = np.ones(window_frames) / window_frames
-    if len(note_onsets) >= window_frames:
-        density = np.convolve(note_onsets, kernel, mode='same')
-    else:
-        density = note_onsets
-
-    # Convert to notes per second (43 fps)
-    density = density * 43.066
-
-    return density
-
-
-def should_use_sliding_window(
-    piano_roll: np.ndarray,
-    density_threshold: float = 8.0,
-    min_fast_region_frames: int = 43
-) -> tuple:
-    """
-    Determine if sliding window generation should be used based on note density.
-
-    Args:
-        piano_roll: Piano roll array [128, T] or [88, T]
-        density_threshold: Notes per second threshold to trigger sliding window
-        min_fast_region_frames: Minimum frames of fast content to trigger (~1 second)
-
-    Returns:
-        (should_use: bool, max_density: float, fast_region_percentage: float)
-    """
-    density = compute_note_density(piano_roll)
-    max_density = float(density.max())
-    fast_frames = (density > density_threshold).sum()
-    fast_percentage = fast_frames / len(density) * 100
-
-    should_use = fast_frames >= min_fast_region_frames
-
-    return should_use, max_density, fast_percentage
-
-
-def split_conditioning_into_windows(
-    piano_roll: np.ndarray,
-    amp: np.ndarray,
-    rframe: np.ndarray,
-    rbend: np.ndarray,
-    window_frames: int = 128,
-    overlap_ratio: float = 0.5
-) -> list:
-    """
-    Split conditioning arrays into overlapping windows.
-
-    Args:
-        piano_roll: [128, T] or [88, T]
-        amp, rframe, rbend: [T]
-        window_frames: Frames per window (at 43fps, 128 frames ≈ 3 seconds)
-        overlap_ratio: Overlap between windows (0.5 = 50% overlap)
-
-    Returns:
-        List of dicts, each containing windowed conditioning:
-        [{'piano_roll': [...], 'amp': [...], 'rframe': [...], 'rbend': [...],
-          'start_frame': int, 'end_frame': int}, ...]
-    """
-    T = piano_roll.shape[-1]
-    hop_frames = int(window_frames * (1 - overlap_ratio))
-
-    windows = []
-    start = 0
-
-    while start < T:
-        end = min(start + window_frames, T)
-
-        # Handle last window - extend back if too short
-        if end - start < window_frames // 2 and len(windows) > 0:
-            # Last window too short, extend previous window
-            break
-
-        # Pad if this is the last window and it's short
-        actual_len = end - start
-
-        window = {
-            'piano_roll': piano_roll[:, start:end].copy(),
-            'amp': amp[start:end].copy(),
-            'rframe': rframe[start:end].copy(),
-            'rbend': rbend[start:end].copy(),
-            'start_frame': start,
-            'end_frame': end,
-            'actual_length': actual_len,
-        }
-
-        # Pad to full window size if needed
-        if actual_len < window_frames:
-            pad_len = window_frames - actual_len
-            window['piano_roll'] = np.pad(window['piano_roll'], ((0, 0), (0, pad_len)), mode='constant')
-            window['amp'] = np.pad(window['amp'], (0, pad_len), mode='constant')
-            window['rframe'] = np.pad(window['rframe'], (0, pad_len), mode='constant')
-            window['rbend'] = np.pad(window['rbend'], (0, pad_len), mode='constant')
-
-        windows.append(window)
-        start += hop_frames
-
-    return windows
-
-
-def create_crossfade_weights(length: int, fade_in: int, fade_out: int) -> np.ndarray:
-    """
-    Create crossfade weight array with raised cosine fades.
-
-    Args:
-        length: Total length of the window
-        fade_in: Number of samples for fade in (0 for first window)
-        fade_out: Number of samples for fade out (0 for last window)
-
-    Returns:
-        weights: Array of shape [length] with values 0-1
-    """
-    weights = np.ones(length)
-
-    if fade_in > 0:
-        # Raised cosine fade in: 0.5 * (1 - cos(pi * t))
-        t = np.linspace(0, 1, fade_in)
-        weights[:fade_in] = 0.5 * (1 - np.cos(np.pi * t))
-
-    if fade_out > 0:
-        # Raised cosine fade out: 0.5 * (1 + cos(pi * t))
-        t = np.linspace(0, 1, fade_out)
-        weights[-fade_out:] = 0.5 * (1 + np.cos(np.pi * t))
-
-    return weights
-
-
-def crossfade_blend_audio(
-    audio_segments: list,
-    window_info: list,
-    sample_rate: int = 44100,
-    fps: float = 43.066
-) -> torch.Tensor:
-    """
-    Blend audio segments with crossfade based on window positions.
-
-    Args:
-        audio_segments: List of audio tensors [C, samples] or [samples]
-        window_info: List of window dicts with 'start_frame', 'end_frame', 'actual_length'
-        sample_rate: Audio sample rate
-        fps: Conditioning frame rate
-
-    Returns:
-        blended: Single blended audio tensor [C, samples]
-    """
-    if len(audio_segments) == 1:
-        seg = audio_segments[0]
-        if seg.ndim == 1:
-            seg = seg.unsqueeze(0)
-        return seg
-
-    # Calculate total length from the last window's end
-    last_window = window_info[-1]
-    total_frames = last_window['start_frame'] + last_window['actual_length']
-    total_samples = int(total_frames / fps * sample_rate)
-
-    # Detect number of channels from first segment
-    first_seg = audio_segments[0]
-    if first_seg.ndim == 1:
-        num_channels = 1
-    else:
-        num_channels = first_seg.shape[0]
-
-    # Initialize output and weight accumulator
-    output = torch.zeros(num_channels, total_samples)
-    weights = torch.zeros(total_samples)
-
-    samples_per_frame = sample_rate / fps
-
-    for i, (audio, winfo) in enumerate(zip(audio_segments, window_info)):
-        if audio.ndim == 1:
-            audio = audio.unsqueeze(0)
-
-        start_sample = int(winfo['start_frame'] * samples_per_frame)
-        actual_samples = int(winfo['actual_length'] * samples_per_frame)
-
-        # Trim audio to actual length (remove padding)
-        audio = audio[:, :actual_samples]
-
-        end_sample = start_sample + audio.shape[-1]
-
-        # Ensure we don't exceed output bounds
-        if end_sample > total_samples:
-            audio = audio[:, :total_samples - start_sample]
-            end_sample = total_samples
-
-        # Calculate fade lengths based on overlap
-        if i > 0:
-            # Find overlap with previous window
-            prev_end = int((window_info[i-1]['start_frame'] + window_info[i-1]['actual_length']) * samples_per_frame)
-            fade_in_samples = max(0, prev_end - start_sample)
-        else:
-            fade_in_samples = 0
-
-        if i < len(audio_segments) - 1:
-            # Find overlap with next window
-            next_start = int(window_info[i+1]['start_frame'] * samples_per_frame)
-            fade_out_samples = max(0, end_sample - next_start)
-        else:
-            fade_out_samples = 0
-
-        # Create weights for this segment
-        seg_weights = create_crossfade_weights(
-            audio.shape[-1],
-            fade_in_samples,
-            fade_out_samples
-        )
-        seg_weights = torch.from_numpy(seg_weights).float()
-
-        # Add weighted audio to output
-        seg_len = audio.shape[-1]
-        output[:, start_sample:start_sample + seg_len] += audio * seg_weights
-        weights[start_sample:start_sample + seg_len] += seg_weights
-
-    # Normalize by weights (avoid division by zero)
-    weights = weights.clamp(min=1e-8)
-    output = output / weights.unsqueeze(0)
-
-    return output
-
-
-def generate_sliding_window(
-    model,
-    piano_roll: np.ndarray,
-    amp: np.ndarray,
-    rframe: np.ndarray,
-    rbend: np.ndarray,
-    group: str,
-    subgroup: str,
-    window_seconds: float = 3.0,
-    overlap_ratio: float = 0.5,
-    fps: float = 43.066,
-    audio_file: str = None,
-    **generate_kwargs
-) -> str:
-    """
-    Generate audio using sliding window approach for fast passages.
-
-    Splits conditioning into overlapping windows, generates each independently,
-    then crossfade blends the outputs. This avoids the temporal resolution issues
-    that occur when the model tries to handle very fast note sequences.
-
-    Args:
-        model: The generation model
-        piano_roll: [128, T] piano roll conditioning
-        amp, rframe, rbend: [T] conditioning arrays
-        group, subgroup: Instrument identifiers
-        window_seconds: Window duration in seconds (default 3.0)
-        overlap_ratio: Window overlap (default 0.5 = 50%)
-        fps: Conditioning frame rate
-        audio_file: Path to source audio for GT latent extraction (optional)
-        **generate_kwargs: Additional args passed to generate()
-
-    Returns:
-        Path to generated audio file
-    """
-    import tempfile
-
-    window_frames = int(window_seconds * fps)
-    T = piano_roll.shape[-1]
-    total_duration = T / fps
-
-    print(f"\n{'='*80}")
-    print(f"🪟 SLIDING WINDOW GENERATION")
-    print(f"{'='*80}")
-    print(f"Total duration: {total_duration:.2f}s ({T} frames)")
-    print(f"Window size: {window_seconds:.1f}s ({window_frames} frames)")
-    print(f"Overlap: {overlap_ratio*100:.0f}%")
-
-    # Check note density
-    should_window, max_density, fast_pct = should_use_sliding_window(piano_roll)
-    print(f"Max note density: {max_density:.1f} notes/sec")
-    print(f"Fast regions: {fast_pct:.1f}% of content")
-
-    # Load source audio for GT latent extraction if provided
-    source_audio = None
-    source_sr = 44100
-    if audio_file and os.path.exists(audio_file):
-        print(f"Loading source audio for GT latents: {Path(audio_file).name}")
-        source_audio, source_sr = torchaudio.load(audio_file)
-        # Convert to mono if stereo for slicing consistency
-        if source_audio.shape[0] > 1:
-            source_audio = source_audio.mean(dim=0, keepdim=True)
-        print(f"   Source audio: {source_audio.shape[-1]} samples ({source_audio.shape[-1]/source_sr:.2f}s)")
-
-    # Split into windows
-    windows = split_conditioning_into_windows(
-        piano_roll, amp, rframe, rbend,
-        window_frames=window_frames,
-        overlap_ratio=overlap_ratio
-    )
-    print(f"Split into {len(windows)} windows")
-
-    # Create empty encodec for each window (user requested no encodec input)
-    encodec_length = window_frames // 4
-    empty_encodec = torch.zeros((1, 8, encodec_length), dtype=torch.long)
-
-    # Create temp directory for audio slices
-    temp_dir = tempfile.mkdtemp(prefix="sliding_window_")
-
-    # Generate each window
-    audio_segments = []
-    seed = generate_kwargs.get('seed', -1)
-    if seed <= 0:
-        seed = torch.seed() % 2**31
-
-    for i, window in enumerate(windows):
-        print(f"\n   Window {i+1}/{len(windows)}: frames {window['start_frame']}-{window['end_frame']}")
-
-        # Use consistent seed offset per window for reproducibility
-        window_seed = (seed + i * 1000) % 2**31
-
-        # Calculate original audio length for this window
-        window_duration = window['actual_length'] / fps
-        original_audio_length = int(window_duration * 44100)
-
-        # Slice source audio for this window if available
-        window_audio_file = None
-        if source_audio is not None:
-            start_sample = int(window['start_frame'] / fps * source_sr)
-            end_sample = int((window['start_frame'] + window['actual_length']) / fps * source_sr)
-            end_sample = min(end_sample, source_audio.shape[-1])
-
-            if end_sample > start_sample:
-                window_audio = source_audio[:, start_sample:end_sample]
-                window_audio_file = os.path.join(temp_dir, f"window_{i}.wav")
-                torchaudio.save(window_audio_file, window_audio, source_sr)
-                print(f"      Sliced GT audio: {start_sample}-{end_sample} samples ({window_audio.shape[-1]/source_sr:.2f}s)")
-
-        # Generate this window
-        window_kwargs = generate_kwargs.copy()
-        window_kwargs['seed'] = window_seed
-        window_kwargs['original_audio_length'] = original_audio_length
-        window_kwargs['target_audio_duration'] = window_duration
-        if window_audio_file:
-            window_kwargs['audio_file'] = window_audio_file
-
-        output_path = generate(
-            model=model,
-            piano_roll=window['piano_roll'],
-            amp=window['amp'],
-            rframe=window['rframe'],
-            rbend=window['rbend'],
-            encodec_tokens=empty_encodec,
-            group=group,
-            subgroup=subgroup,
-            **window_kwargs
-        )
-
-        # Load the generated audio
-        audio, sr = torchaudio.load(output_path)
-
-        # Trim to actual length (remove any padding artifacts)
-        expected_samples = int(window['actual_length'] / fps * sr)
-        if audio.shape[-1] > expected_samples:
-            audio = audio[:, :expected_samples]
-
-        audio_segments.append(audio)
-        print(f"   ✅ Window {i+1} generated: {audio.shape[-1]} samples")
-
-    # Crossfade blend all segments
-    print(f"\n🔀 Blending {len(audio_segments)} segments with crossfade...")
-    blended = crossfade_blend_audio(audio_segments, windows, sample_rate=44100, fps=fps)
-
-    # Save blended output
-    out_dir = Path("./generated_ui")
-    out_dir.mkdir(exist_ok=True)
-    out_path = out_dir / f"{time.strftime('%Y%m%d-%H%M%S')}_sliding_window_seed{seed}.wav"
-
-    torchaudio.save(str(out_path), blended, 44100)
-
-    # Cleanup temp directory
-    import shutil
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
-
-    print(f"\n✅ Sliding window generation complete: {out_path}")
-    print(f"   Duration: {blended.shape[-1] / 44100:.2f}s")
-    print(f"{'='*80}\n")
-
-    return str(out_path)
 
 # ------------------------------------------------------------------------------
 # MIDI Processing and FluidSynth Rendering
@@ -2820,7 +2458,7 @@ def extract_conditioning_from_audio(audio_path: str, output_dir: str = "./extrac
 
     # Extract new conditioning
     print(f"🔄 Extracting conditioning for: {Path(audio_path).name}")
-    cmd = [sys.executable, "test_extract_local.py", "--input", str(audio_path), "--output", str(out_dir)]
+    cmd = ["python", "test_extract_local.py", "--input", str(audio_path), "--output", str(out_dir)]
 
     # Add formats parameter if specified
     if extract_formats:
@@ -3156,30 +2794,7 @@ def load_conditioning_fast_mode(extraction: dict, window_slow: int, variant: str
     """
     print(f"⚡ Fast mode ({variant.upper()}): Loading conditioning")
 
-    # Resample helper (FIX: interpolate instead of zero-padding)
-    def _resample_arr(x, L, mode='linear'):
-        """Resample array from its current length to target length L."""
-        current_L = x.shape[-1]
-        if current_L == L:
-            return x
-        if current_L > L:
-            return x[..., :L]
-        # Upsample using interpolation
-        if x.ndim == 1:
-            x_tensor = torch.from_numpy(x).float().unsqueeze(0).unsqueeze(0)
-            if mode == 'nearest':
-                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='nearest')
-            else:
-                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='linear', align_corners=False)
-            return x_resampled.squeeze().numpy()
-        else:
-            x_tensor = torch.from_numpy(x).float().unsqueeze(0)
-            if mode == 'nearest':
-                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='nearest')
-            else:
-                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='linear', align_corners=False)
-            return x_resampled.squeeze(0).numpy()
-
+    # Pad/trim helper (ORIGINAL CODE)
     def _pad_arr(x, L):
         if x.shape[-1] >= L: return x[..., :L]
         pad = [(0,0)]*(x.ndim-1) + [(0, L - x.shape[-1])]
@@ -3260,12 +2875,7 @@ def load_conditioning_fast_mode(extraction: dict, window_slow: int, variant: str
             pr_padded[21:109, :] = pr  # Insert 88 keys at MIDI positions 21-108
             pr = pr_padded
 
-        # Resample if significant length difference (different fps)
-        if pr.shape[-1] < window_slow * 0.9:
-            print(f"   🔄 Resampling piano roll: {pr.shape[-1]} → {window_slow} frames")
-            pr = _resample_arr(pr, window_slow, mode='nearest')
-        else:
-            pr = _pad_arr(pr, window_slow)
+        pr = _pad_arr(pr, window_slow)
 
         # Create preset values for amp, rfr, rbd (stable/default values)
         # NOTE: amp, rframe, rbend should be 1D arrays of shape (window_slow,), not (128, window_slow)
@@ -3328,56 +2938,16 @@ def load_conditioning(extraction: dict, window_slow: int):
     if enc.ndim == 2:
         enc = enc.unsqueeze(0)
 
-    # RESAMPLE to window_slow (FIX: interpolate instead of zero-padding)
-    # Conditioning is extracted at 10.77 fps (hop=4096), model expects 43.066 fps
-    # Ratio is approximately 4x, so we need to upsample
-    def _resample_arr(x, L, mode='linear'):
-        """Resample array from its current length to target length L."""
-        current_L = x.shape[-1]
-        if current_L == L:
-            return x
-        if current_L > L:
-            # Downsample: just trim
-            return x[..., :L]
+    # pad/trim to window_slow (ORIGINAL CODE - no interpolation)
+    def _pad_arr(x, L):
+        if x.shape[-1] >= L: return x[..., :L]
+        pad = [(0,0)]*(x.ndim-1) + [(0, L - x.shape[-1])]
+        return np.pad(x, pad, mode="constant")
 
-        # Upsample using interpolation
-        if x.ndim == 1:
-            # 1D array (amp, rframe, rbend)
-            x_tensor = torch.from_numpy(x).float().unsqueeze(0).unsqueeze(0)  # [1, 1, T]
-            if mode == 'nearest':
-                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='nearest')
-            else:
-                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='linear', align_corners=False)
-            return x_resampled.squeeze().numpy()
-        else:
-            # 2D array (piano_roll: [128, T])
-            x_tensor = torch.from_numpy(x).float().unsqueeze(0)  # [1, 128, T]
-            if mode == 'nearest':
-                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='nearest')
-            else:
-                x_resampled = torch.nn.functional.interpolate(x_tensor, size=L, mode='linear', align_corners=False)
-            return x_resampled.squeeze(0).numpy()
-
-    # Check if resampling is needed (significant length difference)
-    pr_len = pr.shape[-1]
-    if pr_len < window_slow * 0.9:  # More than 10% shorter means different fps
-        print(f"🔄 Resampling conditioning: {pr_len} → {window_slow} frames (10.77fps → 43.066fps)")
-        # Piano roll: use nearest-neighbor to preserve binary nature
-        pr = _resample_arr(pr, window_slow, mode='nearest')
-        # Continuous signals: use linear interpolation
-        amp = _resample_arr(amp, window_slow, mode='linear')
-        rfr = _resample_arr(rfr, window_slow, mode='linear')
-        rbd = _resample_arr(rbd, window_slow, mode='linear')
-    else:
-        # Just pad/trim if lengths are similar (same fps)
-        def _pad_arr(x, L):
-            if x.shape[-1] >= L: return x[..., :L]
-            pad = [(0,0)]*(x.ndim-1) + [(0, L - x.shape[-1])]
-            return np.pad(x, pad, mode="constant")
-        pr  = _pad_arr(pr,  window_slow)
-        amp = _pad_arr(amp, window_slow)
-        rfr = _pad_arr(rfr, window_slow)
-        rbd = _pad_arr(rbd, window_slow)
+    pr  = _pad_arr(pr,  window_slow)
+    amp = _pad_arr(amp, window_slow)
+    rfr = _pad_arr(rfr, window_slow)
+    rbd = _pad_arr(rbd, window_slow)
 
     return pr, amp, rfr, rbd, enc.long()
 
@@ -5350,12 +4920,7 @@ def generate(
     # Render & extract mode flag
     render_and_extract=False,
     # Debug trajectory logging
-    collect_trajectory=False,
-    # Latent space output for sliding window blending
-    return_latents=False,
-    # Post-generation GT mixing (at DCAE resolution, avoids interpolation artifacts)
-    # 0.0 = pure generated, 1.0 = pure GT, 0.1 = 90% generated + 10% GT
-    post_gen_gt_mix=0.0
+    collect_trajectory=False
 ):
     device = next(model.parameters()).device
     model.eval()
@@ -5417,14 +4982,11 @@ def generate(
             print(f"   Clamping tokens to valid range...")
             encodec_tokens = torch.clamp(encodec_tokens, 0, encodec_vocab_size - 1)
 
-    # Get model dtype for conditioning tensors (support bfloat16 models)
-    model_dtype = next(model.parameters()).dtype
-
     conds = {
-        "piano_roll": torch.from_numpy(piano_roll).to(dtype=model_dtype, device=device).unsqueeze(0),  # [1,128,T]
-        "amp":        torch.from_numpy(amp).to(dtype=model_dtype, device=device).unsqueeze(0),         # [1,T]
-        "rframe":     torch.from_numpy(rframe).to(dtype=model_dtype, device=device).unsqueeze(0),      # [1,T]
-        "rbend":      torch.from_numpy(rbend).to(dtype=model_dtype, device=device).unsqueeze(0),       # [1,T]
+        "piano_roll": torch.from_numpy(piano_roll).float().unsqueeze(0).to(device),  # [1,128,T]
+        "amp":        torch.from_numpy(amp).float().unsqueeze(0).to(device),         # [1,T]
+        "rframe":     torch.from_numpy(rframe).float().unsqueeze(0).to(device),      # [1,T]
+        "rbend":      torch.from_numpy(rbend).float().unsqueeze(0).to(device),       # [1,T]
         "rbend_mask": torch.from_numpy((rframe > 0.5).astype(np.float32)).bool().unsqueeze(0).to(device),
         "encodec_tokens": encodec_tokens.to(device),                                  # [1,C,Tf]
         "group_id":   torch.tensor([gid], dtype=torch.long, device=device),
@@ -5474,17 +5036,13 @@ def generate(
     torch.manual_seed(int(seed))
 
     # Initialize latents based on noise level
-    # CRITICAL: Extract GT latents if:
-    # - noise_level < 1.0 (for pre-gen mixing)
-    # - render_and_extract mode (for FluidSynth mixing)
-    # - post_gen_gt_mix > 0 (for post-gen mixing at native resolution)
-    gt_latent_native = None  # Initialize outside conditional for post-gen mixing
-
-    need_gt_latents = (float(noise_level) < 1.0 or render_and_extract or float(post_gen_gt_mix) > 0.0)
-
-    if not need_gt_latents:
-        # Pure noise (original behavior)
-        x = torch.randn_like(sample_patch.to(device=device, dtype=tokens.dtype))
+    # CRITICAL: In render & extract mode, ALWAYS extract GT latents even if noise_level=1.0
+    # This allows mixing with FluidSynth-rendered audio GT
+    # FIX: Use sample_patch.dtype (bfloat16) NOT tokens.dtype (torch.long integer)!
+    latent_dtype = sample_patch.dtype  # Should be bfloat16, NOT tokens.dtype which is torch.long
+    if float(noise_level) >= 1.0 and not render_and_extract:
+        # Pure noise (original behavior) - but NOT in render & extract mode
+        x = torch.randn_like(sample_patch.to(device=device, dtype=latent_dtype))
     else:
         # Try to extract ground truth latents for proper noise mixing
         # OR when render_and_extract=True (regardless of noise level)
@@ -5509,32 +5067,19 @@ def generate(
 
         if gt_latents is not None:
             # Resize ground truth latents to match expected shape
-            gt_latents = gt_latents.to(device=device, dtype=tokens.dtype)
+            gt_latents = gt_latents.to(device=device, dtype=latent_dtype)
             target_shape = sample_patch.shape  # [1, 8, 16, T]
 
             # Add batch dimension if missing
             if gt_latents.ndim == 3:  # [8, 16, T] -> [1, 8, 16, T]
                 gt_latents = gt_latents.unsqueeze(0)
 
-            # Store native resolution GT for post-generation mixing (avoids interpolation artifacts)
-            if float(post_gen_gt_mix) > 0.0:
-                gt_latent_native = gt_latents.clone()
-                print(f"   📦 Stored GT latent at native resolution: {gt_latent_native.shape} for post-gen mixing")
-
-            # Interpolate or crop temporal dimension to match target
+            # Pad or crop temporal dimension to match target
             if gt_latents.shape[-1] != target_shape[-1]:
                 if gt_latents.shape[-1] < target_shape[-1]:
-                    # INTERPOLATE if too short (not zero-pad!)
-                    # Shape: [1, 8, 16, T_short] -> [1, 8, 16, T_target]
-                    old_len = gt_latents.shape[-1]
-                    new_len = target_shape[-1]
-                    # Reshape for interpolate: [1, 8, 16, T] -> [1, 8*16, T]
-                    B, C, H, T = gt_latents.shape
-                    gt_flat = gt_latents.reshape(B, C * H, T)  # Use reshape, not view
-                    # Use NEAREST interpolation to preserve spectral structure (avoids linear blur)
-                    gt_interp = F.interpolate(gt_flat, size=new_len, mode='nearest-exact')
-                    gt_latents = gt_interp.reshape(B, C, H, new_len)  # Use reshape, not view
-                    print(f"   🔄 Interpolated GT latent (nearest): {old_len} → {new_len} frames")
+                    # Pad if too short
+                    pad_size = target_shape[-1] - gt_latents.shape[-1]
+                    gt_latents = F.pad(gt_latents, (0, pad_size), mode='constant', value=0)
                 else:
                     # Crop if too long
                     gt_latents = gt_latents[..., :target_shape[-1]]
@@ -5542,7 +5087,7 @@ def generate(
             # Ensure dimensions match
             if gt_latents.shape != target_shape:
                 print(f"⚠️ GT latent shape mismatch: {gt_latents.shape} vs {target_shape}, using noise")
-                x = torch.randn_like(sample_patch.to(device=device, dtype=tokens.dtype))
+                x = torch.randn_like(sample_patch.to(device=device, dtype=latent_dtype))
             else:
                 if float(noise_level) <= 0.0:
                     # Pure ground truth latents
@@ -5556,7 +5101,7 @@ def generate(
         else:
             # Fallback to pure noise if no ground truth available
             print("⚠️ No ground truth latents available, using pure noise")
-            x = torch.randn_like(sample_patch.to(device=device, dtype=tokens.dtype))
+            x = torch.randn_like(sample_patch.to(device=device, dtype=latent_dtype))
 
     # Control residuals (constant across loop)
     pr_128 = conds["piano_roll"].to(dtype=x.dtype)
@@ -5726,52 +5271,6 @@ def generate(
         print(f"🎵 DCAE DECODE DIAGNOSTICS:")
         print(f"   NO original_audio_length - Calculated from latent frames:")
         print(f"   {T_latent_actual} latent frames * {DCAE_HOP} hop * ({sr_out}/{DCAE_SR}) = {audio_len} samples = {expected_duration:.2f}s")
-
-    # Return latent before decoding if requested (for latent-space blending)
-    if return_latents:
-        print(f"🔧 Returning latent for blending: {x.shape}")
-        return x.clone()
-
-    # CRITICAL FIX: Generated latent is at conditioning fps (43.066), but DCAE expects
-    # latent at its native resolution (~10.77 fps = 44100/4096). Downsample before decode.
-    DCAE_FPS = DCAE_SR / DCAE_HOP  # ~10.766 fps
-    COND_FPS = 43.066
-
-    # Calculate target latent frames for DCAE based on audio duration
-    if original_audio_length is not None:
-        target_duration = original_audio_length / DCAE_SR
-    else:
-        target_duration = x.shape[-1] / COND_FPS
-
-    target_latent_frames = int(round(target_duration * DCAE_FPS))
-
-    if x.shape[-1] != target_latent_frames and x.shape[-1] > target_latent_frames * 1.5:
-        print(f"   🔄 Resampling latent for DCAE: {x.shape[-1]} → {target_latent_frames} frames")
-        print(f"      (conditioning at {COND_FPS:.1f}fps → DCAE at {DCAE_FPS:.2f}fps)")
-        B, C, H, T = x.shape
-        x_flat = x.reshape(B, C * H, T)
-        x_resampled = F.interpolate(x_flat, size=target_latent_frames, mode='linear', align_corners=False)
-        x = x_resampled.reshape(B, C, H, target_latent_frames)
-        print(f"   ✅ Resampled latent shape: {x.shape}")
-
-    # POST-GENERATION GT MIXING: Mix with GT latent at DCAE native resolution
-    # This avoids the interpolation artifacts that destroy timbre
-    if float(post_gen_gt_mix) > 0.0 and gt_latent_native is not None:
-        gt_native = gt_latent_native.to(device=x.device, dtype=x.dtype)
-
-        # Adjust GT latent length to match generated latent (minor adjustment, not 4x)
-        if gt_native.shape[-1] != x.shape[-1]:
-            B, C, H, T_gt = gt_native.shape
-            gt_flat = gt_native.reshape(B, C * H, T_gt)
-            gt_adjusted = F.interpolate(gt_flat, size=x.shape[-1], mode='linear', align_corners=False)
-            gt_native = gt_adjusted.reshape(B, C, H, x.shape[-1])
-            print(f"   🔄 Adjusted GT latent: {T_gt} → {x.shape[-1]} frames (minor adjustment)")
-
-        # Mix: x_final = (1 - mix) * generated + mix * gt
-        mix_amount = float(post_gen_gt_mix)
-        x = (1.0 - mix_amount) * x + mix_amount * gt_native
-        print(f"   🎯 Post-gen GT mix: {mix_amount:.1%} GT + {1-mix_amount:.1%} generated")
-        print(f"      (GT latent at native resolution - preserves timbre!)")
 
     p = next(model.dcae.parameters(), None)
     dev = p.device if p is not None else getattr(model.dcae, "device", device)
@@ -6773,10 +6272,14 @@ import requests as http_requests
 # Create FastAPI app
 app = FastAPI()
 
-# CORS middleware
+# CORS middleware - restricted to known origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://doseedo.com",
+        "https://www.doseedo.com",
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -6919,10 +6422,6 @@ def generate_do_task(
     upsample_mode: bool = False,
     upsample_noise_level: float = 0.3,
     upsample_steps: int = 20,
-    # Sliding window mode for fast passages
-    sliding_window_mode: bool = False,
-    sliding_window_seconds: float = 3.0,
-    sliding_window_overlap: float = 0.5,
     use_overlap_decoder: bool = True,
     inpaint_mode: bool = False,
     inpaint_start_time: Optional[float] = None,
@@ -6986,7 +6485,6 @@ def generate_do_task(
         print(f"Duration parameter: {duration}s")
         print(f"Audio file: {audio_file_path}")
         print(f"🎞️ TAPE SPEED: {tape_speed}x, Method: {slowdown_method}")
-        print(f"🪟 SLIDING WINDOW: {sliding_window_mode} (window={sliding_window_seconds}s, overlap={sliding_window_overlap*100:.0f}%)")
         print(f"🔊 USE OVERLAP DECODER: {use_overlap_decoder}")
         print(f"⚡ FAST MODE: {fast_mode_variant} ({fast_mode_variant or 'disabled'})")
         print(f"📋 EXTRACTION FORMATS: {extract_formats or 'all (default)'}")
@@ -8382,94 +7880,51 @@ def generate_do_task(
                 voice_seed = seed + (voice_idx * 1000)
                 print(f"   Generating with seed {voice_seed}...")
 
-                # Check if sliding window mode should be used
-                use_sliding_window = sliding_window_mode
-                collect_trajectory_flag = debug_mode or DEBUG_TRAJECTORY_LOGGING  # Define before branching
-
-                if use_sliding_window:
-                    # Check note density to confirm sliding window is beneficial
-                    should_window, max_density, fast_pct = should_use_sliding_window(piano_roll)
-                    print(f"   🪟 SLIDING WINDOW MODE: density={max_density:.1f} notes/sec, fast={fast_pct:.1f}%")
-                    if not should_window:
-                        print(f"      Note density is low, using standard generation instead")
-                        use_sliding_window = False
-
-                if use_sliding_window:
-                    # Use sliding window generation for fast passages
-                    print(f"   🪟 Using sliding window generation (window={sliding_window_seconds}s, overlap={sliding_window_overlap*100:.0f}%)")
-                    gen_result = generate_sliding_window(
-                        model=MODEL,
-                        piano_roll=piano_roll,
-                        amp=amp,
-                        rframe=rframe,
-                        rbend=rbend,
-                        group=group,
-                        subgroup=subgroup,
-                        window_seconds=sliding_window_seconds,
-                        overlap_ratio=sliding_window_overlap,
-                        steps=steps,
-                        seed=voice_seed,
-                        adapter_scale=adapter_scale,
-                        cfg_weight=cfg_weight,
-                        t0=1.0,
-                        sr_out=44100,
-                        instrument_strength=instrument_strength,
-                        inst_boost=2.5,
-                        piano_roll_gain=piano_roll_gain,
-                        amp_gain=amp_gain,
-                        rframe_gain=rframe_gain,
-                        rbend_gain=rbend_gain,
-                        encodec_gain=0.0,  # No encodec for sliding window
-                        use_overlap_decoder=use_overlap_decoder,
-                        pitch_fidelity_boost=pitch_fidelity_boost,
-                        onset_guidance_boost=onset_guidance_boost,
-                        pitch_snap_strength=pitch_snap_strength,
-                        noise_level=noise_level,
+                # Initialize trajectory logger if debug mode is enabled
+                global TRAJECTORY_LOGGER
+                # Use frontend debug_mode parameter OR global environment variable
+                collect_trajectory_flag = debug_mode or DEBUG_TRAJECTORY_LOGGING
+                if collect_trajectory_flag and TRAJECTORY_LOGGER is None:
+                    TRAJECTORY_LOGGER = get_logger(
+                        debug_mode=True,
+                        save_every_n_steps=10,
+                        base_dir="/mnt/msdd/generation_debug"
                     )
-                else:
-                    # Initialize trajectory logger if debug mode is enabled
-                    global TRAJECTORY_LOGGER
-                    if collect_trajectory_flag and TRAJECTORY_LOGGER is None:
-                        TRAJECTORY_LOGGER = get_logger(
-                            debug_mode=True,
-                            save_every_n_steps=10,
-                            base_dir="/mnt/msdd/generation_debug"
-                        )
-                        print(f"[TrajectoryLogger] Initialized logger (frontend debug_mode={debug_mode}, env DEBUG_TRAJECTORY_LOGGING={DEBUG_TRAJECTORY_LOGGING})")
+                    print(f"[TrajectoryLogger] Initialized logger (frontend debug_mode={debug_mode}, env DEBUG_TRAJECTORY_LOGGING={DEBUG_TRAJECTORY_LOGGING})")
 
-                    gen_result = generate(
-                        model=MODEL,
-                        piano_roll=piano_roll,
-                        amp=amp,
-                        rframe=rframe,
-                        rbend=rbend,
-                        encodec_tokens=encodec_tokens,
-                        group=group,
-                        subgroup=subgroup,
-                        steps=steps,
-                        seed=voice_seed,
-                        adapter_scale=adapter_scale,
-                        cfg_weight=cfg_weight,
-                        t0=1.0,
-                        sr_out=44100,
-                        instrument_strength=instrument_strength,
-                        inst_boost=2.5,
-                        piano_roll_gain=piano_roll_gain,
-                        amp_gain=amp_gain,
-                        rframe_gain=rframe_gain,
-                        rbend_gain=rbend_gain,
-                        encodec_gain=encodec_gain,
-                        use_overlap_decoder=use_overlap_decoder,
-                        original_audio_length=int(actual_duration * 44100),
-                        pitch_fidelity_boost=pitch_fidelity_boost,
-                        onset_guidance_boost=onset_guidance_boost,
-                        pitch_snap_strength=pitch_snap_strength,
-                        noise_level=noise_level,
-                        audio_file=voice_audio,
-                        fast_mode_variant=fast_mode_variant,  # Pass fast_mode_variant for T_dcae conversion
-                        target_audio_duration=consistent_duration,  # Ensure consistent latent extraction
-                        collect_trajectory=collect_trajectory_flag  # Collect trajectory if debug mode enabled
-                    )
+                gen_result = generate(
+                    model=MODEL,
+                    piano_roll=piano_roll,
+                    amp=amp,
+                    rframe=rframe,
+                    rbend=rbend,
+                    encodec_tokens=encodec_tokens,
+                    group=group,
+                    subgroup=subgroup,
+                    steps=steps,
+                    seed=voice_seed,
+                    adapter_scale=adapter_scale,
+                    cfg_weight=cfg_weight,
+                    t0=1.0,
+                    sr_out=44100,
+                    instrument_strength=instrument_strength,
+                    inst_boost=2.5,
+                    piano_roll_gain=piano_roll_gain,
+                    amp_gain=amp_gain,
+                    rframe_gain=rframe_gain,
+                    rbend_gain=rbend_gain,
+                    encodec_gain=encodec_gain,
+                    use_overlap_decoder=use_overlap_decoder,
+                    original_audio_length=int(actual_duration * 44100),
+                    pitch_fidelity_boost=pitch_fidelity_boost,
+                    onset_guidance_boost=onset_guidance_boost,
+                    pitch_snap_strength=pitch_snap_strength,
+                    noise_level=noise_level,
+                    audio_file=voice_audio,
+                    fast_mode_variant=fast_mode_variant,  # Pass fast_mode_variant for T_dcae conversion
+                    target_audio_duration=consistent_duration,  # Ensure consistent latent extraction
+                    collect_trajectory=collect_trajectory_flag  # Collect trajectory if debug mode enabled
+                )
 
                 # Handle generate() return value (may include trajectory)
                 if collect_trajectory_flag and isinstance(gen_result, tuple):
@@ -8843,7 +8298,12 @@ def generate_do_task(
                 except Exception as e:
                     print(f"  ⚠️ Error copying concatenated MIDI: {e}")
 
-            return {"file_paths": completed_voices, "input_files": input_files}
+            result = {"file_paths": completed_voices, "input_files": input_files}
+            if instrument_subgroup == 'muted_trumpet':
+                print(f"\n🎺 Post-processing: applying trumpet mute to {len(completed_voices)} voices...")
+                dry_paths = apply_mute_to_generation_files(completed_voices, output_dir, process_id)
+                result["dry_file_paths"] = dry_paths
+            return result
 
         # MULTITRACK MIDI DETECTION: Check if uploaded file is multi-track MIDI with voice separation disabled
         if is_midi_file(audio_file_path) and monophonic_mode and not enable_voice_separation:
@@ -9315,12 +8775,17 @@ def generate_do_task(
                 if tape_speed < 1.0:
                     print(f"✅ All tracks already restored to original speed (done per-track)")
 
-                return {
+                result = {
                     "file_paths": file_paths,
                     "input_files": input_files,
                     "mainAudio": file_paths[0],
                     "voices": completed_voices  # Individual tracks without mix
                 }
+                if instrument_subgroup == 'muted_trumpet':
+                    print(f"\n🎺 Post-processing: applying trumpet mute to {len(file_paths)} tracks...")
+                    dry_paths = apply_mute_to_generation_files(file_paths, output_dir, process_id)
+                    result["dry_file_paths"] = dry_paths
+                return result
 
         # Apply speed slowdown if needed (before conditioning extraction)
         original_audio_path = audio_file_path
@@ -9679,7 +9144,13 @@ def generate_do_task(
             mix_download_path = f"/download/{process_id}/0.wav"
 
             print(f"\n🎉 Complete! {len(completed_voices)} voices + mix")
-            return {"file_paths": [mix_download_path] + completed_voices, "input_files": input_files}
+            all_paths = [mix_download_path] + completed_voices
+            result = {"file_paths": all_paths, "input_files": input_files}
+            if instrument_subgroup == 'muted_trumpet':
+                print(f"\n🎺 Post-processing: applying trumpet mute to {len(all_paths)} tracks...")
+                dry_paths = apply_mute_to_generation_files(all_paths, output_dir, process_id)
+                result["dry_file_paths"] = dry_paths
+            return result
 
         # Single-track processing continues below
         skip_to_monophonic = False
@@ -10203,7 +9674,13 @@ def generate_do_task(
                     except Exception as e:
                         print(f"  ⚠️ Error copying input file: {e}")
 
-                return {"file_paths": [f"/download/{process_id}/0.wav"], "input_files": input_files}
+                single_paths = [f"/download/{process_id}/0.wav"]
+                result = {"file_paths": single_paths, "input_files": input_files}
+                if instrument_subgroup == 'muted_trumpet':
+                    print(f"\n🎺 Post-processing: applying trumpet mute...")
+                    dry_paths = apply_mute_to_generation_files(single_paths, output_dir, process_id)
+                    result["dry_file_paths"] = dry_paths
+                return result
 
             else:
                 # Normal monophonic mode - generate all voices
@@ -10473,7 +9950,12 @@ def generate_do_task(
                 except Exception as e:
                     print(f"  ⚠️ Error copying master input file: {e}")
 
-            return {"file_paths": file_paths, "input_files": input_files}
+            result = {"file_paths": file_paths, "input_files": input_files}
+            if instrument_subgroup == 'muted_trumpet':
+                print(f"\n🎺 Post-processing: applying trumpet mute to {len(file_paths)} tracks...")
+                dry_paths = apply_mute_to_generation_files(file_paths, output_dir, process_id)
+                result["dry_file_paths"] = dry_paths
+            return result
 
         else:
             # Regular single-voice generation
@@ -10822,7 +10304,13 @@ def generate_do_task(
                 except Exception as e:
                     print(f"  ⚠️ Error copying input file: {e}")
 
-            return {"file_paths": [f"/download/{process_id}/0.wav"], "input_files": input_files}
+            single_paths2 = [f"/download/{process_id}/0.wav"]
+            result = {"file_paths": single_paths2, "input_files": input_files}
+            if instrument_subgroup == 'muted_trumpet':
+                print(f"\n🎺 Post-processing: applying trumpet mute...")
+                dry_paths = apply_mute_to_generation_files(single_paths2, output_dir, process_id)
+                result["dry_file_paths"] = dry_paths
+            return result
 
     except Exception as e:
         logging.error(f"❌ Error in ACE-Step generation: {e}")
@@ -10956,9 +10444,12 @@ def generate_simple_ace_step_task(
         if not output_path.exists():
             raise Exception("Output file was not created")
 
-        # Return file path
+        # Upload to GCS and get URL
+        audio_url = upload_audio_to_gcs(str(output_path), process_id, output_path.name)
+
+        # Return file path (GCS URL or fallback)
         return {
-            "file_paths": [f"/download-ace-step/{process_id}/{output_path.name}"],
+            "file_paths": [audio_url],
             "input_files": []
         }
 
@@ -11305,6 +10796,8 @@ async def generate_audio(
     encodec_onset_boost = 2.0
     enable_midi_export = False  # Default: don't export MIDI
     extract_formats = None  # Default: extract all formats
+    use_chords = False  # Default: don't use chord progression
+    chord_beat_map = {}  # Default: empty chord map
     if params:
         params_dict = json.loads(params)
         steps = params_dict.get('steps', steps)
@@ -11896,6 +11389,9 @@ def separate_stems_task(self, temp_input_path: str, process_id: str, mode: str =
     """
     Celery task for stem separation using Demucs
 
+    Uses /tmp for local processing, then uploads results to GCS.
+    Returns GCS URLs for immediate frontend access.
+
     Args:
         temp_input_path: Path to input audio file
         process_id: Unique ID for this separation job
@@ -11904,12 +11400,18 @@ def separate_stems_task(self, temp_input_path: str, process_id: str, mode: str =
     import subprocess
     import shutil
     from pathlib import Path
+    import os
+
+    # Import GCS functions (in case not available at module level in celery worker)
+    import sys
+    sys.path.insert(0, '/home/arlo/ScoreAI')
+    from gcs_storage import upload_to_gcs, get_gcs_url
 
     print(f"🎵 Starting stem separation task: {process_id} (mode: {mode})")
     print(f"   Input file: {temp_input_path}")
 
-    output_base_dir = Path("/home/arlo/ScoreAI/audiofiles")
-    output_dir = output_base_dir / f"stems_{process_id}"
+    # Use /tmp for local processing
+    output_dir = Path(f"/tmp/stems_{process_id}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -11961,30 +11463,47 @@ def separate_stems_task(self, temp_input_path: str, process_id: str, mode: str =
         if not stems_dir.exists():
             raise Exception(f"Stems directory not found: {stems_dir}")
 
-        # Copy stems to output directory
+        # Upload stems to GCS and collect URLs
         stem_files = {}
 
         for stem_name in expected_stems:
             stem_file = stems_dir / f"{stem_name}.wav"
             if stem_file.exists():
-                output_stem_path = output_dir / f"{stem_name}.wav"
-                shutil.copy(stem_file, output_stem_path)
-                download_url = f"/download-stem/{process_id}/{stem_name}.wav"
-                stem_files[stem_name] = download_url
-                print(f"   ✅ {stem_name}: {output_stem_path}")
+                # Upload to GCS: audiofiles/stems_{process_id}/{stem_name}.wav
+                gcs_path = f"gs://score-ai-generations/audiofiles/stems_{process_id}/{stem_name}.wav"
+                try:
+                    upload_to_gcs(str(stem_file), gcs_path=gcs_path, make_public=True)
+                    stem_url = get_gcs_url(gcs_path)
+                    stem_files[stem_name] = stem_url
+                    print(f"   ✅ {stem_name}: {stem_url}")
+                except Exception as upload_err:
+                    print(f"   ⚠️ GCS upload failed for {stem_name}, using fallback: {upload_err}")
+                    # Fallback: copy to local audiofiles dir and use download endpoint
+                    fallback_dir = Path("/home/arlo/ScoreAI/audiofiles") / f"stems_{process_id}"
+                    fallback_dir.mkdir(parents=True, exist_ok=True)
+                    fallback_path = fallback_dir / f"{stem_name}.wav"
+                    shutil.copy(stem_file, fallback_path)
+                    stem_files[stem_name] = f"/download-stem/{process_id}/{stem_name}.wav"
 
         # For 2-stem mode, also create "instrumental" alias for "no_vocals"
         if mode == "2s" and "no_vocals" in stem_files:
-            instrumental_path = output_dir / "instrumental.wav"
-            no_vocals_path = output_dir / "no_vocals.wav"
-            shutil.copy(no_vocals_path, instrumental_path)
-            stem_files["instrumental"] = f"/download-stem/{process_id}/instrumental.wav"
-            print(f"   ✅ instrumental: {instrumental_path} (alias for no_vocals)")
+            no_vocals_file = stems_dir / "no_vocals.wav"
+            if no_vocals_file.exists():
+                gcs_path = f"gs://score-ai-generations/audiofiles/stems_{process_id}/instrumental.wav"
+                try:
+                    upload_to_gcs(str(no_vocals_file), gcs_path=gcs_path, make_public=True)
+                    stem_files["instrumental"] = get_gcs_url(gcs_path)
+                    print(f"   ✅ instrumental: {stem_files['instrumental']} (alias for no_vocals)")
+                except Exception as upload_err:
+                    print(f"   ⚠️ GCS upload failed for instrumental: {upload_err}")
+                    stem_files["instrumental"] = f"/download-stem/{process_id}/instrumental.wav"
 
-        # Clean up temp input file
-        import os
+        # Clean up temp input file and local temp output
         if os.path.exists(temp_input_path):
             os.remove(temp_input_path)
+
+        # Clean up temp directory after successful upload
+        shutil.rmtree(output_dir, ignore_errors=True)
 
         print(f"✅ Stem separation complete: {len(stem_files)} stems (mode: {mode})")
 
@@ -11999,10 +11518,10 @@ def separate_stems_task(self, temp_input_path: str, process_id: str, mode: str =
         print(f"❌ Error during stem separation: {e}")
         import traceback
         traceback.print_exc()
-        # Clean up temp file on error
-        import os
+        # Clean up temp files on error
         if os.path.exists(temp_input_path):
             os.remove(temp_input_path)
+        shutil.rmtree(output_dir, ignore_errors=True)
         raise
 
 
@@ -12032,7 +11551,8 @@ async def separate_stems(
     # Use whichever file was provided
     uploaded_file = audio_file or audioFile
 
-    upload_dir = Path("/home/arlo/ScoreAI/uploads")
+    # Use /tmp for temporary file processing
+    upload_dir = Path("/tmp/stem_uploads")
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     # Handle URL-based separation (for ACE-Step generated files)
@@ -12061,9 +11581,11 @@ async def separate_stems(
                     shutil.copy(local_path, temp_input_path)
 
                 elif audioUrl.startswith('/download-upload/'):
-                    # Handle uploaded files
+                    # Handle uploaded files - check both old and new locations
                     filename = audioUrl.split('/')[-1]
-                    local_path = Path("/home/arlo/ScoreAI/uploads") / filename
+                    local_path = Path("/tmp/uploads") / filename
+                    if not local_path.exists():
+                        local_path = Path("/home/arlo/ScoreAI/uploads") / filename
 
                     if not local_path.exists():
                         raise HTTPException(404, f"Audio file not found: {audioUrl}")
@@ -12178,11 +11700,733 @@ async def get_stem_separation_status(task_id: str):
 
 @app.get("/download-stem/{process_id}/{filename}")
 async def download_stem(process_id: str, filename: str):
-    """Download separated stem file"""
+    """Download separated stem file - checks local then GCS"""
+    from fastapi.responses import RedirectResponse
+
+    # Check local file first
     file_path = Path("/home/arlo/ScoreAI/audiofiles") / f"stems_{process_id}" / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail=f"Stem file not found: {filename}")
-    return FileResponse(file_path, media_type="audio/wav", filename=filename)
+    if file_path.exists():
+        return FileResponse(file_path, media_type="audio/wav", filename=filename)
+
+    # Check /tmp (new location)
+    tmp_path = Path(f"/tmp/stems_{process_id}") / filename
+    if tmp_path.exists():
+        return FileResponse(tmp_path, media_type="audio/wav", filename=filename)
+
+    # Try GCS redirect
+    gcs_url = f"https://storage.googleapis.com/score-ai-generations/audiofiles/stems_{process_id}/{filename}"
+    try:
+        import subprocess
+        gcs_path = f"gs://score-ai-generations/audiofiles/stems_{process_id}/{filename}"
+        result = subprocess.run(["gsutil", "ls", gcs_path], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return RedirectResponse(url=gcs_url, status_code=302)
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=404, detail=f"Stem file not found: {filename}")
+
+
+# =============================================================================
+# Trumpet Mute - ONNX waveform-domain mute translator
+# =============================================================================
+
+_mute_onnx_cache = {
+    "finetuned_session": None,
+    "original_session": None,
+}
+
+MUTE_ONNX_FINETUNED = "/home/arlo/do-repo/mute_translator/Resources copy/mute_translator_finetuned.onnx"
+MUTE_ONNX_ORIGINAL = "/home/arlo/do-repo/mute_translator/Resources copy/mute_translator_original.onnx"
+
+
+def apply_mute_onnx(input_path: str, output_path: str):
+    """
+    Run audio through finetuned → original ONNX models sequentially.
+    Input/output: WAV files. Models expect [1, 2, T] float32 stereo @ 44100 Hz.
+    """
+    import onnxruntime as ort
+    import torchaudio
+    import numpy as np
+
+    global _mute_onnx_cache
+
+    # Load/cache ONNX sessions
+    if _mute_onnx_cache["finetuned_session"] is None:
+        print(f"   Loading finetuned mute ONNX model...")
+        _mute_onnx_cache["finetuned_session"] = ort.InferenceSession(
+            MUTE_ONNX_FINETUNED, providers=["CPUExecutionProvider"]
+        )
+    if _mute_onnx_cache["original_session"] is None:
+        print(f"   Loading original mute ONNX model...")
+        _mute_onnx_cache["original_session"] = ort.InferenceSession(
+            MUTE_ONNX_ORIGINAL, providers=["CPUExecutionProvider"]
+        )
+
+    finetuned = _mute_onnx_cache["finetuned_session"]
+    original = _mute_onnx_cache["original_session"]
+
+    # Load audio
+    audio, sr = torchaudio.load(input_path)
+
+    # Resample to 44100 if needed
+    if sr != 44100:
+        print(f"   Resampling from {sr} to 44100")
+        audio = torchaudio.transforms.Resample(sr, 44100)(audio)
+
+    # Ensure stereo [2, T]
+    if audio.shape[0] == 1:
+        audio = audio.repeat(2, 1)
+    elif audio.shape[0] > 2:
+        audio = audio[:2]
+
+    # Convert to numpy [1, 2, T]
+    audio_np = audio.unsqueeze(0).numpy().astype(np.float32)
+
+    # Run finetuned → intermediate
+    print(f"   Running finetuned ONNX model... input shape: {audio_np.shape}")
+    intermediate = finetuned.run(["audio_out"], {"audio_in": audio_np})[0]
+
+    # Run intermediate → original → final muted
+    print(f"   Running original ONNX model... input shape: {intermediate.shape}")
+    muted = original.run(["audio_out"], {"audio_in": intermediate})[0]
+
+    # Normalize and save
+    import torch
+    muted_tensor = torch.from_numpy(muted).squeeze(0)  # [2, T]
+    max_val = muted_tensor.abs().max()
+    if max_val > 0:
+        muted_tensor = muted_tensor / max_val * 0.9
+
+    torchaudio.save(output_path, muted_tensor, 44100)
+    print(f"   Saved muted audio: {output_path}")
+
+
+def apply_mute_to_generation_files(file_paths: list, output_dir, process_id: str) -> list:
+    """
+    Post-process generated voice files through mute ONNX models.
+    For each voice file, saves a dry copy and overwrites with muted version.
+    Returns list of dry file download paths.
+    """
+    import shutil
+    from pathlib import Path
+
+    output_dir = Path(output_dir)
+    dry_file_paths = []
+
+    for fp in file_paths:
+        # fp is like "/download/{process_id}/1.wav"
+        parts = fp.split("/")
+        filename = parts[-1]  # e.g. "1.wav"
+        stem = Path(filename).stem  # e.g. "1"
+
+        voice_file = output_dir / filename
+        if not voice_file.exists():
+            print(f"   ⚠️ Voice file not found for muting: {voice_file}")
+            dry_file_paths.append(None)
+            continue
+
+        # Save dry copy
+        dry_filename = f"{stem}_dry.wav"
+        dry_file = output_dir / dry_filename
+        shutil.copy(str(voice_file), str(dry_file))
+        dry_download_path = f"/download/{process_id}/{dry_filename}"
+        dry_file_paths.append(dry_download_path)
+
+        # Apply mute in-place
+        print(f"   🎺 Applying mute to {filename}...")
+        apply_mute_onnx(str(voice_file), str(voice_file))
+        print(f"   ✅ Muted {filename}")
+
+    return dry_file_paths
+
+
+# =============================================================================
+# Audio Clarifier - Improve timbre quality for generated instruments
+# =============================================================================
+
+# Model cache for clarifier (avoid reloading on each request)
+_clarifier_cache = {
+    "clarifier": None,
+    "dcae": None,
+    "device": None
+}
+
+# Group/subgroup ID mappings (must match clarifier training)
+CLARIFIER_GROUPS = ["piano", "guitar", "bass", "strings", "brass", "winds"]
+CLARIFIER_SUBGROUPS = {
+    "piano": ["acoustic_piano", "keys", "undefined"],
+    "guitar": ["acoustic_guitar", "electric_guitar", "plucked", "undefined"],
+    "bass": ["electric_bass", "upright_bass", "undefined"],
+    "strings": ["violin", "viola", "cello", "undefined"],
+    "brass": ["trumpet", "trombone", "french_horn", "tuba", "undefined"],
+    "winds": ["bassoon", "clarinet", "flute", "oboe", "sax"],
+}
+
+def get_group_subgroup_ids(group_name: str, subgroup_name: str):
+    """Convert group/subgroup names to IDs for the clarifier model."""
+    group_name = group_name.lower().strip()
+    subgroup_name = subgroup_name.lower().strip()
+
+    # Get group ID
+    group_id = CLARIFIER_GROUPS.index(group_name) if group_name in CLARIFIER_GROUPS else 0
+
+    # Build global subgroup list (same order as training)
+    all_subgroups = sorted({sg for subs in CLARIFIER_SUBGROUPS.values() for sg in subs})
+    subgroup_id = all_subgroups.index(subgroup_name) if subgroup_name in all_subgroups else 0
+
+    return group_id, subgroup_id
+
+
+@celery_app.task(bind=True, name="clarify_audio_task")
+def clarify_audio_task(self, temp_input_path: str, process_id: str, group_id: int, subgroup_id: int):
+    """
+    Celery task for audio clarification using InstrumentClarifier
+
+    Uses /tmp for local processing, then uploads results to GCS.
+    Returns GCS URLs for immediate frontend access.
+
+    Args:
+        temp_input_path: Path to input audio file
+        process_id: Unique ID for this clarification job
+        group_id: Instrument group ID (0-5)
+        subgroup_id: Instrument subgroup ID
+    """
+    import sys
+    import os
+    import shutil
+    import torch
+    import torchaudio
+    from pathlib import Path
+
+    # Add clarifier paths
+    sys.path.insert(0, '/home/arlo/do-repo/home/arlo/Data/clarifier')
+    sys.path.insert(0, '/home/arlo/Data/dø')
+    sys.path.insert(0, '/home/arlo/Data/ACE-Step')
+    sys.path.insert(0, '/home/arlo/ScoreAI')
+    from gcs_storage import upload_to_gcs, get_gcs_url
+
+    print(f"🎺 Starting audio clarification task: {process_id}")
+    print(f"   Input file: {temp_input_path}")
+    print(f"   Group ID: {group_id}, Subgroup ID: {subgroup_id}")
+
+    # Use /tmp for local processing
+    output_dir = Path(f"/tmp/clarified_{process_id}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from models import InstrumentClarifier
+        from do.pipeline_do import DoTrainComponents
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        # Use cached models if available
+        global _clarifier_cache
+
+        if _clarifier_cache["clarifier"] is None or _clarifier_cache["device"] != device:
+            # Load clarifier model
+            clarifier_checkpoint = "/mnt/models/clarifier_checkpoints/brass_v2/best.pt"
+            print(f"   Loading clarifier from: {clarifier_checkpoint}")
+
+            clarifier = InstrumentClarifier(group_vocab=6, subgroup_vocab=20)
+            ckpt = torch.load(clarifier_checkpoint, map_location="cpu", weights_only=False)
+            clarifier.load_state_dict(ckpt["model_state_dict"])
+            clarifier.to(device).eval()
+            _clarifier_cache["clarifier"] = clarifier
+            _clarifier_cache["device"] = device
+            print(f"   ✅ Clarifier loaded and cached")
+        else:
+            clarifier = _clarifier_cache["clarifier"]
+            print(f"   ✅ Using cached clarifier")
+
+        if _clarifier_cache["dcae"] is None:
+            # Load DCAE for encode/decode
+            ace_checkpoint_dir = "/home/arlo/Data/ACE-Step/checkpoints/models--ACE-Step--ACE-Step-v1-3.5B/snapshots/82cd0d7b6322bd28cd4e830fe675ddb6180ce36c"
+            print(f"   Loading DCAE from: {ace_checkpoint_dir}")
+
+            comps = DoTrainComponents(checkpoint_dir=ace_checkpoint_dir, dtype="float32")
+            comps.device = torch.device(device)
+            dcae = comps.load_dcae()
+            dcae.to(device).eval()
+            _clarifier_cache["dcae"] = dcae
+            print(f"   ✅ DCAE loaded and cached")
+        else:
+            dcae = _clarifier_cache["dcae"]
+            print(f"   ✅ Using cached DCAE")
+
+        # Load and preprocess audio
+        print(f"   Loading audio: {temp_input_path}")
+        waveform, sr = torchaudio.load(temp_input_path)
+
+        # Resample to DCAE sample rate (44100) if needed
+        dcae_sr = 44100
+        if sr != dcae_sr:
+            print(f"   Resampling from {sr} to {dcae_sr}")
+            resampler = torchaudio.transforms.Resample(sr, dcae_sr)
+            waveform = resampler(waveform)
+
+        # Convert to stereo if mono
+        if waveform.shape[0] == 1:
+            waveform = waveform.repeat(2, 1)
+        elif waveform.shape[0] > 2:
+            waveform = waveform[:2]
+
+        # Add batch dimension [1, 2, T]
+        waveform = waveform.unsqueeze(0).to(device)
+        audio_lengths = torch.tensor([waveform.shape[-1]], device=device)
+
+        print(f"   Audio shape: {waveform.shape}, length: {waveform.shape[-1] / dcae_sr:.2f}s")
+
+        # Encode to DCAE latent
+        print(f"   Encoding to DCAE latent...")
+        with torch.no_grad():
+            dcae_param = next(dcae.parameters())
+            waveform = waveform.to(dtype=dcae_param.dtype)
+            encode_result = dcae.encode(waveform, audio_lengths=audio_lengths, sr=dcae_sr)
+            # encode returns (latent, lengths) tuple
+            if isinstance(encode_result, tuple):
+                latent = encode_result[0]
+            else:
+                latent = encode_result
+
+        print(f"   Latent shape: {latent.shape}")  # [B, 8, 16, T_slow]
+
+        # Apply clarifier
+        print(f"   Applying clarifier...")
+        g_id = torch.tensor([group_id], device=device, dtype=torch.long)
+        sg_id = torch.tensor([subgroup_id], device=device, dtype=torch.long)
+
+        with torch.no_grad():
+            # Make latent contiguous and float for clarifier
+            latent = latent.float().contiguous()
+            clarified_latent = clarifier(latent, g_id, sg_id)
+
+        print(f"   Clarified latent shape: {clarified_latent.shape}")
+
+        # Decode back to audio
+        print(f"   Decoding to audio...")
+        with torch.no_grad():
+            clarified_latent = clarified_latent.to(dtype=dcae_param.dtype)
+            decode_result = dcae.decode(clarified_latent, audio_lengths=audio_lengths, sr=48000)
+            # decode returns (sr, audio) or similar tuple
+            if isinstance(decode_result, tuple):
+                sr_out = decode_result[0]
+                clarified_audio = decode_result[1]
+            else:
+                sr_out = 48000
+                clarified_audio = decode_result
+
+            # Handle if audio is a list
+            if isinstance(clarified_audio, list):
+                clarified_audio = clarified_audio[0]
+
+        print(f"   Decoded audio shape: {clarified_audio.shape}, sr: {sr_out}")
+
+        # Save output locally first
+        output_path = output_dir / "clarified.wav"
+        clarified_audio = clarified_audio.squeeze(0).cpu().float()
+        torchaudio.save(str(output_path), clarified_audio, sr_out)
+
+        print(f"   ✅ Saved clarified audio locally: {output_path}")
+
+        # Upload to GCS
+        gcs_path = f"gs://score-ai-generations/audiofiles/clarified_{process_id}/clarified.wav"
+        try:
+            upload_to_gcs(str(output_path), gcs_path=gcs_path, make_public=True)
+            clarified_url = get_gcs_url(gcs_path)
+            print(f"   ✅ Uploaded to GCS: {clarified_url}")
+        except Exception as upload_err:
+            print(f"   ⚠️ GCS upload failed, using fallback: {upload_err}")
+            # Fallback: copy to local audiofiles dir
+            fallback_dir = Path("/home/arlo/ScoreAI/audiofiles") / f"clarified_{process_id}"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy(output_path, fallback_dir / "clarified.wav")
+            clarified_url = f"/download-clarified/{process_id}/clarified.wav"
+
+        # Clean up temp files
+        if os.path.exists(temp_input_path):
+            os.remove(temp_input_path)
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+        return {
+            "process_id": process_id,
+            "clarified_url": clarified_url,
+            "group_id": group_id,
+            "subgroup_id": subgroup_id
+        }
+
+    except Exception as e:
+        print(f"❌ Error during audio clarification: {e}")
+        import traceback
+        traceback.print_exc()
+        # Clean up temp files on error
+        if os.path.exists(temp_input_path):
+            os.remove(temp_input_path)
+        shutil.rmtree(output_dir, ignore_errors=True)
+        raise
+
+
+@app.post("/clarify-audio")
+async def clarify_audio(
+    audioFile: Optional[UploadFile] = File(None),
+    audioUrl: Optional[str] = Form(None),
+    instrumentGroup: str = Form(...),
+    instrumentSubgroup: str = Form(...)
+):
+    """
+    Clarify audio to improve instrument timbre quality
+
+    Args:
+        audioFile: Optional uploaded audio file
+        audioUrl: Optional URL to audio file
+        instrumentGroup: Instrument group name (e.g., 'brass', 'strings')
+        instrumentSubgroup: Instrument subgroup name (e.g., 'trumpet', 'violin')
+
+    Returns: Task ID for polling
+    """
+    import uuid
+    import shutil
+    import httpx
+
+    print(f"🎺 Received /clarify-audio request")
+    print(f"   Group: {instrumentGroup}, Subgroup: {instrumentSubgroup}")
+
+    # Get group/subgroup IDs
+    group_id, subgroup_id = get_group_subgroup_ids(instrumentGroup, instrumentSubgroup)
+    print(f"   Resolved IDs - Group: {group_id}, Subgroup: {subgroup_id}")
+
+    upload_dir = Path("/home/arlo/ScoreAI/uploads")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    temp_input_path = None
+
+    # Handle URL-based clarification
+    if audioUrl and not audioFile:
+        print(f"   Processing URL: {audioUrl}")
+
+        try:
+            # Handle relative URLs (local files)
+            if audioUrl.startswith('/'):
+                if audioUrl.startswith('/download-ace-step/'):
+                    filename = audioUrl.split('/')[-1]
+                    local_path = Path("/home/arlo/Data/output_audio") / filename
+                elif audioUrl.startswith('/download-upload/'):
+                    filename = audioUrl.split('/')[-1]
+                    local_path = Path("/home/arlo/ScoreAI/uploads") / filename
+                elif audioUrl.startswith('/download/'):
+                    # Handle /download/{process_id}/{voice}.wav paths
+                    parts = audioUrl.split('/')
+                    process_id_part = parts[-2]
+                    filename = parts[-1]
+                    local_path = Path("/home/arlo/ScoreAI/audiofiles") / f"ace_step_output_{process_id_part}" / filename
+                else:
+                    raise HTTPException(400, f"Unsupported URL format: {audioUrl}")
+
+                if not local_path.exists():
+                    raise HTTPException(404, f"Audio file not found: {audioUrl}")
+
+                print(f"   Using local file: {local_path}")
+                file_extension = local_path.suffix.lower()
+                temp_input_path = str(upload_dir / f"{uuid.uuid4()}{file_extension}")
+                shutil.copy(local_path, temp_input_path)
+            else:
+                # External URL - download via HTTP
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(audioUrl)
+                    if response.status_code != 200:
+                        raise HTTPException(500, f"Failed to download audio from URL: {response.status_code}")
+
+                    content_type = response.headers.get('content-type', '')
+                    if 'wav' in content_type:
+                        file_extension = '.wav'
+                    elif 'mp3' in content_type:
+                        file_extension = '.mp3'
+                    else:
+                        file_extension = Path(audioUrl).suffix or '.wav'
+
+                    temp_input_path = str(upload_dir / f"{uuid.uuid4()}{file_extension}")
+                    with open(temp_input_path, "wb") as f:
+                        f.write(response.content)
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"❌ Error processing audio URL: {e}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(500, f"Failed to process audio: {str(e)}")
+
+    # Handle file upload
+    elif audioFile and audioFile.filename:
+        print(f"   Processing uploaded file: {audioFile.filename}")
+        file_extension = Path(audioFile.filename).suffix.lower()
+        temp_input_path = str(upload_dir / f"{uuid.uuid4()}{file_extension}")
+        with open(temp_input_path, "wb") as f:
+            content = await audioFile.read()
+            f.write(content)
+    else:
+        raise HTTPException(400, "No audio file or URL provided")
+
+    print(f"   Saved to: {temp_input_path}")
+
+    # Generate process ID
+    process_id = str(uuid.uuid4())
+
+    # Queue Celery task
+    print(f"🚀 Queuing clarify audio task: {process_id}")
+    task = clarify_audio_task.delay(temp_input_path, process_id, group_id, subgroup_id)
+
+    print(f"✅ Task queued: {task.id}")
+
+    return {
+        "task_id": task.id,
+        "process_id": process_id,
+        "status": "processing"
+    }
+
+
+@app.get("/clarify-audio/status/{task_id}")
+async def get_clarify_status(task_id: str):
+    """Get status of clarify audio task"""
+    task_result = celery_app.AsyncResult(task_id)
+
+    if task_result.state == 'PENDING':
+        return {"status": "processing", "task_id": task_id}
+    elif task_result.state == 'SUCCESS':
+        result = task_result.result
+        return {
+            "status": "completed",
+            "task_id": task_id,
+            "process_id": result["process_id"],
+            "clarified_url": result["clarified_url"]
+        }
+    elif task_result.state == 'FAILURE':
+        return {
+            "status": "failed",
+            "task_id": task_id,
+            "error": str(task_result.info)
+        }
+    else:
+        return {"status": task_result.state.lower(), "task_id": task_id}
+
+
+@app.get("/download-clarified/{process_id}/{filename}")
+async def download_clarified(process_id: str, filename: str):
+    """Download clarified audio file - checks local then GCS"""
+    from fastapi.responses import RedirectResponse
+
+    # Check local file first
+    file_path = Path("/home/arlo/ScoreAI/audiofiles") / f"clarified_{process_id}" / filename
+    if file_path.exists():
+        return FileResponse(file_path, media_type="audio/wav", filename=filename)
+
+    # Check /tmp (new location)
+    tmp_path = Path(f"/tmp/clarified_{process_id}") / filename
+    if tmp_path.exists():
+        return FileResponse(tmp_path, media_type="audio/wav", filename=filename)
+
+    # Try GCS redirect
+    gcs_url = f"https://storage.googleapis.com/score-ai-generations/audiofiles/clarified_{process_id}/{filename}"
+    try:
+        import subprocess
+        gcs_path = f"gs://score-ai-generations/audiofiles/clarified_{process_id}/{filename}"
+        result = subprocess.run(["gsutil", "ls", gcs_path], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return RedirectResponse(url=gcs_url, status_code=302)
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=404, detail=f"Clarified file not found: {filename}")
+
+
+# =============================================================================
+# Apply FX - Generic audio FX endpoint (trumpet mute, future effects)
+# =============================================================================
+
+@celery_app.task(bind=True, name="apply_fx_task")
+def apply_fx_task(self, temp_input_path: str, process_id: str, fx_type: str):
+    """
+    Celery task for applying audio FX.
+
+    Supported fx_type values:
+        - 'trumpet_mute': Run through finetuned → original ONNX mute models
+    """
+    from pathlib import Path
+    from gcs_storage import upload_to_gcs, get_gcs_url
+
+    print(f"🎛️ Starting apply_fx task: {process_id}, fx_type={fx_type}")
+    print(f"   Input file: {temp_input_path}")
+
+    output_dir = Path(f"/tmp/fx_{process_id}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if fx_type == "trumpet_mute":
+            output_path = str(output_dir / "muted.wav")
+            apply_mute_onnx(temp_input_path, output_path)
+        else:
+            raise ValueError(f"Unknown fx_type: {fx_type}")
+
+        # Upload to GCS
+        output_filename = Path(output_path).name
+        gcs_path = f"gs://score-ai-generations/audiofiles/fx_{process_id}/{output_filename}"
+        try:
+            upload_to_gcs(output_path, gcs_path=gcs_path, make_public=True)
+            fx_url = f"https://storage.googleapis.com/score-ai-generations/audiofiles/fx_{process_id}/{output_filename}"
+            print(f"   ✅ Uploaded to GCS: {fx_url}")
+        except Exception as e:
+            print(f"   ⚠️ GCS upload failed, using local URL: {e}")
+            fx_url = f"/download-fx/{process_id}/{output_filename}"
+
+        return {
+            "process_id": process_id,
+            "fx_url": fx_url,
+            "fx_type": fx_type,
+        }
+
+    except Exception as e:
+        print(f"❌ FX task failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+
+@app.post("/api/apply-fx")
+async def apply_fx(
+    audioFile: Optional[UploadFile] = File(None),
+    audioUrl: Optional[str] = Form(None),
+    fxType: str = Form(...),
+):
+    """
+    Apply an audio FX to a track.
+
+    Args:
+        audioFile: Optional uploaded audio file
+        audioUrl: Optional URL to existing audio
+        fxType: FX type to apply (e.g., 'trumpet_mute')
+    """
+    import uuid
+    import shutil
+    import httpx
+
+    print(f"🎛️ Received /api/apply-fx request, fxType={fxType}")
+
+    upload_dir = Path("/home/arlo/ScoreAI/uploads")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    temp_input_path = None
+
+    # Handle URL-based input
+    if audioUrl and not audioFile:
+        print(f"   Processing URL: {audioUrl}")
+        try:
+            if audioUrl.startswith('/'):
+                if audioUrl.startswith('/download-ace-step/'):
+                    filename = audioUrl.split('/')[-1]
+                    local_path = Path("/home/arlo/Data/output_audio") / filename
+                elif audioUrl.startswith('/download-upload/'):
+                    filename = audioUrl.split('/')[-1]
+                    local_path = Path("/home/arlo/ScoreAI/uploads") / filename
+                elif audioUrl.startswith('/download/'):
+                    parts = audioUrl.split('/')
+                    process_id_part = parts[-2]
+                    filename = parts[-1]
+                    local_path = Path("/home/arlo/ScoreAI/audiofiles") / f"ace_step_output_{process_id_part}" / filename
+                else:
+                    raise HTTPException(400, f"Unsupported URL format: {audioUrl}")
+
+                if not local_path.exists():
+                    raise HTTPException(404, f"Audio file not found: {audioUrl}")
+
+                file_extension = local_path.suffix.lower()
+                temp_input_path = str(upload_dir / f"{uuid.uuid4()}{file_extension}")
+                shutil.copy(local_path, temp_input_path)
+            else:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(audioUrl)
+                    if response.status_code != 200:
+                        raise HTTPException(500, f"Failed to download audio: {response.status_code}")
+                    content_type = response.headers.get('content-type', '')
+                    file_extension = '.wav' if 'wav' in content_type else ('.mp3' if 'mp3' in content_type else (Path(audioUrl).suffix or '.wav'))
+                    temp_input_path = str(upload_dir / f"{uuid.uuid4()}{file_extension}")
+                    with open(temp_input_path, "wb") as f:
+                        f.write(response.content)
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"❌ Error processing audio URL: {e}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(500, f"Failed to process audio: {str(e)}")
+
+    elif audioFile and audioFile.filename:
+        file_extension = Path(audioFile.filename).suffix.lower()
+        temp_input_path = str(upload_dir / f"{uuid.uuid4()}{file_extension}")
+        with open(temp_input_path, "wb") as f:
+            content = await audioFile.read()
+            f.write(content)
+    else:
+        raise HTTPException(400, "No audio file or URL provided")
+
+    process_id = str(uuid.uuid4())
+    print(f"🚀 Queuing apply_fx task: {process_id}")
+    task = apply_fx_task.delay(temp_input_path, process_id, fxType)
+    print(f"✅ Task queued: {task.id}")
+
+    return {
+        "task_id": task.id,
+        "process_id": process_id,
+        "status": "processing"
+    }
+
+
+@app.get("/api/apply-fx/status/{task_id}")
+async def get_apply_fx_status(task_id: str):
+    """Get status of apply-fx task"""
+    task_result = celery_app.AsyncResult(task_id)
+
+    if task_result.state == 'PENDING':
+        return {"status": "processing", "task_id": task_id}
+    elif task_result.state == 'SUCCESS':
+        result = task_result.result
+        return {
+            "status": "completed",
+            "task_id": task_id,
+            "process_id": result["process_id"],
+            "fx_url": result["fx_url"],
+            "fx_type": result["fx_type"],
+        }
+    elif task_result.state == 'FAILURE':
+        return {
+            "status": "failed",
+            "task_id": task_id,
+            "error": str(task_result.info)
+        }
+    else:
+        return {"status": task_result.state.lower(), "task_id": task_id}
+
+
+@app.get("/download-fx/{process_id}/{filename}")
+async def download_fx(process_id: str, filename: str):
+    """Download FX-processed audio file"""
+    from fastapi.responses import RedirectResponse
+
+    tmp_path = Path(f"/tmp/fx_{process_id}") / filename
+    if tmp_path.exists():
+        return FileResponse(tmp_path, media_type="audio/wav", filename=filename)
+
+    gcs_url = f"https://storage.googleapis.com/score-ai-generations/audiofiles/fx_{process_id}/{filename}"
+    try:
+        import subprocess
+        gcs_path = f"gs://score-ai-generations/audiofiles/fx_{process_id}/{filename}"
+        result = subprocess.run(["gsutil", "ls", gcs_path], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return RedirectResponse(url=gcs_url, status_code=302)
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=404, detail=f"FX file not found: {filename}")
+
 
 @app.post("/api/upload-audio")
 async def upload_audio(
@@ -12703,11 +12947,32 @@ async def get_task_status(task_id: str):
 
 @app.get("/download/{process_id}/{filename}")
 async def download_audio(process_id: str, filename: str):
-    """Download generated audio file"""
+    """Download generated audio file - checks local then GCS"""
+    from fastapi.responses import RedirectResponse
+
+    # Check local file first
     file_path = Path("/home/arlo/ScoreAI/audiofiles") / f"ace_step_output_{process_id}" / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(file_path, media_type="audio/wav")
+    if file_path.exists():
+        return FileResponse(file_path, media_type="audio/wav")
+
+    # Check /tmp (new location)
+    tmp_path = Path(f"/tmp/ace_step_output_{process_id}") / filename
+    if tmp_path.exists():
+        return FileResponse(tmp_path, media_type="audio/wav")
+
+    # Try GCS redirect
+    gcs_url = f"https://storage.googleapis.com/score-ai-generations/audiofiles/ace_step_output_{process_id}/{filename}"
+    # Check if GCS file exists by trying to verify
+    try:
+        import subprocess
+        gcs_path = f"gs://score-ai-generations/audiofiles/ace_step_output_{process_id}/{filename}"
+        result = subprocess.run(["gsutil", "ls", gcs_path], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return RedirectResponse(url=gcs_url, status_code=302)
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=404, detail="File not found")
 
 @app.get("/api/list-midi-files")
 async def list_midi_files():
@@ -13025,6 +13290,121 @@ def get_cached_plugin(plugin_path: str):
         print(f"   📊 Current cache has {len(_VST_PLUGIN_CACHE)} plugins")
 
     return _VST_PLUGIN_CACHE[plugin_path]
+
+
+@app.post("/api/vocal-harmonizer")
+async def vocal_harmonizer(
+    audioFile: UploadFile = File(...),
+    numHarmonies: int = Form(2),
+    voicingStyle: str = Form("thirds"),
+    key: str = Form("C"),
+    mode: str = Form("major"),
+    noiseLevel: float = Form(0.3),
+    useAceStep: bool = Form(False)
+):
+    """
+    Generate vocal harmonies from input audio.
+
+    Args:
+        audioFile: Input vocal audio file
+        numHarmonies: Number of harmony voices (1-4)
+        voicingStyle: Harmony style (thirds, sixths, power, close, wide, jazz, minor, barbershop)
+        key: Musical key (C, C#, D, etc. or 'chromatic')
+        mode: Scale mode ('major' or 'minor')
+        noiseLevel: Noise reduction amount (0.0 - 1.0)
+        useAceStep: Use ACE-Step for natural vocal rendering
+
+    Returns:
+        Dictionary with harmony audio URLs, MIDI path, and extracted lyrics
+    """
+    import uuid
+
+    print(f"🎤 Received /api/vocal-harmonizer request")
+    print(f"   Harmonies: {numHarmonies}, Style: {voicingStyle}, Key: {key} {mode}")
+
+    if not audioFile or not audioFile.filename:
+        raise HTTPException(400, "No audio file provided")
+
+    try:
+        # Save uploaded audio
+        upload_id = str(uuid.uuid4())
+        output_dir = Path(f"/home/arlo/ScoreAI/harmonizer_output_{upload_id}")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        audio_path = output_dir / f"input_{audioFile.filename}"
+        with open(audio_path, "wb") as f:
+            content = await audioFile.read()
+            f.write(content)
+
+        print(f"   Saved input: {audio_path}")
+
+        # Import vocal harmonizer
+        sys.path.insert(0, '/home/arlo/do-repo/harmonymodule')
+        from vocal_harmonizer import harmonize_vocal
+
+        # Run harmonization
+        result = harmonize_vocal(
+            audio_path=str(audio_path),
+            output_dir=str(output_dir),
+            voicing_style=voicingStyle,
+            num_harmonies=min(numHarmonies, 4),
+            key=key,
+            mode=mode,
+            noise_level=noiseLevel,
+            extract_lyrics=True,
+            use_ace_step=useAceStep
+        )
+
+        # Convert file paths to download URLs
+        harmony_urls = []
+        for i, audio_path in enumerate(result.get('harmony_audio', [])):
+            filename = Path(audio_path).name
+            url = f"/download-harmonizer/{upload_id}/{filename}"
+            harmony_urls.append(url)
+
+        midi_url = None
+        if result.get('harmony_midi'):
+            midi_filename = Path(result['harmony_midi']).name
+            midi_url = f"/download-harmonizer/{upload_id}/{midi_filename}"
+
+        return {
+            "harmony_audio": harmony_urls,
+            "harmony_midi": midi_url,
+            "lyrics": result.get('lyrics'),
+            "voicing_style": result.get('voicing_style'),
+            "num_harmonies": len(harmony_urls),
+            "key": key,
+            "mode": mode,
+            "process_id": upload_id
+        }
+
+    except Exception as e:
+        print(f"❌ Vocal harmonizer error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"Harmonization failed: {str(e)}")
+
+
+@app.get("/download-harmonizer/{process_id}/{filename}")
+async def download_harmonizer_file(process_id: str, filename: str):
+    """Download generated harmony file"""
+    file_path = Path(f"/home/arlo/ScoreAI/harmonizer_output_{process_id}") / filename
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+
+    # Determine media type
+    ext = file_path.suffix.lower()
+    media_types = {
+        '.wav': 'audio/wav',
+        '.mp3': 'audio/mpeg',
+        '.mid': 'audio/midi',
+        '.midi': 'audio/midi'
+    }
+    media_type = media_types.get(ext, 'application/octet-stream')
+
+    return FileResponse(file_path, media_type=media_type, filename=filename)
+
 
 @app.post("/api/download-with-fx")
 async def download_with_fx(
@@ -13916,11 +14296,32 @@ async def generate_ace_step_endpoint(
 
 @app.get("/download-ace-step/{process_id}/{filename}")
 async def download_ace_step_audio(process_id: str, filename: str):
-    """Serve ACE-Step generated audio files"""
-    file_path = Path(f"./generated_ui/ace_step_{process_id}") / filename
-    if not file_path.exists():
-        raise HTTPException(404, "ACE-Step audio file not found")
-    return FileResponse(file_path, media_type="audio/wav", filename=filename)
+    """Serve ACE-Step generated audio files - checks local then GCS"""
+    from fastapi.responses import RedirectResponse
+
+    # Check multiple local locations
+    paths_to_check = [
+        Path(f"./generated_ui/ace_step_{process_id}") / filename,
+        Path("/home/arlo/ScoreAI/audiofiles") / f"ace_step_output_{process_id}" / filename,
+        Path(f"/tmp/ace_step_output_{process_id}") / filename,
+    ]
+
+    for file_path in paths_to_check:
+        if file_path.exists():
+            return FileResponse(file_path, media_type="audio/wav", filename=filename)
+
+    # Try GCS redirect
+    gcs_url = f"https://storage.googleapis.com/score-ai-generations/audiofiles/ace_step_output_{process_id}/{filename}"
+    try:
+        import subprocess
+        gcs_path = f"gs://score-ai-generations/audiofiles/ace_step_output_{process_id}/{filename}"
+        result = subprocess.run(["gsutil", "ls", gcs_path], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return RedirectResponse(url=gcs_url, status_code=302)
+    except Exception:
+        pass
+
+    raise HTTPException(404, "ACE-Step audio file not found")
 
 
 

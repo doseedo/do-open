@@ -79,6 +79,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 
 LATENTS_ROOT = Path("/home/arlo/gcs-bucket/Latents")
 AUDIO_ROOT = Path("/home/arlo/gcs-bucket")
+FORMAT_MANIFEST_PATH = Path("/home/arlo/gcs-bucket/Manifests/format_manifest.json")
 
 # Confidence thresholds
 CONFIDENCE_HIGH = 0.85
@@ -100,6 +101,40 @@ HIDDEN_DIM = 256
 
 # Feature extraction - pooling strategies
 POOL_METHODS = ['mean', 'std', 'max']  # Results in 8*16*3 = 384 features
+
+
+# ===================== LATENT EXISTENCE LOOKUP =====================
+
+# Cached has_latent lookup from format_manifest.json
+_has_latent_cache: Optional[Dict[str, bool]] = None
+
+def load_has_latent_lookup() -> Dict[str, bool]:
+    """Load has_latent data from format_manifest.json.
+
+    Returns dict mapping audio path -> bool (has latent).
+    Cached after first load.
+    """
+    global _has_latent_cache
+    if _has_latent_cache is not None:
+        return _has_latent_cache
+
+    if not FORMAT_MANIFEST_PATH.exists():
+        logging.warning(f"Format manifest not found: {FORMAT_MANIFEST_PATH}")
+        _has_latent_cache = {}
+        return _has_latent_cache
+
+    logging.info(f"Loading has_latent lookup from {FORMAT_MANIFEST_PATH}...")
+    with open(FORMAT_MANIFEST_PATH) as f:
+        format_manifest = json.load(f)
+
+    _has_latent_cache = {}
+    entries = format_manifest.get('entries', format_manifest) if isinstance(format_manifest, dict) else format_manifest
+    for entry in entries:
+        if isinstance(entry, dict) and 'path' in entry:
+            _has_latent_cache[entry['path']] = entry.get('has_latent', False)
+
+    logging.info(f"  Loaded {len(_has_latent_cache)} entries, {sum(1 for v in _has_latent_cache.values() if v)} have latents")
+    return _has_latent_cache
 
 
 # ===================== PATH CONVERSION =====================
@@ -670,7 +705,8 @@ def extract_features_batch(audio_paths: List[str],
 # ===================== TRAINING =====================
 
 def train_classifier(manifest_path: Path, output_dir: Path,
-                    corrections_path: Path = None, num_workers: int = 8, device: str = 'cuda') -> Dict:
+                    corrections_path: Path = None, num_workers: int = 8, device: str = 'cuda',
+                    exclude_file: Path = None) -> Dict:
     """Train the latent-space instrument classifier using manifest labels.
 
     Args:
@@ -679,9 +715,18 @@ def train_classifier(manifest_path: Path, output_dir: Path,
         corrections_path: Optional path to corrections JSON (overrides manifest labels)
         num_workers: Number of parallel workers for feature extraction
         device: 'cuda' or 'cpu'
+        exclude_file: Optional file with paths to exclude from training (one per line)
     """
 
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load exclude paths if provided
+    exclude_paths = set()
+    if exclude_file and Path(exclude_file).exists():
+        logging.info(f"Loading exclude paths from {exclude_file}...")
+        with open(exclude_file) as f:
+            exclude_paths = set(line.strip() for line in f if line.strip())
+        logging.info(f"  Will exclude {len(exclude_paths)} paths from training")
 
     if device == 'cuda' and not torch.cuda.is_available():
         logging.warning("CUDA not available, falling back to CPU")
@@ -702,6 +747,21 @@ def train_classifier(manifest_path: Path, output_dir: Path,
         with open(corrections_path) as f:
             corrections = json.load(f)
         logging.info(f"  Loaded {len(corrections)} corrections")
+
+    # Load ensemble detector results to filter out mix files
+    # PIPELINE: Group classifier is for ISOLATED files only (Phase 2a)
+    ensemble_mix_paths = set()
+    ensemble_file = Path("/home/arlo/Data/ensemble_detector/ensemble_detections.json")
+    if ensemble_file.exists():
+        logging.info(f"Loading ensemble detector results to exclude mix files...")
+        try:
+            with open(ensemble_file) as f:
+                ensemble_data = json.load(f)
+            for entry in ensemble_data.get("detected", []):
+                ensemble_mix_paths.add(entry.get("path", ""))
+            logging.info(f"  Will exclude {len(ensemble_mix_paths)} detected mix files from training")
+        except Exception as e:
+            logging.warning(f"  Could not load ensemble detector: {e}")
 
     # Support both formats:
     # - combined_manifest: dict keyed by path, value has 'group'
@@ -740,15 +800,33 @@ def train_classifier(manifest_path: Path, output_dir: Path,
                 skipped_undefined += 1
                 continue
 
+            # Skip mix files (likely multi-instrument)
+            # Check both filename patterns AND ensemble detector results
+            fname_lower = audio_path.lower()
+            if 'mix' in fname_lower or '/room' in fname_lower or '_room' in fname_lower:
+                skipped_undefined += 1
+                continue
+
+            # PIPELINE: Skip files detected as mix by ensemble detector (Phase 1)
+            if audio_path in ensemble_mix_paths:
+                skipped_undefined += 1
+                continue
+
             if not has_latent or not latent_path_str:
                 skipped_no_latent += 1
+                continue
+
+            # Skip excluded paths
+            if audio_path in exclude_paths:
                 continue
 
             file_label_pairs.append((audio_path, label))
             class_counts[label] += 1
     else:
         logging.info("Detected combined manifest format (dict keyed by path)")
-        logging.info("Checking latent existence for manifest paths...")
+        # Load has_latent lookup from format_manifest.json
+        has_latent_lookup = load_has_latent_lookup()
+        logging.info("Processing manifest entries...")
         total_checked = 0
         for audio_path, meta in manifest.items():
             total_checked += 1
@@ -761,19 +839,38 @@ def train_classifier(manifest_path: Path, output_dir: Path,
             else:
                 label = 'undefined'
 
+            # Apply correction if exists
+            if audio_path in corrections:
+                corr = corrections[audio_path]
+                if not corr.get('multi_label') and corr.get('group'):
+                    label = corr['group']
+
             if not label or label in EXCLUDED_CLASSES:
                 skipped_undefined += 1
                 continue
 
-            # Quick filter: latents only exist for /New/ paths, not /Prev/
-            if '/New/' not in audio_path:
+            # Skip mix files (likely multi-instrument)
+            fname_lower = audio_path.lower()
+            if 'mix' in fname_lower or '/room' in fname_lower or '_room' in fname_lower:
+                skipped_undefined += 1
+                continue
+
+            # PIPELINE: Skip files detected as mix by ensemble detector (Phase 1)
+            if audio_path in ensemble_mix_paths:
+                skipped_undefined += 1
+                continue
+
+            # Check for latent - first from meta, then from lookup (try relative path)
+            has_latent = meta.get('has_latent', False) if isinstance(meta, dict) else False
+            if not has_latent:
+                rel_path = audio_path.replace('/home/arlo/gcs-bucket/', '')
+                has_latent = has_latent_lookup.get(rel_path, False)
+            if not has_latent:
                 skipped_no_latent += 1
                 continue
 
-            # Verify latent actually exists
-            latent_path = audio_path_to_latent_path(audio_path)
-            if latent_path is None:
-                skipped_no_latent += 1
+            # Skip excluded paths
+            if audio_path in exclude_paths:
                 continue
 
             file_label_pairs.append((audio_path, label))
@@ -1023,16 +1120,15 @@ def classify_undefined(model_path: Path, undefined_paths: List[str],
                     continue
                 undefined_paths.append(entry['audio_path'])
         else:
+            # Load has_latent lookup from format_manifest.json
+            has_latent_lookup = load_has_latent_lookup()
             for path, meta in manifest.items():
                 if not isinstance(meta, dict):
                     continue
                 if meta.get('group') != 'undefined':
                     continue
-                if '/New/' not in path:
-                    continue
-                # Check latent exists
-                latent_path = audio_path_to_latent_path(path)
-                if latent_path is not None:
+                # Check latent exists using lookup
+                if has_latent_lookup.get(path, False):
                     undefined_paths.append(path)
                 else:
                     skipped_no_latent += 1
@@ -1088,29 +1184,51 @@ def classify_undefined(model_path: Path, undefined_paths: List[str],
     # Decode predictions
     y_pred_labels = [classes[i] for i in y_pred]
 
+    # Detect silent files by checking if pooled feature energy is very low
+    # X is already normalized, so check raw features before normalization
+    X_raw = X * std + mean  # Denormalize to get raw pooled features
+    feature_energy = (X_raw ** 2).mean(dim=1).numpy()  # RMS energy per file
+    SILENT_ENERGY_THRESHOLD = 0.001  # Very low energy = silent file
+
     # Categorize by confidence
     predictions = {
         'high_confidence': [],
         'medium_confidence': [],
-        'low_confidence': []
+        'low_confidence': [],
+        'silent': []  # New category for detected silent files
     }
 
     results = []
+    silent_count = 0
     for i, (path, label, conf) in enumerate(zip(valid_paths, y_pred_labels, max_proba)):
-        result = {
-            'path': path,
-            'predicted_group': label,
-            'confidence': float(conf),
-            'all_probabilities': {c: float(p) for c, p in zip(classes, all_probs[i])}
-        }
-        results.append(result)
+        # Check if file is silent based on feature energy
+        is_silent = feature_energy[i] < SILENT_ENERGY_THRESHOLD
 
-        if conf >= CONFIDENCE_HIGH:
-            predictions['high_confidence'].append(result)
-        elif conf >= CONFIDENCE_MEDIUM:
-            predictions['medium_confidence'].append(result)
+        if is_silent:
+            result = {
+                'path': path,
+                'predicted_group': 'silent',
+                'confidence': 1.0,  # High confidence it's silent
+                'all_probabilities': {'silent': 1.0},
+                'detected_silent': True
+            }
+            predictions['silent'].append(result)
+            silent_count += 1
         else:
-            predictions['low_confidence'].append(result)
+            result = {
+                'path': path,
+                'predicted_group': label,
+                'confidence': float(conf),
+                'all_probabilities': {c: float(p) for c, p in zip(classes, all_probs[i])}
+            }
+            if conf >= CONFIDENCE_HIGH:
+                predictions['high_confidence'].append(result)
+            elif conf >= CONFIDENCE_MEDIUM:
+                predictions['medium_confidence'].append(result)
+            else:
+                predictions['low_confidence'].append(result)
+
+        results.append(result)
 
     # Summary
     logging.info("\n" + "=" * 60)
@@ -1120,6 +1238,7 @@ def classify_undefined(model_path: Path, undefined_paths: List[str],
     logging.info(f"  High confidence (>={CONFIDENCE_HIGH:.0%}): {len(predictions['high_confidence'])}")
     logging.info(f"  Medium confidence ({CONFIDENCE_MEDIUM:.0%}-{CONFIDENCE_HIGH:.0%}): {len(predictions['medium_confidence'])}")
     logging.info(f"  Low confidence (<{CONFIDENCE_MEDIUM:.0%}): {len(predictions['low_confidence'])}")
+    logging.info(f"  Detected silent: {silent_count}")
     logging.info(f"  Failed to load latent: {len(failed)}")
 
     # Predictions by class
@@ -1130,6 +1249,7 @@ def classify_undefined(model_path: Path, undefined_paths: List[str],
 
     # Save results
     output_data = {
+        'total': len(results),  # Put total at top for fast header reading
         'predictions': results,
         'failed_paths': failed,
         'summary': {
@@ -1137,6 +1257,7 @@ def classify_undefined(model_path: Path, undefined_paths: List[str],
             'high_confidence': len(predictions['high_confidence']),
             'medium_confidence': len(predictions['medium_confidence']),
             'low_confidence': len(predictions['low_confidence']),
+            'silent': silent_count,
             'failed': len(failed),
             'by_class': dict(Counter(r['predicted_group'] for r in results))
         },
@@ -1224,6 +1345,8 @@ def validate_labels(model_path: Path, manifest_path: Path, output_dir: Path,
                 continue
             labeled_entries.append((entry['audio_path'], label))
     else:
+        # Load has_latent lookup from format_manifest.json
+        has_latent_lookup = load_has_latent_lookup()
         for path, meta in manifest.items():
             if not isinstance(meta, dict):
                 continue
@@ -1232,11 +1355,13 @@ def validate_labels(model_path: Path, manifest_path: Path, output_dir: Path,
                 continue
             if label not in classes:  # Skip classes not in training
                 continue
-            if '/New/' not in path:  # Only entries that could have latents
-                continue
-
-            latent_path = audio_path_to_latent_path(path)
-            if latent_path is not None:
+            # Check latent exists - first from meta, then from lookup (try relative path)
+            has_latent = meta.get('has_latent', False)
+            if not has_latent:
+                # Try relative path for lookup
+                rel_path = path.replace('/home/arlo/gcs-bucket/', '')
+                has_latent = has_latent_lookup.get(rel_path, False)
+            if has_latent:
                 labeled_entries.append((path, label))
 
     logging.info(f"Found {len(labeled_entries):,} labeled entries with latents to validate")
@@ -1509,6 +1634,8 @@ def main():
                         help='Hop size in seconds for temporal mode')
     parser.add_argument('--group', type=str,
                         help='Filter to specific group for temporal analysis')
+    parser.add_argument('--exclude-file', type=str,
+                        help='File with paths to exclude from training (one per line)')
 
     args = parser.parse_args()
 
@@ -1525,12 +1652,14 @@ def main():
         if not args.manifest:
             parser.error("--manifest required for train mode")
         corrections_path = Path(args.corrections) if args.corrections else None
+        exclude_file = Path(args.exclude_file) if args.exclude_file else None
         train_classifier(
             Path(args.manifest),
             output_dir,
             corrections_path=corrections_path,
             num_workers=args.workers,
-            device=args.device
+            device=args.device,
+            exclude_file=exclude_file
         )
 
     elif args.mode == 'classify':
@@ -1607,11 +1736,15 @@ def main():
                         continue
                     audio_paths.append(entry['audio_path'])
             else:
+                # Load has_latent lookup from format_manifest.json
+                has_latent_lookup = load_has_latent_lookup()
                 for path, meta in manifest.items():
                     if isinstance(meta, dict):
                         if args.group and meta.get('group') != args.group:
                             continue
-                    audio_paths.append(path)
+                    # Only include paths with latents
+                    if has_latent_lookup.get(path, False):
+                        audio_paths.append(path)
 
             logging.info(f"Found {len(audio_paths)} paths to analyze")
 
@@ -1640,11 +1773,13 @@ def main():
         logging.info("=" * 60)
         logging.info("PHASE 1: TRAINING")
         logging.info("=" * 60)
+        exclude_file = Path(args.exclude_file) if args.exclude_file else None
         train_classifier(
             Path(args.manifest),
             output_dir,
             num_workers=args.workers,
-            device=args.device
+            device=args.device,
+            exclude_file=exclude_file
         )
 
         gc.collect()

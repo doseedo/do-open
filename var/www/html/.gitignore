@@ -1,0 +1,65 @@
+# Large binary files and data
+*.wav
+*.pt
+*.npy
+*.h5
+*.tflite
+*.png
+*.jpg
+*.jpeg
+
+# Large text/data files
+*.csv
+*.txt
+*.json
+vocal_training_manifest.json
+final_training_manifest_final.json
+*.jsonl
+
+# Temporary and cache directories
+__pycache__/
+.cache*/
+*.pyc
+*.pyo
+*.pyd
+
+# Training outputs and logs
+nohup.out
+*.log
+logs/
+exps/
+generated*/
+preview_*.wav
+*_debug*/
+focused_debug*/
+test_extraction/
+temp_*/
+
+# Large data directories
+ACE-Step/
+extracted_conditioning/
+categorized_instrument_paths*/
+chord_*/
+midi_*/
+note_search_results/
+pitch_coverage/
+viz_check/
+output_classifications*/
+
+# Model and checkpoint files
+checkpoints/
+*.ckpt
+
+# OS and editor files
+.DS_Store
+.vscode/
+.idea/
+*~
+
+# Environment files
+.env
+.env.local
+
+# Embedded git repositories
+pyaaf2/
+pyaafenv/

@@ -1,0 +1,97 @@
+export default function AnalogAIInstrument() {
+  return (
+    <div className="bg-[#2b2b2b] text-[#e2d7c3] min-h-screen font-mono p-6">
+      {/* Outer frame */}
+      <div className="border-8 border-[#6b4f2d] rounded-xl p-4 shadow-2xl bg-gradient-to-b from-[#3b2c20] to-[#1c1c1c]">
+        {/* Title Plate */}
+        <div className="flex items-center justify-center mb-6">
+          <div className="bg-[#d1b98e] text-[#1c1c1c] px-6 py-2 rounded-sm border-4 border-[#3b2c20] tracking-widest text-xl font-bold shadow-inner">
+            INTERUNIVERSAL SOUND CAPTURE UNIT
+          </div>
+        </div>
+
+        {/* Input Conditioning */}
+        <section className="mb-8">
+          <h2 className="text-lg mb-2 border-b border-[#8c6a3b] pb-1 tracking-wider">1. INPUT CONDITIONING</h2>
+          <div className="bg-[#1c1c1c] border border-[#8c6a3b] p-4 rounded-md flex items-center space-x-4 shadow-inner">
+            <div className="w-48 h-16 bg-[#2f2f2f] border border-[#d1b98e] flex items-center justify-center text-sm text-[#d1b98e] italic">
+              Cassette Inserted
+            </div>
+            <div className="flex-1">
+              <div className="h-10 bg-[#3a3a3a] border border-[#8c6a3b] relative">
+                <div className="absolute left-0 top-0 h-full bg-[#d1b98e] w-1/3 animate-pulse"></div>
+              </div>
+              <div className="flex justify-between text-xs mt-1">
+                <span>0:04</span>
+                <span>0:16</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Instrument Target */}
+        <section className="mb-8">
+          <h2 className="text-lg mb-2 border-b border-[#8c6a3b] pb-1 tracking-wider">2. INSTRUMENT TARGET</h2>
+          <div className="bg-[#1c1c1c] border border-[#8c6a3b] p-4 rounded-md space-y-4 shadow-inner">
+            <div>
+              <label className="block text-sm mb-1">Instrument Group</label>
+              <select className="w-full bg-[#2f2f2f] border border-[#d1b98e] p-2">
+                <option>guitar</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm mb-1">Instrument Subgroup</label>
+              <select className="w-full bg-[#2f2f2f] border border-[#d1b98e] p-2">
+                <option>acoustic_guitar</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        {/* Generation Parameters */}
+        <section className="mb-8">
+          <h2 className="text-lg mb-2 border-b border-[#8c6a3b] pb-1 tracking-wider">3. GENERATION PARAMETERS</h2>
+          <div className="grid grid-cols-2 gap-6 bg-[#1c1c1c] border border-[#8c6a3b] p-4 rounded-md shadow-inner">
+            {[
+              { label: "Seed", value: 1671, max: 10000 },
+              { label: "Steps", value: 34, max: 100 },
+              { label: "Adapter Scale", value: 4.5, max: 5 },
+              { label: "CFG (Guidance Strength)", value: 5.7, max: 15 },
+              { label: "T0 (Noise Horizon)", value: 1, max: 1 },
+            ].map((param, i) => (
+              <div key={i}>
+                <label className="block text-sm mb-1">{param.label}</label>
+                <div className="flex items-center space-x-2">
+                  <input type="range" defaultValue={param.value} max={param.max} className="flex-1 accent-[#d1b98e]" />
+                  <span className="text-xs w-10 text-right">{param.value}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Generate Button */}
+        <div className="flex justify-center mb-8">
+          <button className="bg-[#d1b98e] text-[#1c1c1c] font-bold px-8 py-3 border-4 border-[#3b2c20] shadow-lg tracking-widest">
+            GENERATE AUDIO
+          </button>
+        </div>
+
+        {/* Output Section */}
+        <section>
+          <h2 className="text-lg mb-2 border-b border-[#8c6a3b] pb-1 tracking-wider">GENERATED OUTPUT</h2>
+          <div className="bg-[#1c1c1c] border border-[#8c6a3b] p-4 rounded-md shadow-inner">
+            <div className="h-20 bg-[#2f2f2f] border border-[#d1b98e] relative flex items-center justify-center">
+              <div className="absolute left-0 top-0 h-full bg-[#d1b98e] w-1/4 animate-pulse"></div>
+              <span className="text-xs italic">Cosmic Waveform Transmission...</span>
+            </div>
+            <div className="flex justify-between text-xs mt-2">
+              <span>0:05</span>
+              <span>0:24</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}

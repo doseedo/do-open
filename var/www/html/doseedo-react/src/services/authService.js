@@ -49,6 +49,11 @@ export async function registerUser(username, email, password) {
 
   const subscriptionStatus = data.subscription ? "Pro+" : "Free";
 
+  // Track sign-up in Google Analytics
+  if (window.gtag) {
+    window.gtag('event', 'sign_up', { method: 'email' });
+  }
+
   return {
     username,
     subscriptionStatus,
@@ -166,6 +171,11 @@ async function registerWithGoogle(googleProfile) {
 
   // Backend sets cookies automatically
   const subscriptionStatus = data.subscription ? "Pro+" : "Free";
+
+  // Track sign-up in Google Analytics
+  if (window.gtag) {
+    window.gtag('event', 'sign_up', { method: 'google' });
+  }
 
   return {
     username: email,

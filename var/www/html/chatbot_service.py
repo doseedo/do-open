@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
-import openai
+from openai import OpenAI, AuthenticationError, RateLimitError, APIError
 import os
 import json
 import logging
@@ -31,13 +31,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load OpenAI API key from environment
+# Load OpenAI API key from environment and initialize client
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 if not OPENAI_API_KEY:
     logger.error("OPENAI_API_KEY environment variable not set!")
+    client = None
 else:
-    openai.api_key = OPENAI_API_KEY
-    logger.info("OpenAI API key loaded successfully")
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    logger.info("OpenAI client initialized successfully")
 
 # Pydantic models
 class Message(BaseModel):
@@ -135,9 +136,9 @@ When providing suggestions or generating API calls, always consider this context
         })
         
         logger.info(f"Calling OpenAI API with {len(messages)} messages...")
-        
-        # Call OpenAI API
-        response = openai.ChatCompletion.create(
+
+        # Call OpenAI API using new v1.0+ client
+        response = client.chat.completions.create(
             model="gpt-4",  # Use gpt-4-turbo for faster responses if available
             messages=messages,
             temperature=0.7,
@@ -146,33 +147,33 @@ When providing suggestions or generating API calls, always consider this context
             frequency_penalty=0.0,
             presence_penalty=0.0
         )
-        
+
         # Extract response
         assistant_message = response.choices[0].message.content
         tokens_used = response.usage.total_tokens
-        
+
         logger.info(f"OpenAI response received. Tokens used: {tokens_used}")
-        
+
         return ChatResponse(
             message=assistant_message,
             timestamp=datetime.now().isoformat(),
             model=response.model,
             tokens_used=tokens_used
         )
-        
-    except openai.error.AuthenticationError as e:
+
+    except AuthenticationError as e:
         logger.error(f"OpenAI authentication error: {str(e)}")
         raise HTTPException(
             status_code=401,
             detail="OpenAI API authentication failed. Check API key."
         )
-    except openai.error.RateLimitError as e:
+    except RateLimitError as e:
         logger.error(f"OpenAI rate limit error: {str(e)}")
         raise HTTPException(
             status_code=429,
             detail="OpenAI API rate limit exceeded. Please try again later."
         )
-    except openai.error.APIError as e:
+    except APIError as e:
         logger.error(f"OpenAI API error: {str(e)}")
         raise HTTPException(
             status_code=502,
@@ -190,8 +191,8 @@ async def health_check():
     """Check chatbot service health and OpenAI connectivity"""
     try:
         # Test OpenAI connection with a minimal request
-        if OPENAI_API_KEY:
-            test_response = openai.ChatCompletion.create(
+        if OPENAI_API_KEY and client:
+            test_response = client.chat.completions.create(
                 model="gpt-4",
                 messages=[{"role": "user", "content": "test"}],
                 max_tokens=5

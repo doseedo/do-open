@@ -1,0 +1,90 @@
+.panKnobContainer {
+  padding: 0 6.4px;
+  position: relative;
+}
+
+.centerTickMark {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0.8px;
+  height: 2.4px;
+  background: var(--color-border-light);
+  border-radius: 0.4px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.knob {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  position: relative;
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 50%;
+  box-shadow: none;
+  cursor: ns-resize;
+  height: 28.8px;
+  transition: transform 0.05s ease-out;
+  width: 28.8px;
+}
+
+.knob:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: #555;
+}
+
+.knob:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.indicator {
+  background: var(--color-primary-blue);
+  border-radius: 0.8px;
+  height: 9.6px;
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: 3.2px;
+  transform: translateX(-50%);
+  width: 1.6px;
+}
+
+.centerDot {
+  background: var(--color-bg-dark);
+  border-radius: 50%;
+  box-shadow: none;
+  height: 4.8px;
+  pointer-events: none;
+  position: absolute;
+  width: 4.8px;
+}
+
+.tickMark {
+  background: var(--color-border-light);
+  height: 2.4px;
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: -4px;
+  transform-origin: 50% 18.4px;
+  width: 0.8px;
+}
+
+.floatingValue {
+  background: rgba(0, 0, 0, 0.9);
+  border: 0.8px solid var(--color-primary-blue);
+  border-radius: 3.2px;
+  box-shadow: 0 1.6px 6.4px rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-family: Monaco, 'Courier New', monospace;
+  font-size: 8.8px;
+  padding: 3.2px 6.4px;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 10000;
+}

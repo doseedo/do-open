@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grammar Hierarchy Editor - V53</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+
+        .app-container {
+            display: grid;
+            grid-template-columns: 300px 1fr 350px;
+            grid-template-rows: 60px 1fr;
+            height: 100vh;
+            gap: 1px;
+            background: #333;
+        }
+
+        /* Header */
+        header {
+            grid-column: 1 / -1;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 20px;
+        }
+
+        header h1 { font-size: 1.4em; font-weight: 600; }
+
+        .header-controls {
+            display: flex;
+            gap: 10px;
+            margin-left: auto;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-primary { background: rgba(255,255,255,0.2); color: white; }
+        .btn-primary:hover { background: rgba(255,255,255,0.3); }
+        .btn-success { background: #10b981; color: white; }
+        .btn-danger { background: #ef4444; color: white; }
+
+        /* Left Panel - Level Browser */
+        .level-panel {
+            background: #16213e;
+            overflow-y: auto;
+            padding: 15px;
+        }
+
+        .panel-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 15px;
+            letter-spacing: 1px;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #0f1729;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.4em;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            color: #888;
+            margin-top: 4px;
+            text-transform: uppercase;
+        }
+
+        /* Level Selector */
+        .level-selector {
+            margin-bottom: 20px;
+        }
+
+        .level-btn {
+            display: block;
+            width: 100%;
+            padding: 12px 15px;
+            margin-bottom: 4px;
+            background: #0f1729;
+            border: none;
+            border-left: 3px solid transparent;
+            border-radius: 4px;
+            color: #ccc;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .level-btn:hover { background: #1a2744; border-left-color: #667eea; }
+        .level-btn.active { background: #1f3460; border-left-color: #10b981; color: white; }
+
+        .level-btn .level-name { font-weight: 500; font-size: 13px; }
+        .level-btn .level-info { font-size: 11px; color: #888; margin-top: 2px; }
+
+        /* Pattern List */
+        .pattern-list {
+            margin-top: 15px;
+        }
+
+        .pattern-item {
+            background: #0f1729;
+            padding: 10px 12px;
+            border-radius: 4px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .pattern-item:hover { background: #1a2744; border-left-color: #667eea; }
+        .pattern-item.selected { background: #1f3460; border-left-color: #10b981; }
+
+        .pattern-id { font-weight: 500; font-size: 13px; }
+        .pattern-info { font-size: 11px; color: #888; margin-top: 2px; }
+
+        /* Center - Tree Visualization */
+        .tree-container {
+            background: #0d1117;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #treeCanvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .tree-controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .tree-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .tree-btn:hover { background: rgba(255,255,255,0.2); }
+
+        /* Depth indicator */
+        .depth-indicator {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .depth-bar {
+            display: flex;
+            gap: 2px;
+            margin-top: 8px;
+        }
+
+        .depth-segment {
+            width: 20px;
+            height: 8px;
+            border-radius: 2px;
+            background: #333;
+        }
+
+        .depth-segment.active { background: #667eea; }
+
+        /* Right Panel - Details */
+        .details-panel {
+            background: #16213e;
+            padding: 15px;
+            overflow-y: auto;
+        }
+
+        .detail-group {
+            margin-bottom: 20px;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 6px;
+        }
+
+        .detail-value {
+            font-size: 14px;
+            padding: 8px 12px;
+            background: #0f1729;
+            border-radius: 4px;
+        }
+
+        /* Children/Parents List */
+        .relation-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .relation-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px;
+            background: #0f1729;
+            border-radius: 4px;
+            margin-bottom: 4px;
+            cursor: pointer;
+        }
+
+        .relation-item:hover { background: #1a2744; }
+
+        .relation-id { flex: 1; font-size: 12px; }
+        .relation-depth { font-size: 11px; color: #888; }
+
+        /* Expansion Preview */
+        .expansion-preview {
+            font-family: monospace;
+            font-size: 11px;
+            background: #0f1729;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 150px;
+            overflow-y: auto;
+            word-break: break-all;
+        }
+
+        /* Connection line */
+        .no-data {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+        }
+
+        /* Server status */
+        .server-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ef4444;
+        }
+
+        .status-dot.connected { background: #10b981; }
+
+        /* Round-trip Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active { display: flex; }
+
+        .modal {
+            background: #1a1a2e;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+
+        .modal-header {
+            padding: 20px 25px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 { font-size: 1.2em; }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            opacity: 0.8;
+        }
+
+        .modal-close:hover { opacity: 1; }
+
+        .modal-body { padding: 25px; }
+
+        /* File upload area */
+        .upload-area {
+            border: 2px dashed #444;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+
+        .upload-area:hover { border-color: #667eea; background: rgba(102,126,234,0.1); }
+        .upload-area.dragover { border-color: #10b981; background: rgba(16,185,129,0.1); }
+
+        .upload-icon { font-size: 48px; margin-bottom: 10px; opacity: 0.5; }
+
+        /* Results area */
+        .results-section {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .results-section.active { display: block; }
+
+        .result-card {
+            background: #0f1729;
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin-bottom: 10px;
+        }
+
+        .result-card h4 {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 10px;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+
+        .metric {
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        .encoding-preview {
+            font-family: monospace;
+            font-size: 11px;
+            background: #0a0d14;
+            padding: 12px;
+            border-radius: 6px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .token { display: inline-block; margin: 2px; padding: 4px 8px; border-radius: 4px; }
+        .token-intro { background: #10b981; color: white; }
+        .token-repeat { background: #6366f1; color: white; }
+        .token-transform { background: #f59e0b; color: white; }
+
+        .download-section {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .btn-download {
+            background: #10b981;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .btn-download:hover { background: #059669; }
+        .btn-download:disabled { background: #444; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header>
+            <h1>Grammar Hierarchy Editor</h1>
+            <span style="color: rgba(255,255,255,0.7)">V53 - Pure Contour</span>
+            <div class="header-controls">
+                <div class="server-status">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Disconnected</span>
+                </div>
+                <input type="text" id="serverUrl" value="https://doseedo.com/transform"
+                       style="padding: 6px 12px; border-radius: 4px; border: none; background: rgba(255,255,255,0.2); color: white; width: 180px;">
+                <button class="btn btn-primary" id="connectBtn">Connect</button>
+                <button class="btn btn-primary" id="roundTripBtn">Round-Trip Test</button>
+                <button class="btn btn-success" id="exportBtn">Export JSON</button>
+            </div>
+        </header>
+
+        <!-- Left Panel - Level Browser -->
+        <div class="level-panel">
+            <div class="panel-title">Grammar Statistics</div>
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="stat-value" id="ruleCount">-</div>
+                    <div class="stat-label">Total Rules</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="maxDepth">-</div>
+                    <div class="stat-label">Max Depth</div>
+                </div>
+            </div>
+
+            <div class="panel-title">Semantic Levels</div>
+            <div class="level-selector" id="levelSelector">
+                <!-- Generated by JS -->
+            </div>
+
+            <div class="panel-title">Patterns at Level</div>
+            <div class="pattern-list" id="patternList">
+                <div class="no-data">Select a level to browse patterns</div>
+            </div>
+        </div>
+
+        <!-- Center - Tree Visualization -->
+        <div class="tree-container">
+            <canvas id="treeCanvas"></canvas>
+            <div class="tree-controls">
+                <button class="tree-btn" id="zoomInBtn" title="Zoom In">+</button>
+                <button class="tree-btn" id="zoomOutBtn" title="Zoom Out">-</button>
+                <button class="tree-btn" id="fitBtn" title="Fit to View">⊡</button>
+                <button class="tree-btn" id="expandBtn" title="Expand All">↕</button>
+            </div>
+            <div class="depth-indicator" id="depthIndicator">
+                <div>Depth: <span id="currentDepth">-</span> / <span id="totalDepth">-</span></div>
+                <div class="depth-bar" id="depthBar"></div>
+            </div>
+        </div>
+
+        <!-- Right Panel - Details -->
+        <div class="details-panel">
+            <div class="panel-title">Selected Rule</div>
+
+            <div id="noSelection" class="no-data">
+                Select a pattern to view details
+            </div>
+
+            <div id="ruleDetails" style="display: none;">
+                <div class="detail-group">
+                    <div class="detail-label">Rule ID</div>
+                    <div class="detail-value" id="detailId">-</div>
+                </div>
+
+                <div class="detail-group">
+                    <div class="detail-label">Depth / Level</div>
+                    <div class="detail-value">
+                        <span id="detailDepth">-</span> / <span id="detailLevel">-</span>
+                    </div>
+                </div>
+
+                <div class="detail-group">
+                    <div class="detail-label">Expansion Length</div>
+                    <div class="detail-value" id="detailLength">-</div>
+                </div>
+
+                <div class="detail-group">
+                    <div class="detail-label">Children (<span id="childCount">0</span>)</div>
+                    <div class="relation-list" id="childrenList"></div>
+                </div>
+
+                <div class="detail-group">
+                    <div class="detail-label">Parents (<span id="parentCount">0</span>)</div>
+                    <div class="relation-list" id="parentsList"></div>
+                </div>
+
+                <div class="detail-group">
+                    <div class="detail-label">Expansion Preview</div>
+                    <div class="expansion-preview" id="expansionPreview">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Round-Trip Test Modal -->
+    <div class="modal-overlay" id="roundTripModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Round-Trip Validation Test</h2>
+                <button class="modal-close" id="closeModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <p>Drop a MIDI file here or click to browse</p>
+                    <p style="font-size: 12px; color: #666; margin-top: 10px;">Supports .mid and .midi files</p>
+                    <input type="file" id="midiFileInput" accept=".mid,.midi" style="display: none;">
+                </div>
+
+                <div id="uploadStatus" style="text-align: center; margin-bottom: 20px; color: #888;"></div>
+
+                <div class="results-section" id="resultsSection">
+                    <div class="result-card">
+                        <h4>Metrics</h4>
+                        <div class="metrics-grid">
+                            <div class="metric">
+                                <div class="metric-value" id="metricOriginal">-</div>
+                                <div class="metric-label">Original Notes</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-value" id="metricRecon">-</div>
+                                <div class="metric-label">Reconstructed</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-value" id="metricPatterns">-</div>
+                                <div class="metric-label">Patterns Used</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-value" id="metricAccuracy">-</div>
+                                <div class="metric-label">Pitch Accuracy</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="result-card">
+                        <h4>Encoding Preview (first 30 tokens)</h4>
+                        <div class="encoding-preview" id="encodingPreview">-</div>
+                    </div>
+
+                    <div class="download-section">
+                        <button class="btn-download" id="downloadRecon" disabled>Download Reconstructed MIDI</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ============================================
+    // Grammar Hierarchy Editor
+    // ============================================
+
+    const SEMANTIC_LEVELS = {
+        1: 'interval', 2: 'interval',
+        3: 'motif', 4: 'motif',
+        5: 'phrase', 6: 'phrase',
+        7: 'section', 8: 'section',
+        9: 'large-scale', 10: 'large-scale',
+        11: 'large-scale', 12: 'corpus'
+    };
+
+    const LEVEL_COLORS = {
+        'interval': '#6366f1',
+        'motif': '#10b981',
+        'phrase': '#f59e0b',
+        'section': '#ef4444',
+        'large-scale': '#8b5cf6',
+        'corpus': '#ec4899'
+    };
+
+    class HierarchyEditor {
+        constructor() {
+            this.serverUrl = 'https://doseedo.com/transform';
+            this.connected = false;
+            this.stats = null;
+            this.selectedRule = null;
+            this.selectedLevel = null;
+            this.treeData = null;
+
+            // Canvas
+            this.canvas = document.getElementById('treeCanvas');
+            this.ctx = this.canvas.getContext('2d');
+            this.zoom = 1;
+            this.panX = 0;
+            this.panY = 0;
+
+            this.initEventListeners();
+            this.resizeCanvas();
+            window.addEventListener('resize', () => this.resizeCanvas());
+
+            // Try to connect on load
+            this.connect();
+        }
+
+        initEventListeners() {
+            document.getElementById('connectBtn').onclick = () => this.connect();
+            document.getElementById('exportBtn').onclick = () => this.exportJSON();
+            document.getElementById('serverUrl').onchange = (e) => {
+                this.serverUrl = e.target.value;
+            };
+
+            // Tree controls
+            document.getElementById('zoomInBtn').onclick = () => { this.zoom *= 1.3; this.drawTree(); };
+            document.getElementById('zoomOutBtn').onclick = () => { this.zoom /= 1.3; this.drawTree(); };
+            document.getElementById('fitBtn').onclick = () => this.fitTreeToView();
+            document.getElementById('expandBtn').onclick = () => this.expandTree();
+
+            // Canvas interaction
+            this.canvas.addEventListener('wheel', (e) => this.onWheel(e));
+            this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
+            this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
+            this.canvas.addEventListener('mouseup', () => this.onMouseUp());
+
+            // Round-trip test modal
+            document.getElementById('roundTripBtn').onclick = () => this.openRoundTripModal();
+            document.getElementById('closeModal').onclick = () => this.closeRoundTripModal();
+            document.getElementById('roundTripModal').onclick = (e) => {
+                if (e.target.id === 'roundTripModal') this.closeRoundTripModal();
+            };
+
+            // File upload
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('midiFileInput');
+
+            uploadArea.onclick = () => fileInput.click();
+            fileInput.onchange = (e) => this.handleFileUpload(e.target.files[0]);
+
+            uploadArea.ondragover = (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            };
+            uploadArea.ondragleave = () => uploadArea.classList.remove('dragover');
+            uploadArea.ondrop = (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                const file = e.dataTransfer.files[0];
+                if (file) this.handleFileUpload(file);
+            };
+        }
+
+        resizeCanvas() {
+            const container = this.canvas.parentElement;
+            this.canvas.width = container.clientWidth;
+            this.canvas.height = container.clientHeight;
+            this.drawTree();
+        }
+
+        async connect() {
+            this.serverUrl = document.getElementById('serverUrl').value;
+
+            try {
+                const response = await fetch(`${this.serverUrl}/api/stats`);
+                if (!response.ok) throw new Error('Server error');
+
+                this.stats = await response.json();
+                this.connected = true;
+                this.updateConnectionStatus(true);
+                this.updateStats();
+                this.buildLevelSelector();
+
+            } catch (error) {
+                console.error('Connection failed:', error);
+                this.connected = false;
+                this.updateConnectionStatus(false);
+            }
+        }
+
+        updateConnectionStatus(connected) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+
+            if (connected) {
+                dot.classList.add('connected');
+                text.textContent = this.stats?.checkpoint?.split('/').pop() || 'Connected';
+            } else {
+                dot.classList.remove('connected');
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        updateStats() {
+            if (!this.stats) return;
+
+            document.getElementById('ruleCount').textContent = this.stats.rule_count?.toLocaleString() || '-';
+            document.getElementById('maxDepth').textContent = this.stats.max_depth || '-';
+            document.getElementById('totalDepth').textContent = this.stats.max_depth || '-';
+
+            // Build depth bar
+            const depthBar = document.getElementById('depthBar');
+            depthBar.innerHTML = '';
+            for (let d = 1; d <= (this.stats.max_depth || 12); d++) {
+                const seg = document.createElement('div');
+                seg.className = 'depth-segment';
+                seg.title = `Depth ${d}: ${this.stats.levels?.[d]?.count || 0} rules`;
+                depthBar.appendChild(seg);
+            }
+        }
+
+        buildLevelSelector() {
+            const container = document.getElementById('levelSelector');
+            container.innerHTML = '';
+
+            if (!this.stats?.levels) return;
+
+            // Group by semantic level
+            const grouped = {};
+            for (const [depth, data] of Object.entries(this.stats.levels)) {
+                const level = data.semantic;
+                if (!grouped[level]) grouped[level] = { count: 0, depths: [], avgLength: 0 };
+                grouped[level].count += data.count;
+                grouped[level].depths.push(depth);
+                grouped[level].avgLength = (grouped[level].avgLength + data.avg_length) / 2;
+            }
+
+            for (const [level, data] of Object.entries(grouped)) {
+                const btn = document.createElement('button');
+                btn.className = 'level-btn';
+                btn.dataset.level = level;
+                btn.innerHTML = `
+                    <div class="level-name" style="color: ${LEVEL_COLORS[level] || '#fff'}">${level.toUpperCase()}</div>
+                    <div class="level-info">${data.count.toLocaleString()} patterns • avg ${Math.round(data.avgLength)} notes</div>
+                `;
+                btn.onclick = () => this.selectLevel(level, btn);
+                container.appendChild(btn);
+            }
+        }
+
+        async selectLevel(level, btn) {
+            // Update UI
+            document.querySelectorAll('.level-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            this.selectedLevel = level;
+
+            // Fetch patterns
+            const patternList = document.getElementById('patternList');
+            patternList.innerHTML = '<div class="loading">Loading...</div>';
+
+            try {
+                const response = await fetch(`${this.serverUrl}/api/level?level=${level}&limit=50`);
+                const data = await response.json();
+
+                patternList.innerHTML = '';
+                for (const pattern of data.patterns) {
+                    const item = document.createElement('div');
+                    item.className = 'pattern-item';
+                    item.dataset.id = pattern.id;
+                    item.innerHTML = `
+                        <div class="pattern-id">R${pattern.id}</div>
+                        <div class="pattern-info">${pattern.expansion_length} notes • depth ${pattern.depth}</div>
+                    `;
+                    item.onclick = () => this.selectPattern(pattern.id, item);
+                    patternList.appendChild(item);
+                }
+
+                if (data.count > 50) {
+                    const more = document.createElement('div');
+                    more.className = 'pattern-info';
+                    more.style.textAlign = 'center';
+                    more.style.padding = '10px';
+                    more.textContent = `... and ${data.count - 50} more`;
+                    patternList.appendChild(more);
+                }
+
+            } catch (error) {
+                patternList.innerHTML = `<div class="no-data">Error loading patterns</div>`;
+            }
+        }
+
+        async selectPattern(ruleId, item) {
+            // Update UI
+            document.querySelectorAll('.pattern-item').forEach(i => i.classList.remove('selected'));
+            if (item) item.classList.add('selected');
+            this.selectedRule = ruleId;
+
+            document.getElementById('noSelection').style.display = 'none';
+            document.getElementById('ruleDetails').style.display = 'block';
+
+            try {
+                // Fetch rule details
+                const response = await fetch(`${this.serverUrl}/api/rule?id=${ruleId}`);
+                const data = await response.json();
+
+                document.getElementById('detailId').textContent = `R${data.id}`;
+                document.getElementById('detailDepth').textContent = data.depth;
+                document.getElementById('detailLevel').textContent = SEMANTIC_LEVELS[data.depth] || 'unknown';
+                document.getElementById('detailLength').textContent = `${data.expansion_length} terminals`;
+
+                // Update depth indicator
+                document.getElementById('currentDepth').textContent = data.depth;
+                const segments = document.querySelectorAll('.depth-segment');
+                segments.forEach((seg, i) => {
+                    seg.classList.toggle('active', i < data.depth);
+                });
+
+                // Children
+                document.getElementById('childCount').textContent = data.children.length;
+                const childrenList = document.getElementById('childrenList');
+                childrenList.innerHTML = '';
+                for (const child of data.children.slice(0, 10)) {
+                    const item = document.createElement('div');
+                    item.className = 'relation-item';
+                    item.innerHTML = `
+                        <span class="relation-id">R${child.id}</span>
+                        <span class="relation-depth">depth ${child.depth} • ${child.length} notes</span>
+                    `;
+                    item.onclick = () => this.selectPattern(child.id);
+                    childrenList.appendChild(item);
+                }
+
+                // Parents
+                document.getElementById('parentCount').textContent = data.parents.length;
+                const parentsList = document.getElementById('parentsList');
+                parentsList.innerHTML = '';
+                for (const parent of data.parents.slice(0, 10)) {
+                    const item = document.createElement('div');
+                    item.className = 'relation-item';
+                    item.innerHTML = `
+                        <span class="relation-id">R${parent.id}</span>
+                        <span class="relation-depth">depth ${parent.depth} • ${parent.length} notes</span>
+                    `;
+                    item.onclick = () => this.selectPattern(parent.id);
+                    parentsList.appendChild(item);
+                }
+
+                // Expansion preview
+                const preview = data.expansion_preview.slice(0, 50).join(', ');
+                const suffix = data.expansion_length > 50 ? '...' : '';
+                document.getElementById('expansionPreview').textContent = `[${preview}${suffix}]`;
+
+                // Load subtree for visualization
+                await this.loadSubtree(ruleId);
+
+            } catch (error) {
+                console.error('Error loading rule:', error);
+            }
+        }
+
+        async loadSubtree(ruleId) {
+            try {
+                const response = await fetch(`${this.serverUrl}/api/subtree?id=${ruleId}&max_depth=4`);
+                this.treeData = await response.json();
+                this.fitTreeToView();
+            } catch (error) {
+                console.error('Error loading subtree:', error);
+            }
+        }
+
+        // Tree visualization
+        drawTree() {
+            const ctx = this.ctx;
+            const w = this.canvas.width;
+            const h = this.canvas.height;
+
+            ctx.fillStyle = '#0d1117';
+            ctx.fillRect(0, 0, w, h);
+
+            // Draw grid
+            ctx.strokeStyle = '#1a1f26';
+            ctx.lineWidth = 1;
+            const gridSize = 50 * this.zoom;
+            for (let x = (this.panX % gridSize); x < w; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, h);
+                ctx.stroke();
+            }
+            for (let y = (this.panY % gridSize); y < h; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w, y);
+                ctx.stroke();
+            }
+
+            if (!this.treeData) {
+                ctx.fillStyle = '#444';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Select a pattern to visualize its tree structure', w/2, h/2);
+                return;
+            }
+
+            // Layout tree
+            const nodes = [];
+            const edges = [];
+            this.layoutTree(this.treeData, w/2, 60, 0, nodes, edges);
+
+            // Draw edges
+            ctx.lineWidth = 2;
+            for (const edge of edges) {
+                const x1 = edge.x1 * this.zoom + this.panX;
+                const y1 = edge.y1 * this.zoom + this.panY;
+                const x2 = edge.x2 * this.zoom + this.panX;
+                const y2 = edge.y2 * this.zoom + this.panY;
+
+                ctx.strokeStyle = edge.color || '#667eea';
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+
+            // Draw nodes
+            for (const node of nodes) {
+                const x = node.x * this.zoom + this.panX;
+                const y = node.y * this.zoom + this.panY;
+                const r = 25 * this.zoom;
+
+                const level = SEMANTIC_LEVELS[node.depth] || 'unknown';
+                const color = LEVEL_COLORS[level] || '#667eea';
+
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#fff';
+                ctx.font = `${12 * this.zoom}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`R${node.id}`, x, y - 5);
+
+                ctx.font = `${9 * this.zoom}px sans-serif`;
+                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.fillText(`d${node.depth}`, x, y + 8);
+            }
+        }
+
+        layoutTree(node, x, y, depth, nodes, edges) {
+            if (node.terminal !== undefined) return;
+
+            const nodeData = {
+                id: node.id,
+                depth: node.depth,
+                x: x,
+                y: y
+            };
+            nodes.push(nodeData);
+
+            const children = node.children || [];
+            if (Array.isArray(children) && children.length > 0) {
+                const spacing = Math.max(80, 300 / (depth + 1));
+                const totalWidth = (children.length - 1) * spacing;
+                const startX = x - totalWidth / 2;
+
+                children.forEach((child, i) => {
+                    const childX = startX + i * spacing;
+                    const childY = y + 80;
+
+                    const level = SEMANTIC_LEVELS[child.depth || 1] || 'unknown';
+                    edges.push({
+                        x1: x, y1: y + 25,
+                        x2: childX, y2: childY - 25,
+                        color: LEVEL_COLORS[level]
+                    });
+
+                    this.layoutTree(child, childX, childY, depth + 1, nodes, edges);
+                });
+            }
+        }
+
+        fitTreeToView() {
+            this.zoom = 1;
+            this.panX = 0;
+            this.panY = 0;
+            this.drawTree();
+        }
+
+        expandTree() {
+            if (this.selectedRule) {
+                this.loadSubtree(this.selectedRule);
+            }
+        }
+
+        // Canvas interaction
+        onWheel(e) {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            this.zoom *= delta;
+            this.zoom = Math.max(0.2, Math.min(3, this.zoom));
+            this.drawTree();
+        }
+
+        onMouseDown(e) {
+            this.isPanning = true;
+            this.lastX = e.clientX;
+            this.lastY = e.clientY;
+        }
+
+        onMouseMove(e) {
+            if (this.isPanning) {
+                this.panX += e.clientX - this.lastX;
+                this.panY += e.clientY - this.lastY;
+                this.lastX = e.clientX;
+                this.lastY = e.clientY;
+                this.drawTree();
+            }
+        }
+
+        onMouseUp() {
+            this.isPanning = false;
+        }
+
+        async exportJSON() {
+            if (!this.connected) {
+                alert('Not connected to server');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${this.serverUrl}/api/hierarchy`);
+                const data = await response.json();
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'grammar_hierarchy.json';
+                a.click();
+                URL.revokeObjectURL(url);
+
+            } catch (error) {
+                alert('Export failed: ' + error.message);
+            }
+        }
+
+        // ========== Round-Trip Test Methods ==========
+
+        openRoundTripModal() {
+            if (!this.connected) {
+                alert('Please connect to a server first');
+                return;
+            }
+            document.getElementById('roundTripModal').classList.add('active');
+            // Reset state
+            document.getElementById('resultsSection').classList.remove('active');
+            document.getElementById('uploadStatus').textContent = '';
+            this.reconstructedMidiData = null;
+        }
+
+        closeRoundTripModal() {
+            document.getElementById('roundTripModal').classList.remove('active');
+        }
+
+        async handleFileUpload(file) {
+            if (!file) return;
+
+            if (!file.name.endsWith('.mid') && !file.name.endsWith('.midi')) {
+                document.getElementById('uploadStatus').textContent = 'Please select a MIDI file (.mid or .midi)';
+                document.getElementById('uploadStatus').style.color = '#ef4444';
+                return;
+            }
+
+            document.getElementById('uploadStatus').textContent = 'Processing...';
+            document.getElementById('uploadStatus').style.color = '#888';
+
+            try {
+                // Read file as base64
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const base64Data = e.target.result.split(',')[1];
+                    await this.runRoundTrip(base64Data, file.name);
+                };
+                reader.readAsDataURL(file);
+            } catch (error) {
+                document.getElementById('uploadStatus').textContent = 'Error: ' + error.message;
+                document.getElementById('uploadStatus').style.color = '#ef4444';
+            }
+        }
+
+        async runRoundTrip(base64Data, filename) {
+            try {
+                const response = await fetch(`${this.serverUrl}/api/round-trip`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ midi_data: base64Data })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Server error');
+                }
+
+                const result = await response.json();
+                this.displayRoundTripResults(result, filename);
+
+            } catch (error) {
+                document.getElementById('uploadStatus').textContent = 'Error: ' + error.message;
+                document.getElementById('uploadStatus').style.color = '#ef4444';
+                console.error('Round-trip error:', error);
+            }
+        }
+
+        displayRoundTripResults(result, filename) {
+            document.getElementById('uploadStatus').textContent = `Processed: ${filename}`;
+            document.getElementById('uploadStatus').style.color = '#10b981';
+
+            // Show metrics
+            document.getElementById('metricOriginal').textContent = result.original_notes;
+            document.getElementById('metricRecon').textContent = result.reconstructed_notes;
+            document.getElementById('metricPatterns').textContent = result.patterns_used;
+
+            const accuracy = result.metrics?.pitch_accuracy || 0;
+            document.getElementById('metricAccuracy').textContent = (accuracy * 100).toFixed(1) + '%';
+            document.getElementById('metricAccuracy').style.color = accuracy > 0.8 ? '#10b981' : (accuracy > 0.5 ? '#f59e0b' : '#ef4444');
+
+            // Show encoding preview
+            const encodingPreview = document.getElementById('encodingPreview');
+            const tokens = result.encoding || [];
+            encodingPreview.innerHTML = tokens.slice(0, 30).map(t => {
+                const type = t.type || 'UNKNOWN';
+                let className = 'token';
+                if (type === 'INTRO') className += ' token-intro';
+                else if (type === 'REPEAT') className += ' token-repeat';
+                else if (type === 'TRANSFORM') className += ' token-transform';
+
+                let label = type;
+                if (type === 'INTRO') label = `INTRO(${t.pattern_idx})`;
+                else if (type === 'REPEAT') label = `REPEAT(${t.pattern_idx})`;
+                else if (type === 'TRANSFORM') label = `T${t.transform_id}(${t.pattern_idx})`;
+
+                return `<span class="${className}">${label}</span>`;
+            }).join(' ');
+
+            if (tokens.length > 30) {
+                encodingPreview.innerHTML += `<span style="color:#888"> ... +${tokens.length - 30} more</span>`;
+            }
+
+            // Store reconstructed MIDI for download
+            this.reconstructedMidiData = result.reconstructed_midi;
+            const downloadBtn = document.getElementById('downloadRecon');
+            downloadBtn.disabled = !this.reconstructedMidiData;
+            downloadBtn.onclick = () => this.downloadReconstructedMidi(filename);
+
+            // Show results section
+            document.getElementById('resultsSection').classList.add('active');
+        }
+
+        downloadReconstructedMidi(originalFilename) {
+            if (!this.reconstructedMidiData) return;
+
+            const binaryData = atob(this.reconstructedMidiData);
+            const bytes = new Uint8Array(binaryData.length);
+            for (let i = 0; i < binaryData.length; i++) {
+                bytes[i] = binaryData.charCodeAt(i);
+            }
+
+            const blob = new Blob([bytes], { type: 'audio/midi' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = originalFilename.replace('.mid', '_reconstructed.mid');
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    }
+
+    // Initialize
+    const editor = new HierarchyEditor();
+    </script>
+</body>
+</html>

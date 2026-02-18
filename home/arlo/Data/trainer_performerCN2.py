@@ -1204,7 +1204,14 @@ class Pipeline(LightningModule):
         if "lyric_mask" in sig:
             kwargs["lyric_mask"] = torch.zeros(B, 1, device=dev, dtype=torch.float32)
 
-        out = self.transformers(**kwargs)
+        # Always use autocast when model is FP16/BF16 to handle LayerNorm/embeddings
+        # Autocast automatically promotes operations that need FP32 precision
+        # CRITICAL: Use bfloat16 autocast to match model weights (fixes NaN on L4 GPU)
+        if getattr(self, '_use_autocast', False):
+            with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16):
+                out = self.transformers(**kwargs)
+        else:
+            out = self.transformers(**kwargs)
         return out.sample if hasattr(out, "sample") else out
 
     def _sample_ts_and_sigmas(self, bsz, ref_tensor=None):
@@ -1354,17 +1361,18 @@ class Pipeline(LightningModule):
             x0 = x0.to(self.device)
             B, _, _, T_slow = x0.shape
 
-            # controls on device
-            tokens, mask = self.ctrl_enc(
-                piano_roll=batch["conds"]["piano_roll"].to(self.device),
-                amp=batch["conds"]["amp"].to(self.device),
-                rframe=batch["conds"]["rframe"].to(self.device),
-                rbend=batch["conds"]["rbend"].to(self.device),
-                rbend_mask=batch["conds"]["rbend_mask"].to(self.device),
-                encodec_tokens=batch["encodec_tokens"].to(self.device),
-                group_id=batch["instrument"]["group_id"].to(self.device),
-                subgroup_id=batch["instrument"]["subgroup_id"].to(self.device),
-            )
+            # controls on device (use autocast if BF16 model)
+            with torch.amp.autocast(device_type='cuda', enabled=getattr(self, '_use_autocast', False), dtype=torch.bfloat16):
+                tokens, mask = self.ctrl_enc(
+                    piano_roll=batch["conds"]["piano_roll"].to(self.device),
+                    amp=batch["conds"]["amp"].to(self.device),
+                    rframe=batch["conds"]["rframe"].to(self.device),
+                    rbend=batch["conds"]["rbend"].to(self.device),
+                    rbend_mask=batch["conds"]["rbend_mask"].to(self.device),
+                    encodec_tokens=batch["encodec_tokens"].to(self.device),
+                    group_id=batch["instrument"]["group_id"].to(self.device),
+                    subgroup_id=batch["instrument"]["subgroup_id"].to(self.device),
+                )
 
             # RF pair (x_t, t)
             t = torch.full((B,), float(t_scalar), device=self.device)
@@ -1449,16 +1457,18 @@ class Pipeline(LightningModule):
             x0 = x0.to(self.device)
             B, _, _, T_slow = x0.shape
 
-            tokens, mask = self.ctrl_enc(
-                piano_roll=batch["conds"]["piano_roll"].to(self.device),
-                amp=batch["conds"]["amp"].to(self.device),
-                rframe=batch["conds"]["rframe"].to(self.device),
-                rbend=batch["conds"]["rbend"].to(self.device),
-                rbend_mask=batch["conds"]["rbend_mask"].to(self.device),
-                encodec_tokens=batch["encodec_tokens"].to(self.device),
-                group_id=batch["instrument"]["group_id"].to(self.device),
-                subgroup_id=batch["instrument"]["subgroup_id"].to(self.device),
-            )
+            # Use autocast for BF16 model to handle LayerNorm
+            with torch.amp.autocast(device_type='cuda', enabled=getattr(self, '_use_autocast', False), dtype=torch.bfloat16):
+                tokens, mask = self.ctrl_enc(
+                    piano_roll=batch["conds"]["piano_roll"].to(self.device),
+                    amp=batch["conds"]["amp"].to(self.device),
+                    rframe=batch["conds"]["rframe"].to(self.device),
+                    rbend=batch["conds"]["rbend"].to(self.device),
+                    rbend_mask=batch["conds"]["rbend_mask"].to(self.device),
+                    encodec_tokens=batch["encodec_tokens"].to(self.device),
+                    group_id=batch["instrument"]["group_id"].to(self.device),
+                    subgroup_id=batch["instrument"]["subgroup_id"].to(self.device),
+                )
 
             torch.manual_seed(0)
             z = torch.randn_like(x0)
@@ -1543,16 +1553,18 @@ class Pipeline(LightningModule):
             x0 = x0.to(self.device)
             B, _, _, T_slow = x0.shape
 
-            tokens, mask = self.ctrl_enc(
-                piano_roll=batch["conds"]["piano_roll"].to(self.device),
-                amp=batch["conds"]["amp"].to(self.device),
-                rframe=batch["conds"]["rframe"].to(self.device),
-                rbend=batch["conds"]["rbend"].to(self.device),
-                rbend_mask=batch["conds"]["rbend_mask"].to(self.device),
-                encodec_tokens=batch["encodec_tokens"].to(self.device),
-                group_id=batch["instrument"]["group_id"].to(self.device),
-                subgroup_id=batch["instrument"]["subgroup_id"].to(self.device),
-            )
+            # Use autocast for BF16 model to handle LayerNorm
+            with torch.amp.autocast(device_type='cuda', enabled=getattr(self, '_use_autocast', False), dtype=torch.bfloat16):
+                tokens, mask = self.ctrl_enc(
+                    piano_roll=batch["conds"]["piano_roll"].to(self.device),
+                    amp=batch["conds"]["amp"].to(self.device),
+                    rframe=batch["conds"]["rframe"].to(self.device),
+                    rbend=batch["conds"]["rbend"].to(self.device),
+                    rbend_mask=batch["conds"]["rbend_mask"].to(self.device),
+                    encodec_tokens=batch["encodec_tokens"].to(self.device),
+                    group_id=batch["instrument"]["group_id"].to(self.device),
+                    subgroup_id=batch["instrument"]["subgroup_id"].to(self.device),
+                )
 
             torch.manual_seed(0)
             x = torch.randn_like(x0)
@@ -2140,16 +2152,18 @@ class Pipeline(LightningModule):
         ramp = float(min(1.0, (int(self.global_step) + 1) / max(1, int(getattr(self, "augment_ramp_steps", 5000)))))
         self.log("aug/ramp", torch.tensor(ramp, device=x0.device), on_step=True)
 
-        tokens, mask = self.ctrl_enc(
-            piano_roll=batch["conds"]["piano_roll"],
-            amp=batch["conds"]["amp"],
-            rframe=batch["conds"]["rframe"],
-            rbend=batch["conds"]["rbend"],
-            rbend_mask=batch["conds"]["rbend_mask"],
-            encodec_tokens=enc_tok,
-            group_id=batch["instrument"]["group_id"],
-            subgroup_id=batch["instrument"]["subgroup_id"],
-        )
+        # Use autocast for BF16 model to handle LayerNorm
+        with torch.amp.autocast(device_type='cuda', enabled=getattr(self, '_use_autocast', False), dtype=torch.bfloat16):
+            tokens, mask = self.ctrl_enc(
+                piano_roll=batch["conds"]["piano_roll"],
+                amp=batch["conds"]["amp"],
+                rframe=batch["conds"]["rframe"],
+                rbend=batch["conds"]["rbend"],
+                rbend_mask=batch["conds"]["rbend_mask"],
+                encodec_tokens=enc_tok,
+                group_id=batch["instrument"]["group_id"],
+                subgroup_id=batch["instrument"]["subgroup_id"],
+            )
         if torch.isnan(tokens).any():
             tokens = torch.nan_to_num(tokens)
         tokens = tokens.to(dtype=x0.dtype)  # mixed precision friendly
@@ -2369,9 +2383,11 @@ class Pipeline(LightningModule):
         # Use the same batch as training for overfitting test
         loss = self.training_step(batch, batch_idx)
         self.log("val/loss", loss, on_step=True)
-        
+
         # Calculate instrument classification accuracy
-        tokens, mask = self.ctrl_enc(batch["conds"]["piano_roll"], batch["conds"]["rbend"], batch["conds"]["rframe"])
+        # Use autocast for BF16 model to handle LayerNorm
+        with torch.amp.autocast(device_type='cuda', enabled=getattr(self, '_use_autocast', False), dtype=torch.bfloat16):
+            tokens, mask = self.ctrl_enc(batch["conds"]["piano_roll"], batch["conds"]["rbend"], batch["conds"]["rframe"])
         inst_tok = tokens[:, 0, :]
         
         # Group classification accuracy

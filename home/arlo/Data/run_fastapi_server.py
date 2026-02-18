@@ -8,13 +8,12 @@ import sys
 import os
 import argparse
 import json
-
-# Add paths FIRST (before other imports)
-sys.path.insert(0, '/home/arlo/Data')
-sys.path.insert(0, '/home/arlo/Data/ACE-Step')
-
 import torch
 import uvicorn
+
+# Add paths
+sys.path.append('/home/arlo/Data')
+sys.path.append('/home/arlo/Data/ACE-Step')
 
 # Import the app and model loading from genfrominterface
 from genfrominterface import (

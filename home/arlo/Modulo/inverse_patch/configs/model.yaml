@@ -1,0 +1,45 @@
+# Model Configuration for Inverse Audio Effects System
+
+encoder:
+  embedding_dim: 512
+  backbone: "efficientnet_b0"
+  pretrained: true
+
+  mel_spectrogram:
+    sample_rate: 44100
+    n_fft: 2048
+    hop_length: 512
+    n_mels: 128
+
+chain_estimator:
+  max_iterations: 6
+  hidden_dim: 256
+
+inverters:
+  eq:
+    type: "analytical"  # EQ is analytically invertible
+
+  compressor:
+    type: "neural"
+    hidden_channels: 32
+    kernel_size: 1023
+
+  reverb:
+    type: "neural"
+    architecture: "demucs"
+
+  distortion:
+    type: "neural"
+    mel_restoration: true
+    vocoder: "hifigan"
+
+differentiable_chain:
+  supported_effects:
+    - eq
+    - compressor
+    - reverb
+    - distortion
+    - chorus
+    - delay
+  refinement_steps: 100
+  refinement_lr: 0.01

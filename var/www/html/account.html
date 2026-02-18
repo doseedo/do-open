@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://kit.fontawesome.com/0de3cb0a73.js" crossorigin="anonymous"></script>
+  
+    <title>Doseedo</title>
+    <link rel="stylesheet" href="style4.css">
+</head>
+<body
+>
+  <div id="navbar">
+    <div id="imageContainer">
+      <img id="logomove" src="logomove.png" />
+      <img id="rotatingImage" src="logomove2.png" />
+  </div>
+
+    <img id="doseedo" src="logo.png" alt="">
+    
+
+
+    <a href="home.html" class="nav-link">Home</a>
+    <a href="#" class="nav-link">Create</a>
+    <a href="about.html" class="nav-link">About</a>
+
+
+
+
+
+        <!-- <canvas id="canvas"></canvas> -->
+        <!-- Sign Up Form -->
+          <!-- Sign Up Button -->
+
+          <button id="signupbutton" type="button" onclick="showSignUp()">Sign Up</button>
+          <!-- Sign In Button -->
+          <button id="loginbutton" type="button" onclick="showSignIn()">Sign In</button>
+          <button id="sign-out-button" onclick="signOut()" style="display: none;">Sign Out</button>
+        <button id="sign-out-button" style="display: none;">Sign Out</button>
+        <!-- Sign Up Form (Initially Hidden) -->
+  
+
+
+                <a href="plans.html" class="nav-link">Pro+</a>
+        <div class="userform">
+          <!-- <label class="switch">
+            <input type="checkbox" id="theme-switch">
+            <span class="slider round"></span> -->
+        </label>
+        
+
+
+
+        
+
+
+      </div>
+
+      
+
+
+      
+        <!-- User Info (Initially Hidden) -->
+
+        <!-- Rest of your HTML content -->
+        <!-- ... -->
+        
+
+</div>
+
+
+<style>
+  #resizable-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 50px;
+    background-color: #1a1a1a;
+    color: white;
+    overflow-y: auto;
+    padding: 20px;
+    border-right: 1px solid #444;
+    z-index: 1000;
+    margin-top: 50px;
+    transition: width 0.3s ease;
+  }
+
+  #main-content {
+    margin-left: 20px;
+    padding: 20px;
+    transition: margin-left 0.3s ease;
+  }
+
+  #resizable-sidebar.expanded {
+    width: 170px;
+  }
+
+
+  #main-content.expanded {
+    margin-left: 145px;
+  }
+</style>
+
+<div id="resizable-sidebar">
+  <h3 class="nav-link" id="expand-toggle">
+    <i class="fa-solid fa-bars"></i>
+
+
+  </h3>
+
+  <div class="menulinks" style="display: none;">
+
+
+
+  <a href="dashboard.html" class="nav-link">Dashboard</a>
+  <a href="dashboard.html" class="nav-link">Projects</a>
+
+  <a href="dashboard.html" class="nav-link">Campaigns</a>
+  <br>
+
+    <hr>
+    <br>
+
+  <a href="dashboard.html" class="nav-link">My Profile</a>
+  <a href="dashboard.html" class="nav-link"></a>
+
+</div>
+
+
+<div class="toolbar" style="display: block;">
+
+  <!-- <button>    <i class=""></i></button>
+  <br>
+  <button>    <i class="fa-solid fa-bookmark"></i></button>
+<br>
+  <button>    <i class="fa-solid fa-wand-magic-sparkles"></i></button>
+  <br>
+  <button>    <i class="fa-solid fa-magnifying-glass"></i></button>
+  <br>
+  <button>    <i class=""></i></button> -->
+
+
+
+
+
+
+</div>
+
+
+</div>
+
+
+<div id="main-content">
+
+<script>
+  const sidebar = document.getElementById('resizable-sidebar');
+  const mainContent = document.getElementById('main-content');
+  const menuContent = document.querySelector('.menulinks');
+  const toggle = document.getElementById('expand-toggle');
+  const toolbar = document.querySelector('.toolbar');
+  
+  
+  let u = false
+
+
+
+  sidebar.classList.toggle('expanded');
+  mainContent.classList.toggle('expanded');
+
+  if(u == false){
+  menuContent.style.display = 'block'
+  toolbar.style.display = 'none'
+
+  u = true
+  }else{
+    menuContent.style.display = 'none'
+    toolbar.style.display = 'block'
+    u = false
+  }
+
+
+
+
+  toggle.addEventListener('click', () => {
+
+
+    sidebar.classList.toggle('expanded');
+    mainContent.classList.toggle('expanded');
+
+    if(u == false){
+    menuContent.style.display = 'block'
+    toolbar.style.display = 'none'
+
+    u = true
+    }else{
+      menuContent.style.display = 'none'
+      toolbar.style.display = 'block'
+      u = false
+    }
+  });
+</script>
+
+
+
+
+
+  <div class="profile" style="color: white; position: relative; left: 27%; width: 50%; text-align: center; float: none; " id="user-info">
+    <!-- <img id="user" src="user.png" alt=""> -->
+   
+
+    <div id="profile">
+      <br>
+      <img id="logomusic" src="logomusic.png" alt="" srcset="">
+      <h2 class="">Manage Account</h2>
+
+
+    <br>
+    <p>  Email: <span id="user-username"></span></p>
+      
+    <p>Pro status: <span id="user-subscription-status"></span></p>
+    <a style="color: rgb(144, 130, 247);" href="account.html">
+    <!-- <i style="float: right;" class="fa-solid fa-arrow-right"></i> -->
+  </a>
+
+  <div id="accountbtns">
+
+
+
+    <button id="unsubscribeBtn" type="submit">Unsubscribe</button>
+
+
+
+
+
+
+    <button type="submit">Delete Account</button>
+
+    <!-- <button type="submit">Show a lil love</button> -->
+  </div>
+    <br>
+
+
+
+
+    <br>
+
+  </div>
+  </div>
+
+</div>
+  <footer>
+    <p>Copyright © 2024 by Doseedo.com</p>
+    <p>Contact us: <a href="mailto:support@doseedo.com">support@doseedo.com</a></p>
+    <p><a href="privacy.html">Privacy Policy</a> | <a href="terms.html">Terms of Use</a></p>
+</footer>
+
+
+    
+</body>
+<script src="javascript.js"></script>
+</html>

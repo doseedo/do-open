@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link rel="stylesheet" href="style4.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=none">
+    <script src="https://kit.fontawesome.com/0de3cb0a73.js" crossorigin="anonymous"></script>
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="-1″>
+    <meta http-equiv="CACHE-CONTROL" content="NO-CACHE">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/nouislider/distribute/nouislider.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/wavesurfer.js"></script>
+
+    <title>Doseedo AI - ACE Step</title>
+</head>
+<body>
+
+<div id="wrapper">
+    <div id='background'>
+        <h4>ACE-Step Music Generation</h4>
+        
+        <div class="buttons">
+            <div class="glow-container">
+                <h4>Upload a Video File</h4>
+                <form id="videoUploadForm" enctype="multipart/form-data">
+                    <video id="videoPreview" controls autoplay style="max-width: 100%;"></video>
+                    <input type="file" name="file" id="videoFile" accept="video/*">
+                </form>
+
+                <input class="glow-button" type="button" value="Generate Music" id="generateMusicBtn" onclick="generateMusic();">
+
+                <div id="status">Waiting for input...</div>
+            </div>
+        </div>
+
+        <ul id="download-links"></ul>
+    </div>
+</div>
+
+<script src="javascript2.js?v=20251009004"></script>
+</body>
+</html>

@@ -1,0 +1,2262 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <!--<meta http-equiv="refresh" content="3; URL=http://www.bassify.net/legal" /> -->
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <link rel="stylesheet" href="style4.css">
+  <script src="https://kit.fontawesome.com/0de3cb0a73.js" crossorigin="anonymous"></script>
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="-1">
+  <meta http-equiv="CACHE-CONTROL" content="NO-CACHE">
+  <meta name="openai-domain-verification" content="dv-Kde8XyGetaPIsXP25QnDvZum" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script src="https://unpkg.com/wavesurfer.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/wavesurfer.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter&display=swap" rel="stylesheet">
+
+
+
+  <script src="https://cdn.jsdelivr.net/npm/html-audio"></script>
+
+  <script src="https://apis.google.com/js/platform.js" async defer></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.js"></script>
+
+
+  <meta name="google-signin-client_id" content="1028528394180-t25p4ross097jh8018sh42p8ddqgam9r.apps.googleusercontent.com">
+  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.min.js"></script>
+  
+  <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
+
+  <meta http-equiv="Content-Security-Policy" 
+      content="script-src 'self' https://www.gstatic.com https://accounts.google.com https://apis.google.com 'unsafe-inline' 'unsafe-eval'">
+
+  
+  <meta http-equiv="Content-Security-Policy" 
+    content="script-src 'self' https://www.gstatic.com https://accounts.google.com 'unsafe-inline' 'unsafe-eval'">
+
+
+  
+  
+  <link rel="stylesheet" href="https://cdn.plyr.io/3.6.8/plyr.css" />
+</head>
+
+<body>
+  <audio id="testaud" src="2 (4).wav"></audio>
+    
+  <div id="dashboard">
+    <!-- <i id="" onclick="showdash(clicked)" class="fa-solid fa-bars" ></i> -->
+    
+  </div>
+
+  <div id="navbar">
+    <!-- <div id="imageContainer"> -->
+      <!-- <img id="logomove" src="logomove.png" /> -->
+      <!-- <img id="rotatingImage" src="logomove2.png" /> -->
+  <!-- </div> -->
+
+    <!-- <img id="doseedo" src="logo.png" alt=""> -->
+
+
+
+    <div class="filedropdown">
+      <button class="dropbtn">File <i class="fa-solid fa-angle-down"></i></button>
+      <div class="file-content">
+        <a href="#" id="new-project">New Project</a>
+        <a href="#" id="open-project">Open</a>
+        <a href="#" id="save-project">Save</a>
+        <a href="#" id="export-project">Export</a>
+      </div>
+    </div>
+    
+
+
+    <a href="#" id="undo" class="nav-link"><i class="fa-solid fa-undo"></i></a>
+
+    <a href="#" id="undo" class="nav-link"><i class="fa-solid fa-redo"></i></a>
+
+  
+    <div id="sessiondiv">  
+      
+      <p id="session">
+      Untitled Session 
+    </p>
+     <i class="fa-solid fa-ellipsis"></i>
+
+    </div>
+
+
+
+ 
+    
+    
+    <div class="user">
+    <div id="user-info" >
+        <!-- <img id="user" src="user.png" alt=""> -->
+
+        <img id="userpic" src="" alt="User Picture" style="display:none; border-radius:50%; width:30px; height:30px;" />
+
+
+
+
+
+        <a style="color: rgb(144, 130, 247); text-decoration: none; " href="account.html">
+        <p><span id="user-username">  </span>  
+          <i class="fa-solid fa-angle-down"></i>  </p>  </p>   </a>
+
+   
+
+      
+          <!-- <button id="sign-out-button" style="visibility: hidden;">Sign Out</button> -->
+          <button id="loginbutton"  type="button" onclick="showSignIn()">Sign In</button>
+    
+    
+    
+ 
+    
+      </div>
+
+      <div class="userdrop" style="display: none;">
+<p>Plan: <span id="user-subscription-status"></span></p>
+
+
+  
+
+
+
+    <button id="sign-out-button" onclick="signOut()">Sign Out</button>
+
+
+     <!-- <p><i  class="fa-solid fa-arrow-right"></i></p> -->
+
+  
+  </p>
+      </div>
+
+    </div>
+      <script>
+
+        document.querySelector('.user').addEventListener('mouseover', function(){
+      
+          document.querySelector('.userdrop').style.display = 'flex'
+      
+      
+      
+        })
+      
+        document.querySelector('.user').addEventListener('mouseout', function(){
+      
+      document.querySelector('.userdrop').style.display = 'none'
+      
+      
+      
+      })
+      
+      
+      
+      </script>
+
+
+
+
+
+
+
+    <!-- <a href="#" class="nav-link">Create</a> -->
+    <!-- <a href="about.html" class="nav-link">About</a> -->
+
+
+
+
+
+
+        <!-- <canvas id="canvas"></canvas> -->
+        <!-- Sign Up Form -->
+          <!-- Sign Up Button -->
+
+          <!-- <button id="signupbutton" type="button" onclick="showSignUp()">Sign Up</button> -->
+          <!-- Sign In Button -->
+          <!-- <button id="loginbutton" type="button" onclick="showSignIn()">Sign In</button> -->
+          <!-- <button id="sign-out-button" onclick="signOut()" style="display: none;">Sign Out</button> -->
+        <!-- <button id="sign-out-button" style="display: none;">Sign Out</button> -->
+        <!-- Sign Up Form (Initially Hidden) -->
+  
+
+
+                <!-- <a href="plans.html" class="nav-link">Pro+</a> -->
+                 
+        <!-- <div class="userform"> -->
+        <!-- <label class="switch"> -->
+            <!-- <input type="checkbox" id="theme-switch"> -->
+            <!-- <span class="slider round"></span> -->
+        <!-- </label> -->
+        
+
+
+
+        
+
+
+      </div>
+
+
+
+
+      
+
+
+      
+        <!-- User Info (Initially Hidden) -->
+
+        <!-- Rest of your HTML content -->
+        <!-- ... -->
+        
+
+</div>
+
+
+<style>
+  #resizable-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 50px;
+    background-color: #1a1a1a;
+    color: white;
+    overflow-y: auto;
+    padding: 20px;
+    border-right: 1px solid #444;
+    z-index: 1000;
+    margin-top: 50px;
+    transition: width 0.3s ease;
+  }
+
+  #main-content {
+    margin-left: 20px;
+    padding: 20px;
+    transition: margin-left 0.3s ease;
+  }
+
+  #resizable-sidebar.expanded {
+    width: 170px;
+  }
+
+
+  #main-content.expanded {
+    margin-left: 145px;
+  }
+</style>
+
+<div id="resizable-sidebar">
+  <h3 class="nav-link" id="expand-toggle">
+    <i class="fa-solid fa-bars"></i>
+
+
+  </h3>
+
+  <div class="menulinks" style="display: none;">
+
+     <br>
+<a href="index.html" class="nav-link">
+  <i class="fa-solid fa-house"></i> Home
+</a>
+<br>
+
+<a href="dashboard.html" class="nav-link">
+  <i class="fa-solid fa-chart-line"></i> Dashboard
+</a>
+<br>
+
+<a href="plans.html" class="nav-link">
+  <i class="fa-solid fa-arrow-up-right-dots"></i> Upgrade
+</a>
+<br><br>
+
+
+
+<hr style="flex: 1; border: none; height: 1px; background-color: rgb(90, 90, 90); margin: 0 -5px;"><br>
+
+
+  <p class="nav-linkhead2">
+  Create
+  </p>
+  <br>
+    <a href="" class="nav-link">
+  <i style="background-color: rgba(128, 128, 128, 0.21); padding: 5px; border-radius: 5px;" class="fa-solid fa-folder-closed"></i> My Sessions
+  </a>
+<br>
+
+
+  <a href="" class="nav-link">
+  <i style="background-color: rgba(128, 128, 128, 0.21); padding: 5px; border-radius: 5px;" class="fa-solid fa-plus"></i> New Session
+  </a>
+<br>
+  <a href="" class="nav-linkhead">
+  <i class="fa-solid fa-music"></i> Video to Music
+  </a>
+  <br>
+  <a href="" class="nav-linkhead">
+  <i class="fa-solid fa-volume-high"></i> Video to SFX
+  </a>
+  <br>
+  <a href="" class="nav-linkhead">
+  <i class="fa-solid fa-microphone"></i> AI Voiceover
+  </a>
+  <br>
+  <br>
+
+
+
+  <hr style="flex: 1; border: none; height: 1px; background-color: rgb(90, 90, 90); margin: 0 -5px;"><br>
+
+
+
+
+<a href="assets.html" class="nav-link">
+  <i class="fa-solid fa-folder-open"></i> Assets
+</a>
+<br>
+
+<a href="" class="nav-link">
+  <i class="fa-solid fa-bullhorn"></i> Campaigns
+</a>
+<br>
+
+<a href="" class="nav-link">
+  <i class="fa-solid fa-compass"></i> Explore
+</a>
+<br>
+<a href="" class="nav-link">
+  <i class="fa-solid fa-wrench"></i> API
+</a>
+
+<br>
+<br>
+
+<hr style="flex: 1; border: none; height: 1px; background-color: rgb(90, 90, 90); margin: 0 -5px;"><br>
+
+
+
+
+</div>
+
+
+<div class="toolbar" style="display: block;">
+
+  <button>    <i class=""></i></button>
+  <br>
+  <button>    <i class="fa-solid fa-bookmark"></i></button>
+<br>
+  <button>    <i class="fa-solid fa-wand-magic-sparkles"></i></button>
+  <br>
+  <button>    <i class="fa-solid fa-magnifying-glass"></i></button>
+  <br>
+  <button>    <i class=""></i></button>
+
+
+
+
+
+
+</div>
+
+
+</div>
+
+
+<div id="main-content">
+
+<script>
+  const sidebar = document.getElementById('resizable-sidebar');
+  const mainContent = document.getElementById('main-content');
+  const menuContent = document.querySelector('.menulinks');
+  const toggle = document.getElementById('expand-toggle');
+  const toolbar = document.querySelector('.toolbar');
+  
+  let u = false
+  toggle.addEventListener('click', () => {
+
+
+    sidebar.classList.toggle('expanded');
+    mainContent.classList.toggle('expanded');
+
+    if(u == false){
+    menuContent.style.display = 'block'
+    toolbar.style.display = 'none'
+
+    u = true
+    }else{
+      menuContent.style.display = 'none'
+      toolbar.style.display = 'block'
+      u = false
+    }
+  });
+</script>
+
+<div id="wrapper">
+
+<div class="content">
+  <div class="startcontainer scrollable">
+<div id="audiodiv" class="audiodiv visible">
+  <div class="settingsdiv">
+    <i id='settings' class="fa-solid fa-gear"></i>
+  </div>
+
+  <div class="modeselect">
+    <div><br></div>
+    <div class="mode musicmode selected" data-mode="Music">Music</div>
+    <div class="mode sfxmode" data-mode="SFX">SFX</div>
+    <div class="mode vomode" data-mode="VO">VO</div>
+  </div>
+  
+  <br>
+  <h4 id="mode-title">Video to Music</h4>
+
+  <br>
+  <div class="startbuttons">
+    <textarea id="description-input" placeholder="Describe any sound effects or Music" style="display: block;" name="" cols="30" rows="10"></textarea>
+    
+
+
+
+    <button id="generate-button" hidden>Generate</button>
+    <button id="generateMelodyButton" hidden>Generate with Melody</button>
+    
+
+    <div class="buttonsdiv">
+     
+      <button style="display: none;" class="glow-button" id="gensfx" onclick="generateRisers();">
+        <i style="font-size: x-large;" class="fa-solid fa-wand-magic-sparkles"></i><br>
+      </button>
+
+
+
+      <button class="glow-button" id="genmus"  onclick="music(); generateMusic();">
+        <i style="font-size: x-large;" class="fa-solid fa-wand-magic-sparkles"></i>
+        <img style="display: none;" id="loading" src="loading.webp" alt="">
+
+
+        <button class="glow-button"  id="regen" onclick="regen();">
+          <i style="font-size: x-large;" class="fa-solid fa-sync"></i><br>
+        </button>
+
+        <div class="sidechaincheck">
+      <label>
+        <input type="checkbox" class="sidechain" id="useDirectAutomation" name="use_direct_automation">
+        Use Automation Curve
+      </label>
+
+      </div>
+        
+
+        
+        <br>
+      </button>
+    </div>
+  </div>
+
+
+
+
+<script>
+
+const modes = document.querySelectorAll('.mode');
+const modeTitle = document.getElementById('mode-title');
+
+modes.forEach((mode, index) => {
+  mode.addEventListener('click', () => {
+    // Remove 'selected' class from all
+    modes.forEach(m => m.classList.remove('selected'));
+    modes.forEach(m => m.classList.remove('kindaselected'));
+    
+    // Add 'selected' to the clicked one
+    mode.classList.add('selected');
+
+    if(modes[index-1]){
+
+    modes[index-1].classList.add('kindaselected');
+    }
+
+
+
+    // Update the title
+    const selected = mode.getAttribute('data-mode');
+    modeTitle.textContent = `Video to ${selected}`;
+  });
+});
+
+
+
+
+</script>
+
+
+
+
+
+  
+  <div class="inputgroups">
+  
+  <div class="input-group1">
+
+
+
+
+    <p class="header" id="pheading" style="display: none;" >Key</p>
+
+    <div class="summary" id="summary">
+      <i class="fa-solid fa-circle-info"></i>
+    </div>
+
+    <div class="keyselect" style="margin-top: -15px; display: flex;">
+
+
+
+    <div id="detail">Choose</div>
+    <select id="prompt-select2" style="display: none;">
+        <option value=""></option>
+        <option value="0">C</option>
+        <option value="1">C# / Db</option>
+        <option value="2">D</option>
+        <option value="3">D# / Eb</option>
+        <option value="4">E</option>
+        <option value="5">F</option>
+        <option value="6">F# / Gb</option>
+        <option value="7">G</option>
+        <option value="8">G# / Ab</option>
+        <option value="9">A</option>
+        <option value="10">A# / Bb</option>
+        <option value="11">B</option>
+
+
+
+
+
+      <!-- Add more prompts as needed -->
+      </select>
+ 
+
+
+      <div id="detail">Choose</div>
+      <select id="prompt-select" style="display: none;" >
+          <option value="prompt">Random</option>
+          <option value="prompt1">Major 7</option>
+          <option value="prompt2">Minor 7</option>
+          <option value="prompt4">Major 6</option>
+          <option value="prompt5">Minor 6</option>
+          <option value="prompt6">Major 9</option>
+          <option value="prompt7">Minor 9</option>
+          <option value="prompt8">Major 11</option>
+          <option value="prompt9">Minor 11</option>
+          <option value="prompt10">Major 13</option>
+          <option value="prompt11">Minor 13</option>
+          <option value="prompt12">Minor Major 7</option>
+          <option value="prompt13">Diminished</option>
+          <option value="prompt14">Diminished 7</option>
+          <option value="prompt15">Augmented</option>
+          <option value="prompt16">Augmented 7</option>
+          <option value="prompt17">Sus 2</option>
+          <option value="prompt18">Sus 4</option>
+          <option value="prompt19">Add 2</option>
+          <option value="prompt20">Add 9</option>
+          <option value="prompt21">6/9</option>
+
+
+  
+        <!-- Add more prompts as needed -->
+        </select>
+
+      </div>
+
+    </div>
+
+
+    <div class="input-group2">
+
+
+
+    <p class="header" id="mheading" style="display: none;" >Reference</p>
+
+    <div class="summary" id="summary">
+      <i class="fa-solid fa-circle-info"></i>
+    </div>
+    <div id="detail">Upload a reference track, or record a melody for the ai to use</div>
+    <div style="display: flex;">
+
+      <br>
+      <br>
+    <label style="float: left;" for="melodyInput" id="uploadLabel">
+
+      <button>
+        <i class="fa-solid fa-upload"></i>
+        <br>
+        Upload
+      </button>
+
+    </label>
+    
+    <p></p>
+
+ 
+    <div style="display: inline-block;" class="record">
+      <button id="recordToggle">
+        <i id="recordIcon" class="fa-solid fa-microphone"></i> Record
+      </button>
+    </div>
+    
+
+
+
+  </div>
+
+  <label style="display: none;" for="melodyInput" id="uploadLabel2">
+<br>
+<br>
+    <button>
+      <i class="fa-solid fa-upload"></i>Upload
+    </button>
+
+
+  </label>
+
+  <audio  id="audioPlayback"  style="display: none;" controls></audio>
+  
+    
+    <input style="display: none; visibility: hidden;" name="files[]" type="file" id="melodyInput" accept="audio/*">
+
+    <script>
+        // Get the file input element
+        const fileInput = document.getElementById('melodyInput');
+        const playback = document.getElementById('audioPlayback');
+        playback.style.marginTop 
+        // Get the label element
+        const uploadLabel = document.getElementById('uploadLabel');
+        const uploadLabel2 = document.getElementById('uploadLabel2');
+    
+        // Add event listener to the label
+        uploadLabel.addEventListener('click', () => {
+            fileInput.click(); // Trigger the click event of the file input
+        });
+    
+        // Add event listener to the file input
+        fileInput.addEventListener('change', () => {
+            const fileName = fileInput.files[0].name; // Get the name of the selected file
+            
+            uploadLabel2.textContent = fileName;
+            uploadLabel2.style.display = 'block';
+            uploadLabel2.style.fontSize = 'small'; 
+            uploadLabel2.style.height = '50px'
+            uploadLabel2.style.marginTop = '10px'
+            const playback = document.getElementById('audioPlayback');
+        
+                          playback.style.display = 'none'
+
+        });
+    </script>
+
+
+  
+  </div>
+    
+
+
+    <div class="input-group3">
+
+      
+
+
+
+      <p class="header" id="dheading" style="display: none;" >Duration</p>
+
+      <div class="summary" id="summary">
+        <i class="fa-solid fa-circle-info"></i>
+
+      </div>
+
+
+      <div id="detail">Duration of result audio files</div> 
+      <div style="display: flex; gap: 10px;" >
+    <input type="number" style="display: none;" id="duration-input" value="3" >  <p> Seconds</p>
+
+  </div>
+     <!-- Default duration -->
+    <label style="visibility: hidden;" id="scenesync">
+      <input type="checkbox" id="sync-toggle" checked />
+      Scene
+    </label>
+  </div>
+
+
+</div>
+
+
+
+
+
+
+        <div style="visibility: hidden;" class="input-group1">
+
+
+
+
+          <p class="header" id="pheading" style="display: none;" >Model</p>
+      
+          <div class="summary" id="summary">
+            <i class="fa-solid fa-circle-info"></i>
+          </div>
+          <div id="detail">switch between models to optimize results</div>
+          <select id="prompt-select" style="display: none;">
+              <option value="prompt1">Prompt 1</option>
+              <option value="prompt2">Prompt 2</option>
+      
+            <!-- Add more prompts as needed -->
+            </select>
+            </div>
+
+            <br>
+
+          </div>
+
+  
+
+
+
+      
+
+
+  
+
+</div>
+
+
+
+</div>
+
+
+
+
+
+<div id='background'>
+
+
+
+
+  <div class="settingsdiv2" style="padding-top: 50px;">
+  <i id='settings2' class="fa-solid fa-gear"></i>
+</div>
+<div id="audiodiv2" class="audiodiv2">
+ 
+        
+    <!-- <h4> Video to Music (V.1.0)</h4> -->
+    
+
+
+      <!-- <div class="input-group2">
+
+
+
+      <p class="header" id="mheading" style="display: none;" >Reference</p>
+
+      <div class="summary" id="summary">
+        <i class="fa-solid fa-circle-info"></i>
+      </div>
+      <div id="detail">Upload a reference track, or record a melody for the ai to use</div>
+      <div style="display: flex;">
+
+        <br>
+        <br>
+      <label style="float: left;" for="melodyInput" id="uploadLabel">
+
+        <button>
+          <i class="fa-solid fa-upload"></i>
+          <br>
+          Upload
+        </button>
+
+      </label>
+      
+      <p></p>
+  
+   
+      <div style="display: inline-block;" class="record">
+        <button id="recordToggle">
+          <i id="recordIcon" class="fa-solid fa-microphone"></i> Record
+        </button>
+      </div>
+      
+
+
+
+    </div>
+
+    <label style="display: none;" for="melodyInput" id="uploadLabel2">
+<br>
+<br>
+      <button>
+        <i class="fa-solid fa-upload"></i>Upload
+      </button>
+
+
+    </label>
+
+    <audio  id="audioPlayback"  style="display: none;" controls></audio>
+    
+      
+      <input style="display: none; visibility: hidden;" name="files[]" type="file" id="melodyInput" accept="audio/*">
+
+      <script>
+          // Get the file input element
+          const fileInput = document.getElementById('melodyInput');
+          const playback = document.getElementById('audioPlayback');
+          playback.style.marginTop 
+          // Get the label element
+          const uploadLabel = document.getElementById('uploadLabel');
+          const uploadLabel2 = document.getElementById('uploadLabel2');
+      
+          // Add event listener to the label
+          uploadLabel.addEventListener('click', () => {
+              fileInput.click(); // Trigger the click event of the file input
+          });
+      
+          // Add event listener to the file input
+          fileInput.addEventListener('change', () => {
+              const fileName = fileInput.files[0].name; // Get the name of the selected file
+              
+              uploadLabel2.textContent = fileName;
+              uploadLabel2.style.display = 'block';
+              uploadLabel2.style.fontSize = 'small'; 
+              uploadLabel2.style.height = '50px'
+              uploadLabel2.style.marginTop = '10px'
+              const playback = document.getElementById('audioPlayback');
+          
+                            playback.style.display = 'none'
+
+          });
+      </script>
+
+
+    
+    </div> -->
+      
+
+
+<!-- <div class="dropdown">
+        
+        <img id="selectedImage" class="dropdown-selected" src="film_genre_icon_1.png" alt="Selected Image">
+
+
+        <div id="imageGrid" class="dropdown-content">
+            <img src="film_genre_icon_1.png" alt="Orchestral / Symphonic">
+            <img src="film_genre_icon_2.png" alt="Ambient / Atmospheric">
+            <img src="film_genre_icon_3.png" alt="Electronic / Synthwave">
+            <img src="film_genre_icon_4.png" alt="Minimalist / Repetitive Patterns">
+            <img src="film_genre_icon_5.png" alt="Jazz / Big Band">
+            <img src="film_genre_icon_6.png" alt="Choral / Vocal-based">
+            <img src="film_genre_icon_7.png" alt="Horror / Avant-garde">
+            <img src="film_genre_icon_8.png" alt="Rock / Alternative">
+            <img src="film_genre_icon_9.png" alt="Romantic / Melodic">
+        </div>
+    </div> -->
+
+    <!-- <script>
+      const selectedImage = document.getElementById('selectedImage');
+      const imageGrid = document.getElementById('imageGrid');
+
+      selectedImage.addEventListener('click', () => {
+          imageGrid.style.display = imageGrid.style.display === 'grid' ? 'none' : 'grid';
+      });
+
+      imageGrid.addEventListener('click', (e) => {
+          if (e.target.tagName === 'IMG') {
+              selectedImage.src = e.target.src;
+              imageGrid.style.display = 'none';
+          }
+      });
+
+      // Optional: Close dropdown if clicking outside
+      document.addEventListener('click', (e) => {
+          if (!e.target.closest('.dropdown')) {
+              imageGrid.style.display = 'none';
+          }
+      });
+
+      
+
+  </script> -->
+
+
+        
+
+
+    
+</div>
+<!-- <p id="helper" > - Upload a video, or enter a description to start generating.</p> -->
+
+
+
+
+<div class="buttons">
+
+  <i onclick="exitvid()"  id="vidx" class="fa-regular fa-x"></i>
+
+  <a style="display: none;" id="switchbtn"  onclick="switchto()">
+    <i id="videoicon"  style="display: none;" class="fa-solid fa-video"></i>
+
+    <i id="keybicon" class="fa-regular fa-keyboard"></i>
+
+
+    <p></p>
+</a>
+
+
+
+  
+    <!-- Include your existing elements like 'description-input' and buttons -->    
+          </ul >
+          <!-- <input type="" id="description-input"> -->
+
+
+  
+          <button  type="button"onclick="exporttovid()" id="exportbtn"><i class="fas fa-download"></i>
+                  
+          </button>
+          <div class="glow-container">
+
+
+
+
+          <h4>Upload a Video File
+          </h4>
+          <label for="videoFile" class="custom-file-input">
+            <i class="fa-solid fa-plus" id="bruh"  style="font-size: 5em;" color="" ></i> 
+            
+        </label>
+          <form id="videoUploadForm" enctype="multipart/form-data">
+            <input type="file" name="file" id="videoFile" accept="video/*">
+          </form>
+        </div>
+
+
+        <div class="video-container" id="video-resizable">
+        <video style="display: none;" id="player" class ="videoprevsrc" playsinline controls>
+          <source   type="video/mp4" /> 
+          Your browser does not support the video tag.
+        </video>
+        <img id="videoLoader" src="loading.gif" style="position: absolute; top: 50%; left: 40%; transform: translate(-50%, -50%); display: none;" />
+
+        <div class="resizer"></div>
+      </div>
+
+
+
+              <div id="automation-window" class="automation-window scrollable">
+              <div id="automation-drag-bar-x"></div>
+              <div id="automation-drag-bar-y"></div>
+              <canvas id="automation-canvas"></canvas>
+
+            </div>
+
+
+
+      <script>
+        const video = document.getElementById('player');
+        const resizer = document.querySelector('.resizer');
+        const container = document.getElementById('video-resizable');
+
+        let isResizing = false;
+        let startYY;
+        let startHeight;
+
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startYY = e.clientY;
+            startHeight = container.offsetHeight;
+            document.body.style.cursor = 'ns-resize';
+            e.preventDefault();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            const dy = e.clientY - startYY;
+            const newHeight = Math.max(100, startHeight + dy);
+            video.style.height = `${newHeight}px`;
+            container.style.height = `${newHeight}px`;
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = 'default';
+            }
+        });
+
+        </script>
+      
+
+
+        <script>
+
+        </script>
+        
+        
+
+
+
+
+          <i class="fas fa-settings" id="bruh"  style="font-size: 5em; color: rgb(166, 116, 241); background:transparent;" ></i> 
+            
+
+
+
+
+
+
+
+
+</div>
+
+
+
+
+
+<div id="status">Waiting for input...</div>
+
+<div id="cursor-line"></div>
+<div id="playback-cursor"></div>
+<div id="cursor-time"></div>
+
+
+
+
+
+
+
+<br>
+<br>
+
+<!-- <h1 style="text-align: center;"> The new age of audio post production is here.</h1>
+
+<div id="plansmobile" class="plans-container">
+
+  <div class="plan">
+      <h2>Free Plan</h2>
+      <ul>
+        <h4>- for personal, non comercial use</h4>
+        <h4>  Limited access to all our models: </h4>
+        <li>- Generate up to 10 seconds of Audio and Music</li>
+        <li>- Text to music</li>
+        <li>- Text to audio</li>
+        <li>- Video to Music</li>
+        <li>- Video to Music</li>
+
+
+
+      </ul>
+
+
+
+      <h2>Doseedo Pro</h2>
+      <ul>
+          <h4>- For social media creators, freelancers, businesses and agencies looking for royalty-free background music to use for-profit.</h4>
+          <h4>  Unlimitted access to all our models: </h4>
+          <li>- Generate up to 5 minutes of Audio and Music</li>
+          <li>- Text to music</li>
+          <li>- Text to audio</li>
+            <li>- Video to Music</li>
+            <li>- Video to Music</li>
+            <a href="plans.html">
+            <button>Go Pro</button>
+          </a>
+   
+
+      </ul>
+
+
+    </div>
+
+      
+      
+
+
+
+
+</div> -->
+
+<!-- <script>
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const video = document.getElementById('videoElement');
+  const videoSlider = document.getElementById('videoSlider');
+  const addSliderBtn = document.getElementById('addSliderBtn');
+  let sliderCount = 1;
+  const audioLength = 100; // Set your audio length here
+
+  function updateCanvas(time) {
+      video.currentTime = time;
+      video.addEventListener('seeked', function() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      }, {once: true});
+  }
+
+
+  //addSliderBtn.addEventListener('click', createNewSlider);
+
+  video.addEventListener('loadedmetadata', function() {
+      videoSlider.noUiSlider.updateOptions({
+          range: {
+              'min': 0,
+              'max': video.duration
+          }
+      });
+  });
+</script> -->
+
+
+
+
+
+</div>  
+
+
+<div class="daw">
+
+
+<div class="trackcontainer">
+  <button style="display: none;" id="autobtn" onclick="autobtn()">
+
+    <i class="fa-solid fa-chart-simple"></i>
+
+
+  </button>
+
+  <div class="trackbox">
+    <div class="trackselect" id="vos">
+      <div>
+        <p data-target="download-links3">
+
+          <i class="fa-solid fa-video"></i>
+          <i class="fa-solid fa-caret-down caret-icon"></i> 
+           <!-- Video Audio  -->
+
+          <button class="bus-mute" data-bus="download-links3">M</button>
+          <button class="bus-solo" data-bus="download-links3">S</button>
+        
+        </p>
+        <div class="tracklist">
+  
+        </div>
+      </div>
+    </div>
+    <br>
+  
+  
+  <div class="trackselect" id="muss">
+    <div>
+      <p data-target="download-links">
+
+        <i class="fa-solid fa-music"></i>
+        <i class="fa-solid fa-caret-down caret-icon"></i> 
+        <!-- Music  -->
+
+
+          <!-- <label for="music-gain">Music Volume</label> -->
+          <input type="range" id="music-gain" min="0" max="1" step="0.01" value="1">
+  
+
+        <button class="bus-mute" data-bus="download-links">M</button>
+        <button class="bus-solo" data-bus="download-links">S</button>
+      
+      </p>
+      <div class="tracklist">
+  
+      </div>
+    </div>
+  </div>
+  <br>
+  
+  
+  
+  
+  <div class="trackselect" id="sfxs">
+    <div>
+      <p data-target="download-links2"> 
+
+          <i class="fa-solid fa-volume-high"></i>
+          <i class="fa-solid fa-caret-down caret-icon">
+          </i> 
+
+
+        <!-- SFX  -->
+
+          <!-- <label for="sfx-gain">SFX Volume</label> -->
+          <input type="range" id="sfx-gain" min="0" max="1" step="0.01" value="1">
+
+
+        <button class="bus-mute" data-bus="download-links2">M</button>
+        <button class="bus-solo" data-bus="download-links2">S</button>
+      
+      
+      </p>
+  
+      <div class="tracklist">
+  
+      </div>
+    </div>
+  </div>
+  <br>
+  
+  
+  </div>
+
+
+  
+  
+  
+  </div>
+  
+
+
+
+<div class="downloadbox">
+
+  <style>
+      .downloadbox {
+    display: flex; /* puts children side by side */
+    float: left;
+
+    margin-right: 20px; /* space between sidebar and content */
+   /* flex-direction: column;  */
+  }
+
+
+
+
+
+
+
+
+
+
+
+    .caret-icon {
+  transition: transform 0.3s ease;
+  transform: rotate(-90deg); /* Default: sideways */
+  display: inline-block; /* required for transform */
+}
+
+.caret-icon.rotated {
+  transform: rotate(0deg); /* Downward when expanded */
+}
+
+
+
+
+
+
+
+
+#download-links > li {
+  position: absolute; /* or fixed, depending on your layout */
+  top: 0; /* reset this dynamically in JS */
+}
+
+
+    
+  </style>
+  
+  <script>
+    let currentTargetContainerId = 'download-links';
+    
+    function adjustMasksOnCollapse(downloadList) {
+        const containerWidth = downloadList.offsetWidth * currentZoomLevel;
+        const pixelsPerSecond = containerWidth / originalLengthInSeconds;
+    
+        const tracks = Array.from(downloadList.querySelectorAll('li')).map((li, index) => {
+            const meta = li._meta;
+            return {
+                li,
+                meta,
+                index,
+                start: meta.startPositionInSeconds,
+                end: meta.startPositionInSeconds + meta.trackDuration,
+                trimStart: meta.trimStart,
+                trimEnd: meta.trimEnd,
+                duration: meta.trackDuration
+            };
+        });
+    
+        tracks.sort((a, b) => a.start - b.start);
+    
+        tracks.forEach((track, i) => {
+            const { li, meta, trimStart, trimEnd, duration, start } = track;
+            const leftMask = li.querySelector('.waveform-mask-left');
+            const rightMask = li.querySelector('.waveform-mask-right');
+    
+            let leftMaskSeconds = trimStart;
+            let rightMaskSeconds = duration - trimEnd;
+    
+            // Shrink left mask if previous overlaps
+            const prev = tracks[i - 1];
+            if (prev) {
+                const prevEnd = prev.start + prev.trimEnd;
+                const overlap = (start + trimStart) - prevEnd;
+                if (overlap <= 0) {
+                    leftMaskSeconds = 0;
+                } else {
+                    leftMaskSeconds = Math.min(trimStart, overlap);
+                }
+            }
+    
+            // Shrink right mask if next overlaps
+            const next = tracks[i + 1];
+            if (next) {
+                const thisEnd = start + trimEnd;
+                const gap = next.start - thisEnd;
+                if (gap <= 0) {
+                    rightMaskSeconds = 0;
+                } else {
+                    rightMaskSeconds = Math.min(duration - trimEnd, gap);
+                }
+            }
+    
+            if (leftMask) {
+                const px = leftMaskSeconds * pixelsPerSecond;
+                const offsetPx = (trimStart - leftMaskSeconds) * pixelsPerSecond;
+                leftMask.style.display = 'block';
+                leftMask.style.left = `${offsetPx}px`;
+                leftMask.style.width = `${px}px`;
+            }
+    
+            if (rightMask) {
+                const px = rightMaskSeconds * pixelsPerSecond;
+                rightMask.style.display = rightMaskSeconds > 0 ? 'block' : 'none';
+                rightMask.style.left = `${(trimEnd) * pixelsPerSecond}px`;
+                rightMask.style.width = `${px}px`;
+            }
+    
+            li.style.zIndex = i * 10;
+        });
+    }
+    
+    document.querySelectorAll('.trackselect p').forEach(header => {
+        header.addEventListener('click', () => {
+            const targetId = header.dataset.target;
+            const downloadList = document.getElementById(targetId);
+            const thisTracklist = header.nextElementSibling;
+            const caretIcon = header.querySelector('.caret-icon');
+            const isExpanding = !thisTracklist.classList.contains('expanded');
+    
+            // Collapse all other sections
+            document.querySelectorAll('.tracklist.expanded').forEach(tracklist => {
+                if (tracklist !== thisTracklist) {
+                    const otherHeader = tracklist.previousElementSibling;
+                    const otherCaret = otherHeader.querySelector('.caret-icon');
+                    const otherDownloadList = document.getElementById(otherHeader.dataset.target);
+    
+                    tracklist.classList.remove('expanded');
+                    otherCaret?.classList.remove('rotated');
+    
+                    if (otherDownloadList) {
+                        otherDownloadList.classList.remove('expanded');
+                        otherDownloadList.style.height = '0';
+                        otherDownloadList.querySelectorAll('li').forEach(li => {
+                            li.style.top = '0';
+                            li.querySelector('.waveform-mask-left')?.style.setProperty('display', 'none');
+                            li.querySelector('.waveform-mask-right')?.style.setProperty('display', 'none');
+                        });
+                    }
+                }
+            });
+    
+            // Toggle selected section
+            thisTracklist.classList.toggle('expanded', isExpanding);
+            caretIcon?.classList.toggle('rotated', isExpanding);
+    
+            if (downloadList) {
+                downloadList.classList.toggle('expanded', isExpanding);
+                currentTargetContainerId = isExpanding ? targetId : 'download-links';
+    
+                const containerWidth = downloadList.offsetWidth * currentZoomLevel;
+                const pixelsPerSecond = containerWidth / originalLengthInSeconds;
+    
+                if (isExpanding) {
+                    const trackCount = downloadList.querySelectorAll('li').length;
+                    const calculatedHeight = Math.max(100, trackCount * 90);
+                    downloadList.style.height = `${calculatedHeight}px`;
+    
+                    downloadList.querySelectorAll('li').forEach((li, i) => {
+                        const meta = li._meta;
+                        li.style.top = `${i * 60}px`;
+                        li.style.zIndex = (trackCount - i) * 10;
+
+    
+                        const leftMask = li.querySelector('.waveform-mask-left');
+                        const rightMask = li.querySelector('.waveform-mask-right');
+    
+                        if (leftMask) {
+                            leftMask.style.display = 'block';
+                            leftMask.style.left = `0px`;
+                            leftMask.style.width = `${meta.trimStart * pixelsPerSecond}px`;
+                        }
+    
+                        if (rightMask) {
+                            rightMask.style.display = 'block';
+                            rightMask.style.left = `${meta.trimEnd * pixelsPerSecond}px`;
+                            rightMask.style.width = `${(meta.trackDuration - meta.trimEnd) * pixelsPerSecond}px`;
+                        }
+                    });
+                } else {
+                    downloadList.style.height = '0';
+                    downloadList.querySelectorAll('li').forEach(li => {
+                        li.style.top = '0';
+                    });
+                    adjustMasksOnCollapse(downloadList);
+                }
+            }
+        });
+    });
+    
+    
+
+
+    </script>
+    
+    
+
+
+
+
+  
+
+  
+
+
+  <div class="downloads">
+
+
+    <div class="timeline-wrapper">
+        <div id="scene-bar-overlay"></div> 
+      <div id="timeline-bar">
+        <div id="timeline-cursor2"></div>
+        <div id="timeline-cursor"></div>
+
+
+
+      </div>
+    </div>
+    
+
+
+<style>
+.automation-window {
+  position: relative;
+  width: 105%;
+  height: 100px;
+  background: #161616;
+  border-bottom: 1px solid #404040;
+  cursor: crosshair;
+  overflow-x: scroll;
+  scrollbar-color: black;
+  /* top: 200px; */
+  display: block;
+    margin-left: -15px;
+    /* top: -200px; */
+  /* margin-top: -200px; */
+}
+
+#automation-canvas {
+  position: relative;
+  /* width: 100%;
+  height: 100%; */
+
+  z-index: 2000;
+    image-rendering: pixelated;
+  /* transform-origin: left top; */
+
+}
+
+#automation-drag-bar-x {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 10px;
+  width: 100%;
+  cursor: ew-resize;
+  background: rgba(255, 255, 255, 0.05);
+  z-index: 2001;
+}
+
+#automation-drag-bar-y {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10px;
+  height: 100%;
+  cursor: ns-resize;
+  background: rgba(255, 255, 255, 0.05);
+  z-index: 2001;
+}
+
+#automation-drag-bar-x,
+#automation-drag-bar-y {
+  transition: background 0.2s, border 0.2s;
+}
+
+#automation-drag-bar-x:hover,
+#automation-drag-bar-y:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+#automation-drag-bar-x.dragging,
+#automation-drag-bar-y.dragging {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+
+</style>
+
+
+<script>
+
+ const styleConfig = {
+  gridColor: '#262626',       // dark grid
+  gridLineWidth: 1,
+  gridSpacing: 20,
+
+  lineColor: '#b3b3ff',       // light grey violet purple
+  lineWidth: 3,
+
+  pointRadius: 2,
+  pointFill: '#ffffff',       // white
+  pointHover: '#9999ff',      // still white on hover
+  pointStroke: '#ffffff',     // soft violet stroke
+  pointLineWidth: 6,
+};
+
+
+let isGraphDragging = false;
+let dragStartX = null;
+let dragStartY = null;
+
+
+
+currentZoomLevel = 1;
+totalDuration = 10;
+
+const canvas = document.getElementById('automation-canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeAutomationCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  
+
+  canvas.style.width = '100%';
+  canvas.style.height = '100px'; // or whatever height you want
+
+  // Set canvas width/height in physical pixels
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+
+  // Scale context so drawings appear sharp
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+const pointRadius = 5;
+let isDragging = false;
+let selectedPoint = null;
+let isDraggingX = false;
+let isDraggingY = false;
+
+let isDraggingLineSegment = false;
+let draggedLinePair = null;
+
+
+const minVolume = 0.2;
+const maxVolume = 1.0;
+
+const automationPoints = [];
+const automationData = {
+  points: [],
+  canvasWidth: 0,
+  canvasHeight: 0
+};
+
+function yToVolume(y) {
+  const normalized = 1 - (y / canvas.offsetHeight);
+  return minVolume + normalized * (maxVolume - minVolume);
+}
+
+function volumeToY(volume) {
+  const normalized = (volume - minVolume) / (maxVolume - minVolume);
+  return canvas.offsetHeight - (normalized * canvas.offsetHeight);
+}
+
+function initPoints() {
+  automationPoints.length = 0; // Clear any existing points
+
+  const midY = volumeToY(0.5); // 50% volume line
+
+  automationPoints.push(
+    { time: 0, y: midY, isEdge: true },
+    { time: totalDuration, y: midY, isEdge: true }
+  );
+
+  updateAutomationData();
+  draw();
+}
+
+function updateAutomationData() {
+  automationData.points = automationPoints.map(p => ({
+    time: p.time,
+    y: p.y,
+    x: (p.time / totalDuration) * canvas.width,
+    volume: yToVolume(p.y),
+    isEdge: p.isEdge || false
+  }));
+
+  automationData.canvasWidth = canvas.width;
+  automationData.canvasHeight = canvas.height;
+  automationData.points.sort((a, b) => a.time - b.time);
+}
+
+function syncEdgePointsToDuration() {
+  const rightEdge = automationPoints.find(p => p.isEdge && p.time !== 0);
+  if (rightEdge) {
+    rightEdge.time = totalDuration;
+  }
+}
+
+function resizeCanvas() {
+  const baseWidth = canvas.parentElement.offsetWidth;
+  canvas.width = baseWidth * currentZoomLevel;
+  canvas.height = 100;
+
+  syncEdgePointsToDuration(); // ✅ update edge BEFORE updating automation data
+  updateAutomationData();
+  draw();
+
+  canvas.focus(); // optional — if you're relying on keyboard events
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Grid
+  ctx.strokeStyle = styleConfig.gridColor;
+  ctx.lineWidth = styleConfig.gridLineWidth;
+  for (let y = 0; y < canvas.height; y += styleConfig.gridSpacing) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+    ctx.stroke();
+  }
+
+  const sorted = [...automationPoints].sort((a, b) => a.time - b.time);
+
+  // Automation Line
+  ctx.beginPath();
+  ctx.strokeStyle = styleConfig.lineColor;
+  ctx.lineWidth = styleConfig.lineWidth;
+  sorted.forEach((p, i) => {
+    const x = (p.time / totalDuration) * canvas.width;
+    if (i === 0) ctx.moveTo(x, p.y);
+    else ctx.lineTo(x, p.y);
+  });
+  ctx.stroke();
+
+  // Points
+  sorted.forEach(p => {
+    if (!p.isEdge) {
+      const x = (p.time / totalDuration) * canvas.width;
+      ctx.beginPath();
+      ctx.arc(x, p.y, styleConfig.pointRadius, 0, Math.PI * 2);
+      ctx.fillStyle = p === selectedPoint && p.snapping
+        ? '#ffffff'
+        : p === selectedPoint
+        ? styleConfig.pointHover
+        : styleConfig.pointFill;
+      ctx.strokeStyle = styleConfig.pointStroke;
+      ctx.lineWidth = styleConfig.pointLineWidth;
+      ctx.fill();
+      ctx.stroke();
+    }
+  });
+}
+
+
+canvas.addEventListener('mousedown', e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  const time = (x / canvas.width) * totalDuration;
+  const SNAP_THRESHOLD = 10;
+  const SNAP_Y_THRESHOLD = 8;
+
+  // 1. Check if dragging a point
+  for (const point of automationPoints) {
+    const px = (point.time / totalDuration) * canvas.width;
+    const dx = px - x;
+    const dy = point.y - y;
+    if (Math.sqrt(dx * dx + dy * dy) < pointRadius * 2) {
+      isDragging = true;
+      selectedPoint = point;
+      return;
+    }
+  }
+
+  // 2. Check if dragging between 2 non-edge points
+  const all = [...automationPoints].sort((a, b) => a.time - b.time);
+  for (let i = 0; i < all.length - 1; i++) {
+    const p1 = all[i];
+    const p2 = all[i + 1];
+
+    const x1 = (p1.time / totalDuration) * canvas.width;
+    const y1 = p1.y;
+    const x2 = (p2.time / totalDuration) * canvas.width;
+    const y2 = p2.y;
+
+    const a = x2 - x1;
+    const b = y2 - y1;
+    const lenSq = a * a + b * b;
+    const t = ((x - x1) * a + (y - y1) * b) / lenSq;
+
+    if (t >= 0 && t <= 1) {
+      const closestX = x1 + t * a;
+      const closestY = y1 + t * b;
+      const dist = Math.sqrt((closestX - x) ** 2 + (closestY - y) ** 2);
+      if (dist < 6) {
+        isDraggingLineSegment = true;
+        draggedLinePair = [p1, p2];
+        return;
+      }
+    }
+  }
+
+  // 3. Add new point if no nearby point exists
+  const existing = automationPoints.find(p => {
+    const px = automationData.points.find(q => q.time === p.time)?.x
+    return Math.abs(px - x) < SNAP_THRESHOLD;
+  });
+
+  const sorted = automationPoints.filter(p => !p.isEdge).sort((a, b) => a.time - b.time);
+  let newY = y;
+  for (const p of sorted) {
+    if (Math.abs(p.y - y) < SNAP_Y_THRESHOLD) {
+      newY = p.y;
+      break;
+    }
+  }
+
+  if (!existing) {
+    const newPoint = {
+      time,
+      y: Math.max(0, Math.min(canvas.height, newY)),
+      isEdge: false
+    };
+    automationPoints.push(newPoint);
+    selectedPoint = newPoint;
+    isDragging = true;
+
+    updateAutomationData();
+    draw();
+      const timelineCursor = document.getElementById('timeline-cursor');
+  const video = document.getElementById('player');
+
+  if (timelineCursor && video) {
+    const clampedTime = Math.max(0, Math.min(video.duration || totalDuration, newPoint.time));
+    video.currentTime = clampedTime;
+
+    const timelineBar = document.getElementById('timeline-bar');
+    const timelineWidth = timelineBar.offsetWidth;
+    const positionPx = (clampedTime / totalDuration) * timelineWidth;
+    // timelineCursor.style.left = `${positionPx}px`;
+  }
+
+  }
+});
+
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  let isHoveringPoint = false;
+  let isHoveringLine = false;
+
+  // --- Hover detection: point
+  for (const p of automationPoints) {
+    const px = automationData.points.find(q => q.time === p.time)?.x
+    const dx = px - x;
+    const dy = p.y - y;
+    if (Math.sqrt(dx * dx + dy * dy) < pointRadius * 2) {
+      isHoveringPoint = true;
+      break;
+    }
+  }
+
+  // --- Hover detection: line
+  for (let i = 0; i < automationData.points.length - 1; i++) {
+  const p1 = automationData.points[i];
+  const p2 = automationData.points[i + 1];
+
+  const a = p2.x - p1.x;
+  const b = p2.y - p1.y;
+  const lenSq = a * a + b * b;
+  if (lenSq === 0) continue;
+
+  const t = ((x - p1.x) * a + (y - p1.y) * b) / lenSq;
+  if (t >= 0 && t <= 1) {
+    const closestX = p1.x + t * a;
+    const closestY = p1.y + t * b;
+    const dist = Math.hypot(x - closestX, y - closestY);
+    if (dist < 6) {
+      isHoveringLine = true;
+      break;
+    }
+  }
+}
+
+
+
+  // --- Cursor
+  if (isDraggingLineSegment) {
+    canvas.style.cursor = 'grabbing';
+  } else if (isHoveringPoint) {
+    canvas.style.cursor = 'move';
+  } else if (isHoveringLine) {
+    canvas.style.cursor = 'grab';
+  } else {
+    canvas.style.cursor = 'crosshair';
+  }
+
+  // --- Handle line dragging
+
+if (isDraggingLineSegment && draggedLinePair) {
+  const dx = e.movementX;
+  const dy = e.movementY;
+  const deltaTime = (dx / canvas.width) * totalDuration;
+
+    const SNAP_X_THRESHOLD = 0.1;
+    function snapToSceneChanges(time) {
+      for (const sceneTime of globalSceneChanges) {
+        if (Math.abs(sceneTime - time) < SNAP_X_THRESHOLD) {
+          return { time: sceneTime, snapped: true };
+        }
+      }
+      return { time, snapped: false };
+    }
+
+
+  const [p1, p2] = draggedLinePair;
+  
+  // Only move points horizontally if they're not edge points
+ if (!p1.isEdge) {
+  const sorted = [...automationPoints].sort((a, b) => a.time - b.time);
+  const i1 = sorted.indexOf(p1);
+  const prev = sorted[i1 - 1];
+  const minTime1 = prev ? prev.time + 0.01 : 0;
+  const maxTime1 = p2.time - 0.01;
+
+  let target1 = Math.max(minTime1, Math.min(p1.time + deltaTime, maxTime1));
+  const snap1 = snapToSceneChanges(target1);
+  p1.time = Math.max(minTime1, Math.min(maxTime1, snap1.time));
+  p1.snapping = snap1.snapped;
+}
+
+if (!p2.isEdge) {
+  const sorted = [...automationPoints].sort((a, b) => a.time - b.time);
+  const i2 = sorted.indexOf(p2);
+  const next = sorted[i2 + 1];
+  const minTime2 = p1.time + 0.01;
+  const maxTime2 = next ? next.time - 0.01 : totalDuration;
+
+  let target2 = Math.max(minTime2, Math.min(p2.time + deltaTime, maxTime2));
+  const snap2 = snapToSceneChanges(target2);
+  p2.time = Math.max(minTime2, Math.min(maxTime2, snap2.time));
+  p2.snapping = snap2.snapped;
+}
+
+  // Vertical movement is allowed for all points
+  p1.y = Math.max(0, Math.min(canvas.height, p1.y + dy));
+  p2.y = Math.max(0, Math.min(canvas.height, p2.y + dy));
+
+  updateAutomationData();
+  draw();
+  return;
+}
+
+  // --- Handle point dragging
+if (isDragging && selectedPoint) {
+
+    const time = (x / canvas.width) * totalDuration;
+    const sorted = automationPoints.slice().sort((a, b) => a.time - b.time);
+
+    
+
+
+    const idx = sorted.findIndex(p => p === selectedPoint);
+const prev = sorted[idx - 1];
+const next = sorted[idx + 1];
+
+// Original raw drag position
+const rawTime = (x / canvas.width) * totalDuration;
+
+// ✨ SNAP X to globalSceneChanges
+const SNAP_X_THRESHOLD = 0.3; // seconds
+let snappedTime = rawTime;
+let snappingX = false;
+
+
+for (const sceneTime of globalSceneChanges) {
+  if (Math.abs(sceneTime - rawTime) < SNAP_X_THRESHOLD) {
+    snappedTime = sceneTime;
+    snappingX = true;
+
+
+    document.getElementById('cursor-line').style.background = 'magenta'
+
+    break;
+}
+let clampedTime = snappedTime;
+// Clamp to neighbor points
+if (!selectedPoint.isEdge) {
+  let clampedTime = snappedTime;
+  if (prev) clampedTime = Math.max(prev.time + 0.01, clampedTime);
+  if (next) clampedTime = Math.min(next.time - 0.01, clampedTime);
+  selectedPoint.time = clampedTime;
+  selectedPoint.snapping = snappingX;
+} else {
+  selectedPoint.time = snappedTime;
+  selectedPoint.snapping = snappingX;
+}
+  
+
+
+}
+  
+  // All points (including edges) can be moved vertically
+  const SNAP_Y_THRESHOLD = 8;
+    let newY = y;
+    let snapping = false;
+
+    if (
+      (prev && Math.abs(prev.y - y) < SNAP_Y_THRESHOLD) ||
+      (prev?.isEdge && Math.abs(prev.y - y) < SNAP_Y_THRESHOLD)
+    ) {
+      newY = prev.y;
+      snapping = true;
+    } else if (
+      (next && Math.abs(next.y - y) < SNAP_Y_THRESHOLD) ||
+      (next?.isEdge && Math.abs(next.y - y) < SNAP_Y_THRESHOLD)
+    ) {
+      newY = next.y;
+      snapping = true;
+    }
+  let clampedTime = snappedTime;
+    selectedPoint.time = clampedTime;
+   
+      
+    selectedPoint.y = Math.max(0, Math.min(canvas.height, newY));
+    selectedPoint.snapping = snapping;
+
+    updateAutomationData();
+
+      // Sync video and timeline cursor to dragged point
+    const timelineCursor = document.getElementById('timeline-cursor');
+    const video = document.getElementById('player');
+
+    if (timelineCursor && video && !selectedPoint.isEdge) {
+      const cursorTime = selectedPoint.time;
+
+      // Clamp within duration
+      const clampedTime = Math.max(0, Math.min(video.duration || totalDuration, cursorTime));
+      video.currentTime = clampedTime;
+
+      // Move the visual timeline cursor
+      const timelineBar = document.getElementById('timeline-bar');
+      const timelineWidth = timelineBar.offsetWidth;
+      const positionPx = (clampedTime / totalDuration) * timelineWidth;
+
+      // timelineCursor.style.left = `${positionPx}px`;
+    }
+
+
+
+    draw();
+
+
+  }
+});
+
+
+
+canvas.addEventListener('mouseup', () => {
+  isDragging = false;
+  isDraggingLineSegment = false;
+  draggedLinePair = null;
+  // Keep selectedPoint if we’re still over it
+});
+
+window.addEventListener('keydown', (e) => {
+  if (
+    (e.key === 'Delete' || e.key === 'Backspace') &&
+    selectedPoint &&
+    !selectedPoint.isEdge
+  ) {
+    const idx = automationPoints.indexOf(selectedPoint);
+    if (idx > -1) {
+      automationPoints.splice(idx, 1);
+      selectedPoint = null;
+      updateAutomationData();
+      draw();
+    }
+  }
+});
+
+const dragBar = document.getElementById('automation-drag-bar');
+
+document.getElementById('automation-drag-bar-x').addEventListener('mousedown', e => {
+  isDraggingX = true;
+  dragStartX = e.clientX;
+  e.currentTarget.classList.add('dragging');
+});
+
+document.getElementById('automation-drag-bar-y').addEventListener('mousedown', e => {
+  isDraggingY = true;
+  dragStartY = e.clientY;
+  e.currentTarget.classList.add('dragging');
+});
+
+window.addEventListener('mousemove', e => {
+  if (isDraggingX || isDraggingY) {
+    const dx = e.clientX - dragStartX;
+    const dy = e.clientY - dragStartY;
+
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+
+    if (isDraggingX) {
+      const deltaTime = (dx / canvas.width) * totalDuration;
+
+      for (const point of automationPoints) {
+        if (!point.isEdge) {
+          point.time = Math.min(totalDuration, Math.max(0, point.time + deltaTime));
+        }
+      }
+    }
+
+    if (isDraggingY) {
+      for (const point of automationPoints) {
+        point.y = Math.max(0, Math.min(canvas.height, point.y + dy));
+      }
+    }
+
+    updateAutomationData();
+    draw();
+  }
+});
+
+
+
+window.addEventListener('mouseup', () => {
+  isDraggingX = false;
+  isDraggingY = false;
+
+  document.getElementById('automation-drag-bar-x').classList.remove('dragging');
+  document.getElementById('automation-drag-bar-y').classList.remove('dragging');
+});
+
+
+
+resizeCanvas();
+initPoints();
+window.addEventListener('resize', resizeCanvas);
+
+function getAutomationData() {
+  return {
+    points: automationData.points.map(p => ({
+      time: p.time,
+      volume: p.volume
+    })),
+    resolution: {
+      width: automationData.canvasWidth,
+      height: automationData.canvasHeight
+    }
+  };
+}
+
+
+
+let on = false;
+
+function autobtn() {
+    const windowEl = document.querySelector('.automation-window');
+
+    if (!on) {
+        windowEl.style.display = 'block';
+        on = true;
+    } else {
+        windowEl.style.display = 'none';
+        on = false;
+        console.log('test');
+    }
+}
+
+autobtn()
+setTimeout(() => {
+  autobtn()
+  
+}, 500);
+
+
+//document.querySelector('#autobtn').click()
+
+</script>
+
+
+    
+    
+
+
+<ul id="download-links3" class="download-list">
+  
+
+
+
+
+</ul>
+
+<ul id="download-links" class="download-list">
+  
+
+
+</ul>
+
+<ul id="download-links2" class="download-list">
+
+</ul>
+
+
+</div>
+</div>
+
+
+</div>
+
+
+
+</div>
+
+
+
+
+
+</div>
+
+</div>
+
+</div>
+
+<div id="fx-panel" style="position: fixed; bottom: 100px; left: 90px; background: #111; color: white; padding: 10px; border-radius: 8px;">
+  <h4>Track FX</h4>
+  <label>Reverb Amount:
+    <input type="range" id="reverb-slider" min="0" max="1" step="0.01" value="0.5">
+  </label>
+  <br>
+  <label>Fade Out (sec):
+    <input type="range" id="fade-out-slider" min="0" max="10" step="0.1" value="1.0">
+  </label>
+    <label>Fade In (sec):
+    <input type="range" id="fade-in-slider" min="0" max="10" step="0.1" value="0.7">
+  </label>
+
+  <br>
+<label>
+  <input type="checkbox" id="fade-to-end-line" checked>
+  Fade to crop
+</label>
+</div>
+
+
+
+</div>
+
+<script>
+  const gensfx = document.getElementById('gensfx');
+  const genmus = document.getElementById('genmus');
+  const sfxs = document.getElementById('sfxs');
+  const muss = document.getElementById('muss');
+  const modeButtons = document.querySelectorAll('.modeselect .mode');
+
+  modeButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Remove 'selected' class from all modes
+      modeButtons.forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+
+      const selectedMode = btn.dataset.mode;
+
+      if (selectedMode === 'Music') {
+        genmus.style.display = 'block'
+        gensfx.style.display = 'none'
+        // muss.style.borderColor  = 'White'
+        muss.classList.add('selected');
+        sfxs.classList.remove('selected');
+        
+      } else if (selectedMode === 'SFX') {
+        genmus.style.display = 'none'
+        gensfx.style.display = 'block'
+
+        sfxs.classList.add('selected');
+        muss.classList.remove('selected');
+      } else if (selectedMode === 'VO') {
+
+      }
+    });
+  });
+
+
+</script>
+
+
+<!-- <p  id="copyright" color="grey"> Algorithm and Website coded by Arlo Erwin, 2022</p> -->
+    
+
+
+
+<footer id="footer">
+    <!-- <p>Copyright © 2024 by Doseedo.com</p> -->
+    <!-- <p>Contact us: <a href="mailto:contact@example.com">arlo@doseedo.com</a></p> -->
+    <!-- <p><a href="privacy.html">Privacy Policy</a> | <a href="terms.html">Terms of Use</a></p> -->
+
+    <!-- <div class="support"> -->
+    <!-- <i id='support' class="fa-solid fa-question"></i> -->
+  </div>
+    <i></i>
+
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/html-audio-player@1.0.0/dist/html-audio.min.js"></script>
+
+<script src="javascript.js"></script>
+
+</body>
+
+
+
+
+</html>

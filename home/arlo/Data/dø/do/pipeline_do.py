@@ -108,15 +108,33 @@ class DoTrainComponents:
     def build_transformer_pretrained(self):
         if self.transformer is not None:
             return self.transformer
-        
+
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         OfficialTransformer = self._get_transformer_class(from_scratch=False)
         model_path = os.path.join(self.root, "ace_step_transformer")
-        model = OfficialTransformer.from_pretrained(model_path)
 
-        model = model.to(self.device).to(self.dtype).train()
+        # Use low_cpu_mem_usage and torch_dtype to avoid RAM OOM on 16GB machines
+        # This loads weights incrementally instead of all at once
+        logger.info(f"[DoTrainComponents] Loading transformer with low_cpu_mem_usage=True, dtype={self.dtype}")
+        model = OfficialTransformer.from_pretrained(
+            model_path,
+            torch_dtype=self.dtype,
+            low_cpu_mem_usage=True,
+        )
+
+        model = model.to(self.device).train()
         self.transformer = model
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         logger.info("[DoTrainComponents] Transformer loaded WITH PRE-TRAINED weights.")
-        return self.transformer   # <-- add this
+        return self.transformer
 
 
     def build_transformer_random(self):

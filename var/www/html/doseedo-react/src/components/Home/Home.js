@@ -1,6 +1,7 @@
 import React from 'react';
 import { Slide } from 'react-slideshow-image';
 import 'react-slideshow-image/dist/styles.css';
+import * as authService from '../../services/authService';
 import styles from './Home.module.css';
 
 /**
@@ -8,18 +9,9 @@ import styles from './Home.module.css';
  * Landing page with feature slideshow
  */
 const Home = () => {
-  const handleAIToolClick = (toolName) => {
-    console.log(`🤖 AI Tool clicked: ${toolName}`);
-    // TODO: Implement AI tool functionality
-    alert(`${toolName} - Coming Soon!`);
-  };
+  const user = authService.getCurrentUser();
+
   const slides = [
-    {
-      title: 'AI-Powered Music Generation',
-      description: 'Transform your videos into professional music with cutting-edge AI technology',
-      gradient: 'linear-gradient(135deg, rgba(102, 126, 234, 0.9), rgba(118, 75, 162, 0.9))',
-      icon: 'fa-wand-magic-sparkles'
-    },
     {
       title: 'Professional DAW Interface',
       description: 'Edit and arrange your tracks with our powerful timeline and mixing tools',
@@ -40,7 +32,7 @@ const Home = () => {
     },
     {
       title: 'Video to Music',
-      description: 'Upload your videos and let AI generate perfectly synced soundtracks',
+      description: 'Upload your videos and generate perfectly synced soundtracks',
       gradient: 'linear-gradient(135deg, rgba(102, 126, 234, 0.9), rgba(186, 156, 255, 0.9))',
       icon: 'fa-video'
     }
@@ -80,45 +72,24 @@ const Home = () => {
       <div className={styles.ctaSection}>
         <h2 className={styles.ctaTitle}>Ready to Create?</h2>
         <p className={styles.ctaDescription}>
-          Start making professional music with AI-powered tools
+          Start making professional music with powerful tools
         </p>
         <div className={styles.ctaButtons}>
-          <button className={styles.primaryBtn}>
-            <i className="fa-solid fa-play"></i>
-            Get Started
-          </button>
+          {user ? (
+            <a href="/plugins" className={styles.primaryBtn}>
+              <i className="fa-solid fa-flask"></i>
+              Sign Up for Open Beta
+            </a>
+          ) : (
+            <a href="/register" className={styles.primaryBtn}>
+              <i className="fa-solid fa-user-plus"></i>
+              Create an Account
+            </a>
+          )}
           <a href="/plans.html" className={styles.secondaryBtn}>
             <i className="fa-solid fa-arrow-up-right-dots"></i>
             View Plans
           </a>
-        </div>
-      </div>
-
-      {/* AI Tools Section */}
-      <div className={styles.aiToolsSection}>
-        <h2 className={styles.aiToolsTitle}>AI Tools</h2>
-        <div className={styles.aiToolsContainer}>
-          <div
-            className={styles.aiToolCard}
-            onClick={() => handleAIToolClick('Lyric Edit')}
-          >
-            <i className="fa-solid fa-pen-to-square"></i>
-            <span>Lyric Edit</span>
-          </div>
-          <div
-            className={styles.aiToolCard}
-            onClick={() => handleAIToolClick('Voice to Instrument')}
-          >
-            <i className="fa-solid fa-microphone-lines"></i>
-            <span>Voice to Instrument</span>
-          </div>
-          <div
-            className={styles.aiToolCard}
-            onClick={() => handleAIToolClick('Sample Regenerator')}
-          >
-            <i className="fa-solid fa-waveform-lines"></i>
-            <span>Sample Regenerator</span>
-          </div>
         </div>
       </div>
     </div>

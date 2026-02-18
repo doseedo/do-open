@@ -4,6 +4,8 @@ import { AppProvider, useApp } from './context/AppContext';
 import { useKeyboardControls } from './hooks/useKeyboardControls';
 import * as authService from './services/authService';
 import * as sessionService from './services/sessionService';
+
+// === STUDIO COMPONENTS (original) ===
 import Navbar from './components/Navbar/Navbar';
 import LeftSidebar from './components/Sidebar/LeftSidebar/LeftSidebar';
 import TrackInfoSidebar from './components/Sidebar/RightSidebar/TrackInfoSidebar';
@@ -25,12 +27,97 @@ import Search from './components/Search/Search';
 import UserInfo from './components/UserInfo/UserInfo';
 import Tools from './components/Tools/Tools';
 import WhatsNew from './components/WhatsNew/WhatsNew';
+import Research from './components/Research/Research';
+import Plugins from './components/Plugins/Plugins';
+import About from './components/Legal/About';
+import Privacy from './components/Legal/Privacy';
+import Terms from './components/Legal/Terms';
 import ChordWindow from './components/ChordWindow/ChordWindow';
 import AudioLabeler from './components/AudioLabeler/AudioLabeler';
 import DataMonitor from './components/DataMonitor/DataMonitor';
-// Real-time theme editor UI enabled:
-import ThemeEditor from './components/ThemeEditor/ThemeEditor';
+// ThemeEditor removed
 import LiquidGlassFilters from './components/LiquidGlassFilters/LiquidGlassFilters';
+
+// === DEMO COMPONENTS (editable without affecting /studio) ===
+import NavbarDemo from './components-demo/Navbar/Navbar';
+import LeftSidebarDemo from './components-demo/Sidebar/LeftSidebar/LeftSidebar';
+import TrackInfoSidebarDemo from './components-demo/Sidebar/RightSidebar/TrackInfoSidebar';
+import GenerationPanelOptimizedDemo from './components-demo/GenerationPanel/GenerationPanelOptimized';
+import MIDIBrowserDemo from './components-demo/MIDIBrowser/MIDIBrowser';
+import ChatWindowDemo from './components-demo/ChatWindow/ChatWindow';
+import VideoUploadOptimizedDemo from './components-demo/VideoUpload/VideoUploadOptimized';
+import ModeSelectorDemo from './components-demo/ModeSelector/ModeSelector';
+import MIDIChartDemo from './components-demo/MIDIChart/MIDIChart';
+import AudioWaveformDemo from './components-demo/AudioWaveform/AudioWaveform';
+import ImageViewerDemo from './components-demo/ImageViewer/ImageViewer';
+import FXViewDemo from './components-demo/FXView/FXView';
+import DAWOptimizedDemo from './components-demo/DAW/DAWOptimized';
+import ResizeBarDemo from './components-demo/ResizeBar/ResizeBar';
+import VerticalResizeBarDemo from './components-demo/ResizeBar/VerticalResizeBar';
+import ChordWindowDemo from './components-demo/ChordWindow/ChordWindow';
+// ThemeEditorDemo removed
+import LiquidGlassFiltersDemo from './components-demo/LiquidGlassFilters/LiquidGlassFilters';
+import CinemaModeDemo from './components-demo/CinemaMode/CinemaMode';
+
+const PROTECTED_PASSWORD = '***REDACTED***';
+
+function PasswordGate({ children, routeName }) {
+  const [unlocked, setUnlocked] = useState(() => {
+    return sessionStorage.getItem(`pw_${routeName}`) === '1';
+  });
+  const [input, setInput] = useState('');
+  const [error, setError] = useState(false);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (input === PROTECTED_PASSWORD) {
+      sessionStorage.setItem(`pw_${routeName}`, '1');
+      setUnlocked(true);
+    } else {
+      setError(true);
+      setTimeout(() => setError(false), 1500);
+    }
+  };
+
+  if (unlocked) return children;
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      minHeight: '100vh', background: '#111', color: '#fff',
+    }}>
+      <form onSubmit={handleSubmit} style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+        background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 12, padding: '40px 48px',
+      }}>
+        <i className="fa-solid fa-lock" style={{ fontSize: 28, color: 'rgba(186,156,255,0.8)', marginBottom: 8 }} />
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Password Required</h2>
+        <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+          Enter the password to access {routeName}.
+        </p>
+        <input
+          type="password"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="Password"
+          autoFocus
+          style={{
+            padding: '10px 16px', fontSize: 14, borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)',
+            background: 'rgba(255,255,255,0.06)', color: '#fff', outline: 'none', width: 220,
+          }}
+        />
+        <button type="submit" style={{
+          padding: '10px 32px', fontSize: 14, fontWeight: 600, borderRadius: 8, border: 'none',
+          background: 'rgba(186,156,255,0.85)', color: '#fff', cursor: 'pointer',
+        }}>
+          Unlock
+        </button>
+        {error && <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,100,100,0.9)' }}>Incorrect password</p>}
+      </form>
+    </div>
+  );
+}
 
 /**
  * AppContent - Inner component with access to context
@@ -39,6 +126,13 @@ function AppContent() {
   const { state, dispatch } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
+  // Track SPA page views in Google Analytics
+  useEffect(() => {
+    if (window.gtag) {
+      window.gtag('event', 'page_view', { page_path: location.pathname + location.search });
+    }
+  }, [location]);
+
   const [contentMode, setContentMode] = useState('video'); // 'video', 'midi', 'audio', 'image', or 'fx'
   const [showMidiBrowser, setShowMidiBrowser] = useState(false); // Toggle between generation panel and MIDI browser
   const [showChatWindow, setShowChatWindow] = useState(false); // Toggle for chat window
@@ -100,10 +194,19 @@ function AppContent() {
                       location.pathname === '/profile' ? 'userinfo' :
                       location.pathname === '/tools' ? 'tools' :
                       location.pathname === '/whats-new' ? 'whatsnew' :
+                      location.pathname === '/about' ? 'about' :
+                      location.pathname === '/privacy' ? 'privacy' :
+                      location.pathname === '/terms' ? 'terms' :
+                      location.pathname.startsWith('/research') ? 'research' :
+                      location.pathname.startsWith('/plugins') ? 'plugins' :
                       location.pathname === '/studio' ? 'daw' :
+                      location.pathname === '/demo' ? 'daw' :
                       location.pathname === '/label' ? 'label' :
                       location.pathname === '/monitor' ? 'monitor' :
                       location.pathname === '/' ? 'home' : 'home';
+
+  // Check if we're in demo mode
+  const isDemo = location.pathname === '/demo';
 
   // Redirect root based on auth status - retry multiple times to handle cookie timing
   useEffect(() => {
@@ -114,11 +217,16 @@ function AppContent() {
 
       const checkAuth = () => {
         attempts++;
-        if (authService.isAuthenticated()) {
+        const isAuth = authService.isAuthenticated();
+        console.log(`Auth check attempt ${attempts}: isAuthenticated=${isAuth}, cookies=${document.cookie}`);
+
+        if (isAuth) {
           // Authenticated users go to dashboard
+          console.log('Redirecting to /dashboard');
           navigate('/dashboard', { replace: true });
         } else if (attempts >= maxAttempts) {
           // After 750ms of retries, assume not authenticated
+          console.log('Max attempts reached, redirecting to /home');
           window.location.href = '/home';
         } else {
           // Try again
@@ -270,6 +378,16 @@ function AppContent() {
     navigate('/whats-new');
   };
 
+  // Handle navigation to research
+  const handleGoToResearch = () => {
+    navigate('/research');
+  };
+
+  // Handle navigation to plugins
+  const handleGoToPlugins = () => {
+    navigate('/plugins');
+  };
+
   // Toggle MIDI browser
   const handleToggleSearch = () => {
     setShowMidiBrowser(prev => !prev);
@@ -306,6 +424,8 @@ function AppContent() {
           onGoToUserInfo={handleGoToUserInfo}
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -315,8 +435,6 @@ function AppContent() {
           isHomeView={true}
         />
         <Home />
-        {/* Real-time theme editor enabled: */}
-        <ThemeEditor />
       </div>
     );
   }
@@ -333,6 +451,8 @@ function AppContent() {
           onGoToUserInfo={handleGoToUserInfo}
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -342,8 +462,6 @@ function AppContent() {
           isSearchView={true}
         />
         <Search />
-        {/* Real-time theme editor enabled: */}
-        <ThemeEditor />
       </div>
     );
   }
@@ -360,6 +478,8 @@ function AppContent() {
           onGoToUserInfo={handleGoToUserInfo}
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -369,36 +489,36 @@ function AppContent() {
           isUserInfoView={true}
         />
         <UserInfo onLogout={handleGoToHome} />
-        {/* Real-time theme editor enabled: */}
-        <ThemeEditor />
       </div>
     );
   }
 
-  // Show tools view with sidebar
+  // Show tools view with sidebar (password protected)
   if (currentView === 'tools') {
     return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-          isToolsView={true}
-        />
-        <Tools />
-        {/* Real-time theme editor enabled: */}
-        <ThemeEditor />
-      </div>
+      <PasswordGate routeName="Tools">
+        <div className="App">
+          <LiquidGlassFilters />
+          <LeftSidebar
+            onBackToDashboard={handleBackToDashboard}
+            onGoToHome={handleGoToHome}
+            onGoToSearch={handleGoToSearch}
+            onGoToUserInfo={handleGoToUserInfo}
+            onGoToTools={handleGoToTools}
+            onGoToWhatsNew={handleGoToWhatsNew}
+            onGoToResearch={handleGoToResearch}
+            onGoToPlugins={handleGoToPlugins}
+            onToggleSearch={handleToggleSearch}
+            onShowGenerationPanel={handleShowGenerationPanel}
+            onShowMidiBrowser={handleShowMidiBrowser}
+            showMidiBrowser={showMidiBrowser}
+            onToggleChat={handleToggleChat}
+            showChatWindow={showChatWindow}
+            isToolsView={true}
+          />
+          <Tools />
+          </div>
+      </PasswordGate>
     );
   }
 
@@ -414,6 +534,8 @@ function AppContent() {
           onGoToUserInfo={handleGoToUserInfo}
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -423,8 +545,87 @@ function AppContent() {
           isWhatsNewView={true}
         />
         <WhatsNew />
-        {/* Real-time theme editor enabled: */}
-        <ThemeEditor />
+      </div>
+    );
+  }
+
+  // Show research view with sidebar
+  if (currentView === 'research') {
+    return (
+      <div className="App">
+        <LiquidGlassFilters />
+        <LeftSidebar
+          onBackToDashboard={handleBackToDashboard}
+          onGoToHome={handleGoToHome}
+          onGoToSearch={handleGoToSearch}
+          onGoToUserInfo={handleGoToUserInfo}
+          onGoToTools={handleGoToTools}
+          onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
+          onToggleSearch={handleToggleSearch}
+          onShowGenerationPanel={handleShowGenerationPanel}
+          onShowMidiBrowser={handleShowMidiBrowser}
+          showMidiBrowser={showMidiBrowser}
+          onToggleChat={handleToggleChat}
+          showChatWindow={showChatWindow}
+          isResearchView={true}
+        />
+        <Research />
+      </div>
+    );
+  }
+
+  // Show about/privacy/terms views with sidebar
+  if (currentView === 'about' || currentView === 'privacy' || currentView === 'terms') {
+    const LegalComponent = currentView === 'about' ? About : currentView === 'privacy' ? Privacy : Terms;
+    return (
+      <div className="App">
+        <LiquidGlassFilters />
+        <LeftSidebar
+          onBackToDashboard={handleBackToDashboard}
+          onGoToHome={handleGoToHome}
+          onGoToSearch={handleGoToSearch}
+          onGoToUserInfo={handleGoToUserInfo}
+          onGoToTools={handleGoToTools}
+          onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
+          onToggleSearch={handleToggleSearch}
+          onShowGenerationPanel={handleShowGenerationPanel}
+          onShowMidiBrowser={handleShowMidiBrowser}
+          showMidiBrowser={showMidiBrowser}
+          onToggleChat={handleToggleChat}
+          showChatWindow={showChatWindow}
+        />
+        <LegalComponent />
+      </div>
+    );
+  }
+
+  // Show plugins view with sidebar
+  if (currentView === 'plugins') {
+    return (
+      <div className="App">
+        <LiquidGlassFilters />
+        <LeftSidebar
+          onBackToDashboard={handleBackToDashboard}
+          onGoToHome={handleGoToHome}
+          onGoToSearch={handleGoToSearch}
+          onGoToUserInfo={handleGoToUserInfo}
+          onGoToTools={handleGoToTools}
+          onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
+          onToggleSearch={handleToggleSearch}
+          onShowGenerationPanel={handleShowGenerationPanel}
+          onShowMidiBrowser={handleShowMidiBrowser}
+          showMidiBrowser={showMidiBrowser}
+          onToggleChat={handleToggleChat}
+          showChatWindow={showChatWindow}
+          isPluginsView={true}
+        />
+        <Plugins />
       </div>
     );
   }
@@ -459,6 +660,8 @@ function AppContent() {
           onGoToUserInfo={handleGoToUserInfo}
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -473,14 +676,211 @@ function AppContent() {
             onLoadProject={handleLoadProject}
           />
         </div>
-        {/* Real-time theme editor enabled: */}
-        <ThemeEditor />
       </div>
     );
   }
 
-  // Show DAW view
+  // Show DAW view - use demo components for /demo route (password protected)
+  if (isDemo) {
+    return (
+      <PasswordGate routeName="Demo">
+      <div className="App">
+        <LiquidGlassFiltersDemo />
+
+        {/* Cinema Mode Overlay */}
+        <CinemaModeDemo
+          videoContent={
+            contentMode === 'fx' ? (
+              <FXViewDemo />
+            ) : contentMode === 'video' ? (
+              <VideoUploadOptimizedDemo />
+            ) : contentMode === 'midi' ? (
+              <MIDIChartDemo />
+            ) : contentMode === 'audio' ? (
+              <AudioWaveformDemo />
+            ) : (
+              <ImageViewerDemo />
+            )
+          }
+          leftPanel={
+            <div className="startcontainer scrollable" style={{ height: '100%', overflowY: 'auto' }}>
+              {showChatWindow ? (
+                <ChatWindowDemo onClose={() => setShowChatWindow(false)} />
+              ) : showMidiBrowser ? (
+                <MIDIBrowserDemo onClose={() => setShowMidiBrowser(false)} />
+              ) : (
+                <GenerationPanelOptimizedDemo />
+              )}
+            </div>
+          }
+          rightPanel={<TrackInfoSidebarDemo embedded={true} />}
+          bottomPanel={
+            <DAWOptimizedDemo
+              maxTracksHeight={300}
+              onTracksHeightChange={() => {}}
+              panelWidth={window.innerWidth}
+              pluginMode={false}
+            />
+          }
+          leftPanelWidth={304}
+          rightPanelWidth={320}
+          bottomPanelHeight={300}
+        />
+
+        <NavbarDemo />
+        <LeftSidebarDemo
+          onBackToDashboard={handleBackToDashboard}
+          onGoToHome={handleGoToHome}
+          onGoToSearch={handleGoToSearch}
+          onGoToUserInfo={handleGoToUserInfo}
+          onGoToTools={handleGoToTools}
+          onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
+          onToggleSearch={handleToggleSearch}
+          showMidiBrowser={showMidiBrowser}
+          onToggleChat={handleToggleChat}
+          showChatWindow={showChatWindow}
+        />
+        <TrackInfoSidebarDemo />
+        <div id="main-content">
+          <div id="wrapper" style={{ position: 'relative' }}>
+            <div
+              ref={contentRef}
+              className="content"
+              style={{
+                width: contentRef.current ? `${panelWidth - contentRef.current.getBoundingClientRect().left}px` : 'auto',
+                height: `${panelHeight}px`,
+                overflow: 'hidden'
+              }}
+            >
+              <div className="startcontainer scrollable" style={{ height: '100%', overflowY: 'auto' }}>
+                {showChatWindow ? (
+                  <ChatWindowDemo onClose={() => setShowChatWindow(false)} />
+                ) : showMidiBrowser ? (
+                  <MIDIBrowserDemo onClose={() => setShowMidiBrowser(false)} />
+                ) : (
+                  <GenerationPanelOptimizedDemo />
+                )}
+              </div>
+            </div>
+
+            {!state.pluginMode && !state.cinemaMode && (
+              <ResizeBarDemo
+                leftPosition={panelWidth}
+                onResize={handleResize}
+                minWidth={minWidth}
+                maxWidth={maxWidth}
+              />
+            )}
+
+            <div style={{
+              height: `${panelHeight}px`,
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'row',
+              background: 'var(--gradient-glow-subtle)',
+              position: 'relative'
+            }}>
+              <ModeSelectorDemo
+                selectedMode={contentMode}
+                onModeChange={setContentMode}
+              />
+
+              <div style={{
+                flex: 1,
+                minWidth: 0,
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                position: 'relative',
+                zIndex: 1
+              }}>
+                <div style={{
+                  height: state.pluginMode ? `${panelHeight - pluginDawHeight}px` : '100%',
+                  minHeight: 0,
+                  overflow: 'hidden',
+                  position: 'relative'
+                }}>
+                  {contentMode === 'fx' ? (
+                    <FXViewDemo />
+                  ) : contentMode === 'video' ? (
+                    <VideoUploadOptimizedDemo />
+                  ) : contentMode === 'midi' ? (
+                    <MIDIChartDemo />
+                  ) : contentMode === 'audio' ? (
+                    <AudioWaveformDemo />
+                  ) : (
+                    <ImageViewerDemo />
+                  )}
+
+                  {contentMode !== 'fx' && !state.pluginMode && <ChordWindowDemo />}
+                </div>
+
+                {state.pluginMode && (
+                  <VerticalResizeBarDemo
+                    topPosition={panelHeight - pluginDawHeight}
+                    onResize={handlePluginDawResize}
+                    minHeight={100}
+                    maxHeight={panelHeight - 100}
+                  />
+                )}
+
+                {state.pluginMode && (
+                  <div style={{
+                    height: `${pluginDawHeight}px`,
+                    minHeight: 0,
+                    overflow: 'hidden',
+                    background: 'var(--daw-bg)'
+                  }}>
+                    <DAWOptimizedDemo
+                      maxTracksHeight={pluginDawHeight - 50}
+                      onTracksHeightChange={() => {}}
+                      panelWidth={panelWidth}
+                      pluginMode={state.pluginMode}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {!state.pluginMode && !state.cinemaMode && (
+              <VerticalResizeBarDemo
+                topPosition={panelHeight}
+                onResize={handleVerticalResize}
+                minHeight={300}
+                maxHeight={1000}
+              />
+            )}
+
+            {!state.pluginMode && (
+              <div style={{
+                marginTop: '10px',
+                width: `calc(100% - ${leftOffset}px)`,
+                position: 'relative',
+                marginLeft: '0px',
+                overflowX: 'auto',
+                overflowY: 'visible'
+              }}>
+                <DAWOptimizedDemo
+                  maxTracksHeight={dawTracksHeight}
+                  onTracksHeightChange={setDawTracksHeight}
+                  panelWidth={panelWidth}
+                  pluginMode={state.pluginMode}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      </PasswordGate>
+    );
+  }
+
+  // Show DAW view (original /studio) - password protected
   return (
+    <PasswordGate routeName="Studio">
     <div className="App">
       <LiquidGlassFilters />
       <Navbar />
@@ -491,6 +891,7 @@ function AppContent() {
         onGoToUserInfo={handleGoToUserInfo}
         onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
         onToggleSearch={handleToggleSearch}
         showMidiBrowser={showMidiBrowser}
         onToggleChat={handleToggleChat}
@@ -498,8 +899,6 @@ function AppContent() {
       />
       {/* Show track info sidebar for both tracks and buses */}
       <TrackInfoSidebar />
-      {/* Real-time theme editor enabled: */}
-      <ThemeEditor />
       <div id="main-content">
         <div id="wrapper" style={{ position: 'relative' }}>
           {/* Top Left: Generation Panel or MIDI Browser or Chat Window */}
@@ -642,6 +1041,7 @@ function AppContent() {
         </div>
       </div>
     </div>
+    </PasswordGate>
   );
 }
 

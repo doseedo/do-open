@@ -1,0 +1,54 @@
+/* Tempo Controls Styles */
+.container {
+  position: relative;
+  display: flex;
+  width: 240px;
+  gap: 6.4px;
+  align-items: center;
+}
+
+.button {
+  padding: 6.4px 12.8px;
+  border-radius: 6.4px;
+  border: 1.6px solid rgba(102, 126, 234, 0.3);
+  background: rgba(30, 30, 30, 0.8);
+  color: #c5cae9;
+  font-size: 11.2px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.button:hover {
+  background: rgba(50, 50, 50, 0.9);
+  border-color: rgba(102, 126, 234, 0.6);
+}
+
+.button.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: #667eea;
+  color: white;
+  box-shadow: 0 1.6px 6.4px rgba(102, 126, 234, 0.5);
+}
+
+.bpmInputContainer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6.4px;
+}
+
+.bpmInputContainer label {
+  color: #c5cae9;
+  font-size: 9.6px;
+  font-weight: 600;
+}
+
+.bpmInput {
+  width: 48px;
+  padding: 4.8px 8px;
+  border-radius: 4.8px;
+  border: 1.6px solid rgba(102, 126, 234, 0.3);
+  background: rgba(30, 30, 30, 0.8);
+  color: white;
+  font-size: 10.4px;
+  text-align: center;
+}

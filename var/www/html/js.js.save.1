@@ -1,0 +1,466 @@
+// JavaScript functions for showing/hiding forms and handling login
+
+let isAuthenticated = false
+let using = ''
+let isPro = false
+let mus = false
+let currentVideoId = '' // Global variable to store the video ID
+let videolabels = ''
+
+const loading = document.getElementById('loading')
+
+
+document.querySelector('.nav-link').addEventListener('click', function() {
+    document.body.classList.add('fade-in');
+
+});
+
+
+window.onload = function() {
+    const isAuth = localStorage.getItem('isAuth') === 'true';
+    const username = localStorage.getItem('username');
+    const substatus = localStorage.getItem('ispro');
+    const paydiv = document.getElementsByClassName('paycontainer')
+    using =  localStorage.getItem('username');
+
+
+
+    
+
+
+    if (window.location.pathname == '/plans.html') {
+        // Execute specific code for home.html
+        if(isAuth === false){
+            document.querySelector('.notsubbed').style.visibility ='hidden'
+            document.querySelector('.notsignedin').style.visibility ='visible'
+            
+        }
+    }
+
+
+    if (isAuth && username) {
+
+        isAuthenticated = true
+
+        if(substatus == 'Subscribed'){
+            isPro = true
+
+
+            
+        }
+
+
+        if (window.location.pathname == '/plans.html') {
+            // Execute specific code for home.html
+
+        if(substatus == 'Subscribed'){
+            isPro = true
+
+   
+            document.querySelector('.notsubbed').style.visibility ='hidden'
+            document.querySelector('.subbed').style.visibility ='visible'
+            document.querySelector('.notsignedin').style.visibility ='hidden'
+
+            if (window.location.pathname == '/plans.html') {
+                //paydiv.style.visibility = 'hidden'
+                }
+            
+
+            
+        }
+    }
+  
+    
+
+
+
+        try {
+            
+
+            
+
+        // User is authenticated, update the UI accordingly
+     
+        document.getElementById('user-username').textContent = username;
+        document.getElementById('user-subscription-status').textContent = substatus;
+
+        document.getElementById('user-info').style.display = 'block';
+        document.getElementById('register-form').style.display = 'none';
+        document.getElementById('login-form').style.display = 'none';
+        document.getElementById('signupbutton').style.display = 'none';
+        document.getElementById('loginbutton').style.display = 'none';
+
+
+        toggleSignOutButton();
+
+    } catch (error) {
+
+    }
+
+    
+
+        
+
+
+        // Add any other UI updates needed for an authenticated user
+    }else{
+        if(window.location.pathname != '/home.html'){
+        //document.getElementById('user-info').style.display = 'none';
+        }
+    }
+
+
+
+
+
+
+
+};
+
+if (isPro === true) {
+
+    // Select the container
+    const container = document.querySelector('.paycontainer');
+
+    // Select and remove the PayPal sign-up div (assuming it has an ID 'paypal-signup')
+    const paypalDiv = container.querySelector('.paypalbuttons');
+    if (paypalDiv) {
+        container.removeChild(paypalDiv);
+    }
+
+    // Create a new div to show subscribed status
+    const subscribedDiv = document.createElement('div');
+    subscribedDiv.textContent = 'You are subscribed. Thank you!';
+    
+    // Append the new div to the container
+    container.appendChild(subscribedDiv);
+    document.getElementsByClassName('notsubbed').style.visibility = 'hidden'
+}
+else{ 
+
+
+}
+
+if (window.location.pathname == '/doseedo1.html') {
+document.addEventListener('DOMContentLoaded', function() {
+
+    document.querySelector('.cues').style.display = 'none';
+    document.querySelector('.buttons').style.display = 'block';
+    var div = document.querySelector(".input-group1")
+    var div1 = document.querySelector(".input-group2")
+    var div2 = document.querySelector(".input-group3")
+
+
+    div.style.display = 'none';
+    div1.style.display = 'none';
+    div2.style.display = 'none';
+
+
+  });
+}
+
+function showSignUp() {
+    document.getElementById('register-form').style.display = 'block';
+    document.querySelector('.formdiv').style.display = 'block';
+    document.getElementById('login-form').style.display = 'none';
+    document.getElementById('user-info').style.display = 'none';
+    document.body.style.bottom = '100px'
+    document.getElementById('background').style.opacity = '0.1'
+}
+
+
+
+function showSignIn() {
+    document.getElementById('register-form').style.display = 'none';
+    document.querySelector('.formdiv').style.display = 'block';
+    document.getElementById('login-form').style.display = 'block';
+    document.getElementById('user-info').style.display = 'none';
+
+    document.getElementById('background').style.opacity = '0.1'
+    console.log('testt')
+
+}
+function exitregistration(){
+    document.getElementById('register-form').style.display = 'none';
+    document.getElementById('login-form').style.display = 'none';
+    document.getElementById('background').style.opacity = '1'
+    document.querySelector('.formdiv').style.display = 'none';
+
+
+}
+
+function loginUser() {
+    const username = document.getElementById('login-username').value;
+    const password = document.getElementById('login-password').value;
+    const user = { username: username, tokens: 10 };
+    document.getElementById('user-username').textContent = user.username;
+    document.getElementById('user-info').style.display = 'block';
+    document.getElementById('register-form').style.display = 'none';
+    document.getElementById('login-form').style.display = 'none';
+}
+
+function registerUser() {
+    const username = document.getElementById('register-username').value;
+    const email = document.getElementById('register-email').value;
+    const password = document.getElementById('register-password').value;
+    alert(`User registered successfully!\nUsername: ${username}\nEmail: ${email}`);
+}
+
+
+if (window.location.pathname == '/doseedo1.html') {
+
+
+
+    function generateAudio() {
+    //updateStatus('Generating audio...');
+    const descriptionInput = document.getElementById('description-input');
+    const durationInput = document.getElementById('duration-input');
+    const labels = descriptionInput.value.split(', ');
+    const promptSelect = document.getElementById('prompt-select');
+    const prompt = promptSelect.value;
+    const duration = durationInput.value;
+    const formData = new FormData();
+    formData.append('labels', JSON.stringify(videolabels));
+    formData.append('prompt', prompt);
+    formData.append('duration', duration);
+    formData.append('video_output', descriptionInput.value);
+    formData.append('request_type', 'normal');
+    loading.style.visibility = 'visible'
+
+    document.querySelector('#genmus').style.pointerEvents = 'none'
+    document.querySelector('#genmus').style.opacity = '20%'
+
+    document.querySelector('#gensfx').style.opacity = '20%'
+    document.querySelector('#gensfx').style.pointerEvents = 'none'
+
+    fetch('https://doseedo.com/generate', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data && data.task_id) {
+            pollTaskStatus(data.task_id, createDownloadLinks);
+        } else {
+            console.log('No task ID received');
+            updateStatus('Failed to start audio generation task.');
+            loading.style.visibility = 'hidden'
+            document.querySelector('#genmus').style.pointerEvents = 'auto'
+            document.querySelector('#genmus').style.opacity = '100%'
+        
+            document.querySelector('#gensfx').style.opacity = '100%'
+            document.querySelector('#gensfx').style.pointerEvents = 'auto'
+        }
+    })
+    .catch(error => {
+        console.error('There was a problem with the fetch operation:', error);
+        updateStatus('Error during audio generation.');
+        loading.style.visibility = 'hidden'
+        document.querySelector('#genmus').style.pointerEvents = 'auto'
+        document.querySelector('#genmus').style.opacity = '100%'
+    
+        document.querySelector('#gensfx').style.opacity = '100%'
+        document.querySelector('#gensfx').style.pointerEvents = 'auto'
+    });
+}
+
+
+
+function generateMusic() {
+    updateStatus('Generating music...');
+    const descriptionInput = document.getElementById('description-input');
+    const durationInput = document.getElementById('duration-input');
+    const labels = descriptionInput.value.split(', ');
+    const promptSelect = document.getElementById('prompt-select');
+    const prompt = promptSelect.value;
+    const duration = durationInput.value;
+    const formData = new FormData();
+    formData.append('labels', JSON.stringify(labels));
+    formData.append('prompt', prompt);
+    formData.append('duration', duration);
+    formData.append('video_output', descriptionInput.value);
+    loading.style.visibility = 'visible'
+
+    let melodyInput = document.getElementById('melodyInput');
+    let resultAudio = document.getElementById('audioPlayback');
+    let melodyFile;
+
+    document.querySelector('#genmus').style.pointerEvents = 'none'
+    document.querySelector('#genmus').style.opacity = '20%'
+
+    document.querySelector('#gensfx').style.opacity = '20%'
+    document.querySelector('#gensfx').style.pointerEvents = 'none'
+
+
+    if (!resultAudio.src) {
+        melodyFile = melodyInput.files[0];
+        appendMelodyAndSend(melodyFile);
+        appendMelodyAndSend(melodyFile);
+        console.log('Ball Vagina')
+    } else {
+        console.log('Fetching audio source');
+        fetch(resultAudio.src)
+            .then(response => response.blob())
+            .then(blob => {
+                melodyFile = new File([blob], "filename.mp3", { type: "audio/mpeg" });
+                console.log(melodyFile);
+                appendMelodyAndSend(melodyFile);
+                console.log('vaginal Balls')
+            });
+    }
+
+    function appendMelodyAndSend(file) {
+        // Append melody only if a file is selected
+        if (file) {
+            formData.append('melody', file);
+            formData.append('request_type', 'melody');
+            console.log('Processing request with melody file');
+        } else {
+            formData.append('request_type', 'normal');
+            console.log('Processing request without melody file');
+        }
+
+        fetch('https://doseedo.com/generate', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data && data.task_id) {
+                pollTaskStatus(data.task_id, createDownloadLinks);
+                updateStatus('Music Successfully Generated');
+                document.querySelector('#genmus').style.pointerEvents = 'auto'
+                document.querySelector('#genmus').style.opacity = '100%'
+            
+                document.querySelector('#gensfx').style.opacity = '100%'
+                document.querySelector('#gensfx').style.pointerEvents = 'auto'
+            } else {
+                console.log('No task ID received');
+                updateStatus('Failed to start music generation task.');
+                loading.style.visibility = 'hidden'
+                document.querySelector('#genmus').style.pointerEvents = 'auto'
+                document.querySelector('#genmus').style.opacity = '100%'
+            
+                document.querySelector('#gensfx').style.opacity = '100%'
+                document.querySelector('#gensfx').style.pointerEvents = 'auto'
+
+            }
+        })
+        .catch(error => {
+            console.error('There was a problem with the fetch operation:', error);
+            updateStatus('Error during music generation.');
+            loading.style.visibility = 'hidden'
+            document.querySelector('#genmus').style.pointerEvents = 'auto'
+            document.querySelector('#genmus').style.opacity = '100%'
+        
+            document.querySelector('#gensfx').style.opacity = '100%'
+            document.querySelector('#gensfx').style.pointerEvents = 'auto'
+        });
+    }
+}
+
+
+
+
+
+
+
+
+setTimeout(() => {
+    document.getElementById('settings').click()
+}, 800);
+
+
+document.getElementById('settings').addEventListener('click', function() {
+    this.style.animation = 'none';
+    this.offsetHeight;
+
+    this.style.animation = 'spin 0.5s linear';
+            
+
+
+
+    var settingsForm = document.getElementById('duration-input');
+    var promptSelect = document.getElementById('prompt-select');
+    var melodyInput = document.getElementById('melodyInput');
+    var pheading = document.getElementById('pheading');
+    var dheading = document.getElementById('dheading');
+    var mheading = document.getElementById('mheading');
+    var audioDiv = document.getElementById('audiodiv')
+    var record = document.querySelector(".record")
+    var div = document.querySelector(".input-group1")
+    var div1 = document.querySelector(".input-group2")
+    var div2 = document.querySelector(".input-group3")
+
+    
+
+
+    audioDiv.classList.toggle("visible");
+        
+
+
+    if (settingsForm.style.display === 'none' || settingsForm.style.display === '') {
+        settingsForm.style.display = 'grid';
+        promptSelect.style.display = 'grid';
+        melodyInput.style.display = 'grid';
+        pheading.style.display = 'grid';
+        dheading.style.display = 'grid';
+        mheading.style.display = 'grid';
+        record.style.display = 'inline-block';
+        div.style.display = 'inline';
+        div1.style.display = 'inline';
+        div2.style.display = 'inline';
+        document.getElementById("stopRecord").style.display = 'none';
+        document.getElementById("startRecord").style.position = 'relative';
+        document.getElementById("startRecord").style.left = '5px';
+        $(document).ready(function() {
+            $('#prompt-select').select2();
+        });
+
+        if (isPro == false){
+
+        audioDiv.style.opacity = '30%'
+        audioDiv.style.pointerEvents = 'none'
+        //const unlock = document.getElementById('probro')
+        //unlock.style.display = 'block'
+   
+        }
+    } else {
+
+        setTimeout(() => {
+            
+
+        settingsForm.style.display = 'none';
+        promptSelect.style.display = 'none';
+        melodyInput.style.display = 'none';
+        pheading.style.display = 'none';
+        dheading.style.display = 'none';
+        mheading.style.display = 'none';
+        record.style.display = 'none';
+        div.style.display = 'none';
+        div1.style.display = 'none';
+        div2.style.display = 'none';
+
+        $(document).ready(function() {
+            $('#prompt-select').select2('destroy');
+
+        });
+    }, 500);
+    audioDiv.style.opacity = '100%'
+
+
+
+    }
+    
+});
+}

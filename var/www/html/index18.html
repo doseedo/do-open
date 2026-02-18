@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--<meta http-equiv="refresh" content="3; URL=http://www.bassify.net/legal" /> -->
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link rel="stylesheet" href="style3.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=none">
+    <script src="https://kit.fontawesome.com/0de3cb0a73.js" crossorigin="anonymous"></script>
+    <meta http-equiv=”Pragma” content=”no-cache”>
+    <meta http-equiv=”Expires” content=”-1″>
+    <meta http-equiv=”CACHE-CONTROL” content=”NO-CACHE”>
+    <meta name="openai-domain-verification" content="dv-Kde8XyGetaPIsXP25QnDvZum" />
+    <script src="https://kit.fontawesome.com/0de3cb0a73.js" crossorigin="anonymous"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+
+    <title>Bassify</title>
+
+    <div class="title">
+
+
+    </div>
+    
+    
+
+</head>
+<body>
+
+
+  <div id="navbar">
+
+    
+
+
+    <a href="home.html" class="nav-link">Home</a>
+    <a href="#" class="nav-link">Services</a>
+    <a href="about.html" class="nav-link">About</a>
+
+        <!-- <canvas id="canvas"></canvas> -->
+        <!-- Sign Up Form -->
+          <!-- Sign Up Button -->
+          <button id="signupbutton" type="button" onclick="showSignUp()">Sign Up</button>
+          <!-- Sign In Button -->
+          <button id="loginbutton" type="button" onclick="showSignIn()">Sign In</button>
+          <button id="sign-out-button" onclick="signOut()" style="display: none;">Sign Out</button>
+        <button id="sign-out-button" style="display: none;">Sign Out</button>
+        <!-- Sign Up Form (Initially Hidden) -->
+        <form id="register-form" style="display: none;">
+          <input type="text" id="register-username" placeholder="Username" required>
+          <input type="email" id="register-email" placeholder="Email" required>
+          <input type="password" id="register-password" placeholder="Password" required>
+          <button type="button" onclick="registerUser()">Sign Up</button>
+        </form>
+        <!-- Sign In Form (Initially Hidden) -->
+        <form id="login-form" style="display: none;">
+          <input type="text" id="login-username" placeholder="Username" required>
+          <input type="password" id="login-password" placeholder="Password" required>
+          <button type="button" onclick="loginUser()">Sign In</button>
+        </form>
+        <!-- User Info (Initially Hidden) -->
+        <div id="user-info" style="display: none;">
+          <p>Welcome, <span id="user-username"></span>!</p>
+          <p>Tokens: <span id="user-tokens">0</span></p>
+        </div>
+        <!-- Rest of your HTML content -->
+        <!-- ... -->
+        
+
+</div>
+
+<div id="wrapper">
+
+  </div>
+
+  
+
+
+<div id="wrapper">
+
+
+
+<div id='background'>
+
+
+<script>
+    // JavaScript functions for showing/hiding forms and handling login
+    function showSignUp() {
+        document.getElementById('register-form').style.display = 'block';
+        document.getElementById('login-form').style.display = 'none';
+        document.getElementById('user-info').style.display = 'none';
+    }
+
+    function showSignIn() {
+        document.getElementById('register-form').style.display = 'none';
+        document.getElementById('login-form').style.display = 'block';
+        document.getElementById('user-info').style.display = 'none';
+    }
+
+    function loginUser() {
+        // Implement your login logic here
+        // Replace the following example code
+        const username = document.getElementById('login-username').value;
+        const password = document.getElementById('login-password').value;
+
+        // Assuming successful login, replace with actual user info
+        const user = { username: username, tokens: 10 };
+
+        // Display user info and hide forms
+        document.getElementById('user-username').textContent = user.username;
+        document.getElementById('user-tokens').textContent = user.tokens;
+        document.getElementById('user-info').style.display = 'block';
+        document.getElementById('register-form').style.display = 'none';
+        document.getElementById('login-form').style.display = 'none';
+    }
+
+    function registerUser() {
+        // Implement your registration logic here
+        // Replace the following example code
+        const username = document.getElementById('register-username').value;
+        const email = document.getElementById('register-email').value;
+        const password = document.getElementById('register-password').value;
+
+        // Assuming successful registration
+        alert(`User registered successfully!\nUsername: ${username}\nEmail: ${email}`);
+    }
+</script>
+
+
+
+
+
+<div class="buttons">
+    
+
+
+
+        <!-- Include your existing elements like 'description-input' and buttons -->
+        
+          </ul>
+
+
+          <div class="glow-container">
+
+
+
+
+           <br>
+        <script>
+let mus = false
+let isAuthenticated = false
+
+ function music(){
+    console.log(mus)
+    mus = true
+    console.log(mus)
+ }
+ function updateStatus(message) {
+    document.getElementById('status').textContent = message;
+}
+
+function uploadVideo() {
+    const videoInput = document.getElementById('videoFile');
+
+    if (videoInput.files.length === 0) {
+        alert('Please select a video file.');
+        return;
+    }
+
+    updateStatus('Uploading video...');
+
+    const formData = new FormData();
+    formData.append('file', videoInput.files[0]);
+
+    fetch('https://bassify.net/uploadvideo/', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Video analysis labels:', data.labels);
+        document.getElementById('description-input').value = data.labels.join(', ');
+        updateStatus('Video uploaded. Processing...');
+
+        if (!mus) {
+            generateAudio();
+        } else {
+            generateMusic();
+            mus = false;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        updateStatus('Error during upload.');
+    });
+}
+
+function generateAudio() {
+    updateStatus('Generating audio...');
+
+    const descriptionInput = document.getElementById('description-input');
+    const durationInput = document.getElementById('duration-input');
+    const labels = descriptionInput.value.split(', ');
+    const promptSelect = document.getElementById('prompt-select');
+    const prompt = promptSelect.value;
+    const duration = durationInput.value;
+
+    const formData = new FormData();
+    formData.append('labels', JSON.stringify(labels));
+    formData.append('prompt', prompt);
+    formData.append('duration', duration);
+    formData.append('video_output', descriptionInput.value);
+    formData.append('request_type', 'normal');
+
+    fetch('https://bassify.net/generate', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data && data.task_id) {
+            pollTaskStatus(data.task_id, createDownloadLinks);
+        } else {
+            console.log('No task ID received');
+            updateStatus('Failed to start audio generation task.');
+        }
+    })
+    .catch(error => {
+        console.error('There was a problem with the fetch operation:', error);
+        updateStatus('Error during audio generation.');
+    });
+}
+
+function generateMusic() {
+    updateStatus('Generating music...');
+
+    const descriptionInput = document.getElementById('description-input');
+    const durationInput = document.getElementById('duration-input');
+    const labels = descriptionInput.value.split(', ');
+    const promptSelect = document.getElementById('prompt-select');
+    const melodyInput = document.getElementById('melodyInput');
+    const melodyFile = melodyInput.files[0];
+
+    const prompt = promptSelect.value;
+    const duration = durationInput.value;
+
+    const formData = new FormData();
+    formData.append('labels', JSON.stringify(labels));
+    formData.append('prompt', prompt);
+    formData.append('duration', duration);
+    formData.append('video_output', descriptionInput.value);
+    formData.append('request_type', 'melody');
+    formData.append('melody', melodyFile);
+
+    fetch('https://bassify.net/generate', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data && data.task_id) {
+            pollTaskStatus(data.task_id, createDownloadLinks);
+        } else {
+            console.log('No task ID received');
+            updateStatus('Failed to start music generation task.');
+        }
+    })
+    .catch(error => {
+        console.error('There was a problem with the fetch operation:', error);
+        updateStatus('Error during music generation.');
+    });
+}
+
+function pollTaskStatus(taskId, callback) {
+    fetch(`https://bassify.net/task/${taskId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'completed') {
+                callback(data.result);
+                updateStatus('Task completed. Download available.');
+            } else {
+                updateStatus(`Processing... (${data.status})`);
+                setTimeout(() => pollTaskStatus(taskId, callback), 2000);
+            }
+        })
+        .catch(error => {
+            console.error('Error polling task status:', error);
+            updateStatus('Error during task status polling.');
+        });
+}
+
+function createDownloadLinks(filePaths) {
+    const downloadList = document.getElementById('download-links');
+    downloadList.innerHTML = "";
+
+    filePaths.forEach(filePath => {
+        const linkElement = document.createElement("a");
+        linkElement.href = `https://bassify.net${filePath}`;
+        linkElement.innerText = 'Download Audio';
+        linkElement.target = '_blank';
+
+        const listItem = document.createElement("li");
+        listItem.appendChild(document.createTextNode('Download '));
+        listItem.appendChild(linkElement);
+        downloadList.appendChild(listItem);
+    });
+}
+
+
+
+function pollTaskStatus(taskId, callback) {
+    fetch(`https://bassify.net/task/${taskId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'completed') {
+                callback(data.result); // Call the callback with the result
+            } else {
+                setTimeout(() => pollTaskStatus(taskId, callback), 2000); // Poll again after a delay
+            }
+        })
+        .catch(error => console.error('Error polling task status:', error));
+}
+
+function createDownloadLinks(filePaths) {
+    const downloadList = document.getElementById('download-links');
+    downloadList.innerHTML = "";
+
+    filePaths.forEach(filePath => {
+        const linkElement = document.createElement("a");
+        linkElement.href = `https://bassify.net${filePath}`;
+        linkElement.innerText = 'Download Audio';
+        linkElement.target = '_blank';
+
+        const listItem = document.createElement("li");
+        listItem.appendChild(document.createTextNode('Download ')); // Replace with an icon if desired
+        listItem.appendChild(linkElement);
+        downloadList.appendChild(listItem);
+    });
+}
+
+        function generateAudioWithMelody() {
+        const descriptionInput = document.getElementById('description-input');
+        const durationInput = document.getElementById('duration-input'); // Input for duration
+            
+        const melodyInput = document.getElementById('melodyInput');
+        const melodyFile = melodyInput.files[0];
+        const labels = descriptionInput.value.split(', ');
+        const duration = durationInput.value; // Get the specified duration
+        const promptSelect = document.getElementById('prompt-select'); // Dropdown or input for selecting prompt
+        const prompt = promptSelect.value; // Get the selected prompt
+            
+        const formData = new FormData();
+
+        formData.append('labels', JSON.stringify(labels));
+        formData.append('prompt', prompt); // Send the selected prompt
+        formData.append('duration', duration); // Send the duration
+        formData.append('video_output', descriptionInput.value); // Send labels as video_output
+        formData.append('melody', melodyFile);
+
+        fetch('https://bassify.net/generateMelody', { // Adjust the endpoint if needed
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+                      if (data && data.length) {
+                          const downloadList = document.getElementById('download-links');
+                          downloadList.innerHTML = "";
+
+      
+                          data.forEach(filePath => {
+                              const linkElement = document.createElement("a");
+                              linkElement.href = 'https://bassify.net/download/' + filePath; // Adjusted base URL for download links
+                              linkElement.innerText = 'Download Audio';
+                              linkElement.target = '_blank'; // Open in a new tab
+      
+                              const listItem = document.createElement("li");
+                              listItem.appendChild(document.createElement('<i class="fa-solid fa-download"></i>'))
+                             
+                              listItem.appendChild(linkElement);
+                              downloadList.appendChild(listItem);
+                          });
+                      } else {
+                          console.log('No download links available');
+                      }
+                  })
+        .catch(error => {
+            console.error('There was a problem with the fetch operation:', error);
+        });
+    }
+
+// Add event listener to the new button
+
+    function registerUser() {
+    const username = document.getElementById('register-username').value;
+    const email = document.getElementById('register-email').value;
+    const password = document.getElementById('register-password').value;
+
+    const formData = new FormData();
+    formData.append('username', username);
+    formData.append('email', email);
+    formData.append('password', password);
+
+    fetch('https://bassify.net/register/', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Registration failed');
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Registration success:', data);
+        // Handle successful registration
+        isAuthenticated = true
+        toggleSignOutButton();;
+        const user = { username: username, tokens: 10 };
+
+// Display user info and hide forms
+        document.getElementById('user-username').textContent = user.username;
+        document.getElementById('user-tokens').textContent = user.tokens;
+        document.getElementById('user-info').style.display = 'block';
+        document.getElementById('register-form').style.display = 'none';
+        document.getElementById('login-form').style.display = 'none';
+        document.getElementById('signupbutton').style.display = 'none';
+        document.getElementById('loginbutton').style.display = 'none';
+    })
+    .catch(error => console.error('Registration error:', error));
+}
+
+
+function loginUser() {
+    const username = document.getElementById('login-username').value;
+    const password = document.getElementById('login-password').value;
+
+    const formData = new FormData();
+    formData.append('username', username);
+    formData.append('password', password);
+
+    fetch('https://bassify.net/token/', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Login failed'); // Throw an error for non-OK responses
+        }
+        return response.json();
+
+    })
+    .then(data => {
+        console.log('Login success:', data);
+        const user = { username: username, tokens: 10 };
+        isAuthenticated = true;
+        toggleSignOutButton();
+
+// Display user info and hide forms
+        document.getElementById('user-username').textContent = user.username;
+        document.getElementById('user-tokens').textContent = user.tokens;
+        document.getElementById('user-info').style.display = 'block';
+        document.getElementById('register-form').style.display = 'none';
+        document.getElementById('login-form').style.display = 'none';
+        document.getElementById('signupbutton').style.display = 'none';
+        document.getElementById('loginbutton').style.display = 'none';
+
+
+        // Handle successful login, store the token, or redirect to a new page
+    })
+    .catch(error => {
+        console.error('Login error:', error);
+        // Handle the error, display a message to the user, or take appropriate action
+    });
+}
+
+function signOut() {
+    isAuthenticated = false; // Set the user as not authenticated (replace with actual authentication logic)
+    toggleSignOutButton();   // Toggle the button visibility
+
+}
+
+function toggleSignOutButton() {
+
+    console.log(isAuthenticated)
+    const signOutButton = document.getElementById("sign-out-button");
+    if (isAuthenticated) {
+      signOutButton.style.display = "block"; // Show the button when authenticated
+    } else {
+      signOutButton.style.display = "none";  // Hide the button when not authenticated
+      document.getElementById('user-info').style.display = '';
+      document.getElementById('user-username').textContent = null;
+        document.getElementById('user-tokens').textContent = null;
+        document.getElementById('user-info').style.display = 'none';
+        document.getElementById('signupbutton').style.display = 'block';
+        document.getElementById('loginbutton').style.display = 'block';
+    }
+  }
+
+
+
+// Your existing JavaScript functions...
+
+          </script>
+
+
+
+
+
+          <h4>Upload an MP4 file 
+          </h2>
+          <label for="videoFile" class="custom-file-input">
+            <i class="fa-regular fa-file-video" id="bruh"  style="font-size: 5em; color: rgba(166, 116, 241, 0.771); background:transparent;" ></i> 
+            
+        </label>
+          <form id="videoUploadForm" enctype="multipart/form-data">
+            <video id="videoPreview" controls autoplay style="max-width: 100%;"></video>
+            <input type="file" name="file" id="videoFile" accept="video/*"><br><br>
+              <input class="glow-button" type="button" value="Generate SFX" onclick="uploadVideo()">
+              <input class="glow-button" type="button" value="Generate Music" onclick="music(); uploadVideo();">
+              
+            </form>
+            <div id="status">Waiting for input...</div>
+          <i class="fas fa-settings" id="bruh"  style="font-size: 5em; color: rgb(166, 116, 241); background:transparent;" ></i> 
+            
+
+
+
+          <script>
+
+
+
+
+
+
+            const videoInput = document.getElementById('videoFile');
+            const videoPreview = document.getElementById('videoPreview');
+
+            videoInput.addEventListener('change', function () {
+                const file = videoInput.files[0];
+
+                if (file) {
+                    const reader = new FileReader();
+    
+                    reader.onload = function (e) {
+                        videoPreview.src = e.target.result;
+                        videoPreview.style.visibility = 'visible'
+                        
+                        
+                    };
+    
+                    reader.readAsDataURL(file);
+                } else {
+                    // Clear the video source if no file is selected
+                    videoPreview.src = '';
+                }
+            });
+        </script>
+
+
+      
+         
+          <input type="text" id="description-input" hidden>
+          <button id="generate-button" hidden>Generate</button>
+          <button id="generateMelodyButton" hidden>Generate with Melody</button>
+          
+          </div>
+
+          <div class="audiodiv">
+
+ 
+          
+            <i id='settings' class="fa-solid fa-gear"></i>
+            <br>
+            <br>
+            <p class="header" id="pheading" style="display: none;" >Model</p>
+            <select id="prompt-select" style="display: none;">
+                <option value="prompt1">Prompt 1</option>
+                <option value="prompt2">Prompt 2</option>
+        
+              <!-- Add more prompts as needed -->
+            
+              </select>
+              <br>
+              <p class="header" id="mheading" style="display: none;" >Melody reference</p>
+              <input style="display: none;" type="file" id="melodyInput" accept="audio/*">
+              <br>
+              <div id="settings-form" style="display: none;">
+              <p class="header" id="dheading" >Duration</p>
+                <input type="number" id="duration-input" value="3"> <!-- Default duration -->
+            </div>
+        
+            
+          </div>
+
+          <script>
+            // Add event listener to toggle settings form
+            document.getElementById('settings').addEventListener('click', function () {
+                var settingsForm = document.getElementById('settings-form');
+                var promptSelect = document.getElementById('prompt-select');
+                var melodyInput = document.getElementById('melodyInput');
+                var pheading = document.getElementById('pheading');
+                var dheading = document.getElementById('dheading');
+                var mheading = document.getElementById('mheading');
+                var headers = document.getElementsByClassName('headers');
+                
+                if (settingsForm.style.display === 'none' || settingsForm.style.display === '') {
+                    settingsForm.style.display = 'grid';
+                    settingsForm.style.width = '50px';
+                    promptSelect.style.display = 'grid';
+                    melodyInput.style.display = 'grid';
+                    pheading.style.display = 'grid';
+                    dheading.style.display = 'grid';
+                    mheading.style.display = 'grid';
+            
+               
+            
+                } else {
+                    settingsForm.style.display = 'none';
+                    promptSelect.style.display = 'none';
+                    melodyInput.style.display = 'none';
+                    pheading.style.display = 'none';
+                    dheading.style.display = 'none';
+                    mheading.style.display = 'none';
+            
+                }
+            
+            });
+                        
+                    </script>
+
+          <ul id="download-links"></ul>
+
+          
+
+
+
+</div>
+
+
+          </div>
+
+      
+      
+
+  </div>
+
+
+
+
+  
+
+
+</div>
+
+</div>
+
+
+</div>
+
+<!-- <p  id="copyright" color="grey"> Algorithm and Website coded by Arlo Erwin, 2022</p> -->
+    
+</body>
+<script src="https://github.com/urtzurd/html-audio.git"></script>
+<!-- <script src="client.js"></script> -->
+
+</html>

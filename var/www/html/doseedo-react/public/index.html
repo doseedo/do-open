@@ -4,15 +4,37 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>Doseedo - React Audio Production App</title>
+  <title>Doseedo - Music Production Studio</title>
 
-  <!-- Font Awesome -->
-  <script src="https://kit.fontawesome.com/0de3cb0a73.js" crossorigin="anonymous"></script>
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon/favicon.ico">
+  <link rel="apple-touch-icon" href="/favicon/favicon.svg">
+  <link rel="manifest" href="/favicon/site.webmanifest">
+
+  <!-- Font Awesome (async to prevent blocking in WebViews) -->
+  <script src="https://kit.fontawesome.com/0de3cb0a73.js" crossorigin="anonymous" defer></script>
 
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Inter&display=swap" rel="stylesheet">
 
-  <meta name="description" content="Doseedo Audio Production Web App - React Version">
+  <meta name="description" content="Doseedo - Professional music production, sound design, and audio tools in your browser. Create, mix, and produce music online.">
+  <meta property="og:title" content="Doseedo - Music Production Studio">
+  <meta property="og:description" content="Professional music production, sound design, and audio tools in your browser. Create, mix, and produce music online.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://doseedo.com">
+
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <!-- Google Analytics (GA4) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-F4J9PFTG9D"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-F4J9PFTG9D');
+  </script>
 </head>
 <body>
   <noscript>You need to enable JavaScript to run this app.</noscript>

@@ -69,7 +69,19 @@ MIN_SAMPLES_PER_CLASS = 50
 MAX_SAMPLES_PER_CLASS = 15000
 
 # Excluded from classification (meta-labels, not instruments)
-EXCLUDED_CLASSES = {'undefined', 'room', 'click', 'silent', 'junk', 'fx', 'ensemble', 'full-track'}
+EXCLUDED_CLASSES = {'undefined', 'room', 'click', 'silent', 'junk', 'fx', 'ensemble', 'full-track', 'review_vocals', 'dialogue'}
+
+# Merge small/variant groups into main groups
+GROUP_MERGES = {
+    'plucked': 'guitar',
+    'drums_roomy': 'drums',
+    'e-drums': 'drums',
+    'e_drums': 'drums',
+}
+
+def normalize_group(group: str) -> str:
+    """Normalize group name by applying merges."""
+    return GROUP_MERGES.get(group, group)
 
 # Temporal settings
 LATENT_FRAMES_PER_SEC = 44100 / 512  # ~86.13 frames/sec
@@ -233,7 +245,7 @@ def load_training_data(
     entries = manifest.get('entries', [])
 
     for entry in entries:
-        group = entry.get('group', 'undefined')
+        group = normalize_group(entry.get('group', 'undefined'))
         if group not in EXCLUDED_CLASSES:
             all_labels.add(group)
 
@@ -242,10 +254,13 @@ def load_training_data(
         if corr.get('multi_label') and corr.get('regions'):
             for region in corr['regions']:
                 for label in region.get('labels', []):
+                    label = normalize_group(label)
                     if label not in EXCLUDED_CLASSES:
                         all_labels.add(label)
-        elif corr.get('group') and corr['group'] not in EXCLUDED_CLASSES:
-            all_labels.add(corr['group'])
+        elif corr.get('group'):
+            group = normalize_group(corr['group'])
+            if group not in EXCLUDED_CLASSES:
+                all_labels.add(group)
 
     classes = sorted(all_labels)
     class_to_idx = {c: i for i, c in enumerate(classes)}
@@ -265,7 +280,7 @@ def load_training_data(
         if not entry.get('has_latent'):
             continue
 
-        group = entry.get('group', 'undefined')
+        group = normalize_group(entry.get('group', 'undefined'))
         if group in EXCLUDED_CLASSES:
             continue
 
@@ -275,27 +290,43 @@ def load_training_data(
             if corr.get('multi_label') and corr.get('regions'):
                 # Use multi-label regions instead
                 for region in corr['regions']:
-                    labels = [l for l in region.get('labels', []) if l not in EXCLUDED_CLASSES]
+                    labels = [normalize_group(l) for l in region.get('labels', []) if normalize_group(l) not in EXCLUDED_CLASSES]
                     if labels:
                         samples.append((audio_path, labels, region.get('start'), region.get('end')))
-            elif corr.get('group') and corr['group'] not in EXCLUDED_CLASSES:
+            elif corr.get('group'):
                 # Use corrected single label
-                samples.append((audio_path, [corr['group']], None, None))
+                corrected_group = normalize_group(corr['group'])
+                if corrected_group not in EXCLUDED_CLASSES:
+                    samples.append((audio_path, [corrected_group], None, None))
         else:
             # Use manifest label
             samples.append((audio_path, [group], None, None))
 
     logging.info(f"Collected {len(samples)} training samples")
 
-    # Count samples per class
+    # Count samples per class (labels already normalized)
     class_counts = Counter()
     for _, labels, _, _ in samples:
         for label in labels:
             class_counts[label] += 1
 
-    logging.info("Class distribution:")
+    # Filter out classes with too few samples
+    valid_classes = {cls for cls, count in class_counts.items() if count >= MIN_SAMPLES_PER_CLASS}
+    removed_classes = set(classes) - valid_classes
+    if removed_classes:
+        logging.info(f"Removing classes with < {MIN_SAMPLES_PER_CLASS} samples: {removed_classes}")
+        classes = sorted(valid_classes)
+        class_to_idx = {c: i for i, c in enumerate(classes)}
+        num_classes = len(classes)
+        # Filter samples to only include valid classes
+        samples = [(p, [l for l in labels if l in valid_classes], s, e)
+                   for p, labels, s, e in samples if any(l in valid_classes for l in labels)]
+        logging.info(f"After filtering: {len(samples)} samples, {num_classes} classes")
+
+    logging.info("Final class distribution:")
     for cls, count in class_counts.most_common():
-        logging.info(f"  {cls}: {count}")
+        if cls in valid_classes:
+            logging.info(f"  {cls}: {count}")
 
     # Balance classes (limit overrepresented, but keep multi-label samples)
     random.seed(42)
@@ -965,6 +996,9 @@ def main():
         for entry in manifest.get('entries', []):
             if not entry.get('has_latent'):
                 continue
+            # Skip excluded groups (silent, junk, etc.)
+            if entry.get('group') in EXCLUDED_CLASSES:
+                continue
             if args.group and entry.get('group') != args.group:
                 continue
             audio_paths.append(entry['audio_path'])
@@ -995,6 +1029,9 @@ def main():
         audio_paths = []
         for entry in manifest.get('entries', []):
             if not entry.get('has_latent'):
+                continue
+            # Skip excluded groups (silent, junk, etc.)
+            if entry.get('group') in EXCLUDED_CLASSES:
                 continue
             if args.group and entry.get('group') != args.group:
                 continue

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auth Debug</title>
+</head>
+<body>
+    <h1>Auth Debug Page</h1>
+    <div id="output"></div>
+    <br>
+    <button onclick="clearAuth()">Clear Auth</button>
+    <button onclick="location.reload()">Refresh</button>
+    <a href="/"><button>Go to App</button></a>
+    <a href="/login.html"><button>Go to Login</button></a>
+
+    <script>
+        function showAuth() {
+            const isAuth = localStorage.getItem('isAuth');
+            const username = localStorage.getItem('username');
+            const ispro = localStorage.getItem('ispro');
+            const userpic = localStorage.getItem('userpic');
+
+            document.getElementById('output').innerHTML = `
+                <h2>LocalStorage Values:</h2>
+                <p>isAuth: ${isAuth}</p>
+                <p>username: ${username}</p>
+                <p>ispro: ${ispro}</p>
+                <p>userpic: ${userpic}</p>
+                <hr>
+                <p>Current URL: ${window.location.href}</p>
+                <p>Pathname: ${window.location.pathname}</p>
+            `;
+        }
+
+        function clearAuth() {
+            localStorage.removeItem('isAuth');
+            localStorage.removeItem('username');
+            localStorage.removeItem('ispro');
+            localStorage.removeItem('userpic');
+            location.reload();
+        }
+
+        showAuth();
+    </script>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video Frame Selector with Range Slider</title>
+    <link href="https://cdn.jsdelivr.net/npm/nouislider/distribute/nouislider.min.css" rel="stylesheet">
+
+    <!-- Existing styles here... -->
+
+    <!-- Additional styles for time display -->
+    <style>
+
+        .time-display, .fade-inputs {
+            text-align: left;
+            margin-top: 5px;
+        }
+        .fade-input {
+            width: 70px; /* Adjust width as needed */
+            margin: 0 10px;
+        }
+
+
+
+        .time-display {
+            padding: 10px;
+            text-align: left;
+            margin-top: 5px;
+        }
+        #canvas {
+            width: 640px;
+            height: 360px;
+            border: 1px solid black;
+            background-color: #eee;
+        }
+        .slider-container {
+            margin-top: 20px;
+            width: 640px;
+            height: 100px;
+        }
+
+        /* Custom Slider Styles */
+        .noUi-target {
+            background: none; /* Remove default white background */
+        }
+        .noUi-handle {
+            width: 20px;
+            height: 20px;
+            border-radius: 0;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+            cursor: pointer;
+            position: relative;
+            left: 50px;
+            height: 50px;
+        }
+        .noUi-handle:after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            bottom: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-top: 10px solid #7244fa; /* Arrow color */
+            transform: translateX(-50%);
+            height: 50px;
+        }
+        .noUi-connect {
+            background: #e8ddff; /* Custom color for the slider bar */
+            height: 100px;
+        }
+        .noUi-base {
+            background: #d1d1d1; /* Custom background color for the slider range */
+        }
+
+
+
+    </style>
+
+</head>
+<body>
+
+<div class="cues">
+<canvas id="canvas"></canvas>
+<div id="videoSlider" class="slider-container"></div>
+<button id="addSliderBtn">Add Slider</button>
+<video id="videoElement" style="display:none;">
+    <source src="trimmed.mp4" type="video/mp4">
+    Your browser does not support the video tag.
+</video>
+
+<script src="https://cdn.jsdelivr.net/npm/nouislider/distribute/nouislider.min.js"></script>
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const video = document.getElementById('videoElement');
+    const videoSlider = document.getElementById('videoSlider');
+    const addSliderBtn = document.getElementById('addSliderBtn');
+    let sliderCount = 1;
+    const audioLength = 100; // Set your audio length here
+
+    function updateCanvas(time) {
+        video.currentTime = time;
+        video.addEventListener('seeked', function() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        }, {once: true});
+    }
+
+    function createNewSlider() {
+        const newSliderContainer = document.createElement('div');
+        newSliderContainer.className = 'slider-container';
+        newSliderContainer.id = `sliderContainer${sliderCount}`;
+        document.body.insertBefore(newSliderContainer, addSliderBtn);
+
+        const newSlider = document.createElement('div');
+        newSlider.className = 'slider';
+        newSlider.id = `slider${sliderCount}`;
+        newSliderContainer.appendChild(newSlider);
+
+        // Time display elements
+        const startTimeDisplay = document.createElement('span');
+        const endTimeDisplay = document.createElement('span');
+        const timeDisplayContainer = document.createElement('div');
+        timeDisplayContainer.className = 'time-display';
+        timeDisplayContainer.appendChild(startTimeDisplay);
+        timeDisplayContainer.appendChild(endTimeDisplay);
+        newSliderContainer.appendChild(timeDisplayContainer);
+
+                    // Fade in/out input fields
+                    const fadeInInput = document.createElement('input');
+            fadeInInput.className = 'fade-input';
+            fadeInInput.type = 'number';
+            fadeInInput.placeholder = 'Fade In';
+            const fadeOutInput = document.createElement('input');
+            fadeOutInput.className = 'fade-input';
+            fadeOutInput.type = 'number';
+            fadeOutInput.placeholder = 'Fade Out';
+            const fadeInputsContainer = document.createElement('div');
+            fadeInputsContainer.className = 'fade-inputs';
+            fadeInputsContainer.appendChild(fadeInInput);
+            fadeInputsContainer.appendChild(fadeOutInput);
+            newSliderContainer.appendChild(fadeInputsContainer);
+
+
+
+
+        noUiSlider.create(newSlider, {
+            start: [0, video.duration],
+            connect: true,
+            range: {
+                'min': 0,
+                'max': video.duration
+            }
+        });
+
+        newSlider.noUiSlider.on('slide', function(values, handle) {
+           
+            const time = parseFloat(values[handle]);
+                updateCanvas(time);
+            // Update time display
+            startTimeDisplay.textContent = `Start: ${parseFloat(values[0]).toFixed(2)}s  --   `;
+            endTimeDisplay.textContent = `End: ${parseFloat(values[1]).toFixed(2)}s`;
+        });
+
+        sliderCount++;
+    }
+
+    addSliderBtn.addEventListener('click', createNewSlider);
+
+    // Initialize first slider
+    createNewSlider();
+
+    video.addEventListener('loadedmetadata', function() {
+        videoSlider.noUiSlider.updateOptions({
+            range: {
+                'min': 0,
+                'max': 100
+            }
+        });
+    });
+</script>
+
+</div>
+
+</body>
+</html>

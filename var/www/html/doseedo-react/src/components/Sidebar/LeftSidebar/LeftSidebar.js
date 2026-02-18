@@ -9,10 +9,18 @@ import styles from './LeftSidebar.module.css';
  * LeftSidebar Component
  * Main navigation sidebar with collapsible menu
  */
-const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, onGoToUserInfo, onGoToTools, onGoToWhatsNew, onToggleSearch: onToggleMidiBrowser, onShowGenerationPanel, onShowMidiBrowser, showMidiBrowser, onToggleChat, showChatWindow, isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView, isWhatsNewView }) => {
+const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, onGoToUserInfo, onGoToTools, onGoToWhatsNew, onGoToResearch, onGoToPlugins, onToggleSearch: onToggleMidiBrowser, onShowGenerationPanel, onShowMidiBrowser, showMidiBrowser, onToggleChat, showChatWindow, isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView, isWhatsNewView, isResearchView, isPluginsView }) => {
   const { state, dispatch } = useApp();
   const [userInfo, setUserInfo] = useState(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  // Track viewport size
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Get user info on mount
   useEffect(() => {
@@ -20,27 +28,38 @@ const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, o
     setUserInfo(user);
   }, []);
 
-  // Force sidebar to be expanded when not in DAW view
-  const isSpecialView = isDashboardView || isHomeView || isSearchView || isUserInfoView || isToolsView || isWhatsNewView;
+  // Force sidebar to be expanded when not in DAW view (desktop only)
+  const isSpecialView = isDashboardView || isHomeView || isSearchView || isUserInfoView || isToolsView || isWhatsNewView || isResearchView || isPluginsView;
   useEffect(() => {
-    if (isSpecialView && !state.sidebar.isExpanded) {
+    if (!isMobile && isSpecialView && !state.sidebar.isExpanded) {
       dispatch({ type: 'TOGGLE_SIDEBAR' });
     }
-  }, [isSpecialView, state.sidebar.isExpanded, dispatch]);
+  }, [isSpecialView, state.sidebar.isExpanded, dispatch, isMobile]);
 
   const toggleSidebar = useCallback(() => {
-    // Only allow toggle if in DAW view
-    if (!isSpecialView) {
+    if (isMobile || !isSpecialView) {
       dispatch({ type: 'TOGGLE_SIDEBAR' });
     }
-  }, [isSpecialView, dispatch]);
+  }, [isSpecialView, dispatch, isMobile]);
 
   return (
-    <div className={`${styles.sidebar} ${state.sidebar.isExpanded || isSpecialView ? styles.expanded : ''}`}>
+    <>
+    {isMobile && (
+      <button className={styles.mobileMenuBtn} onClick={toggleSidebar}>
+        <i className={`fa-solid ${state.sidebar.isExpanded ? 'fa-xmark' : 'fa-bars'}`}></i>
+      </button>
+    )}
+    {isMobile && (
+      <div
+        className={`${styles.mobileOverlay} ${state.sidebar.isExpanded ? styles.visible : ''}`}
+        onClick={toggleSidebar}
+      />
+    )}
+    <div className={`${styles.sidebar} ${(!isMobile && isSpecialView) || state.sidebar.isExpanded ? styles.expanded : ''}`}>
       {/* Logo and toggle button at top */}
       {state.sidebar.isExpanded ? (
         <div className={styles.logoHeader}>
-          <img src="/assets/icons/dologotp.png" alt="Doseedo" className={styles.logo} />
+          <img src="/assets/icons/transparentlogo.png" alt="Doseedo" className={styles.logo} />
           {!isSpecialView && (
             <button className={styles.collapseBtn} onClick={toggleSidebar}>
               <i className="fa-solid fa-chevron-left"></i>
@@ -91,21 +110,38 @@ const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, o
               onBackToDashboard();
             }}
           />
-          <SidebarLink href="" icon="fa-solid fa-plus" label="New Session" highlighted />
+          <SidebarLink href="" icon="fa-solid fa-plus" label="New Session" highlighted disabled tooltip="Coming soon" />
           <SidebarLink
             href="#"
             icon="fa-solid fa-wrench"
             label="Tools"
-            active={isToolsView}
+            disabled
+            tooltip="Coming soon"
+          />
+          <SidebarLink
+            href="#"
+            icon="fa-solid fa-puzzle-piece"
+            label="Plugins"
+            active={isPluginsView}
             onClick={(e) => {
               e.preventDefault();
-              onGoToTools();
+              onGoToPlugins();
             }}
           />
         </SidebarSection>
 
         {/* Info Section */}
         <SidebarSection title="Info" showDivider>
+          <SidebarLink
+            href="#"
+            icon="fa-solid fa-flask"
+            label="Research"
+            active={isResearchView}
+            onClick={(e) => {
+              e.preventDefault();
+              onGoToResearch();
+            }}
+          />
           <SidebarLink
             href="#"
             icon="fa-solid fa-newspaper"
@@ -190,6 +226,7 @@ const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, o
         </div>
       )}
     </div>
+    </>
   );
 });
 

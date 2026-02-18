@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--<meta http-equiv="refresh" content="3; URL=http://www.bassify.net/legal" /> -->
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <link rel="stylesheet" href="style4dash.css">
+    <!-- <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=none"> -->
+    <script src="https://kit.fontawesome.com/0de3cb0a73.js" crossorigin="anonymous"></script>
+    <meta http-equiv=”Pragma” content=”no-cache”>
+    <meta http-equiv=”Expires” content=”-1″>
+    <meta http-equiv=”CACHE-CONTROL” content=”NO-CACHE”>
+    <meta name="openai-domain-verification" content="dv-Kde8XyGetaPIsXP25QnDvZum" />
+    <script src="https://kit.fontawesome.com/0de3cb0a73.js" crossorigin="anonymous"></script>
+    <!-- <meta name="viewport" content="width=device-width, initial-scale=1.0"> -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
+    <!-- <meta name="google-signin-client_id" content="1028528394180-t25p4ross097jh8018sh42p8ddqgam9r.apps.googleusercontent.com"> -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+ 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/nouislider/distribute/nouislider.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/wavesurfer.js"></script>
+    <script src="https://unpkg.com/wavesurfer.js"></script>
+    <script src="https://apis.google.com/js/platform.js" async defer></script>
+    <!-- <script src="https://accounts.google.com/gsi/client" async defer></script> -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/nouislider/distribute/nouislider.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter&display=swap" rel="stylesheet">
+
+    <script src="
+    https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.min.js
+    "></script>
+
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.js"></script>
+
+
+
+
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.6.8/plyr.css" />
+    <script src="https://cdn.plyr.io/3.6.8/plyr.polyfilled.js"></script>
+
+
+
+    <!-- <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9497698028642982"
+     crossorigin="anonymous"></script> -->
+
+    <title>Doseedo AI</title>
+
+    <div class="title">
+
+
+    </div>
+    
+    
+
+</head>
+<body style="background-color: rgba(0, 0, 0, 0.942);">
+  <audio id="testaud" src="2 (4).wav"></audio>
+    
+
+<a href="index.html">
+
+  </a>
+
+   
+
+
+    <!-- <a href="index.html" class="nav-link">Home</a> -->
+    <!-- <a href="#" class="nav-link">Create</a> -->
+    <!-- <a href="about.html" class="nav-link">About</a> -->
+
+
+
+
+
+        <!-- <canvas id="canvas"></canvas> -->
+        <!-- Sign Up Form -->
+          <!-- Sign Up Button -->
+
+          <!-- <button id="signupbutton" type="button" onclick="showSignUp()">Sign Up</button> -->
+          <!-- Sign In Button -->
+          <!-- <button id="loginbutton" type="button" onclick="showSignIn()">Sign In</button> -->
+          <!-- <button id="sign-out-button" onclick="signOut()" style="display: none;">Sign Out</button> -->
+        <!-- <button id="sign-out-button" style="display: none;">Sign Out</button> -->
+
+  
+
+
+                <!-- <a href="plans.html" class="nav-link">Pro+</a> -->
+
+      
+
+
+ 
+        
+<div class="formdiv">
+  <a onclick="exitregistration()">
+    <i class="fa-solid fa-x"></i>
+
+  </a>
+
+<form id="register-form" style="display: none;">
+  <img src="logo.png" style="width: 150px;" alt="">
+
+  <p>Start creating today.</p>
+
+  <br>
+  <input type="text" id="register-username" placeholder="Username" required>
+  <input type="email" id="register-email" placeholder="Email" required>
+  <input type="password" id="register-password" placeholder="Password" required>
+  
+
+  <!-- <div id="g_id_onload" -->
+  <!-- data-client_id="1028528394180-t25p4ross097jh8018sh42p8ddqgam9r.apps.googleusercontent.com" -->
+  <!-- data-context="signin" -->
+  <!-- data-callback="handleCredentialResponse" -->
+  <!-- data-auto_prompt="false"> -->
+<!-- </div> -->
+<!-- <div class="g_id_signin" style="width: 340px; position: relative; left: 30px;" data-type="standard"></div> -->
+    
+
+
+<script>
+  function handleCredentialResponse(response) {
+    console.log("Encoded JWT ID token: " + response.credential);
+
+    // Example: Send the ID token to your server for verification
+    // fetch('/your-server-endpoint', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({ idToken: response.credential })
+    // });
+  }
+</script>
+
+
+
+
+
+  <button type="button" onclick="registerUser()">Sign Up</button>
+  <div id="signup-error-message" style="color: red; display: none;"></div>
+</form>
+
+<!-- Sign In Form (Initially Hidden) -->
+
+<form id="login-form" style="display: none;">
+<img src="logo.png" style="width: 150px;" alt="">
+  <p>Welcome Back!</p>
+
+    <br>
+
+  <input type="text" id="login-username" placeholder="Email" required>
+  <input type="password" id="login-password" placeholder="Password" required>
+
+  <!-- <div id="g_id_onload" -->
+  <!-- data-client_id="1028528394180-t25p4ross097jh8018sh42p8ddqgam9r.apps.googleusercontent.com" -->
+  <!-- data-context="signin" -->
+  <!-- data-callback="handleCredentialResponse" -->
+  <!-- data-auto_prompt="false"> -->
+<!-- </div> -->
+<div class="g_id_signin" style="width: 340px; position: relative; left: 30px;" data-type="standard"></div>
+    
+
+
+<script>
+  function handleCredentialResponse(response) {
+    console.log("Encoded JWT ID token: " + response.credential);
+
+    // Example: Send the ID token to your server for verification
+    // fetch('/your-server-endpoint', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({ idToken: response.credential })
+    // });
+  }
+</script>
+
+
+
+  
+
+  <button type="button" onclick="loginUser()">Sign In</button>
+  <div  id="signin-error-message" style="color: red; display: none;"></div>
+  <a onclick="showSignUp()">
+  <p>Don't have an account? Sign Up</p>
+</a>
+
+<a style="color: white;" href="forgotpassword.html">
+  <p>Forgot your password?</p>
+</a>
+  
+
+</form>
+
+</div>
+
+
+
+<div class="sidebar scrollable">
+
+ 
+
+  <p>
+
+  <div class="user">
+
+    <div id="user-info">
+      <div class="profile">
+      
+        
+                <img id="userpic" src="" alt="User Picture" style="display:none; border-radius:50%; width:30px; height:30px;" />
+
+    <!-- <img id="user" src="user.png" alt=""> -->
+    <a href="account.html">
+    <p><span id="user-username"></span></p>
+  </a>
+    <br>
+
+
+
+
+  
+</div>
+
+<div class="userdrop" style="display: none;">
+<p>Plan: <span id="user-subscription-status"></span></p>
+
+
+  
+
+
+
+    <button id="sign-out-button" onclick="signOut()" style="display: none;">Sign Out</button>
+    <br>
+
+     <!-- <p><i  class="fa-solid fa-arrow-right"></i></p> -->
+
+    <button id="sign-out-button" style="display: none;">Sign Out</button>
+  
+  </p>
+</div>
+
+
+<script>
+
+  document.querySelector('.user').addEventListener('mouseover', function(){
+
+    document.querySelector('.userdrop').style.display = 'block'
+
+
+
+  })
+
+  document.querySelector('.user').addEventListener('mouseout', function(){
+
+document.querySelector('.userdrop').style.display = 'none'
+
+
+
+})
+
+
+
+</script>
+
+
+</div>
+
+
+
+</div>
+
+<br>
+<br>
+<br>
+<br>
+<br>
+ <br>
+<a href="index.html" class="nav-link">
+  <i class="fa-solid fa-house"></i> Home
+</a>
+<br>
+
+<a style="background-color: rgba(128, 128, 128, 0.396); color: white; border-radius: 5px;" href="dashboard.html" class="nav-link">
+  <i class="fa-solid fa-chart-line"></i> Dashboard
+</a>
+<br>
+
+<a href="plans.html" class="nav-link">
+  <i class="fa-solid fa-arrow-up-right-dots"></i> Upgrade
+</a>
+<br><br>
+
+<hr style="flex: 1; border: none; height: 1px; background-color: rgb(90, 90, 90); margin: 0 -5px;"><br>
+
+
+  <p class="nav-linkhead2">
+  Create
+  </p>
+  <br>
+    <a href="" class="nav-link">
+  <i style="background-color: rgba(128, 128, 128, 0.21); padding: 5px; border-radius: 5px;" class="fa-solid fa-folder-closed"></i> My Sessions
+  </a>
+<br>
+
+
+  <a href="" class="nav-link">
+  <i style="background-color: rgba(128, 128, 128, 0.21); padding: 5px; border-radius: 5px;" class="fa-solid fa-plus"></i> New Session
+  </a>
+<br>
+  <a href="" class="nav-linkhead">
+  <i class="fa-solid fa-music"></i> Video to Music
+  </a>
+  <br>
+  <a href="" class="nav-linkhead">
+  <i class="fa-solid fa-volume-high"></i> Video to SFX
+  </a>
+  <br>
+  <a href="" class="nav-linkhead">
+  <i class="fa-solid fa-microphone"></i> AI Voiceover
+  </a>
+  <br>
+  <br>
+
+
+
+  <hr style="flex: 1; border: none; height: 1px; background-color: rgb(90, 90, 90); margin: 0 -5px;"><br>
+
+
+
+
+<a href="assets.html" class="nav-link">
+  <i class="fa-solid fa-folder-open"></i> Assets
+</a>
+<br>
+
+<a href="" class="nav-link">
+  <i class="fa-solid fa-bullhorn"></i> Campaigns
+</a>
+<br>
+
+<a href="" class="nav-link">
+  <i class="fa-solid fa-compass"></i> Explore
+</a>
+<br>
+<a href="" class="nav-link">
+  <i class="fa-solid fa-wrench"></i> API
+</a>
+
+<br>
+<br>
+
+<hr style="flex: 1; border: none; height: 1px; background-color: rgb(90, 90, 90); margin: 0 -5px;"><br>
+
+
+    <!-- <p>Tools</p> -->
+
+   
+
+
+
+
+
+
+</div>
+  
+
+
+<div id="background" >
+
+
+    <h1> My Projects</h1>
+
+  <div class="dashboard">
+    <div class="header">
+        <!-- <h3>Start a new session</h3> -->
+    </div>
+
+    <div class="create-project">
+
+
+
+
+
+
+        <div class="glow-container">
+          <textarea id="description-input" placeholder="Describe any sound effects or Music" style="display: none;" name="" cols="30" rows="10"></textarea>
+        
+    
+    
+    
+        <h4 >Create New Project</h4>
+
+        <label for="videoFile" class="custom-file-input">
+          <i class="fa-solid fa-plus" id="bruh"  style="font-size: 3em;" color="" ></i> 
+          
+      </label>
+        <form id="videoUploadForm" enctype="multipart/form-data">
+          <input type="" name="file" id="videoFile" accept="video/*">
+        </form>
+      </div>
+
+    
+    <br> <br>
+    
+
+
+        <form id="createProjectForm">
+
+        </form>
+        <input type="text" id="projectName" placeholder="Project name (optional)">
+
+    </div>
+
+    <div class="project-list scrollable">
+
+        <p id="startnew">No Projects</p>
+        <div id="projects">
+            <!-- Dynamically added projects will appear here -->
+        </div>
+    </div>
+</div>
+
+
+<div class="dashboards" style="display: none;">
+
+<div class="dashboard2">
+  <h4>AI Tools</h4>
+  <div class="template">
+
+
+
+
+    <a href="doseedo1.html">
+
+  <div class="glow-container2" id="glow-container3">
+
+
+    <textarea id="description-input" placeholder="Describe any sound effects or Music" style="display: none;" name="" cols="30" rows="10">
+    </textarea>
+      <h4>Soundtrack</h4>
+      </h4>
+      <!-- <i class="fa-solid fa-music" id="bruh"  style="font-size: 5em;" color="" ></i> -->
+    </div>    
+  </a>
+
+  <a href="doseedo1.html">
+  <div class="glow-container2" id="glow-container4">
+
+    <textarea id="description-input" placeholder="Describe any sound effects or Music" style="display: none;" name="" cols="30" rows="10">
+    </textarea>
+      <h4>Sfx and Sound Design</h4>
+      </h4>
+      <!-- <i class="fa-solid fa-microphone" id="bruh" style="font-size: 5em;" color="" ></i> -->
+
+  </div>
+</a>
+
+  <a href="doseedo1.html">
+  <div class="glow-container2" id="glow-container5">
+
+    <textarea id="description-input" placeholder="Describe any sound effects or Music" style="display: none;" name="" cols="30" rows="10">
+    </textarea>
+      <h4>Voiceover</h4>
+      </h4>
+      <!-- <i class="fa-solid fa-volume-high" id="bruh" style="font-size: 5em;" color="" ></i> -->
+
+      </div>
+    </a>
+
+
+
+    <br>
+    <br>
+  
+  </div>
+
+</div>
+<div class="dashboard3">
+  <h4>AI Tools</h4>
+  <div class="template">
+
+    <ul>
+      <li>Test</li>
+      <li>Test</li>
+      <li>Test</li>
+    </ul>
+
+
+
+
+ 
+
+
+
+
+  
+  </div>
+
+</div>
+
+
+</div>
+
+
+
+<script>
+document.getElementById('startnew').style.display = 'block';
+
+// JavaScript to handle dynamic project addition, deletion, renaming, and local storage
+const createProjectForm = document.querySelector('.glow-container');
+const projectsDiv = document.getElementById('projects');
+
+// Retrieve projects from localStorage
+const projects = JSON.parse(localStorage.getItem('projects')) || [];
+
+// Function to render projects
+function renderProjects() {
+    projectsDiv.innerHTML = ''; // Clear current projects
+    [...projects].forEach((project, index) => {
+        const projectElement = document.createElement('div');
+        projectElement.className = 'project';
+        document.getElementById('startnew').style.display = 'none';
+
+        // Project name (editable)
+        const projectNameElement = document.createElement('span');
+        projectNameElement.textContent = project;
+        projectNameElement.className = 'project-name';
+        projectNameElement.ondblclick = () => editProjectName(index, projectNameElement);
+
+        // Delete button
+        // Edit (pencil) button
+        const editButton = document.createElement('button');
+        editButton.innerHTML = '<i class="fa-solid fa-pen"></i>';
+        editButton.className = 'edit-button';
+
+        // Delete (X) button, initially hidden
+        const deleteButton = document.createElement('button');
+        deleteButton.innerHTML = '<i class="fa-solid fa-x"></i>';
+        deleteButton.className = 'delete-button';
+        deleteButton.style.display = 'none';
+
+        // On pencil click: show delete button and make name editable
+        editButton.onclick = (e) => {
+            e.stopPropagation();
+            deleteButton.style.display = 'inline-block';
+            editProjectName(index, projectNameElement);
+        };
+
+        // On delete click
+        deleteButton.onclick = (e) => {
+        e.stopPropagation();
+        deleteProject(project);
+    };
+
+
+        // Attempt to load video blob from IndexedDB
+        const request = indexedDB.open('DoseedoDB', 2);
+        request.onsuccess = (e) => {
+            const db = e.target.result;
+            const tx = db.transaction(['videos'], 'readonly');
+            const store = tx.objectStore('videos');
+            const videoKey = `preview-${project}`;
+
+            const blobReq = store.get(videoKey);
+            blobReq.onsuccess = () => {
+                const blob = blobReq.result;
+                if (blob) {
+                    const url = URL.createObjectURL(blob);
+                    const videoEl = document.createElement('video');
+                    videoEl.className = 'project-preview';
+                    videoEl.src = url;
+                    videoEl.muted = true;
+                    videoEl.loop = true;
+                    videoEl.playsInline = true;
+                    videoEl.autoplay = false;
+                    // videoEl.style.width = '120px';
+                    videoEl.style.height = 'auto';
+                    // videoEl.style.marginRight = '10px';
+                    videoEl.style.borderRadius = '10px';
+                    projectNameElement.parentNode.insertBefore(videoEl, projectNameElement.nextSibling);
+
+                }
+            };
+        };
+
+        projectElement.appendChild(editButton);
+        projectElement.appendChild(deleteButton);
+
+        projectElement.appendChild(projectNameElement);
+        projectsDiv.appendChild(projectElement);
+
+
+        projectElement.onclick = (e) => {
+        if (e.target.closest('.delete-button')) return; // Ignore clicks on delete button
+
+        const sessionKey = `session-${project}`;
+        const sessionData = localStorage.getItem(sessionKey);
+        if (sessionData) {
+          localStorage.setItem('activeProject', project);
+          localStorage.setItem('lastSession', project); // Set lastSession for auto-load
+          window.location.href = 'doseedo2.html';
+        } else {
+          alert('No session data found.');
+        }
+      };
+
+
+
+
+    });
+
+    
+
+
+}
+
+
+
+createProjectForm.addEventListener('click', (e) => {
+    e.preventDefault();
+    const projectNameInput = document.getElementById('projectName');
+
+    // Auto-generate unique project name
+    let baseName = projectNameInput.value.trim() || 'Untitled';
+    let projectName = baseName;
+    let counter = 2;
+
+    // If user didn't provide a name, use Untitled numbering
+    if (!projectNameInput.value.trim()) {
+        projectName = 'Untitled';
+        while (projects.includes(projectName)) {
+            projectName = `Untitled (${counter})`;
+            counter++;
+        }
+    } else {
+        // User provided name - add number if it exists
+        while (projects.includes(projectName)) {
+            projectName = `${baseName} (${counter})`;
+            counter++;
+        }
+    }
+
+    console.log(`🆕 Creating project: ${projectName}`);
+
+    // Save to projects list
+    projects.unshift(projectName);
+    localStorage.setItem('projects', JSON.stringify(projects));
+
+    // Create blank session data
+    const sessionKey = `session-${projectName}`;
+    const sessionData = {
+        originalLengthInSeconds: 10,
+        currentZoomLevel: 1,
+        tracks: [],
+        sceneChanges: [],
+        automationPoints: [],
+        previewSrcKey: '',
+        timestamp: Date.now()
+    };
+    localStorage.setItem(sessionKey, JSON.stringify(sessionData));
+
+    // Set as active project and redirect to DAW
+    localStorage.setItem('activeProject', projectName);
+    localStorage.setItem('lastSession', projectName);
+    window.location.href = 'doseedo2.html';
+});
+
+// Function to delete a project
+function deleteProject(projectName) {
+    // Find project index
+    const index = projects.indexOf(projectName);
+    if (index === -1) return;
+
+    // Remove from list and update localStorage
+    projects.splice(index, 1);
+    localStorage.setItem('projects', JSON.stringify(projects));
+    localStorage.removeItem(`session-${projectName}`);
+
+    // Remove associated video blob from IndexedDB
+    const openReq = indexedDB.open('DoseedoDB', 2);
+    openReq.onsuccess = (e) => {
+        const db = e.target.result;
+        const tx = db.transaction('videos', 'readwrite');
+        const store = tx.objectStore('videos');
+        store.delete(`preview-${projectName}`);
+    };
+
+    // Update UI
+    renderProjects();
+}
+
+// Function to edit project name
+function editProjectName(index, projectNameElement) {
+    const originalName = projects[index];
+
+    // Create input field
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = originalName;
+    input.maxLength = 30;
+    input.className = 'edit-input';
+    input.style.cssText = `
+        width: 80%;
+        margin-top: -5px;
+        font-size: 14px;
+        border-radius: 5px;
+        padding: 4px;
+    `;
+
+    // Save logic
+    const save = () => {
+        const newName = input.value.trim() || 'Untitled';
+        if (newName === originalName) {
+            renderProjects();
+            return;
+        }
+
+        // Rename project and update all references
+        projects[index] = newName;
+        localStorage.setItem('projects', JSON.stringify(projects));
+
+        const oldSession = localStorage.getItem(`session-${originalName}`);
+        if (oldSession) {
+            localStorage.setItem(`session-${newName}`, oldSession);
+            localStorage.removeItem(`session-${originalName}`);
+        }
+
+        const openReq = indexedDB.open('DoseedoDB', 2);
+        openReq.onsuccess = (e) => {
+            const db = e.target.result;
+            const tx = db.transaction('videos', 'readwrite');
+            const store = tx.objectStore('videos');
+            const getReq = store.get(`preview-${originalName}`);
+            getReq.onsuccess = () => {
+                const blob = getReq.result;
+                if (blob) {
+                    store.put(blob, `preview-${newName}`);
+                    store.delete(`preview-${originalName}`);
+                }
+            };
+        };
+
+        renderProjects();
+    };
+
+    input.onblur = save;
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') save();
+    };
+
+    // Swap the span with the input
+    projectNameElement.replaceWith(input);
+    input.focus();
+}
+
+// Initial render of projects
+renderProjects();
+</script>
+
+
+
+
+
+
+
+ 
+
+</div>
+
+</div>
+
+</div>
+
+
+</div>
+
+<!-- <p  id="copyright" color="grey"> Algorithm and Website coded by Arlo Erwin, 2022</p> -->
+    
+<br>
+<br>
+
+
+<footer>
+    <p>Copyright © 2024 by Doseedo.com</p>
+    <p>Contact us: <a href="mailto:contact@example.com">arlo@doseedo.com</a></p>
+    <p><a href="privacy.html">Privacy Policy</a> | <a href="terms.html">Terms of Use</a></p>
+</footer>
+
+<script src="https://github.com/urtzurd/html-audio.git"></script>
+<script src="javascriptdash.js"></script>
+
+</body>
+
+
+
+
+</html>
