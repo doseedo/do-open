@@ -1,0 +1,35 @@
+# DO1 Training Configuration
+
+# Optimizer
+learning_rate: 1.0e-4
+weight_decay: 0.01
+warmup_steps: 5000
+max_steps: 500000
+
+# Batch
+batch_size: 8
+gradient_accumulation: 4
+grad_clip: 1.0
+
+# Precision
+precision: bf16-mixed
+
+# Data loading
+num_workers: 8
+max_time_frames: 4096
+samples_per_epoch: 100000
+
+# CFG
+cfg_dropout: 0.3
+
+# Flow matching
+timestep_distribution: logit_normal
+logit_mean: 0.0
+logit_std: 1.0
+
+# Logging
+log_every: 100
+
+# Checkpointing
+checkpoint_every: 5000
+save_top_k: 3

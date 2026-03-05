@@ -1,0 +1,28 @@
+# DO1 3.3B Model Configuration
+# Target: ~3.3B parameters
+
+# Input/output dimensions
+in_channels_noisy: 8
+in_channels_cond: 8
+in_channels_mask: 1
+in_channels_ref: 8
+out_channels: 8
+
+# Patch embedding
+patch_size: [4, 4]
+freq_bins: 16
+max_time_frames: 4096
+
+# Transformer dimensions
+model_dim: 2304
+num_attention_heads: 36
+attention_head_dim: 64
+num_layers: 32
+mlp_ratio: 4.0
+
+# Position encoding
+max_position: 32768
+rope_theta: 1000000.0
+
+# Normalization
+qk_norm: true
