@@ -359,37 +359,27 @@
   );
 }
 
-/* Drawing Tools */
-.drawingTools {
+/* Tool Selector (in transport) */
+.toolSelector {
   display: flex;
-  gap: 2px;
-  margin-top: 4px;
+  gap: 4px;
 }
 
-.drawToolBtn {
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: transparent;
-  color: rgba(200, 200, 208, 0.5);
-  font-size: 9px;
-  cursor: pointer;
+/* Automation Legend */
+.automationLegend {
   display: flex;
   align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 10px;
+  color: rgba(200, 200, 208, 0.5);
 }
 
-.drawToolBtn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #C8C8D0;
-}
-
-.drawToolBtnActive {
-  background: rgba(46, 117, 182, 0.2);
-  border-color: rgba(46, 117, 182, 0.3);
-  color: #2E75B6;
+.legendDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
 
 /* Bottom Panel */
