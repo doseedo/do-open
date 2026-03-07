@@ -308,39 +308,7 @@
   font-family: 'JetBrains Mono', monospace;
 }
 
-/* Automation Lane */
-.automationLane {
-  flex: 1;
-  min-width: 0;
-  position: relative;
-  height: 60px;
-  cursor: crosshair;
-  background: #12121A;
-}
-
-.automationCanvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* Unified automation container */
-.automationUnified {
-  flex: 1;
-  position: relative;
-  height: 60px;
-  min-width: 0;
-}
-
-.automationOverlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-}
-
+/* Automation Value Label */
 .automationValue {
   position: absolute;
   top: 4px;
