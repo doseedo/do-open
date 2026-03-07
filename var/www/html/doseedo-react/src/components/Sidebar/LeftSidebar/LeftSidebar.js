@@ -9,7 +9,7 @@ import styles from './LeftSidebar.module.css';
  * LeftSidebar Component
  * Main navigation sidebar with collapsible menu
  */
-const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, onGoToUserInfo, onGoToTools, onGoToWhatsNew, onGoToResearch, onGoToPlugins, onToggleSearch: onToggleMidiBrowser, onShowGenerationPanel, onShowMidiBrowser, showMidiBrowser, onToggleChat, showChatWindow, isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView, isWhatsNewView, isResearchView, isPluginsView }) => {
+const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, onGoToUserInfo, onGoToTools, onGoToWhatsNew, onGoToResearch, onGoToPlugins, onGoToDO1, onToggleSearch: onToggleMidiBrowser, onShowGenerationPanel, onShowMidiBrowser, showMidiBrowser, onToggleChat, showChatWindow, isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView, isWhatsNewView, isResearchView, isPluginsView, isDO1View }) => {
   const { state, dispatch } = useApp();
   const [userInfo, setUserInfo] = useState(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -29,7 +29,7 @@ const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, o
   }, []);
 
   // Force sidebar to be expanded when not in DAW view (desktop only)
-  const isSpecialView = isDashboardView || isHomeView || isSearchView || isUserInfoView || isToolsView || isWhatsNewView || isResearchView || isPluginsView;
+  const isSpecialView = isDashboardView || isHomeView || isSearchView || isUserInfoView || isToolsView || isWhatsNewView || isResearchView || isPluginsView || isDO1View;
   useEffect(() => {
     if (!isMobile && isSpecialView && !state.sidebar.isExpanded) {
       dispatch({ type: 'TOGGLE_SIDEBAR' });
@@ -126,6 +126,16 @@ const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, o
             onClick={(e) => {
               e.preventDefault();
               onGoToPlugins();
+            }}
+          />
+          <SidebarLink
+            href="#"
+            icon="fa-solid fa-bolt"
+            label="DO1"
+            active={isDO1View}
+            onClick={(e) => {
+              e.preventDefault();
+              if (onGoToDO1) onGoToDO1();
             }}
           />
         </SidebarSection>

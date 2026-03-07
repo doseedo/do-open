@@ -37,6 +37,7 @@ import ChordWindow from './components/ChordWindow/ChordWindow';
 import AudioLabeler from './components/AudioLabeler/AudioLabeler';
 import DataMonitor from './components/DataMonitor/DataMonitor';
 import AdminUsers from './components/AdminUsers/AdminUsers';
+import DO1 from './components/DO1/DO1';
 // ThemeEditor removed
 import LiquidGlassFilters from './components/LiquidGlassFilters/LiquidGlassFilters';
 
@@ -207,6 +208,7 @@ function AppContent() {
                       location.pathname === '/label' ? 'label' :
                       location.pathname === '/monitor' ? 'monitor' :
                       location.pathname === '/admin' ? 'admin' :
+                      location.pathname === '/DO1' ? 'do1' :
                       location.pathname === '/' ? 'home' : 'home';
 
   // Check if we're in demo mode
@@ -392,6 +394,11 @@ function AppContent() {
     navigate('/plugins');
   };
 
+  // Handle navigation to DO1
+  const handleGoToDO1 = () => {
+    navigate('/DO1');
+  };
+
   // Toggle MIDI browser
   const handleToggleSearch = () => {
     setShowMidiBrowser(prev => !prev);
@@ -430,6 +437,7 @@ function AppContent() {
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
           onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -457,6 +465,7 @@ function AppContent() {
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
           onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -484,6 +493,7 @@ function AppContent() {
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
           onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -540,6 +550,7 @@ function AppContent() {
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
           onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -567,6 +578,7 @@ function AppContent() {
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
           onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -595,6 +607,7 @@ function AppContent() {
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
           onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -621,6 +634,7 @@ function AppContent() {
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
           onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -649,6 +663,7 @@ function AppContent() {
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
           onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -679,6 +694,34 @@ function AppContent() {
     );
   }
 
+  // Show DO1 view with sidebar
+  if (currentView === 'do1') {
+    return (
+      <div className="App">
+        <LiquidGlassFilters />
+        <LeftSidebar
+          onBackToDashboard={handleBackToDashboard}
+          onGoToHome={handleGoToHome}
+          onGoToSearch={handleGoToSearch}
+          onGoToUserInfo={handleGoToUserInfo}
+          onGoToTools={handleGoToTools}
+          onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
+          onToggleSearch={handleToggleSearch}
+          onShowGenerationPanel={handleShowGenerationPanel}
+          onShowMidiBrowser={handleShowMidiBrowser}
+          showMidiBrowser={showMidiBrowser}
+          onToggleChat={handleToggleChat}
+          showChatWindow={showChatWindow}
+          isDO1View={true}
+        />
+        <DO1 />
+      </div>
+    );
+  }
+
   // Show admin view (standalone, no sidebar)
   if (currentView === 'admin') {
     return (
@@ -702,6 +745,7 @@ function AppContent() {
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
           onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -777,6 +821,7 @@ function AppContent() {
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
           onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
           showMidiBrowser={showMidiBrowser}
           onToggleChat={handleToggleChat}
@@ -932,6 +977,8 @@ function AppContent() {
         onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
         onToggleSearch={handleToggleSearch}
         showMidiBrowser={showMidiBrowser}
         onToggleChat={handleToggleChat}
