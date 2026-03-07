@@ -201,14 +201,28 @@
 /* === Chat Panel (left) === */
 
 .chatPanel {
-  width: 340px;
-  min-width: 280px;
+  min-width: 200px;
   display: flex;
   flex-direction: column;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   overflow: hidden;
+  flex-shrink: 0;
+}
+
+.resizeHandle {
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  transition: background 0.15s;
+}
+.resizeHandle:hover,
+.resizeHandle:active {
+  background: rgba(186, 156, 255, 0.3);
 }
 
 .chatHeader {
@@ -517,6 +531,428 @@
 
 .chatTabActive i {
   color: #667eea;
+}
+
+/* === Asset Browser === */
+
+.assetBrowseGrid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.assetRow {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.assetRowHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.assetRowHeader i {
+  font-size: 14px;
+  color: #ba9cff;
+  width: 18px;
+  text-align: center;
+}
+
+.assetRowBtns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.assetSquareBtn {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(186, 156, 255, 0.06);
+  border: 1px solid rgba(186, 156, 255, 0.2);
+  border-radius: 10px;
+  color: rgba(186, 156, 255, 0.9);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.assetSquareBtn i {
+  font-size: 18px;
+}
+
+.assetSquareBtn:hover {
+  background: rgba(186, 156, 255, 0.15);
+  border-color: rgba(186, 156, 255, 0.4);
+}
+
+.comingSoon {
+  margin-left: auto;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.25);
+  font-style: italic;
+}
+
+/* === Knob Generator === */
+
+.knobGenerator {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.generatorBackBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  align-self: flex-start;
+  transition: all 0.2s ease;
+}
+
+.generatorBackBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.generatorTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.generatorModeRow {
+  display: flex;
+  gap: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.modePill {
+  flex: 1;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.modePill:hover {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.modePillActive {
+  composes: modePill;
+  background: rgba(186, 156, 255, 0.15);
+  color: #ba9cff;
+}
+
+.styleGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.styleCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 9px;
+  text-align: center;
+}
+
+.styleCard:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(186, 156, 255, 0.3);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.styleCardActive {
+  composes: styleCard;
+  background: rgba(186, 156, 255, 0.12);
+  border-color: rgba(186, 156, 255, 0.5);
+  color: #ba9cff;
+}
+
+.colorRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.colorRow label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.colorRow input[type="color"] {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 4px;
+}
+
+.generateBtn {
+  padding: 10px 0;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.generateBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.generateBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
+.knobPreview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.knobPreviewArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.previewValueLabel {
+  font-size: 11px;
+  color: rgba(186, 156, 255, 0.7);
+  font-weight: 600;
+}
+
+.previewHint {
+  margin: 0;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.addToCanvasBtn {
+  width: 100%;
+  padding: 10px 0;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.addToCanvasBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* === Rotation Layer Controls === */
+
+.layerControlStack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.layerControl {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.layerControlHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.layerControlLabel {
+  flex: 1;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+}
+
+.toggleSwitch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.toggleSwitchOn {
+  composes: toggleSwitch;
+  background: rgba(102, 126, 234, 0.6);
+}
+
+.toggleSwitchThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  transition: left 0.2s ease, background 0.2s ease;
+}
+
+.toggleSwitchOn .toggleSwitchThumb {
+  left: 18px;
+  background: #fff;
+}
+
+.layerSettingsBtn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  transition: color 0.2s ease;
+  font-family: inherit;
+}
+
+.layerSettingsBtn:hover {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.layerSettingsOpen {
+  composes: layerSettingsBtn;
+  color: rgba(186, 156, 255, 0.6);
+}
+
+.layerSettingsPanel {
+  padding: 6px 10px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.speedRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speedLabel {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  width: 42px;
+  flex-shrink: 0;
+}
+
+.speedSlider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  outline: none;
+}
+
+.speedSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #667eea;
+  cursor: pointer;
+}
+
+.speedValue {
+  font-size: 11px;
+  color: rgba(186, 156, 255, 0.6);
+  width: 32px;
+  text-align: right;
+  font-family: 'SF Mono', monospace;
+  flex-shrink: 0;
 }
 
 /* === DSP Language Blocks === */
@@ -936,6 +1372,56 @@
   font-size: 8px;
 }
 
+/* === Canvas Toggle (UI Editor / DSP Editor) === */
+
+.canvasToggle {
+  display: flex;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.canvasToggleBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  position: relative;
+}
+
+.canvasToggleBtn:hover {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.canvasToggleBtnActive {
+  background: rgba(186, 156, 255, 0.15);
+  color: #ba9cff;
+  box-shadow: inset 0 -2px 0 #ba9cff;
+}
+
+.canvasToggleBtn i {
+  font-size: 13px;
+}
+
+/* Make DSPEditor fill the canvas panel */
+.canvasPanel > div:last-child:not(.canvasToggle) {
+  flex: 1;
+  min-height: 0;
+}
+
 /* === Canvas Panel (right) === */
 
 .canvasPanel {
@@ -950,11 +1436,13 @@
 /* === Plugin Frame === */
 
 .pluginFrame {
+  display: flex;
+  flex-direction: column;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  align-self: center;
+  align-self: flex-start;
   flex-shrink: 0;
 }
 
@@ -989,6 +1477,14 @@
   cursor: default;
 }
 
+.canvasWithProps {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 .gridOverlay {
   pointer-events: none;
 }
@@ -1020,23 +1516,85 @@
   font-size: 9px;
   color: rgba(255, 255, 255, 0.6);
   text-align: center;
-  margin-top: 2px;
+  margin-top: 1px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
 }
 
 /* === Component Palette === */
 
 .palette {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
+  flex-direction: column;
+  padding: 0;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
-  flex-wrap: wrap;
   flex-shrink: 0;
+  overflow: visible;
+}
+
+.paletteCatRow {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.paletteCatGroup {
+  position: relative;
+  flex: 1;
+}
+
+.paletteCatLabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(186, 156, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 12px;
+  cursor: default;
+  transition: all 0.2s ease;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+}
+
+.paletteCatGroup:last-child .paletteCatLabel {
+  border-right: none;
+}
+
+.paletteCatGroup:hover .paletteCatLabel {
+  color: rgba(186, 156, 255, 0.9);
+  background: rgba(186, 156, 255, 0.06);
+}
+
+.paletteCatItems {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  background: rgba(30, 25, 50, 0.97);
+  border: 1px solid rgba(186, 156, 255, 0.2);
+  border-radius: 8px;
+  z-index: 100;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+}
+
+.paletteCatGroup:hover .paletteCatItems {
+  display: flex;
 }
 
 .paletteLabel {
@@ -1044,19 +1602,6 @@
   font-weight: 600;
   color: rgba(255, 255, 255, 0.4);
   margin-right: 4px;
-}
-
-.paletteCatLabel {
-  font-size: 10px;
-  font-weight: 700;
-  color: rgba(186, 156, 255, 0.5);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-left: 6px;
-}
-
-.paletteCatLabel:first-child {
-  margin-left: 0;
 }
 
 .paletteBtn {
@@ -1092,8 +1637,10 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   flex-shrink: 0;
-  max-height: 360px;
+  width: 260px;
+  max-height: none;
   overflow-y: auto;
+  align-self: flex-start;
 }
 
 .propertyPanel::-webkit-scrollbar {
@@ -1464,6 +2011,57 @@
   padding: 20px 0;
 }
 
+.layerRenameInput {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(186, 156, 255, 0.4);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 11px;
+  padding: 2px 6px;
+  outline: none;
+  min-width: 0;
+}
+
+/* === Zoom Controls === */
+
+.zoomBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  margin-bottom: 4px;
+  align-self: flex-start;
+}
+
+.zoomBtn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+.zoomBtn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.zoomLabel {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  min-width: 36px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+.zoomLabel:hover {
+  color: #ba9cff;
+}
+
 /* === Image Browser Modal === */
 
 .imageBrowserOverlay {
@@ -1723,9 +2321,13 @@
   }
 
   .chatPanel {
-    width: 100%;
+    width: 100% !important;
     min-width: 0;
     height: 300px;
+  }
+
+  .resizeHandle {
+    display: none;
   }
 
   .canvasPanel {
@@ -1738,8 +2340,17 @@
   }
 
   .palette {
-    gap: 4px;
-    padding: 8px 12px;
+    padding: 0;
+  }
+
+  .paletteCatLabel {
+    font-size: 9px;
+    padding: 8px 6px;
+  }
+
+  .paletteCatItems {
+    padding: 6px 8px;
+    gap: 3px;
   }
 
   .paletteBtn {
@@ -1751,13 +2362,24 @@
     display: none;
   }
 
-  .paletteCatLabel {
-    display: none;
-  }
-
   .layersPanel {
     width: 100%;
     height: 200px;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-radius: 12px 12px 0 0;
+    z-index: 100;
+  }
+
+  .canvasBody {
+    min-height: 60vh;
+    touch-action: manipulation;
+  }
+
+  .zoomBar {
+    margin-bottom: 2px;
   }
 
   .topBarActions {
@@ -1814,4 +2436,80 @@
   color: white;
   display: flex;
   flex-direction: column;
+}
+
+/* === Welcome / Template Gallery === */
+
+.welcomeOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 30, 0.7);
+  backdrop-filter: blur(8px);
+}
+
+.welcomeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: #fff;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.welcomeCard:hover {
+  background: rgba(186, 156, 255, 0.1);
+  border-color: rgba(186, 156, 255, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.15);
+}
+
+.welcomeBadge {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(102, 126, 234, 0.15);
+  color: rgba(162, 186, 255, 0.8);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+/* === Empty Canvas Hint === */
+
+.emptyCanvasHint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+  animation: fadeInHint 0.5s ease;
+}
+
+.emptyCanvasHint p {
+  margin: 0;
+  font-size: 14px;
+  max-width: 260px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+@keyframes fadeInHint {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }

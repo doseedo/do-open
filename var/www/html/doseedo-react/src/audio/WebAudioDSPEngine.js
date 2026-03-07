@@ -200,6 +200,10 @@ function buildLadder(ctx, node, paramDefs) {
   return { input: filters[0], output: filters[3], paramTargets: targets };
 }
 
+function dbToLinear(db) {
+  return Math.pow(10, db / 20);
+}
+
 function buildGain(ctx, node, paramDefs) {
   const gain = ctx.createGain();
   gain.gain.value = 1;
@@ -210,7 +214,9 @@ function buildGain(ctx, node, paramDefs) {
     if (typeof val === 'string' && val.startsWith('@')) {
       const paramId = val.slice(1);
       if (key === 'gain' || key === 'level' || key === 'volume' || key === 'makeup' || key === 'makeup_gain') {
-        targets[paramId] = { audioParam: gain.gain, paramDef: paramDefs[paramId] };
+        const pDef = paramDefs[paramId];
+        const isDb = pDef && (pDef.unit === 'dB' || pDef.unit === 'db');
+        targets[paramId] = { audioParam: gain.gain, paramDef: pDef, scale: isDb ? dbToLinear : undefined };
       }
     } else {
       if (key === 'gain' || key === 'level' || key === 'volume') gain.gain.value = val;
@@ -328,7 +334,7 @@ function buildCompressor(ctx, node, paramDefs) {
     }
   }
 
-  return { input: comp, output: makeup, paramTargets: targets };
+  return { input: comp, output: makeup, paramTargets: targets, compressorNode: comp };
 }
 
 function buildLimiter(ctx, node, paramDefs) {
@@ -350,7 +356,7 @@ function buildLimiter(ctx, node, paramDefs) {
     }
   }
 
-  return { input: comp, output: comp, paramTargets: targets };
+  return { input: comp, output: comp, paramTargets: targets, compressorNode: comp };
 }
 
 function buildReverb(ctx, node, paramDefs) {
@@ -619,6 +625,164 @@ function buildTremolo(ctx, node, paramDefs) {
   return { input, output: tremGain, paramTargets: targets, oscillators: [lfo] };
 }
 
+// ── Instrument node builders ─────────────────────────────────────────────────
+
+function buildOscillator(ctx, node, paramDefs) {
+  // Oscillator that responds to noteOn/noteOff for instrument mode
+  const output = ctx.createGain();
+  output.gain.value = 0.5;
+  const targets = {};
+  const params = node.params || {};
+  const waveType = params.waveform || params.type || 'sawtooth';
+
+  // Store config for creating voices on noteOn
+  const oscConfig = {
+    type: typeof waveType === 'string' && !waveType.startsWith('@') ? waveType : 'sawtooth',
+    detune: 0,
+    unison: 1,
+    unisonSpread: 15,
+  };
+
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val === 'string' && val.startsWith('@')) {
+      const paramId = val.slice(1);
+      if (key === 'detune' || key === 'fine') {
+        targets[paramId] = { paramDef: paramDefs[paramId], customSetter: (v) => { oscConfig.detune = v; } };
+      } else if (key === 'gain' || key === 'level') {
+        targets[paramId] = { audioParam: output.gain, paramDef: paramDefs[paramId] };
+      }
+    } else {
+      if (key === 'detune' || key === 'fine') oscConfig.detune = val;
+      if (key === 'unison') oscConfig.unison = val;
+      if (key === 'unison_spread') oscConfig.unisonSpread = val;
+    }
+  }
+
+  return { input: output, output, paramTargets: targets, oscConfig, isSource: true };
+}
+
+function buildNoiseGen(ctx, node, paramDefs) {
+  const bufLen = ctx.sampleRate * 4;
+  const buf = ctx.createBuffer(2, bufLen, ctx.sampleRate);
+  const noiseType = (node.params?.type || 'white').toLowerCase();
+
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buf.getChannelData(ch);
+    if (noiseType === 'pink') {
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (let i = 0; i < bufLen; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        b3 = 0.86650 * b3 + white * 0.3104856;
+        b4 = 0.55000 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.0168980;
+        data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+        b6 = white * 0.115926;
+      }
+    } else {
+      for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+    }
+  }
+
+  const source = ctx.createBufferSource();
+  source.buffer = buf;
+  source.loop = true;
+  const output = ctx.createGain();
+  output.gain.value = 0.3;
+  source.connect(output);
+  source.start();
+
+  const targets = {};
+  const params = node.params || {};
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val === 'string' && val.startsWith('@')) {
+      const paramId = val.slice(1);
+      if (key === 'gain' || key === 'level') {
+        targets[paramId] = { audioParam: output.gain, paramDef: paramDefs[paramId] };
+      }
+    }
+  }
+
+  return { input: output, output, paramTargets: targets, oscillators: [source], isSource: true };
+}
+
+function buildADSREnvelope(ctx, node, paramDefs) {
+  const gain = ctx.createGain();
+  gain.gain.value = 0;
+  const targets = {};
+  const params = node.params || {};
+
+  const envConfig = { attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3 };
+
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val === 'string' && val.startsWith('@')) {
+      const paramId = val.slice(1);
+      targets[paramId] = {
+        paramDef: paramDefs[paramId],
+        customSetter: (v) => { envConfig[key] = v; },
+      };
+    } else {
+      if (key in envConfig) envConfig[key] = val;
+    }
+  }
+
+  return { input: gain, output: gain, paramTargets: targets, envConfig, isEnvelope: true };
+}
+
+function buildLFONode(ctx, node, paramDefs) {
+  const lfo = ctx.createOscillator();
+  const lfoGain = ctx.createGain();
+  lfo.frequency.value = 2;
+  lfoGain.gain.value = 0.5;
+  lfo.type = (node.params?.shape || 'sine').toLowerCase();
+  lfo.connect(lfoGain);
+  lfo.start();
+
+  // LFO output goes to a modulation target — pass through a gain node
+  const output = ctx.createGain();
+  output.gain.value = 1;
+  lfoGain.connect(output);
+
+  const targets = {};
+  const params = node.params || {};
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val === 'string' && val.startsWith('@')) {
+      const paramId = val.slice(1);
+      if (key === 'rate' || key === 'frequency') targets[paramId] = { audioParam: lfo.frequency, paramDef: paramDefs[paramId] };
+      else if (key === 'depth' || key === 'amount') targets[paramId] = { audioParam: lfoGain.gain, paramDef: paramDefs[paramId] };
+    } else {
+      if (key === 'rate' || key === 'frequency') lfo.frequency.value = val;
+      else if (key === 'depth' || key === 'amount') lfoGain.gain.value = val;
+    }
+  }
+
+  return { input: output, output, paramTargets: targets, oscillators: [lfo] };
+}
+
+function buildSubOscillator(ctx, node, paramDefs) {
+  // Sub oscillator: same as oscillator but defaults to -1 or -2 octaves
+  const result = buildOscillator(ctx, node, paramDefs);
+  result.oscConfig.type = (node.params?.waveform || 'sine').toLowerCase();
+  result.oscConfig.octaveOffset = node.params?.octave ?? -1;
+  return result;
+}
+
+function buildMixer(ctx, node, paramDefs) {
+  const gain = ctx.createGain();
+  gain.gain.value = 1;
+  const targets = {};
+  const params = node.params || {};
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val === 'string' && val.startsWith('@')) {
+      const paramId = val.slice(1);
+      if (key === 'gain' || key === 'level') targets[paramId] = { audioParam: gain.gain, paramDef: paramDefs[paramId] };
+    }
+  }
+  return { input: gain, output: gain, paramTargets: targets };
+}
+
 // ── Node builder registry ──────────────────────────────────────────────────
 
 const NODE_BUILDERS = {
@@ -635,6 +799,14 @@ const NODE_BUILDERS = {
   saturation: buildWaveshaper, foldback: buildWaveshaper,
   chorus: buildChorus, phaser: buildPhaser, flanger: buildFlanger,
   tremolo: buildTremolo, ring_mod: buildTremolo,
+  // Instrument nodes
+  oscillator: buildOscillator, osc: buildOscillator, saw: buildOscillator,
+  square: buildOscillator, sine: buildOscillator, triangle: buildOscillator,
+  sub_oscillator: buildSubOscillator, sub_osc: buildSubOscillator,
+  noise: buildNoiseGen, noise_gen: buildNoiseGen, white_noise: buildNoiseGen, pink_noise: buildNoiseGen,
+  adsr: buildADSREnvelope, envelope: buildADSREnvelope, amp_env: buildADSREnvelope, filter_env: buildADSREnvelope,
+  lfo: buildLFONode,
+  mixer: buildMixer, mix_bus: buildMixer,
   // Passthrough for unsupported types
   dc_blocker: buildGain, mix: buildGain, splitter: buildGain, merger: buildGain,
 };
@@ -669,11 +841,24 @@ export default class WebAudioDSPEngine {
 
   _ensureContext() {
     if (!this.ctx || this.ctx.state === 'closed') {
-      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      try {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.contextError = null;
+      } catch (err) {
+        this.contextError = err.message || 'Failed to create AudioContext';
+        return;
+      }
     }
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().catch(() => {});
     }
+  }
+
+  getContextState() {
+    return {
+      state: this.ctx?.state,
+      error: this.contextError,
+    };
   }
 
   _buildGraph() {
@@ -691,10 +876,23 @@ export default class WebAudioDSPEngine {
     this.masterGain.connect(this.analyser);
     this.analyser.connect(ctx.destination);
 
+    // If a raw dspGraph with parallel routing exists, use it
+    if (this.config?.dspGraph?.nodes?.length > 0 && this.config?.dspGraph?.edges?.length > 0) {
+      this._buildGraphFromNodes();
+      return;
+    }
+
     const chain = this.config?.dspChain || [];
     if (chain.length === 0) {
       // No DSP — direct passthrough
       this._chainInput = this.masterGain;
+      this._voiceInput = this.masterGain;
+      return;
+    }
+
+    // Instrument mode: separate sources/envelopes from effects
+    if (this.isInstrument) {
+      this._buildInstrumentGraph(chain);
       return;
     }
 
@@ -711,6 +909,10 @@ export default class WebAudioDSPEngine {
       const built = builder(ctx, nodeDef, this.paramDefs);
       builtNodes.push(built);
       if (built.oscillators) this.oscillators.push(...built.oscillators);
+      if (built.compressorNode) {
+        if (!this._compressorNodes) this._compressorNodes = [];
+        this._compressorNodes.push(built.compressorNode);
+      }
 
       // Collect param targets
       for (const [paramId, target] of Object.entries(built.paramTargets)) {
@@ -735,15 +937,208 @@ export default class WebAudioDSPEngine {
     }
   }
 
+  _buildGraphFromNodes() {
+    const ctx = this.ctx;
+    const graph = this.config.dspGraph;
+    const builtNodes = {};
+
+    // Build each node
+    for (const nodeDef of graph.nodes) {
+      if (nodeDef.type === 'input' || nodeDef.type === 'output') {
+        // Virtual input/output nodes
+        const g = ctx.createGain();
+        builtNodes[nodeDef.id] = { input: g, output: g, paramTargets: {} };
+        continue;
+      }
+      const builder = NODE_BUILDERS[nodeDef.type];
+      if (!builder) {
+        const g = ctx.createGain();
+        builtNodes[nodeDef.id] = { input: g, output: g, paramTargets: {} };
+        continue;
+      }
+      const built = builder(ctx, nodeDef, this.paramDefs);
+      builtNodes[nodeDef.id] = built;
+      if (built.oscillators) this.oscillators.push(...built.oscillators);
+      for (const [paramId, target] of Object.entries(built.paramTargets)) {
+        this.paramTargets[paramId] = target;
+      }
+    }
+
+    // Connect based on edges
+    for (const edge of graph.edges) {
+      const src = builtNodes[edge.source];
+      const tgt = builtNodes[edge.target];
+      if (src && tgt) {
+        try { src.output.connect(tgt.input); } catch (e) { /* ignore connection errors */ }
+      }
+    }
+
+    // Find input and output nodes
+    const inputNode = builtNodes['input'] || builtNodes['audio_input'];
+    const outputNode = builtNodes['output'] || builtNodes['audio_output'];
+
+    if (outputNode) {
+      outputNode.output.connect(this.masterGain);
+    }
+
+    this._chainInput = inputNode?.input || this.masterGain;
+    this.nodes = Object.values(builtNodes);
+
+    // Apply initial parameter values
+    for (const [paramId, normVal] of Object.entries(this.paramValues)) {
+      this._applyParam(paramId, normVal);
+    }
+  }
+
+  _buildInstrumentGraph(chain) {
+    const ctx = this.ctx;
+    this._sourceConfigs = [];
+    this._envelopeConfigs = [];
+
+    const SOURCE_TYPES = new Set([
+      'oscillator', 'osc', 'saw', 'square', 'sine', 'triangle',
+      'sub_oscillator', 'sub_osc', 'noise', 'noise_gen', 'white_noise', 'pink_noise',
+    ]);
+    const ENVELOPE_TYPES = new Set(['adsr', 'envelope', 'amp_env', 'filter_env']);
+
+    const effectDefs = [];
+
+    for (const nodeDef of chain) {
+      if (SOURCE_TYPES.has(nodeDef.type)) {
+        const params = nodeDef.params || {};
+        let waveType = params.waveform || params.type || 'sawtooth';
+        if (typeof waveType === 'string' && waveType.startsWith('@')) waveType = 'sawtooth';
+        // Override wave type for explicitly named types
+        if (nodeDef.type === 'square') waveType = 'square';
+        else if (nodeDef.type === 'sine') waveType = 'sine';
+        else if (nodeDef.type === 'triangle') waveType = 'triangle';
+        else if (nodeDef.type === 'saw') waveType = 'sawtooth';
+
+        const cfg = {
+          type: waveType,
+          detune: 0, unison: 1, unisonSpread: 15, octaveOffset: 0, gainValue: 0.5,
+        };
+
+        if (nodeDef.type === 'sub_oscillator' || nodeDef.type === 'sub_osc') {
+          cfg.type = (params.waveform || 'sine').toLowerCase();
+          if (cfg.type.startsWith('@')) cfg.type = 'sine';
+          cfg.octaveOffset = params.octave ?? -1;
+        }
+
+        if (nodeDef.type.includes('noise')) {
+          cfg.isNoise = true;
+          cfg.noiseType = (params.type || 'white').toLowerCase();
+        }
+
+        // Wire param bindings to update config for future notes
+        for (const [key, val] of Object.entries(params)) {
+          if (typeof val === 'string' && val.startsWith('@')) {
+            const paramId = val.slice(1);
+            if (key === 'detune' || key === 'fine') {
+              this.paramTargets[paramId] = { paramDef: this.paramDefs[paramId], customSetter: (v) => { cfg.detune = v; } };
+            } else if (key === 'gain' || key === 'level') {
+              this.paramTargets[paramId] = { paramDef: this.paramDefs[paramId], customSetter: (v) => { cfg.gainValue = v; } };
+            }
+          } else {
+            if (key === 'detune' || key === 'fine') cfg.detune = val;
+            if (key === 'unison') cfg.unison = val;
+            if (key === 'unison_spread') cfg.unisonSpread = val;
+          }
+        }
+
+        this._sourceConfigs.push(cfg);
+        continue;
+      }
+
+      if (ENVELOPE_TYPES.has(nodeDef.type)) {
+        const params = nodeDef.params || {};
+        const envCfg = { attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3 };
+        for (const [key, val] of Object.entries(params)) {
+          if (typeof val === 'string' && val.startsWith('@')) {
+            const paramId = val.slice(1);
+            this.paramTargets[paramId] = { paramDef: this.paramDefs[paramId], customSetter: (v) => { envCfg[key] = v; } };
+          } else {
+            if (key in envCfg) envCfg[key] = val;
+          }
+        }
+        this._envelopeConfigs.push(envCfg);
+        continue;
+      }
+
+      // Effect node — keep for static chain
+      effectDefs.push(nodeDef);
+    }
+
+    // Build only effect nodes
+    const effectNodes = [];
+    for (const nodeDef of effectDefs) {
+      const builder = NODE_BUILDERS[nodeDef.type];
+      if (!builder) {
+        const g = ctx.createGain();
+        effectNodes.push({ input: g, output: g, paramTargets: {} });
+        continue;
+      }
+      const built = builder(ctx, nodeDef, this.paramDefs);
+      effectNodes.push(built);
+      if (built.oscillators) this.oscillators.push(...built.oscillators);
+      for (const [paramId, target] of Object.entries(built.paramTargets)) {
+        this.paramTargets[paramId] = target;
+      }
+    }
+
+    // Voice merge point → effect chain → master
+    this._voiceInput = ctx.createGain();
+    this._voiceInput.gain.value = 1;
+
+    if (effectNodes.length > 0) {
+      this._voiceInput.connect(effectNodes[0].input);
+      for (let i = 1; i < effectNodes.length; i++) {
+        effectNodes[i - 1].output.connect(effectNodes[i].input);
+      }
+      effectNodes[effectNodes.length - 1].output.connect(this.masterGain);
+    } else {
+      this._voiceInput.connect(this.masterGain);
+    }
+
+    this._chainInput = this._voiceInput;
+    this.nodes = effectNodes;
+
+    // Defaults if DSP chain didn't include explicit source/envelope
+    if (this._envelopeConfigs.length === 0) {
+      this._envelopeConfigs.push({ attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3 });
+    }
+    if (this._sourceConfigs.length === 0) {
+      this._sourceConfigs.push({ type: 'sawtooth', detune: 0, unison: 1, unisonSpread: 15, octaveOffset: 0, gainValue: 0.5 });
+    }
+
+    // Apply initial parameter values
+    for (const [paramId, normVal] of Object.entries(this.paramValues)) {
+      this._applyParam(paramId, normVal);
+    }
+  }
+
   _teardownGraph() {
     this.oscillators.forEach(o => { try { o.stop(); } catch (e) {} });
     this.oscillators = [];
     this.nodes = [];
     this.paramTargets = {};
+    this._compressorNodes = [];
     if (this.sourceNode) {
       try { this.sourceNode.stop(); } catch (e) {}
       this.sourceNode = null;
     }
+    // Clean up instrument voices
+    if (this._activeVoices) {
+      for (const v of Object.values(this._activeVoices)) {
+        v.voices.forEach(o => { try { o.stop(); } catch (e) {} });
+        try { v.voiceGain.disconnect(); } catch (e) {}
+      }
+      this._activeVoices = {};
+    }
+    this._voiceInput = null;
+    this._sourceConfigs = null;
+    this._envelopeConfigs = null;
+    this.stopMicInput();
   }
 
   _applyParam(paramId, normValue) {
@@ -800,6 +1195,13 @@ export default class WebAudioDSPEngine {
   }
 
   play() {
+    // For instruments, just ensure graph is built (notes are triggered via noteOn)
+    if (this.isInstrument) {
+      if (!this.masterGain) this._buildGraph();
+      this.playing = true;
+      return;
+    }
+
     if (this.playing) this.stop();
     this._buildGraph();
 
@@ -827,12 +1229,14 @@ export default class WebAudioDSPEngine {
       try { this.sourceNode.stop(); } catch (e) {}
       this.sourceNode = null;
     }
+    this.stopMicInput();
     this.playing = false;
   }
 
   setParameter(paramId, normalizedValue) {
     this.paramValues[paramId] = normalizedValue;
-    if (this.playing) {
+    // Apply immediately if graph is built (not just when playing — instruments need params between notes)
+    if (this.masterGain) {
       this._applyParam(paramId, normalizedValue);
     }
   }
@@ -850,11 +1254,51 @@ export default class WebAudioDSPEngine {
     }
   }
 
+  // ── Microphone input (for FX plugins) ──────────────────────────────────
+
+  async startMicInput() {
+    this._ensureContext();
+    if (!this.masterGain) this._buildGraph();
+    if (this._micStream) this.stopMicInput();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    this._micStream = stream;
+    this._micSource = this.ctx.createMediaStreamSource(stream);
+    this._micSource.connect(this._chainInput || this.masterGain);
+    this.playing = true;
+  }
+
+  stopMicInput() {
+    if (this._micSource) {
+      try { this._micSource.disconnect(); } catch (e) {}
+      this._micSource = null;
+    }
+    if (this._micStream) {
+      this._micStream.getTracks().forEach(t => t.stop());
+      this._micStream = null;
+    }
+  }
+
   getAnalyserData() {
     if (!this.analyser) return null;
     const data = new Uint8Array(this.analyser.frequencyBinCount);
     this.analyser.getByteFrequencyData(data);
     return data;
+  }
+
+  /** Returns gain reduction in dB (negative value) from the first compressor/limiter node, or 0 */
+  getReduction() {
+    if (!this._compressorNodes?.length) return 0;
+    return this._compressorNodes[0].reduction || 0; // reduction is a float, always <= 0
+  }
+
+  /** Returns current output RMS level as 0-1 from the analyser */
+  getOutputLevel() {
+    if (!this.analyser) return 0;
+    const data = new Uint8Array(this.analyser.frequencyBinCount);
+    this.analyser.getByteFrequencyData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) sum += data[i];
+    return sum / (data.length * 255); // normalized 0-1
   }
 
   getParameterIds() {
@@ -865,7 +1309,142 @@ export default class WebAudioDSPEngine {
     return this.paramDefs[paramId];
   }
 
+  // Preset support: snapshot / restore all param values
+  getState() {
+    return { ...this.paramValues };
+  }
+
+  setState(values) {
+    if (!values) return;
+    for (const [paramId, val] of Object.entries(values)) {
+      this.setParameter(paramId, val);
+    }
+  }
+
+  // ── Instrument mode (synth) ───────────────────────────────────────────
+
+  get isInstrument() {
+    return this.config?.pluginType === 'instrument' ||
+      (this.config?.dspChain || []).some(n => NODE_BUILDERS[n.type] === buildOscillator || NODE_BUILDERS[n.type] === buildSubOscillator || NODE_BUILDERS[n.type] === buildNoiseGen);
+  }
+
+  noteOn(midiNote = 60, velocity = 0.8) {
+    this._ensureContext();
+    if (!this.masterGain) this._buildGraph();
+    const ctx = this.ctx;
+    const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
+    const t = ctx.currentTime;
+
+    // Per-voice envelope config (read current values — may be updated by param knobs)
+    const env = this._envelopeConfigs?.[0] || { attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.3 };
+
+    // Create per-voice envelope gain node
+    const voiceGain = ctx.createGain();
+    voiceGain.gain.setValueAtTime(0, t);
+    voiceGain.gain.linearRampToValueAtTime(velocity, t + Math.max(0.001, env.attack));
+    voiceGain.gain.linearRampToValueAtTime(
+      velocity * (env.sustain ?? 0.7),
+      t + Math.max(0.001, env.attack) + Math.max(0.001, env.decay)
+    );
+    voiceGain.connect(this._voiceInput || this.masterGain);
+
+    // Create oscillators for each source config
+    const voices = [];
+    const sourceConfigs = this._sourceConfigs || [];
+
+    for (const cfg of sourceConfigs) {
+      if (cfg.isNoise) {
+        // Per-voice noise buffer
+        const bufLen = ctx.sampleRate * 4;
+        const buf = ctx.createBuffer(2, bufLen, ctx.sampleRate);
+        for (let ch = 0; ch < 2; ch++) {
+          const data = buf.getChannelData(ch);
+          if (cfg.noiseType === 'pink') {
+            let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+            for (let i = 0; i < bufLen; i++) {
+              const w = Math.random() * 2 - 1;
+              b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759;
+              b2 = 0.96900 * b2 + w * 0.1538520; b3 = 0.86650 * b3 + w * 0.3104856;
+              b4 = 0.55000 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.0168980;
+              data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
+              b6 = w * 0.115926;
+            }
+          } else {
+            for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+          }
+        }
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        const noiseGain = ctx.createGain();
+        noiseGain.gain.value = cfg.gainValue ?? 0.3;
+        src.connect(noiseGain);
+        noiseGain.connect(voiceGain);
+        src.start(t);
+        voices.push(src);
+      } else {
+        const count = cfg.unison || 1;
+        for (let u = 0; u < count; u++) {
+          const osc = ctx.createOscillator();
+          osc.type = cfg.type || 'sawtooth';
+          const octOffset = cfg.octaveOffset || 0;
+          const uniDetune = count > 1 ? (u / (count - 1) - 0.5) * (cfg.unisonSpread || 15) : 0;
+          osc.frequency.value = freq * Math.pow(2, octOffset);
+          osc.detune.value = (cfg.detune || 0) + uniDetune;
+          const oscGain = ctx.createGain();
+          oscGain.gain.value = cfg.gainValue ?? 0.5;
+          osc.connect(oscGain);
+          oscGain.connect(voiceGain);
+          osc.start(t);
+          voices.push(osc);
+        }
+      }
+    }
+
+    this.playing = true;
+    const voiceId = Date.now() + '-' + midiNote;
+    if (!this._activeVoices) this._activeVoices = {};
+    this._activeVoices[voiceId] = { voices, voiceGain, midiNote, env: { ...env } };
+    return voiceId;
+  }
+
+  noteOff(voiceId) {
+    if (!this._activeVoices?.[voiceId]) return;
+    const { voices, voiceGain, env } = this._activeVoices[voiceId];
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const release = Math.max(0.01, env?.release || 0.3);
+
+    // Release this voice's envelope
+    voiceGain.gain.cancelScheduledValues(t);
+    voiceGain.gain.setValueAtTime(voiceGain.gain.value, t);
+    voiceGain.gain.linearRampToValueAtTime(0, t + release);
+
+    // Stop oscillators after release
+    for (const osc of voices) {
+      osc.stop(t + release + 0.05);
+    }
+
+    // Clean up after release completes
+    setTimeout(() => {
+      try { voiceGain.disconnect(); } catch (e) {}
+    }, (release + 0.1) * 1000);
+
+    delete this._activeVoices[voiceId];
+  }
+
+  // Keyboard mapping: computer keys → MIDI notes
+  static KEYBOARD_MAP = {
+    'a': 60, 'w': 61, 's': 62, 'e': 63, 'd': 64, 'f': 65, 't': 66,
+    'g': 67, 'y': 68, 'h': 69, 'u': 70, 'j': 71, 'k': 72, 'o': 73,
+    'l': 74, 'p': 75, ';': 76,
+  };
+
   dispose() {
+    // Stop active voices first (before teardown kills the graph)
+    if (this._activeVoices) {
+      for (const vid of Object.keys(this._activeVoices)) this.noteOff(vid);
+    }
     this.stop();
     this._teardownGraph();
     if (this.ctx && this.ctx.state !== 'closed') {

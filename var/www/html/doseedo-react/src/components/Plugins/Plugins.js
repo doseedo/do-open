@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import * as authService from '../../services/authService';
-import { listMyProjects, listCommunityProjects, deleteProject, loadProject, recordDownload, generateCode } from '../../services/pluginProjectsAPI';
+import { listMyProjects, deleteProject, loadProject, generateCode } from '../../services/pluginProjectsAPI';
+import { listCreations, getCreation, toggleLike, toggleFavorite, recordDownload, forkCreation, getMyFavorites } from '../../services/communityAPI';
+import WebAudioDSPEngine from '../../audio/WebAudioDSPEngine';
 import styles from './Plugins.module.css';
 import PluginCreator from './PluginCreator/PluginCreator';
 
@@ -112,6 +114,92 @@ const Plugins = () => {
   const [viewingProject, setViewingProject] = useState(null);
   const [projectCodePreview, setProjectCodePreview] = useState(null);
   const [generatingProjectCode, setGeneratingProjectCode] = useState(false);
+  const [communityOffset, setCommunityOffset] = useState(0);
+  const [loadingMoreCommunity, setLoadingMoreCommunity] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [loadingPreviewId, setLoadingPreviewId] = useState(null);
+  const [favoritesProjects, setFavoritesProjects] = useState([]);
+  const [loadingFavorites, setLoadingFavorites] = useState(false);
+
+  // Audio preview engine for community plugins
+  const previewEngineRef = useRef(null);
+  const [previewingId, setPreviewingId] = useState(null);
+
+  // Cleanup preview engine on unmount or tab switch
+  useEffect(() => {
+    return () => {
+      if (previewEngineRef.current) {
+        previewEngineRef.current.stop();
+        previewEngineRef.current.dispose();
+        previewEngineRef.current = null;
+      }
+    };
+  }, []);
+
+  // Stop preview when switching tabs
+  useEffect(() => {
+    if (mainTab !== 'community' && previewEngineRef.current) {
+      previewEngineRef.current.stop();
+      previewEngineRef.current.dispose();
+      previewEngineRef.current = null;
+      setPreviewingId(null);
+    }
+  }, [mainTab]);
+
+  const handlePreviewToggle = useCallback(async (projectId, dspConfig, e) => {
+    if (e) e.stopPropagation();
+    // If already previewing this one, stop
+    if (previewingId === projectId) {
+      if (previewEngineRef.current) {
+        previewEngineRef.current.stop();
+        previewEngineRef.current.dispose();
+        previewEngineRef.current = null;
+      }
+      setPreviewingId(null);
+      return;
+    }
+    // Stop any existing preview
+    if (previewEngineRef.current) {
+      previewEngineRef.current.stop();
+      previewEngineRef.current.dispose();
+      previewEngineRef.current = null;
+    }
+    // If we have dspConfig inline, use it directly
+    if (dspConfig && dspConfig.dspChain?.length > 0) {
+      try {
+        const engine = new WebAudioDSPEngine(dspConfig);
+        engine.loadTestTone('drums');
+        engine.setLoop(true);
+        engine.setMasterVolume(0.7);
+        engine.play();
+        previewEngineRef.current = engine;
+        setPreviewingId(projectId);
+      } catch (err) {
+        console.error('Preview failed:', err);
+        setPreviewingId(null);
+      }
+      return;
+    }
+    // Otherwise load the full project first
+    try {
+      setLoadingPreviewId(projectId);
+      const fullProject = await loadProject(projectId);
+      if (fullProject?.dsp_config?.dspChain?.length > 0) {
+        const engine = new WebAudioDSPEngine(fullProject.dsp_config);
+        engine.loadTestTone('drums');
+        engine.setLoop(true);
+        engine.setMasterVolume(0.7);
+        engine.play();
+        previewEngineRef.current = engine;
+        setPreviewingId(projectId);
+      }
+    } catch (err) {
+      console.error('Preview load failed:', err);
+      setPreviewingId(null);
+    } finally {
+      setLoadingPreviewId(null);
+    }
+  }, [previewingId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,13 +273,15 @@ const Plugins = () => {
     }).catch(() => setMyCreations([])).finally(() => setLoadingCreations(false));
   }, [mainTab]);
 
-  // Fetch community when tab opens or search/sort changes
+  // Fetch community when tab opens or search/sort changes (DB-backed)
   useEffect(() => {
     if (mainTab !== 'community') return;
+    setCommunityOffset(0);
+    setCommunityProjects([]);
     setLoadingCommunity(true);
-    listCommunityProjects({ search: communitySearch || undefined, sort: communitySort, limit: 50 })
+    listCreations({ type: 'plugin', search: communitySearch || undefined, sort: communitySort, limit: 24, offset: 0 })
       .then(data => {
-        setCommunityProjects(data.projects || []);
+        setCommunityProjects(data.creations || []);
         setCommunityTotal(data.total || 0);
       }).catch(() => {
         setCommunityProjects([]);
@@ -199,21 +289,55 @@ const Plugins = () => {
       }).finally(() => setLoadingCommunity(false));
   }, [mainTab, communitySearch, communitySort]);
 
-  const handleDeleteCreation = useCallback(async (id, e) => {
+  // Fetch saved/bookmarked plugins
+  useEffect(() => {
+    if (mainTab !== 'saved') return;
+    if (!authService.isAuthenticated()) return;
+    setLoadingFavorites(true);
+    getMyFavorites({ limit: 50 })
+      .then(data => setFavoritesProjects(data.creations || data || []))
+      .catch(() => setFavoritesProjects([]))
+      .finally(() => setLoadingFavorites(false));
+  }, [mainTab]);
+
+  const handleDeleteCreation = useCallback((id, e) => {
     e.stopPropagation();
-    if (!window.confirm('Delete this plugin project?')) return;
-    try {
-      await deleteProject(id);
-      setMyCreations(prev => prev.filter(p => p.id !== id));
-    } catch (err) {
-      console.error('Delete failed:', err);
-    }
+    setDeleteConfirmId(id);
   }, []);
+
+  const confirmDelete = useCallback(async () => {
+    if (!deleteConfirmId) return;
+    try {
+      await deleteProject(deleteConfirmId);
+      setMyCreations(prev => prev.filter(p => p.id !== deleteConfirmId));
+    } catch (err) { console.error('Delete failed:', err); }
+    finally { setDeleteConfirmId(null); }
+  }, [deleteConfirmId]);
+
+  const handleLoadMore = useCallback(async () => {
+    const nextOffset = communityOffset + 24;
+    setLoadingMoreCommunity(true);
+    try {
+      const data = await listCreations({ type: 'plugin', search: communitySearch || undefined, sort: communitySort, limit: 24, offset: nextOffset });
+      setCommunityProjects(prev => [...prev, ...(data.creations || [])]);
+      setCommunityOffset(nextOffset);
+    } catch (err) { console.error('Load more failed:', err); }
+    finally { setLoadingMoreCommunity(false); }
+  }, [communityOffset, communitySearch, communitySort]);
 
   const handleViewCommunityProject = useCallback(async (projectId) => {
     try {
-      const data = await loadProject(projectId);
-      setViewingProject(data);
+      // Load full project data from GCS (for components/dsp_config) + DB metadata
+      const [fullProject, creationMeta] = await Promise.all([
+        loadProject(projectId).catch(() => null),
+        getCreation(projectId).catch(() => null),
+      ]);
+      const merged = { ...(fullProject || {}), ...(creationMeta || {}), id: projectId };
+      // Prefer full project data for dsp_config/components, but use DB for like/fav counts
+      if (fullProject?.dsp_config) merged.dsp_config = fullProject.dsp_config;
+      if (fullProject?.components) merged.components = fullProject.components;
+      if (fullProject?.plugin_config) merged.plugin_config = fullProject.plugin_config;
+      setViewingProject(merged);
     } catch (err) {
       console.error('Failed to load project:', err);
     }
@@ -223,7 +347,7 @@ const Plugins = () => {
     if (!project.dsp_config) return;
     setGeneratingProjectCode(true);
     try {
-      await recordDownload(project.id);
+      await recordDownload(project.id).catch(() => {});
       const uiLayout = { pluginConfig: project.plugin_config, components: project.components || [] };
       const result = await generateCode(project.dsp_config, uiLayout);
       setProjectCodePreview(result);
@@ -233,6 +357,44 @@ const Plugins = () => {
       setGeneratingProjectCode(false);
     }
   }, []);
+
+  const handleToggleLike = useCallback(async (creationId, e) => {
+    if (e) e.stopPropagation();
+    if (!authService.isAuthenticated()) return;
+    try {
+      const res = await toggleLike(creationId);
+      setCommunityProjects(prev => prev.map(p =>
+        p.id === creationId ? { ...p, user_liked: res.liked, like_count: res.like_count } : p
+      ));
+      if (viewingProject?.id === creationId) {
+        setViewingProject(prev => ({ ...prev, user_liked: res.liked, like_count: res.like_count }));
+      }
+    } catch (err) { console.error('Like failed:', err); }
+  }, [viewingProject]);
+
+  const handleToggleFavorite = useCallback(async (creationId, e) => {
+    if (e) e.stopPropagation();
+    if (!authService.isAuthenticated()) return;
+    try {
+      const res = await toggleFavorite(creationId);
+      setCommunityProjects(prev => prev.map(p =>
+        p.id === creationId ? { ...p, user_favorited: res.favorited, favorite_count: res.favorite_count } : p
+      ));
+      if (viewingProject?.id === creationId) {
+        setViewingProject(prev => ({ ...prev, user_favorited: res.favorited, favorite_count: res.favorite_count }));
+      }
+    } catch (err) { console.error('Favorite failed:', err); }
+  }, [viewingProject]);
+
+  const handleFork = useCallback(async (creationId) => {
+    if (!authService.isAuthenticated()) return;
+    try {
+      const res = await forkCreation(creationId);
+      if (res.forked_project_id) {
+        navigate(`/plugins/create?project=${res.forked_project_id}`);
+      }
+    } catch (err) { console.error('Fork failed:', err); }
+  }, [navigate]);
 
   const pathParts = location.pathname.split('/').filter(Boolean);
   const isDownloadPage = pathParts[1] === 'download' && pathParts[2];
@@ -301,6 +463,12 @@ const Plugins = () => {
           onClick={() => { setMainTab('community'); setViewingProject(null); }}
         >
           <i className="fa-solid fa-users"></i> Community
+        </button>
+        <button
+          className={`${styles.mainTab} ${mainTab === 'saved' ? styles.mainTabActive : ''}`}
+          onClick={() => { setMainTab('saved'); setViewingProject(null); }}
+        >
+          <i className="fa-solid fa-bookmark"></i> Saved
         </button>
       </div>
 
@@ -374,16 +542,12 @@ const Plugins = () => {
             </div>
           )}
 
-          {/* My Purchased Plugins */}
+          {/* My Purchased Plugins — only show for logged-in users */}
+          {user && (
           <div className={styles.myPluginsSection}>
             <h2 className={styles.myPluginsTitle}>My Purchased Plugins</h2>
             <div className={styles.myPluginsBox}>
-              {!user ? (
-                <p className={styles.myPluginsEmpty}>
-                  <i className="fa-solid fa-lock"></i>
-                  Sign in to see your purchased plugins.
-                </p>
-              ) : loadingMyPlugins ? (
+              {loadingMyPlugins ? (
                 <div className={styles.loadingState}>
                   <i className="fa-solid fa-spinner fa-spin"></i>
                   Loading...
@@ -421,6 +585,7 @@ const Plugins = () => {
               )}
             </div>
           </div>
+          )}
         </>
       )}
 
@@ -520,6 +685,7 @@ const Plugins = () => {
               {[
                 { id: 'newest', label: 'Newest', icon: 'fa-solid fa-clock' },
                 { id: 'popular', label: 'Popular', icon: 'fa-solid fa-fire' },
+                { id: 'liked', label: 'Most Liked', icon: 'fa-solid fa-heart' },
                 { id: 'name', label: 'A-Z', icon: 'fa-solid fa-arrow-down-a-z' },
               ].map(s => (
                 <button
@@ -570,8 +736,17 @@ const Plugins = () => {
                       {proj.description || (proj.dsp_summary ? `${proj.dsp_summary.pluginType} - ${proj.dsp_summary.nodeCount} nodes` : 'Plugin project')}
                     </p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto', fontSize: 12 }}>
-                      <span style={{ color: 'rgba(255,255,255,0.35)' }}>
-                        <i className="fa-solid fa-user" style={{ marginRight: 4 }}></i>{proj.author_name || 'Anonymous'}
+                      <span
+                        style={{ color: 'rgba(255,255,255,0.45)', cursor: 'pointer' }}
+                        onClick={e => { e.stopPropagation(); navigate(`/profile/${proj.author?.username || proj.author_name || 'anonymous'}`); }}
+                        title="View profile"
+                      >
+                        {proj.author?.avatar_url ? (
+                          <img src={proj.author.avatar_url} alt="" style={{ width: 16, height: 16, borderRadius: '50%', marginRight: 4, verticalAlign: 'middle' }} />
+                        ) : (
+                          <i className="fa-solid fa-user" style={{ marginRight: 4 }}></i>
+                        )}
+                        {proj.author?.display_name || proj.author?.username || proj.author_name || 'Anonymous'}
                       </span>
                       <span style={{ color: 'rgba(255,255,255,0.2)' }}>
                         <i className="fa-solid fa-download" style={{ marginRight: 4 }}></i>{proj.download_count || 0}
@@ -582,10 +757,113 @@ const Plugins = () => {
                         </span>
                       )}
                     </div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      <button
+                        onClick={e => handleToggleLike(proj.id, e)}
+                        style={{
+                          background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px',
+                          color: proj.user_liked ? '#ff6b8a' : 'rgba(255,255,255,0.25)', fontSize: 13,
+                          display: 'flex', alignItems: 'center', gap: 4, transition: 'color 0.2s',
+                        }}
+                        title="Like"
+                      >
+                        <i className={proj.user_liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart'}></i>
+                        <span style={{ fontSize: 11 }}>{proj.like_count || 0}</span>
+                      </button>
+                      <button
+                        onClick={e => handleToggleFavorite(proj.id, e)}
+                        style={{
+                          background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px',
+                          color: proj.user_favorited ? '#fbbf24' : 'rgba(255,255,255,0.25)', fontSize: 13,
+                          display: 'flex', alignItems: 'center', gap: 4, transition: 'color 0.2s',
+                        }}
+                        title="Save"
+                      >
+                        <i className={proj.user_favorited ? 'fa-solid fa-bookmark' : 'fa-regular fa-bookmark'}></i>
+                      </button>
+                      {(proj.dsp_summary?.nodeCount > 0 || proj.dsp_config?.dspChain?.length > 0) && (
+                        <button
+                          onClick={e => handlePreviewToggle(proj.id, proj.dsp_config, e)}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px',
+                            color: loadingPreviewId === proj.id ? 'rgba(255,255,255,0.5)' : previewingId === proj.id ? '#00e5ff' : 'rgba(255,255,255,0.25)', fontSize: 13,
+                            display: 'flex', alignItems: 'center', gap: 4, transition: 'color 0.2s',
+                            marginLeft: 'auto',
+                          }}
+                          title={loadingPreviewId === proj.id ? 'Loading...' : previewingId === proj.id ? 'Stop preview' : 'Preview sound'}
+                        >
+                          <i className={`fa-solid ${loadingPreviewId === proj.id ? 'fa-spinner fa-spin' : previewingId === proj.id ? 'fa-stop' : 'fa-volume-high'}`}
+                            style={previewingId === proj.id ? { animation: 'pulse 1s infinite' } : undefined}
+                          ></i>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
+              {communityProjects.length < communityTotal && (
+                <div style={{ textAlign: 'center', marginTop: 16 }}>
+                  <button
+                    onClick={handleLoadMore}
+                    disabled={loadingMoreCommunity}
+                    style={{
+                      padding: '10px 24px', borderRadius: 10, border: '1px solid rgba(186,156,255,0.2)',
+                      background: 'rgba(186,156,255,0.06)', color: 'rgba(186,156,255,0.8)',
+                      fontSize: 13, fontWeight: 600, cursor: loadingMoreCommunity ? 'wait' : 'pointer',
+                      opacity: loadingMoreCommunity ? 0.6 : 1,
+                    }}
+                  >
+                    {loadingMoreCommunity
+                      ? <><i className="fa-solid fa-spinner fa-spin" style={{ marginRight: 6 }} />Loading...</>
+                      : `Load More (${communityTotal - communityProjects.length} remaining)`
+                    }
+                  </button>
+                </div>
+              )}
             </>
+          )}
+        </>
+      )}
+
+      {/* ══════════ SAVED TAB ══════════ */}
+      {mainTab === 'saved' && (
+        <>
+          {!authService.isAuthenticated() ? (
+            <div className={styles.noResults}>
+              <i className="fa-solid fa-lock"></i>
+              <p>Sign in to see your saved plugins.</p>
+            </div>
+          ) : loadingFavorites ? (
+            <div className={styles.loadingState}>
+              <i className="fa-solid fa-spinner fa-spin"></i> Loading saved plugins...
+            </div>
+          ) : favoritesProjects.length === 0 ? (
+            <div className={styles.noResults}>
+              <i className="fa-solid fa-bookmark"></i>
+              <p>No saved plugins yet. Bookmark community plugins to find them here.</p>
+            </div>
+          ) : (
+            <div className={styles.productGrid}>
+              {favoritesProjects.map(proj => (
+                <div
+                  key={proj.id}
+                  className={styles.productCard}
+                  onClick={() => { setMainTab('community'); handleViewCommunityProject(proj.id || proj.creation_id); }}
+                >
+                  {proj.thumbnail_data ? (
+                    <div className={styles.productIcon} style={{ background: 'transparent', overflow: 'hidden' }}>
+                      <img src={proj.thumbnail_data} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 12 }} />
+                    </div>
+                  ) : (
+                    <div className={styles.productIcon} style={{ background: 'rgba(102,126,234,0.12)' }}>
+                      <i className="fa-solid fa-puzzle-piece" style={{ color: '#667eea' }}></i>
+                    </div>
+                  )}
+                  <h2 className={styles.productName}>{proj.name}</h2>
+                  <p className={styles.productDesc}>{proj.description || 'Plugin project'}</p>
+                </div>
+              ))}
+            </div>
           )}
         </>
       )}
@@ -599,7 +877,48 @@ const Plugins = () => {
           codePreview={projectCodePreview}
           generating={generatingProjectCode}
           navigate={navigate}
+          onToggleLike={handleToggleLike}
+          onToggleFavorite={handleToggleFavorite}
+          onFork={handleFork}
+          onPreviewToggle={handlePreviewToggle}
+          previewingId={previewingId}
+          loadingPreviewId={loadingPreviewId}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmId && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }} onClick={() => setDeleteConfirmId(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: '#1e1e3a', border: '1px solid rgba(255,100,100,0.2)', borderRadius: 16,
+            padding: 28, width: 360, maxWidth: '90vw', color: '#fff',
+          }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: 16 }}>
+              <i className="fa-solid fa-triangle-exclamation" style={{ color: '#f44336', marginRight: 8 }} />
+              Delete Plugin?
+            </h3>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+              This will permanently delete the plugin project. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setDeleteConfirmId(null)} style={{
+                padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
+                background: 'transparent', color: 'rgba(255,255,255,0.6)', fontSize: 13, cursor: 'pointer',
+              }}>
+                Cancel
+              </button>
+              <button onClick={confirmDelete} style={{
+                padding: '8px 20px', borderRadius: 8, border: 'none',
+                background: 'rgba(244,67,54,0.85)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}>
+                <i className="fa-solid fa-trash" style={{ marginRight: 6 }} />Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -608,8 +927,9 @@ const Plugins = () => {
 /**
  * Community project detail view
  */
-const CommunityProjectDetail = ({ project, onBack, onDownloadCode, codePreview, generating, navigate }) => {
+const CommunityProjectDetail = ({ project, onBack, onDownloadCode, codePreview, generating, navigate, onToggleLike, onToggleFavorite, onFork, onPreviewToggle, previewingId, loadingPreviewId }) => {
   const [activeFile, setActiveFile] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (codePreview?.files) {
@@ -627,9 +947,45 @@ const CommunityProjectDetail = ({ project, onBack, onDownloadCode, codePreview, 
         {/* Info */}
         <div style={{ flex: '1 1 300px', minWidth: 300 }}>
           <h2 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 600 }}>{project.name}</h2>
-          <p style={{ margin: '0 0 12px', fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>
-            by {project.author_name || 'Anonymous'} &middot; {project.download_count || 0} downloads
-          </p>
+          <div style={{ margin: '0 0 12px', fontSize: 13, color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span
+              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+              onClick={() => navigate(`/profile/${project.author?.username || project.author_name || 'anonymous'}`)}
+              title="View profile"
+            >
+              {project.author?.avatar_url ? (
+                <img src={project.author.avatar_url} alt="" style={{ width: 20, height: 20, borderRadius: '50%' }} />
+              ) : (
+                <i className="fa-solid fa-user"></i>
+              )}
+              <span style={{ color: 'rgba(186,156,255,0.8)' }}>
+                {project.author?.display_name || project.author?.username || project.author_name || 'Anonymous'}
+              </span>
+            </span>
+            <span>&middot; {project.download_count || 0} downloads</span>
+            <button
+              onClick={() => onToggleLike(project.id)}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer', padding: '2px 8px',
+                color: project.user_liked ? '#ff6b8a' : 'rgba(255,255,255,0.35)', fontSize: 14,
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}
+            >
+              <i className={project.user_liked ? 'fa-solid fa-heart' : 'fa-regular fa-heart'}></i>
+              {project.like_count || 0}
+            </button>
+            <button
+              onClick={() => onToggleFavorite(project.id)}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer', padding: '2px 8px',
+                color: project.user_favorited ? '#fbbf24' : 'rgba(255,255,255,0.35)', fontSize: 14,
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}
+            >
+              <i className={project.user_favorited ? 'fa-solid fa-bookmark' : 'fa-regular fa-bookmark'}></i>
+              Save
+            </button>
+          </div>
           {project.description && (
             <p style={{ margin: '0 0 16px', fontSize: 14, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
               {project.description}
@@ -664,6 +1020,22 @@ const CommunityProjectDetail = ({ project, onBack, onDownloadCode, codePreview, 
           )}
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {project.dsp_config?.dspChain?.length > 0 && onPreviewToggle && (
+              <button
+                onClick={() => onPreviewToggle(project.id, project.dsp_config)}
+                style={{
+                  padding: '10px 20px', borderRadius: 10,
+                  border: previewingId === project.id ? '1px solid rgba(0,229,255,0.4)' : '1px solid rgba(0,229,255,0.25)',
+                  background: previewingId === project.id ? 'rgba(0,229,255,0.12)' : 'transparent',
+                  color: previewingId === project.id ? '#00e5ff' : 'rgba(0,229,255,0.7)',
+                  fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+                  transition: 'all 0.2s',
+                }}
+              >
+                <i className={`fa-solid ${loadingPreviewId === project.id ? 'fa-spinner fa-spin' : previewingId === project.id ? 'fa-stop' : 'fa-volume-high'}`}></i>
+                {loadingPreviewId === project.id ? 'Loading...' : previewingId === project.id ? 'Stop Preview' : 'Preview Sound'}
+              </button>
+            )}
             {project.dsp_config && (
               <button
                 onClick={() => onDownloadCode(project)}
@@ -688,7 +1060,25 @@ const CommunityProjectDetail = ({ project, onBack, onDownloadCode, codePreview, 
                 display: 'flex', alignItems: 'center', gap: 8,
               }}
             >
-              <i className="fa-solid fa-pen"></i> Open in Creator
+              <i className="fa-solid fa-eye"></i> View in Creator
+            </button>
+            <button
+              onClick={() => {
+                if (!authService.isAuthenticated()) {
+                  alert('Sign in to fork this plugin to your creations.');
+                  return;
+                }
+                onFork(project.id);
+              }}
+              title="Copy this plugin to your own creations so you can edit and modify it"
+              style={{
+                padding: '10px 20px', borderRadius: 10,
+                border: '1px solid rgba(102,126,234,0.3)', background: 'transparent',
+                color: 'rgba(102,126,234,0.8)', fontSize: 14, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}
+            >
+              <i className="fa-solid fa-code-fork"></i> Fork (Edit Your Own Copy)
             </button>
           </div>
         </div>
@@ -718,7 +1108,7 @@ const CommunityProjectDetail = ({ project, onBack, onDownloadCode, codePreview, 
           <h3 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 600 }}>
             <i className="fa-solid fa-code" style={{ marginRight: 8 }}></i>Generated Code
           </h3>
-          <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {Object.keys(codePreview.files).map(fname => (
               <button
                 key={fname}
@@ -732,6 +1122,21 @@ const CommunityProjectDetail = ({ project, onBack, onDownloadCode, codePreview, 
                 {fname}
               </button>
             ))}
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(codePreview.files[activeFile] || '');
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }}
+              style={{
+                marginLeft: 'auto', padding: '4px 10px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
+                border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)',
+                color: copied ? '#4caf50' : 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              <i className={`fa-solid ${copied ? 'fa-check' : 'fa-clipboard'}`}></i>
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
           </div>
           <pre style={{
             overflow: 'auto', maxHeight: 500, padding: 16, borderRadius: 10,
@@ -748,12 +1153,10 @@ const CommunityProjectDetail = ({ project, onBack, onDownloadCode, codePreview, 
 };
 
 /**
- * Inline auth modal — email signup + Google sign-in, no redirect.
+ * Inline auth modal — email-only signup + Google sign-in for free plugin download.
  */
-const AuthModal = ({ open, onClose, onSuccess }) => {
+const AuthModal = ({ open, onClose, onSuccess, pluginSlug = 'brass-mute-lite' }) => {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [step, setStep] = useState('email'); // 'email' | 'password'
   const [authError, setAuthError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const googleBtnRef = useRef(null);
@@ -786,44 +1189,35 @@ const AuthModal = ({ open, onClose, onSuccess }) => {
     setSubmitting(true);
     try {
       const decoded = JSON.parse(atob(response.credential.split('.')[1]));
+      const googleEmail = decoded.email;
       const googleProfile = {
-        getEmail: () => decoded.email,
+        getEmail: () => googleEmail,
         getId: () => decoded.sub,
-        getName: () => decoded.name || decoded.email.split('@')[0],
+        getName: () => decoded.name || googleEmail.split('@')[0],
         getPicture: () => decoded.picture || 'user.png',
       };
       await authService.loginWithGoogle(googleProfile);
+      const result = await authService.liteClaimPlugin(googleEmail, pluginSlug);
       if (window.gtag) {
         window.gtag('event', 'sign_up', { method: 'google' });
       }
-      onSuccess();
+      onSuccess(result);
     } catch (err) {
       setAuthError(err.message || 'Google sign-in failed');
     }
     setSubmitting(false);
   };
 
-  const handleEmailNext = (e) => {
+  const handleEmailSubmit = async (e) => {
     e.preventDefault();
     if (!email.trim()) return;
     setAuthError('');
-    setStep('password');
-  };
-
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    if (!password) return;
-    setAuthError('');
     setSubmitting(true);
     try {
-      const username = email.split('@')[0];
-      await authService.registerUser(username, email, password);
-      if (window.gtag) {
-        window.gtag('event', 'sign_up', { method: 'email' });
-      }
-      onSuccess();
+      const result = await authService.liteClaimPlugin(email.trim(), pluginSlug);
+      onSuccess(result);
     } catch (err) {
-      setAuthError(err.message || 'Registration failed');
+      setAuthError(err.message || 'Something went wrong');
     }
     setSubmitting(false);
   };
@@ -839,44 +1233,22 @@ const AuthModal = ({ open, onClose, onSuccess }) => {
 
         <img src="/assets/muted.png" alt="" style={{ width: 40, height: 40, marginBottom: 12, opacity: 0.8 }} />
         <h2 className={styles.modalTitle}>Get the free version</h2>
-        <p className={styles.modalSubtitle}>Create an account to download Brass Mute Lite</p>
+        <p className={styles.modalSubtitle}>Enter your email to download Brass Mute Lite</p>
 
-        {step === 'email' ? (
-          <form onSubmit={handleEmailNext} className={styles.modalForm}>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="Enter your email"
-              autoFocus
-              required
-              className={styles.modalInput}
-            />
-            <button type="submit" className={styles.modalSubmitBtn}>
-              Continue
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleRegister} className={styles.modalForm}>
-            <div className={styles.modalEmailDisplay}>{email}</div>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="Create a password"
-              autoFocus
-              required
-              minLength={6}
-              className={styles.modalInput}
-            />
-            <button type="submit" className={styles.modalSubmitBtn} disabled={submitting}>
-              {submitting ? 'Creating account...' : 'Sign Up'}
-            </button>
-            <button type="button" className={styles.modalBackBtn} onClick={() => setStep('email')}>
-              <i className="fa-solid fa-arrow-left"></i> Back
-            </button>
-          </form>
-        )}
+        <form onSubmit={handleEmailSubmit} className={styles.modalForm}>
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="Enter your email"
+            autoFocus
+            required
+            className={styles.modalInput}
+          />
+          <button type="submit" className={styles.modalSubmitBtn} disabled={submitting}>
+            {submitting ? 'Setting up...' : 'Get Free Download'}
+          </button>
+        </form>
 
         {authError && <p className={styles.modalError}>{authError}</p>}
 
@@ -948,20 +1320,10 @@ const ProductDetail = ({ plugin, onBack }) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/plugins/claim-free', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ plugin_slug: plugin.slug }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || 'Failed to claim plugin');
-      }
-      const data = await res.json();
+      // lite-claim works for both new and existing users; backend uses JWT email if authenticated
+      const result = await authService.liteClaimPlugin('', plugin.slug);
       trackEvent('file_download', { plugin: plugin.slug, plugin_name: plugin.name });
-      // Trigger download via the signed URL
-      window.location.href = data.download_url;
+      window.location.href = result.download_url;
     } catch (err) {
       setError(err.message);
     }
@@ -970,16 +1332,34 @@ const ProductDetail = ({ plugin, onBack }) => {
 
   const [showAuthModal, setShowAuthModal] = useState(false);
   const navigate = useNavigate();
+  const detailLocation = useLocation();
   const user = authService.getCurrentUser();
+
+  // Auto-trigger download if navigated here with a download URL (from brass-mute-1 page)
+  useEffect(() => {
+    if (detailLocation.state?.autoDownloadUrl) {
+      trackEvent('file_download', { plugin: plugin.slug, plugin_name: plugin.name });
+      window.location.href = detailLocation.state.autoDownloadUrl;
+      window.history.replaceState({}, document.title);
+    }
+  }, [detailLocation.state, plugin.slug, plugin.name]);
 
   return (
     <div className={styles.plugins}>
       <AuthModal
         open={showAuthModal}
         onClose={() => setShowAuthModal(false)}
-        onSuccess={() => {
+        pluginSlug={plugin.isFree ? plugin.slug : 'brass-mute-lite'}
+        onSuccess={(result) => {
           setShowAuthModal(false);
-          navigate('/plugins/brass-mute-lite');
+          if (plugin.isFree) {
+            // On lite page — trigger download directly
+            trackEvent('file_download', { plugin: plugin.slug, plugin_name: plugin.name });
+            window.location.href = result.download_url;
+          } else {
+            // On paid page — navigate to lite page with auto-download
+            navigate('/plugins/brass-mute-lite', { state: { autoDownloadUrl: result.download_url } });
+          }
         }}
       />
       <button className={styles.backBtn} onClick={onBack}>
@@ -999,7 +1379,7 @@ const ProductDetail = ({ plugin, onBack }) => {
             <div className={styles.detailPrice}>
               {plugin.isFree ? 'Free' : `$${plugin.price}`}
               {!plugin.isFree && (
-                <span className={styles.tryFreeNote}> - <button onClick={() => setShowAuthModal(true)} className={styles.tryFreeLink}>create account to try free</button></span>
+                <span className={styles.tryFreeNote}> - <button onClick={() => setShowAuthModal(true)} className={styles.tryFreeLink}>get the free version</button></span>
               )}
             </div>
             <p className={styles.detailDesc}>{plugin.description}</p>
@@ -1038,7 +1418,7 @@ const ProductDetail = ({ plugin, onBack }) => {
                   className={styles.downloadFreeBtn}
                   onClick={() => {
                     if (!user) {
-                      window.location.href = `/login?redirect=/plugins/${plugin.slug}`;
+                      setShowAuthModal(true);
                     } else {
                       handleDownloadFree();
                     }
@@ -1050,7 +1430,7 @@ const ProductDetail = ({ plugin, onBack }) => {
                 </button>
                 {!user && (
                   <p className={styles.guestNote}>
-                    Create a free account to download.
+                    Enter your email to download.
                   </p>
                 )}
               </>
@@ -1070,7 +1450,7 @@ const ProductDetail = ({ plugin, onBack }) => {
                     onClick={() => user ? navigate('/plugins/brass-mute-lite') : setShowAuthModal(true)}
                   >
                     <i className="fa-solid fa-gift"></i>
-                    Free version — {user ? 'Download' : 'Create an account'}
+                    Free version — {user ? 'Download' : 'Sign up free'}
                   </button>
                 </div>
                 {!user && (

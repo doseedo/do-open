@@ -186,6 +186,35 @@ async function registerWithGoogle(googleProfile) {
 }
 
 /**
+ * Claim a free plugin with just an email (no password).
+ * Creates or finds user, sets auth cookies, creates purchase record.
+ * @param {string} email - User's email
+ * @param {string} pluginSlug - Plugin slug to claim
+ * @returns {Promise<Object>} { download_url, plugin_name, username, is_new_user }
+ */
+export async function liteClaimPlugin(email, pluginSlug) {
+  const response = await fetch(`${API_BASE_URL}/api/plugins/lite-claim`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email, plugin_slug: pluginSlug }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to claim plugin');
+  }
+
+  const data = await response.json();
+
+  if (window.gtag) {
+    window.gtag('event', 'sign_up', { method: 'lite_email' });
+  }
+
+  return data;
+}
+
+/**
  * Logout current user by calling backend to clear cookies
  */
 export async function logoutUser() {

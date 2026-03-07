@@ -15,13 +15,18 @@ const AudioTestPanel = ({ engine, dspConfig, paramValues, paramMapping, componen
   const [audioSource, setAudioSource] = useState('drums');
   const [audioFileName, setAudioFileName] = useState('');
   const [showMapping, setShowMapping] = useState(false);
+  const [micActive, setMicActive] = useState(false);
+  const [micError, setMicError] = useState('');
   const fileInputRef = useRef(null);
   const canvasRef = useRef(null);
   const animRef = useRef(null);
 
-  // Analyser visualization
+  const isInstrument = engine?.isInstrument;
+
+  // Analyser visualization — run for both instruments (when notes are active) and effects
   useEffect(() => {
-    if (!playing || !engine || !canvasRef.current) {
+    const shouldAnimate = playing || micActive || (isInstrument && engine?.playing);
+    if (!shouldAnimate || !engine || !canvasRef.current) {
       if (animRef.current) cancelAnimationFrame(animRef.current);
       return;
     }
@@ -43,10 +48,14 @@ const AudioTestPanel = ({ engine, dspConfig, paramValues, paramMapping, componen
     };
     animRef.current = requestAnimationFrame(draw);
     return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
-  }, [playing, engine]);
+  }, [playing, micActive, isInstrument, engine]);
 
   const handlePlay = useCallback(() => {
     if (!engine) return;
+    if (micActive) {
+      engine.stop();
+      setMicActive(false);
+    }
     if (playing) {
       engine.stop();
       setPlaying(false);
@@ -56,7 +65,7 @@ const AudioTestPanel = ({ engine, dspConfig, paramValues, paramMapping, componen
       engine.play();
       setPlaying(true);
     }
-  }, [engine, playing, loop, volume]);
+  }, [engine, playing, micActive, loop, volume]);
 
   const handleVolumeChange = useCallback((e) => {
     const v = parseFloat(e.target.value);
@@ -71,8 +80,10 @@ const AudioTestPanel = ({ engine, dspConfig, paramValues, paramMapping, componen
   }, [engine, loop]);
 
   const handleToneSelect = useCallback((toneId) => {
+    if (micActive && engine) { engine.stopMicInput(); setMicActive(false); }
     setAudioSource(toneId);
     setAudioFileName('');
+    setMicError('');
     if (engine) {
       const wasPlaying = engine.playing;
       if (wasPlaying) engine.stop();
@@ -82,13 +93,15 @@ const AudioTestPanel = ({ engine, dspConfig, paramValues, paramMapping, componen
         setPlaying(true);
       }
     }
-  }, [engine]);
+  }, [engine, micActive]);
 
   const handleFileUpload = useCallback(async (e) => {
     const file = e.target.files?.[0];
     if (!file || !engine) return;
+    if (micActive) { engine.stopMicInput(); setMicActive(false); }
     setAudioFileName(file.name);
     setAudioSource('file');
+    setMicError('');
     const wasPlaying = engine.playing;
     if (wasPlaying) engine.stop();
     await engine.loadAudioFile(file);
@@ -96,65 +109,126 @@ const AudioTestPanel = ({ engine, dspConfig, paramValues, paramMapping, componen
       engine.play();
       setPlaying(true);
     }
-  }, [engine]);
+  }, [engine, micActive]);
+
+  const handleMicToggle = useCallback(async () => {
+    if (!engine) return;
+    if (micActive) {
+      engine.stop();
+      setMicActive(false);
+      setPlaying(false);
+      setMicError('');
+    } else {
+      // Stop any current playback
+      if (playing) { engine.stop(); setPlaying(false); }
+      try {
+        setMicError('');
+        await engine.startMicInput();
+        setMicActive(true);
+        setAudioSource('mic');
+      } catch (err) {
+        setMicError('Mic access denied');
+        console.error('Mic error:', err);
+      }
+    }
+  }, [engine, micActive, playing]);
 
   const hasDsp = dspConfig && dspConfig.dspChain && dspConfig.dspChain.length > 0;
   const dspParams = dspConfig?.parameters || [];
 
   return (
     <div className={styles.audioTestPanel}>
-      {/* Transport */}
-      <div className={styles.audioTransport}>
-        <button
-          className={`${styles.audioPlayBtn} ${playing ? styles.audioPlayBtnActive : ''}`}
-          onClick={handlePlay}
-          disabled={!engine}
-          title={playing ? 'Stop' : 'Play'}
-        >
-          <i className={`fa-solid ${playing ? 'fa-stop' : 'fa-play'}`} />
-        </button>
-        <button
-          className={`${styles.audioLoopBtn} ${loop ? styles.audioLoopBtnActive : ''}`}
-          onClick={handleLoopToggle}
-          title="Loop"
-        >
-          <i className="fa-solid fa-repeat" />
-        </button>
-        <div className={styles.audioVolumeWrap}>
-          <i className="fa-solid fa-volume-high" style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }} />
-          <input
-            type="range"
-            min={0} max={1} step={0.01}
-            value={volume}
-            onChange={handleVolumeChange}
-            className={styles.audioVolumeSlider}
-          />
-        </div>
-        <canvas ref={canvasRef} className={styles.audioAnalyser} width={120} height={28} />
-      </div>
+      {/* For instruments: simplified controls */}
+      {isInstrument ? (
+        <>
+          <div className={styles.audioTransport}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+              <i className="fa-solid fa-piano-keyboard" style={{ color: '#667eea', fontSize: 12 }} />
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>Instrument Mode</span>
+            </div>
+            <div className={styles.audioVolumeWrap}>
+              <i className="fa-solid fa-volume-high" style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }} />
+              <input
+                type="range"
+                min={0} max={1} step={0.01}
+                value={volume}
+                onChange={handleVolumeChange}
+                className={styles.audioVolumeSlider}
+              />
+            </div>
+            <canvas ref={canvasRef} className={styles.audioAnalyser} width={120} height={28} />
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Transport for effects */}
+          <div className={styles.audioTransport}>
+            <button
+              className={`${styles.audioPlayBtn} ${playing ? styles.audioPlayBtnActive : ''}`}
+              onClick={handlePlay}
+              disabled={!engine}
+              title={playing ? 'Stop' : 'Play'}
+            >
+              <i className={`fa-solid ${playing ? 'fa-stop' : 'fa-play'}`} />
+            </button>
+            <button
+              className={`${styles.audioLoopBtn} ${loop ? styles.audioLoopBtnActive : ''}`}
+              onClick={handleLoopToggle}
+              title="Loop"
+            >
+              <i className="fa-solid fa-repeat" />
+            </button>
+            <div className={styles.audioVolumeWrap}>
+              <i className="fa-solid fa-volume-high" style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }} />
+              <input
+                type="range"
+                min={0} max={1} step={0.01}
+                value={volume}
+                onChange={handleVolumeChange}
+                className={styles.audioVolumeSlider}
+              />
+            </div>
+            <canvas ref={canvasRef} className={styles.audioAnalyser} width={120} height={28} />
+          </div>
 
-      {/* Audio Source */}
-      <div className={styles.audioSourceRow}>
-        <span className={styles.audioSourceLabel}>Source:</span>
-        {TEST_TONES.map(t => (
-          <button
-            key={t.id}
-            className={`${styles.audioSourceBtn} ${audioSource === t.id ? styles.audioSourceBtnActive : ''}`}
-            onClick={() => handleToneSelect(t.id)}
-            title={t.label}
-          >
-            <i className={`fa-solid ${t.icon}`} /> {t.label}
-          </button>
-        ))}
-        <button
-          className={`${styles.audioSourceBtn} ${audioSource === 'file' ? styles.audioSourceBtnActive : ''}`}
-          onClick={() => fileInputRef.current?.click()}
-          title="Upload audio file"
-        >
-          <i className="fa-solid fa-upload" /> {audioFileName || 'Upload'}
-        </button>
-        <input ref={fileInputRef} type="file" accept="audio/*" onChange={handleFileUpload} style={{ display: 'none' }} />
-      </div>
+          {/* Audio Source — effects only */}
+          <div className={styles.audioSourceRow}>
+            <span className={styles.audioSourceLabel}>Source:</span>
+            {TEST_TONES.map(t => (
+              <button
+                key={t.id}
+                className={`${styles.audioSourceBtn} ${audioSource === t.id ? styles.audioSourceBtnActive : ''}`}
+                onClick={() => handleToneSelect(t.id)}
+                title={t.label}
+              >
+                <i className={`fa-solid ${t.icon}`} /> {t.label}
+              </button>
+            ))}
+            <button
+              className={`${styles.audioSourceBtn} ${audioSource === 'mic' ? styles.audioSourceBtnActive : ''}`}
+              onClick={handleMicToggle}
+              title={micActive ? 'Stop microphone' : 'Use microphone input'}
+              style={micActive ? { color: '#ef4444', borderColor: 'rgba(239,68,68,0.4)' } : undefined}
+            >
+              <i className={`fa-solid ${micActive ? 'fa-microphone-slash' : 'fa-microphone'}`} />
+              {micActive ? 'Stop Mic' : 'Mic'}
+            </button>
+            <button
+              className={`${styles.audioSourceBtn} ${audioSource === 'file' ? styles.audioSourceBtnActive : ''}`}
+              onClick={() => fileInputRef.current?.click()}
+              title="Upload audio file"
+            >
+              <i className="fa-solid fa-upload" /> {audioFileName || 'Upload'}
+            </button>
+            <input ref={fileInputRef} type="file" accept="audio/*" onChange={handleFileUpload} style={{ display: 'none' }} />
+          </div>
+          {micError && (
+            <div style={{ padding: '3px 8px', fontSize: 10, color: '#ef4444', background: 'rgba(239,68,68,0.08)' }}>
+              <i className="fa-solid fa-triangle-exclamation" /> {micError}
+            </div>
+          )}
+        </>
+      )}
 
       {/* DSP Status */}
       {hasDsp ? (
@@ -208,6 +282,19 @@ const AudioTestPanel = ({ engine, dspConfig, paramValues, paramMapping, componen
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Keyboard hint (instrument mode — full keyboard is on the plugin canvas) */}
+      {isInstrument && (
+        <div style={{
+          padding: '4px 8px', background: 'rgba(0,0,0,0.15)',
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          fontSize: 9, color: 'rgba(255,255,255,0.35)',
+          display: 'flex', alignItems: 'center', gap: 4,
+        }}>
+          <i className="fa-solid fa-keyboard" />
+          <span>Press A-L keys or click the keyboard below the plugin to play</span>
         </div>
       )}
     </div>

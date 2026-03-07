@@ -67,8 +67,11 @@ const DATA_SOURCES = [
   { id: 'stem_energy', name: '📊 Stem Energy (GT)', endpoint: '/classifier/stem-energy', category: 'stems', description: 'Demucs stem energy over time (training GT)' },
   { id: 'separated', name: '🔀 Separated Stems', endpoint: '/classifier/separated-stems', category: 'stems', description: 'Demucs stem separation summary' },
   // Silence detection
+  // Technique classification
+  { id: 'technique', name: '🎻 Technique (Pizz/Arco)', endpoint: '/classifier/technique', category: 'classifier', description: 'Pizzicato vs Arco detection (v4)' },
   { id: 'silence', name: '🔇 Silence Detection', endpoint: '/silence-detection', category: 'analysis', description: 'Temporal silence detection results' },
   { id: 'drum_onsets', name: 'Drum Onsets', endpoint: '/drum-onsets', category: 'analysis', description: 'Drum onset detection review' },
+  { id: 'midi_refinement', name: 'MIDI Refinement', endpoint: '/midi-refinement-comparison', category: 'analysis', description: 'Compare BasicPitch vs Refined MIDI' },
 ];
 
 // Views available for each data source - Batch Review Modes
@@ -157,6 +160,12 @@ const AudioLabeler = () => {
   const [fileListSourceFilter, setFileListSourceFilter] = useState('');
   const [fileListVerifiedFilter, setFileListVerifiedFilter] = useState('');
 
+  // Technique classifier state
+  const [techniqueFilter, setTechniqueFilter] = useState(''); // pizzicato, arco
+  const [methodFilter, setMethodFilter] = useState(''); // score_detected, keyword_positive, etc.
+  const [techniqueCounts, setTechniqueCounts] = useState({});
+  const [methodCounts, setMethodCounts] = useState({});
+
   // Separated stems state
   const [isStemMode, setIsStemMode] = useState(false);
   const [isTemporalMode, setIsTemporalMode] = useState(false);
@@ -202,6 +211,77 @@ const AudioLabeler = () => {
   const wavesurferRef = useRef(null);
   const regionsRef = useRef(null);
   const dragSelectionCleanupRef = useRef(null);
+
+  // MIDI tab WaveSurfer refs
+  const midiWavesurferRef = useRef(null);
+  const midiAnimFrameRef = useRef(null);
+
+  // Callback ref for midi tab waveform container - initializes WaveSurfer when div mounts
+  const midiWaveformRef = useCallback((node) => {
+    // Cleanup old instance
+    if (midiAnimFrameRef.current) cancelAnimationFrame(midiAnimFrameRef.current);
+    if (midiWavesurferRef.current) {
+      midiWavesurferRef.current.destroy();
+      midiWavesurferRef.current = null;
+    }
+    if (!node) return;
+
+    midiWavesurferRef.current = WaveSurfer.create({
+      container: node,
+      waveColor: 'rgba(224, 112, 80, 0.6)',
+      progressColor: 'rgba(200, 80, 50, 0.9)',
+      cursorColor: '#ff6b6b',
+      cursorWidth: 2,
+      barWidth: 2,
+      barGap: 1,
+      barRadius: 2,
+      height: 80,
+      responsive: true,
+      normalize: false,
+      backend: 'WebAudio',
+    });
+
+    midiWavesurferRef.current.on('ready', () => {
+      setDuration(midiWavesurferRef.current.getDuration());
+      midiWavesurferRef.current.play();
+    });
+
+    // Use requestAnimationFrame for smooth playhead sync
+    const updateTime = () => {
+      if (midiWavesurferRef.current && midiWavesurferRef.current.isPlaying()) {
+        setCurrentTime(midiWavesurferRef.current.getCurrentTime());
+      }
+      midiAnimFrameRef.current = requestAnimationFrame(updateTime);
+    };
+
+    midiWavesurferRef.current.on('play', () => {
+      setIsPlaying(true);
+      midiAnimFrameRef.current = requestAnimationFrame(updateTime);
+    });
+    midiWavesurferRef.current.on('pause', () => {
+      setIsPlaying(false);
+      if (midiAnimFrameRef.current) cancelAnimationFrame(midiAnimFrameRef.current);
+      if (midiWavesurferRef.current) setCurrentTime(midiWavesurferRef.current.getCurrentTime());
+    });
+    midiWavesurferRef.current.on('finish', () => {
+      setIsPlaying(false);
+      if (midiAnimFrameRef.current) cancelAnimationFrame(midiAnimFrameRef.current);
+    });
+    midiWavesurferRef.current.on('seek', () => {
+      if (midiWavesurferRef.current) {
+        setCurrentTime(midiWavesurferRef.current.getCurrentTime());
+      }
+    });
+    midiWavesurferRef.current.on('interaction', () => {
+      if (midiWavesurferRef.current && !midiWavesurferRef.current.isPlaying()) {
+        midiWavesurferRef.current.play();
+      }
+    });
+    midiWavesurferRef.current.on('error', (err) => {
+      if (err?.name === 'AbortError' || err?.message?.includes('abort')) return;
+      console.error('MIDI tab WaveSurfer error:', err);
+    });
+  }, []);
 
   // Dual waveform refs for GT comparison view
   const [isDualWaveformMode, setIsDualWaveformMode] = useState(false);
@@ -311,6 +391,69 @@ const AudioLabeler = () => {
       }
     };
   }, []);
+
+  // Auto-select kick when current item has no original_path
+  // Auto-select best available source when current selection is unavailable
+  useEffect(() => {
+    if (dataSource !== 'drum_onsets' || !currentItem) return;
+    if (drumOnsetStem === 'original' && !currentItem.original_path) {
+      setDrumOnsetStem(currentItem.bus_path ? 'bus' : 'kick');
+    } else if (drumOnsetStem === 'bus' && !currentItem.bus_path) {
+      setDrumOnsetStem(currentItem.original_path ? 'original' : 'kick');
+    }
+  }, [dataSource, currentItem, drumOnsetStem]);
+
+  // Load audio into MIDI tab WaveSurfer when currentItem changes
+  useEffect(() => {
+    if (activeTab !== 'midi' || !midiWavesurferRef.current || !currentItem) return;
+
+    let audioUrl;
+    if (dataSource === 'drum_onsets') {
+      if (drumOnsetStem === 'original' && currentItem.original_path) {
+        audioUrl = `${API_BASE}/audio?path=${encodeURIComponent(currentItem.original_path)}`;
+      } else if (drumOnsetStem === 'bus' && currentItem.bus_path) {
+        audioUrl = `${API_BASE}/audio?path=${encodeURIComponent(currentItem.bus_path)}`;
+      } else if (drumOnsetStem !== 'original' && drumOnsetStem !== 'bus') {
+        const stemPath = currentItem.stem_audio_paths?.[drumOnsetStem];
+        if (stemPath) {
+          audioUrl = `${API_BASE}/audio?path=${encodeURIComponent(stemPath)}`;
+        }
+      }
+      // Fallback: kick or first available stem
+      if (!audioUrl) {
+        const fallback = currentItem.stem_audio_paths?.kick
+          || Object.values(currentItem.stem_audio_paths || {})[0];
+        if (fallback) {
+          audioUrl = `${API_BASE}/audio?path=${encodeURIComponent(fallback)}`;
+        }
+      }
+    }
+    if (!audioUrl && currentItem.path && !currentItem.path.endsWith('/')) {
+      const p = currentItem.path;
+      if (p.includes('.')) {
+        audioUrl = `${API_BASE}/audio?path=${encodeURIComponent(p)}`;
+      }
+    }
+
+    if (audioUrl) {
+      midiWavesurferRef.current.load(audioUrl);
+    }
+  }, [activeTab, currentItem, dataSource, drumOnsetStem]);
+
+  // Space bar play/pause for midi tab WaveSurfer
+  useEffect(() => {
+    if (activeTab !== 'midi') return;
+    const handleKeyDown = (e) => {
+      if (e.code === 'Space' && !e.target.closest('input, textarea, select, button')) {
+        e.preventDefault();
+        if (midiWavesurferRef.current) {
+          midiWavesurferRef.current.playPause();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab]);
 
   // Initialize GT WaveSurfer for dual waveform mode
   useEffect(() => {
@@ -584,7 +727,7 @@ const AudioLabeler = () => {
       fetchItems();
       setInitialLoadDone(true);
     }
-  }, [activeClassifierId, activeClassifier, activeVersion, activeTab, confidenceFilter, flaggedFilter, predictedGroupFilter, predManifestGroupFilter, matchFilter, multiFilter, mixFilter, isolatedFilter, sessionInstrumentFilter, manifestGroupFilter, correctionFilter, stemModeOption, subgroupFilter, sortBy, sourceFilter, dataSource, activeView]);
+  }, [activeClassifierId, activeClassifier, activeVersion, activeTab, confidenceFilter, flaggedFilter, predictedGroupFilter, predManifestGroupFilter, matchFilter, multiFilter, mixFilter, isolatedFilter, sessionInstrumentFilter, manifestGroupFilter, correctionFilter, stemModeOption, subgroupFilter, sortBy, sourceFilter, dataSource, activeView, techniqueFilter, methodFilter]);
 
   // Load audio when current item changes
   useEffect(() => {
@@ -958,10 +1101,14 @@ const AudioLabeler = () => {
         url = `${API_BASE}/classifier/stem-energy?${commonParams}`;
       } else if (dataSource === 'separated') {
         url = `${API_BASE}/classifier/separated-stems?${commonParams}&mode=${stemModeOption}`;
+      } else if (dataSource === 'technique') {
+        url = `${API_BASE}/classifier/technique?${commonParams}${techniqueFilter ? `&technique=${techniqueFilter}` : ''}${methodFilter ? `&method=${methodFilter}` : ''}`;
       } else if (dataSource === 'silence') {
         url = `${API_BASE}/silence-detection?${commonParams}${sourceFilter ? `&classification=${sourceFilter}` : ''}&sort_by=silence_ratio`;
       } else if (dataSource === 'drum_onsets') {
         url = `${API_BASE}/drum-onsets?limit=200`;
+      } else if (dataSource === 'midi_refinement') {
+        url = `${API_BASE}/midi-refinement-comparison?limit=500${predictedGroupFilter ? `&group=${predictedGroupFilter}` : ''}`;
       } else if (activeTab === 'label') {
         // Fallback for legacy activeClassifier pattern
         url = `${API_BASE}/classifier/${activeClassifier}/predictions?version=${activeVersion}&confidence=${confidenceFilter}&${commonParams}`;
@@ -1037,6 +1184,12 @@ const AudioLabeler = () => {
         if (data.isolated_stats) setIsolatedStats(data.isolated_stats);
         if (data.available_session_instruments) setAvailableSessionInstruments(data.available_session_instruments);
         if (data.source_counts) setSourceCounts(data.source_counts);
+      }
+
+      // Store technique classifier stats
+      if (dataSource === 'technique') {
+        if (data.technique_counts) setTechniqueCounts(data.technique_counts);
+        if (data.method_counts) setMethodCounts(data.method_counts);
       }
 
       // Store correction stats for manifest filter
@@ -1289,7 +1442,22 @@ const AudioLabeler = () => {
     // Determine final isolated status: override if set, otherwise use model prediction
     const finalIsIsolated = isolatedOverride !== null ? isolatedOverride : currentItem.is_isolated;
 
-    const label = {
+    // Build label payload — technique mode uses different fields
+    const isTechniqueMode = dataSource === 'technique';
+
+    const label = isTechniqueMode ? {
+      path: currentItem.path,
+      group: finalGroup, // 'pizzicato', 'arco', 'staccato', etc.
+      previous_group: currentItem.predicted_technique,
+      subgroup: currentItem.subgroup,
+      source: 'technique_classifier',
+      classifier: 'technique',
+      technique: finalGroup,
+      previous_technique: currentItem.predicted_technique,
+      pr_score: currentItem.pr_score,
+      lda_score: currentItem.lda_score,
+      detection_method: currentItem.detection_method,
+    } : {
       path: currentItem.path,
       group: isRoomy ? `${finalGroup}_roomy` : finalGroup,
       previous_group: currentItem.current_label || currentItem.predicted_class,
@@ -1544,6 +1712,8 @@ const AudioLabeler = () => {
         e.preventDefault();
         if (multiLabelMode && regions.length > 0) {
           saveMultiLabel();
+        } else if (dataSource === 'technique') {
+          handleConfirm(currentItem.predicted_technique);
         } else if (!multiLabelMode) {
           handleConfirm(currentItem.predicted_class || currentItem.current_label);
         }
@@ -1553,12 +1723,16 @@ const AudioLabeler = () => {
       } else if (e.code === 'ArrowLeft') {
         e.preventDefault();
         handlePrevious();
+      } else if (dataSource === 'technique' && currentItem) {
+        // Technique-specific shortcuts
+        if (e.key === 'p') { e.preventDefault(); handleConfirm('pizzicato'); }
+        else if (e.key === 'a') { e.preventDefault(); handleConfirm('arco'); }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [togglePlayPause, handleConfirm, handleSkip, handlePrevious, currentItem, multiLabelMode, regions, saveMultiLabel]);
+  }, [togglePlayPause, handleConfirm, handleSkip, handlePrevious, currentItem, multiLabelMode, regions, saveMultiLabel, dataSource]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -1772,34 +1946,78 @@ const AudioLabeler = () => {
 
           {/* Filters */}
           <div className="filter-bar">
-            <div className="filter-group">
-              <label>Group:</label>
-              <select value={predictedGroupFilter} onChange={e => setPredictedGroupFilter(e.target.value)}>
-                <option value="">All Groups</option>
-                {predictedGroups.map(g => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
-              </select>
-            </div>
-            {availableSubgroups.length > 0 && (
-              <div className="filter-group">
-                <label>Subgroup:</label>
-                <select value={subgroupFilter} onChange={e => setSubgroupFilter(e.target.value)}>
-                  <option value="">All Subgroups</option>
-                  {availableSubgroups.map(sg => (
-                    <option key={sg} value={sg}>{sg}</option>
-                  ))}
-                </select>
-              </div>
+            {dataSource === 'technique' ? (
+              <>
+                <div className="filter-group">
+                  <label>Instrument:</label>
+                  <select value={subgroupFilter} onChange={e => setSubgroupFilter(e.target.value)}>
+                    <option value="">All ({items.length})</option>
+                    {availableSubgroups.map(sg => (
+                      <option key={sg} value={sg}>{sg} {techniqueCounts[sg] ? `(${techniqueCounts[sg]})` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="filter-group">
+                  <label>Predicted:</label>
+                  <select value={techniqueFilter} onChange={e => setTechniqueFilter(e.target.value)}>
+                    <option value="">All</option>
+                    <option value="pizzicato">Pizzicato ({techniqueCounts.pizzicato || 0})</option>
+                    <option value="arco">Arco ({techniqueCounts.arco || 0})</option>
+                  </select>
+                </div>
+                <div className="filter-group">
+                  <label>Method:</label>
+                  <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)}>
+                    <option value="">All</option>
+                    <option value="score_detected">Score Detected ({methodCounts.score_detected || 0})</option>
+                    <option value="keyword_positive">Keyword + ({methodCounts.keyword_positive || 0})</option>
+                    <option value="keyword_negative">Keyword - ({methodCounts.keyword_negative || 0})</option>
+                    <option value="score_default">Score Default ({methodCounts.score_default || 0})</option>
+                  </select>
+                </div>
+                <div className="filter-group">
+                  <label>Sort:</label>
+                  <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                    <option value="">Default</option>
+                    <option value="borderline">Borderline (lowest PR)</option>
+                    <option value="pr_score_asc">PR Score Asc</option>
+                    <option value="pr_score_desc">PR Score Desc</option>
+                    <option value="lda_score_desc">LDA Score Desc</option>
+                  </select>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="filter-group">
+                  <label>Group:</label>
+                  <select value={predictedGroupFilter} onChange={e => setPredictedGroupFilter(e.target.value)}>
+                    <option value="">All Groups</option>
+                    {predictedGroups.map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+                {availableSubgroups.length > 0 && (
+                  <div className="filter-group">
+                    <label>Subgroup:</label>
+                    <select value={subgroupFilter} onChange={e => setSubgroupFilter(e.target.value)}>
+                      <option value="">All Subgroups</option>
+                      {availableSubgroups.map(sg => (
+                        <option key={sg} value={sg}>{sg}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="filter-group">
+                  <label>Sort:</label>
+                  <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                    <option value="">Default</option>
+                    <option value="group">By Group</option>
+                    <option value="subgroup">By Subgroup</option>
+                  </select>
+                </div>
+              </>
             )}
-            <div className="filter-group">
-              <label>Sort:</label>
-              <select value={sortBy} onChange={e => setSortBy(e.target.value)}>
-                <option value="">Default</option>
-                <option value="group">By Group</option>
-                <option value="subgroup">By Subgroup</option>
-              </select>
-            </div>
             <div className="progress-info">
               {items.length > 0 && (
                 <span>{currentIndex + 1} / {items.length}</span>
@@ -1812,70 +2030,88 @@ const AudioLabeler = () => {
             <div className="current-item-info">
               <div className="item-path">{currentItem.path?.split('/').pop()}</div>
               <div className="item-details">
-                <span className={`current-label`}>
-                  <strong>{currentItem.current_label || currentItem.group || 'unlabeled'}</strong>
-                </span>
-                {currentItem.subgroup && currentItem.subgroup !== 'undefined' && (
-                  <span className="subgroup-badge">{currentItem.subgroup}</span>
+                {dataSource === 'technique' ? (
+                  <>
+                    <span className={`technique-badge ${currentItem.predicted_technique}`}>
+                      {currentItem.predicted_technique}
+                    </span>
+                    <span className="subgroup-badge">{currentItem.subgroup}</span>
+                    <span className={`method-badge ${currentItem.detection_method}`}>
+                      {currentItem.detection_method?.replace('_', ' ')}
+                    </span>
+                    {currentItem.pr_score != null && (
+                      <span style={{ fontSize: '11px', color: currentItem.pr_score >= (currentItem.threshold_pr || 0) ? '#22c55e' : '#888' }}>
+                        PR: {currentItem.pr_score?.toFixed(3)}
+                      </span>
+                    )}
+                    {currentItem.lda_score != null && (
+                      <span style={{ fontSize: '11px', color: currentItem.lda_score >= (currentItem.threshold_lda || 0) ? '#22c55e' : '#888' }}>
+                        LDA: {currentItem.lda_score?.toFixed(3)}
+                      </span>
+                    )}
+                    {currentItem.is_seed && (
+                      <span style={{ fontSize: '10px', background: '#f59e0b', color: '#000', padding: '1px 5px', borderRadius: '3px' }}>SEED</span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span className={`current-label`}>
+                      <strong>{currentItem.current_label || currentItem.group || 'unlabeled'}</strong>
+                    </span>
+                    {currentItem.subgroup && currentItem.subgroup !== 'undefined' && (
+                      <span className="subgroup-badge">{currentItem.subgroup}</span>
+                    )}
+                    <span className={`midi-availability ${currentItem.has_midi ? 'has-midi' : 'no-midi'}`}>
+                      {currentItem.has_midi ? 'MIDI available' : 'No MIDI'}
+                    </span>
+                  </>
                 )}
-                <span className={`midi-availability ${currentItem.has_midi ? 'has-midi' : 'no-midi'}`}>
-                  {currentItem.has_midi ? 'MIDI available' : 'No MIDI'}
-                </span>
               </div>
+              {dataSource === 'midi_refinement' && currentItem.diff_score != null && (
+                <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', fontSize: '12px', color: '#aaa', marginTop: '4px' }}>
+                  <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>Score: {currentItem.diff_score?.toFixed(1)}</span>
+                  <span>BP: {currentItem.bp_count} notes</span>
+                  <span>Refined: {currentItem.refined_count} notes</span>
+                  <span style={{ color: currentItem.added > 0 ? '#22c55e' : '#888' }}>+{currentItem.added} added</span>
+                  <span style={{ color: currentItem.removed > 0 ? '#ef4444' : '#888' }}>-{currentItem.removed} removed</span>
+                  <span>{currentItem.shifted} shifted ({currentItem.avg_shift_ms}ms avg)</span>
+                </div>
+              )}
             </div>
           )}
 
           {/* Audio Player + Navigation */}
           {currentItem && (
             <div className="midi-tab-audio">
-              <audio
-                key={dataSource === 'drum_onsets' ? `${currentItem.path}-${drumOnsetStem}` : currentItem.path}
-                id="midi-tab-audio"
-                src={(() => {
-                  if (dataSource === 'drum_onsets') {
-                    if (drumOnsetStem === 'original' && currentItem.original_path) {
-                      return `${API_BASE}/audio?path=${encodeURIComponent(currentItem.original_path)}&format=opus`;
-                    }
-                    const stemPath = currentItem.stem_audio_paths?.[drumOnsetStem];
-                    if (stemPath) {
-                      return `${API_BASE}/audio?path=${encodeURIComponent(stemPath)}&format=opus`;
-                    }
-                  }
-                  return `${API_BASE}/audio?path=${encodeURIComponent(currentItem.path)}`;
-                })()}
-                controls
-                style={{ width: '100%', height: '40px', borderRadius: '8px' }}
-                onTimeUpdate={(e) => {
-                  const audioEl = e.target;
-                  setCurrentTime(audioEl.currentTime);
-                  setDuration(audioEl.duration || 0);
-                }}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-                onEnded={() => setIsPlaying(false)}
-                autoPlay
+              <div
+                ref={midiWaveformRef}
+                className="midi-tab-waveform"
+                style={{ width: '100%', borderRadius: '8px', overflow: 'hidden', background: '#1a1a2e', minHeight: '80px' }}
               />
               {dataSource === 'drum_onsets' && currentItem.stem_audio_paths && (
                 <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', padding: '0.5rem 0', alignItems: 'center' }}>
                   <span style={{ color: '#888', fontSize: '12px', marginRight: '0.25rem' }}>Play:</span>
-                  {['original', 'kick', 'snare', 'toms', 'hh', 'cymbals'].map(stem => {
+                  {['original', 'bus', 'kick', 'snare', 'toms', 'hh', 'cymbals'].map(stem => {
                     const hasPath = stem === 'original'
                       ? !!currentItem.original_path
+                      : stem === 'bus'
+                      ? !!currentItem.bus_path
                       : !!currentItem.stem_audio_paths[stem];
-                    const count = stem === 'original'
+                    const count = stem === 'original' || stem === 'bus'
                       ? currentItem.total_onsets
                       : currentItem.onsets?.[stem]?.count ?? 0;
-                    const sourceMic = stem !== 'original' ? currentItem.mics_used?.[stem] : null;
+                    const label = stem === 'original' ? 'Full Mix'
+                      : stem === 'bus' ? 'Unseparated'
+                      : stem;
                     return (
                       <button
                         key={stem}
                         className={`midi-tool-btn ${drumOnsetStem === stem ? 'active' : ''}`}
                         onClick={() => setDrumOnsetStem(stem)}
                         disabled={!hasPath}
-                        title={sourceMic ? `Source mic: ${sourceMic}` : undefined}
                         style={{ opacity: hasPath ? 1 : 0.4, fontSize: '12px', padding: '3px 8px' }}
                       >
-                        {stem === 'original' ? 'Full Mix' : stem}
+                        {label}
                         {count > 0 && <span style={{ fontSize: '10px', marginLeft: '3px', color: '#aaa' }}>({count})</span>}
                       </button>
                     );
@@ -1903,6 +2139,9 @@ const AudioLabeler = () => {
             isPlaying={isPlaying}
             onsets={dataSource === 'drum_onsets' ? currentItem?.onsets : null}
             isOnsetMode={dataSource === 'drum_onsets'}
+            bpMidiPath={dataSource === 'midi_refinement' ? currentItem?.bp_midi_path : null}
+            refinedMidiPath={dataSource === 'midi_refinement' ? currentItem?.refined_midi_path : null}
+            isComparisonMode={dataSource === 'midi_refinement'}
           />
         </>
       )}
@@ -2906,8 +3145,8 @@ const AudioLabeler = () => {
       <div className="label-section">
         {/* Header with mode toggles */}
         <div className="label-header">
-          <h3>{multiLabelMode ? 'Select Instruments for Region:' : (hasBleed && !bleedConfirmed) ? 'Select Bleed Instruments:' : (hasBleed && bleedConfirmed) ? 'Select Main Label (with bleed):' : 'Confirm or Change Label:'}</h3>
-          <div className="label-modes">
+          <h3>{dataSource === 'technique' ? 'Correct Technique:' : multiLabelMode ? 'Select Instruments for Region:' : (hasBleed && !bleedConfirmed) ? 'Select Bleed Instruments:' : (hasBleed && bleedConfirmed) ? 'Select Main Label (with bleed):' : 'Confirm or Change Label:'}</h3>
+          {dataSource !== 'technique' && <div className="label-modes">
             <label className="mode-toggle">
               <input
                 type="checkbox"
@@ -2984,88 +3223,165 @@ const AudioLabeler = () => {
                 </button>
               </div>
             </div>
-          </div>
+          </div>}
         </div>
 
-        {/* Label Buttons - unified for both label and bleed selection */}
-        <div className="label-buttons">
-          {GROUPS.map(group => (
-            <button
-              key={group}
-              className={`label-btn
-                ${currentItem?.predicted_class === group ? 'predicted' : ''}
-                ${currentItem?.current_label === group ? 'current' : ''}
-                ${multiLabelMode && selectedLabels.includes(group) ? 'selected-multi' : ''}
-                ${hasBleed && bleedInstruments.includes(group) ? 'bleed-selected' : ''}
-                ${pendingGroup === group ? 'pending' : ''}`}
-              onClick={() => handleGroupClick(group)}
-              disabled={!currentItem && !hasBleed}
-            >
-              {group}
-              {currentItem?.predicted_class === group && !multiLabelMode && !hasBleed && <span className="badge">pred</span>}
-              {currentItem?.current_label === group && activeTab === 'flagged' && !multiLabelMode && !hasBleed && <span className="badge current">curr</span>}
-              {multiLabelMode && selectedLabels.includes(group) && <span className="badge selected">✓</span>}
-              {hasBleed && bleedInstruments.includes(group) && <span className="badge bleed">bleed</span>}
-              {pendingGroup === group && <span className="badge pending">●</span>}
-            </button>
-          ))}
-        </div>
-
-        {/* Subgroup Buttons - show based on pending group first, then current item's group */}
-        {currentItem && (SUBGROUPS[pendingGroup] || SUBGROUPS[currentItem.current_label] || SUBGROUPS[currentItem.predicted_class] || SUBGROUPS[currentItem.group]) && (
-          <div className="subgroup-buttons">
-            <span className="subgroup-label">Subgroup:</span>
-            {(SUBGROUPS[pendingGroup] || SUBGROUPS[currentItem.current_label] || SUBGROUPS[currentItem.predicted_class] || SUBGROUPS[currentItem.group]).map(sub => (
+        {/* Label Buttons */}
+        {dataSource === 'technique' ? (
+          /* Technique-specific label controls */
+          <div className="technique-label-controls">
+            <div className="technique-buttons">
+              {['pizzicato', 'arco'].map(tech => (
+                <button
+                  key={tech}
+                  className={`label-btn technique-btn ${tech}
+                    ${currentItem?.predicted_technique === tech ? 'predicted' : ''}`}
+                  onClick={() => handleConfirm(tech)}
+                  disabled={!currentItem}
+                  style={{
+                    padding: '12px 32px',
+                    fontSize: '16px',
+                    background: tech === 'pizzicato'
+                      ? (currentItem?.predicted_technique === tech ? '#22c55e' : '#1a4d2e')
+                      : (currentItem?.predicted_technique === tech ? '#3b82f6' : '#1e3a5f'),
+                    border: currentItem?.predicted_technique === tech ? '2px solid #fff' : '2px solid transparent',
+                    color: '#fff',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    minWidth: '140px',
+                    position: 'relative',
+                  }}
+                >
+                  {tech}
+                  {currentItem?.predicted_technique === tech && (
+                    <span className="badge">pred</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {/* Quick-reject buttons */}
+            <div className="technique-reject-buttons" style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem' }}>
+              {['staccato', 'tremolo', 'col_legno', 'harmonics', 'spiccato'].map(tech => (
+                <button
+                  key={tech}
+                  className="label-btn special-tag"
+                  onClick={() => handleConfirm(tech)}
+                  disabled={!currentItem}
+                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                >
+                  {tech.replace('_', ' ')}
+                </button>
+              ))}
               <button
-                key={sub}
-                className={`label-btn subgroup-btn
-                  ${selectedSubgroup === sub ? 'selected' : ''}
-                  ${currentItem.current_subgroup === sub ? 'current' : ''}
-                  ${currentItem.predicted_subgroup === sub ? 'predicted' : ''}`}
-                onClick={() => setSelectedSubgroup(selectedSubgroup === sub ? '' : sub)}
+                className="label-btn special-tag junk"
+                onClick={() => handleConfirm('junk')}
+                disabled={!currentItem}
+                style={{ padding: '6px 12px', fontSize: '12px' }}
               >
-                {sub.replace('_', ' ')}
-                {currentItem.predicted_subgroup === sub && <span className="badge">pred</span>}
-                {currentItem.current_subgroup === sub && <span className="badge current">curr</span>}
+                junk
               </button>
-            ))}
-            {/* Confirm button when group is pending */}
-            {pendingGroup && (
               <button
-                className="label-btn confirm-btn"
-                onClick={() => handleConfirm(pendingGroup)}
+                className="label-btn special-tag"
+                onClick={() => handleConfirm('skip')}
+                disabled={!currentItem}
+                style={{ padding: '6px 12px', fontSize: '12px', background: '#333' }}
               >
-                ✓ Confirm {pendingGroup}{selectedSubgroup ? ` → ${selectedSubgroup}` : ''}
+                skip/unsure
               </button>
+            </div>
+            {/* Score detail for current item */}
+            {currentItem && currentItem.pr_score != null && (
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '11px', color: '#888', flexWrap: 'wrap' }}>
+                <span>PR: <strong style={{ color: currentItem.pr_score >= (currentItem.threshold_pr || 0) ? '#22c55e' : '#ef4444' }}>{currentItem.pr_score?.toFixed(4)}</strong> (thr: {currentItem.threshold_pr?.toFixed(4)})</span>
+                <span>LDA: <strong style={{ color: currentItem.lda_score >= (currentItem.threshold_lda || 0) ? '#22c55e' : '#ef4444' }}>{currentItem.lda_score?.toFixed(4)}</strong> (thr: {currentItem.threshold_lda?.toFixed(4)})</span>
+                <span>Method: {currentItem.detection_method}</span>
+                <span style={{ color: '#aaa' }}>{currentItem.path?.split('/').slice(-3, -1).join('/')}</span>
+              </div>
             )}
           </div>
-        )}
+        ) : (
+          /* Standard instrument label buttons */
+          <>
+            <div className="label-buttons">
+              {GROUPS.map(group => (
+                <button
+                  key={group}
+                  className={`label-btn
+                    ${currentItem?.predicted_class === group ? 'predicted' : ''}
+                    ${currentItem?.current_label === group ? 'current' : ''}
+                    ${multiLabelMode && selectedLabels.includes(group) ? 'selected-multi' : ''}
+                    ${hasBleed && bleedInstruments.includes(group) ? 'bleed-selected' : ''}
+                    ${pendingGroup === group ? 'pending' : ''}`}
+                  onClick={() => handleGroupClick(group)}
+                  disabled={!currentItem && !hasBleed}
+                >
+                  {group}
+                  {currentItem?.predicted_class === group && !multiLabelMode && !hasBleed && <span className="badge">pred</span>}
+                  {currentItem?.current_label === group && activeTab === 'flagged' && !multiLabelMode && !hasBleed && <span className="badge current">curr</span>}
+                  {multiLabelMode && selectedLabels.includes(group) && <span className="badge selected">✓</span>}
+                  {hasBleed && bleedInstruments.includes(group) && <span className="badge bleed">bleed</span>}
+                  {pendingGroup === group && <span className="badge pending">●</span>}
+                </button>
+              ))}
+            </div>
 
-        {/* Special Tags */}
-        <div className="special-tags">
-          {SPECIAL_TAGS.map(tag => (
-            <button
-              key={tag}
-              className={`label-btn special-tag ${tag} ${multiLabelMode && selectedLabels.includes(tag) ? 'selected-multi' : ''}`}
-              onClick={() => handleConfirm(tag)}
-              disabled={!currentItem || (hasBleed && !bleedConfirmed)}
-            >
-              {tag}
-              {multiLabelMode && selectedLabels.includes(tag) && <span className="badge selected">✓</span>}
-            </button>
-          ))}
-        </div>
+            {/* Subgroup Buttons - show based on pending group first, then current item's group */}
+            {currentItem && (SUBGROUPS[pendingGroup] || SUBGROUPS[currentItem.current_label] || SUBGROUPS[currentItem.predicted_class] || SUBGROUPS[currentItem.group]) && (
+              <div className="subgroup-buttons">
+                <span className="subgroup-label">Subgroup:</span>
+                {(SUBGROUPS[pendingGroup] || SUBGROUPS[currentItem.current_label] || SUBGROUPS[currentItem.predicted_class] || SUBGROUPS[currentItem.group]).map(sub => (
+                  <button
+                    key={sub}
+                    className={`label-btn subgroup-btn
+                      ${selectedSubgroup === sub ? 'selected' : ''}
+                      ${currentItem.current_subgroup === sub ? 'current' : ''}
+                      ${currentItem.predicted_subgroup === sub ? 'predicted' : ''}`}
+                    onClick={() => setSelectedSubgroup(selectedSubgroup === sub ? '' : sub)}
+                  >
+                    {sub.replace('_', ' ')}
+                    {currentItem.predicted_subgroup === sub && <span className="badge">pred</span>}
+                    {currentItem.current_subgroup === sub && <span className="badge current">curr</span>}
+                  </button>
+                ))}
+                {/* Confirm button when group is pending */}
+                {pendingGroup && (
+                  <button
+                    className="label-btn confirm-btn"
+                    onClick={() => handleConfirm(pendingGroup)}
+                  >
+                    ✓ Confirm {pendingGroup}{selectedSubgroup ? ` → ${selectedSubgroup}` : ''}
+                  </button>
+                )}
+              </div>
+            )}
 
-        {/* Submit hint when bleed is selected */}
-        {hasBleed && bleedInstruments.length > 0 && !bleedConfirmed && (
-          <div className="bleed-hint">
-            Select bleed instruments, then check "Lock Bleed" to confirm main label.
-          </div>
-        )}
-        {hasBleed && bleedConfirmed && (
-          <div className="bleed-hint confirmed">
-            Bleed locked ({bleedInstruments.join(', ')}). Now click a main instrument to confirm.
-          </div>
+            {/* Special Tags */}
+            <div className="special-tags">
+              {SPECIAL_TAGS.map(tag => (
+                <button
+                  key={tag}
+                  className={`label-btn special-tag ${tag} ${multiLabelMode && selectedLabels.includes(tag) ? 'selected-multi' : ''}`}
+                  onClick={() => handleConfirm(tag)}
+                  disabled={!currentItem || (hasBleed && !bleedConfirmed)}
+                >
+                  {tag}
+                  {multiLabelMode && selectedLabels.includes(tag) && <span className="badge selected">✓</span>}
+                </button>
+              ))}
+            </div>
+
+            {/* Submit hint when bleed is selected */}
+            {hasBleed && bleedInstruments.length > 0 && !bleedConfirmed && (
+              <div className="bleed-hint">
+                Select bleed instruments, then check "Lock Bleed" to confirm main label.
+              </div>
+            )}
+            {hasBleed && bleedConfirmed && (
+              <div className="bleed-hint confirmed">
+                Bleed locked ({bleedInstruments.join(', ')}). Now click a main instrument to confirm.
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -3075,7 +3391,15 @@ const AudioLabeler = () => {
       {/* Keyboard Shortcuts */}
       <div className="shortcuts">
         <span><kbd>Space</kbd> Play/Pause</span>
-        <span><kbd>Enter</kbd> {multiLabelMode ? 'Save Regions' : 'Confirm & Next'}</span>
+        {dataSource === 'technique' ? (
+          <>
+            <span><kbd>Enter</kbd> Confirm Prediction</span>
+            <span><kbd>P</kbd> Pizzicato</span>
+            <span><kbd>A</kbd> Arco</span>
+          </>
+        ) : (
+          <span><kbd>Enter</kbd> {multiLabelMode ? 'Save Regions' : 'Confirm & Next'}</span>
+        )}
         <span><kbd>←</kbd><kbd>→</kbd> Navigate</span>
       </div>
         </>

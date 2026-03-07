@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as authService from '../services/authService';
+import { migrateGuestProjects } from '../services/pluginProjectsAPI';
 
 const AuthContext = createContext();
 
@@ -18,6 +19,8 @@ export function AuthProvider({ children }) {
     try {
       const userData = await authService.loginUser(username, password);
       setUser(userData);
+      // Migrate any guest plugin projects to the authenticated user
+      migrateGuestProjects().catch(() => {});
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -28,6 +31,7 @@ export function AuthProvider({ children }) {
     try {
       const userData = await authService.loginWithGoogle(googleProfile);
       setUser(userData);
+      migrateGuestProjects().catch(() => {});
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -38,6 +42,7 @@ export function AuthProvider({ children }) {
     try {
       const userData = await authService.registerUser(username, email, password);
       setUser(userData);
+      migrateGuestProjects().catch(() => {});
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };

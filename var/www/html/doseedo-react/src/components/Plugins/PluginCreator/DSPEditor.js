@@ -1,106 +1,18 @@
 import React, { useState, useCallback, useMemo, useRef } from 'react';
 import styles from './DSPEditor.module.css';
-
-// ── All supported DSP node types with their parameter schemas ──────────────
-
-const NODE_CATEGORIES = {
-  'Filters': [
-    { type: 'lowpass', label: 'Lowpass', params: { cutoff: { default: 1000, unit: 'Hz' }, resonance: { default: 0.5 } } },
-    { type: 'highpass', label: 'Highpass', params: { cutoff: { default: 1000, unit: 'Hz' }, resonance: { default: 0.5 } } },
-    { type: 'bandpass', label: 'Bandpass', params: { cutoff: { default: 1000, unit: 'Hz' }, resonance: { default: 0.5 } } },
-    { type: 'notch', label: 'Notch', params: { cutoff: { default: 1000, unit: 'Hz' }, resonance: { default: 0.5 } } },
-    { type: 'allpass', label: 'Allpass', params: { cutoff: { default: 1000, unit: 'Hz' }, resonance: { default: 0.5 } } },
-    { type: 'ladder', label: 'Ladder', params: { cutoff: { default: 2000, unit: 'Hz' }, resonance: { default: 0.3 }, mode: { default: 'LP24', options: ['LP12','LP24','HP12','HP24','BP12','BP24'] } } },
-    { type: 'comb', label: 'Comb', params: { delay_ms: { default: 5, unit: 'ms' }, feedback: { default: 0.5 } } },
-    { type: 'shelf_low', label: 'Low Shelf', params: { cutoff: { default: 200, unit: 'Hz' }, gain_db: { default: 0, unit: 'dB' } } },
-    { type: 'shelf_high', label: 'High Shelf', params: { cutoff: { default: 8000, unit: 'Hz' }, gain_db: { default: 0, unit: 'dB' } } },
-    { type: 'parametric_eq', label: 'Parametric EQ', params: { freq: { default: 1000, unit: 'Hz' }, gain_db: { default: 0, unit: 'dB' }, q: { default: 1 } } },
-  ],
-  'Dynamics': [
-    { type: 'compressor', label: 'Compressor', params: { threshold_db: { default: -18, unit: 'dB' }, ratio: { default: 4 }, attack_ms: { default: 10, unit: 'ms' }, release_ms: { default: 150, unit: 'ms' }, makeup_db: { default: 0, unit: 'dB' } } },
-    { type: 'limiter', label: 'Limiter', params: { threshold_db: { default: -3, unit: 'dB' }, release_ms: { default: 100, unit: 'ms' } } },
-    { type: 'gate', label: 'Gate', params: { threshold_db: { default: -40, unit: 'dB' }, attack_ms: { default: 1, unit: 'ms' }, release_ms: { default: 100, unit: 'ms' } } },
-    { type: 'expander', label: 'Expander', params: { threshold_db: { default: -40, unit: 'dB' }, ratio: { default: 2 }, attack_ms: { default: 5, unit: 'ms' }, release_ms: { default: 100, unit: 'ms' } } },
-    { type: 'envelope_follower', label: 'Env Follower', params: { attack_ms: { default: 10, unit: 'ms' }, release_ms: { default: 100, unit: 'ms' } } },
-  ],
-  'Time': [
-    { type: 'delay', label: 'Delay', params: { time_ms: { default: 350, unit: 'ms' }, feedback: { default: 0.4 }, mix: { default: 0.3 } } },
-    { type: 'multitap_delay', label: 'Multitap Delay', params: { feedback: { default: 0.3 }, mix: { default: 0.3 } } },
-    { type: 'ping_pong_delay', label: 'Ping-Pong', params: { time_ms: { default: 300, unit: 'ms' }, feedback: { default: 0.4 }, mix: { default: 0.3 }, spread: { default: 0.8 } } },
-    { type: 'reverb', label: 'Reverb', params: { room_size: { default: 0.5 }, damping: { default: 0.5 }, width: { default: 1 }, mix: { default: 0.3 } } },
-    { type: 'convolution', label: 'Convolution', params: { ir_file: { default: '' } } },
-  ],
-  'Modulation': [
-    { type: 'chorus', label: 'Chorus', params: { rate_hz: { default: 1.2, unit: 'Hz' }, depth: { default: 0.4 }, mix: { default: 0.5 }, voices: { default: 2 } } },
-    { type: 'flanger', label: 'Flanger', params: { rate_hz: { default: 0.3, unit: 'Hz' }, depth: { default: 0.5 }, feedback: { default: 0.5 }, mix: { default: 0.5 } } },
-    { type: 'phaser', label: 'Phaser', params: { rate_hz: { default: 0.5, unit: 'Hz' }, depth: { default: 0.5 }, feedback: { default: 0.3 }, mix: { default: 0.5 }, stages: { default: 4 } } },
-    { type: 'tremolo', label: 'Tremolo', params: { rate_hz: { default: 4, unit: 'Hz' }, depth: { default: 0.5 }, shape: { default: 'sine', options: ['sine','triangle','square'] } } },
-    { type: 'ring_mod', label: 'Ring Mod', params: { freq_hz: { default: 440, unit: 'Hz' }, mix: { default: 0.5 } } },
-    { type: 'lfo', label: 'LFO', params: { rate_hz: { default: 1, unit: 'Hz' }, shape: { default: 'sine', options: ['sine','triangle','saw','square'] }, depth: { default: 0.5 }, target: { default: '' } } },
-  ],
-  'Distortion': [
-    { type: 'overdrive', label: 'Overdrive', params: { drive: { default: 0.3 }, tone: { default: 0.6 }, mix: { default: 1 } } },
-    { type: 'waveshaper', label: 'Waveshaper', params: { curve: { default: 'tanh', options: ['tanh','atan','cubic','hard_clip'] }, amount: { default: 0.5 }, mix: { default: 1 } } },
-    { type: 'bitcrusher', label: 'Bitcrusher', params: { bit_depth: { default: 8 }, sample_rate_div: { default: 4 }, mix: { default: 0.5 } } },
-    { type: 'saturation', label: 'Saturation', params: { amount: { default: 0.4 }, asymmetry: { default: 0 }, mix: { default: 1 } } },
-    { type: 'foldback', label: 'Foldback', params: { threshold: { default: 0.5 }, mix: { default: 0.5 } } },
-  ],
-  'Utility': [
-    { type: 'gain', label: 'Gain', params: { gain_db: { default: 0, unit: 'dB' } } },
-    { type: 'pan', label: 'Pan', params: { pan: { default: 0 } } },
-    { type: 'mix', label: 'Dry/Wet', params: { dry: { default: 1 }, wet: { default: 1 } } },
-    { type: 'dc_blocker', label: 'DC Blocker', params: {} },
-  ],
-  'Synthesis': [
-    { type: 'oscillator', label: 'Oscillator', params: { waveform: { default: 'saw', options: ['sine','saw','square','triangle','noise'] }, detune: { default: 0 }, level: { default: 1 } } },
-    { type: 'noise', label: 'Noise', params: { type: { default: 'white', options: ['white','pink','brown'] }, level: { default: 0.5 } } },
-    { type: 'wavetable', label: 'Wavetable', params: { table: { default: 'basic_shapes' }, position: { default: 0.5 }, level: { default: 1 } } },
-    { type: 'fm_operator', label: 'FM Operator', params: { ratio: { default: 2 }, index: { default: 1 }, level: { default: 1 } } },
-    { type: 'envelope_adsr', label: 'ADSR', params: { attack_ms: { default: 10, unit: 'ms' }, decay_ms: { default: 300, unit: 'ms' }, sustain: { default: 0.7 }, release_ms: { default: 500, unit: 'ms' }, target: { default: 'amp' } } },
-    { type: 'sample_player', label: 'Sampler', params: { file: { default: '' }, root_note: { default: 60 } } },
-  ],
-  'Analysis': [
-    { type: 'peak_meter', label: 'Peak Meter', params: {} },
-    { type: 'rms_meter', label: 'RMS Meter', params: { window_ms: { default: 50, unit: 'ms' } } },
-  ],
-};
-
-// Category colors for node headers
-const CATEGORY_COLORS = {
-  Filters: '#4fc3f7',
-  Dynamics: '#ff8a65',
-  Time: '#81c784',
-  Modulation: '#ba68c8',
-  Distortion: '#ef5350',
-  Utility: '#90a4ae',
-  Synthesis: '#ffd54f',
-  Analysis: '#7986cb',
-};
-
-function getCategoryForType(type) {
-  for (const [cat, nodes] of Object.entries(NODE_CATEGORIES)) {
-    if (nodes.some(n => n.type === type)) return cat;
-  }
-  return 'Utility';
-}
-
-function getNodeSchema(type) {
-  for (const nodes of Object.values(NODE_CATEGORIES)) {
-    const found = nodes.find(n => n.type === type);
-    if (found) return found;
-  }
-  return null;
-}
-
-let _nodeIdCounter = 0;
-function nextNodeId(type) {
-  _nodeIdCounter++;
-  return `${type}_${_nodeIdCounter}`;
-}
+import DSPGraphEditor from './DSPGraphEditor';
+import {
+  NODE_CATEGORIES,
+  CATEGORY_COLORS,
+  getCategoryForType,
+  getNodeSchema,
+  nextNodeId,
+} from './dspNodeDefinitions';
 
 // ── Main DSP Editor Component ──────────────────────────────────────────────
 
 const DSPEditor = ({ dspConfig, onUpdateDsp }) => {
+  const [viewMode, setViewMode] = useState('graph'); // 'graph' | 'chain'
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedParam, setSelectedParam] = useState(null);
   const [showAddMenu, setShowAddMenu] = useState(null); // null or insert index
@@ -237,7 +149,7 @@ const DSPEditor = ({ dspConfig, onUpdateDsp }) => {
     if (selectedParam === paramId) setSelectedParam(null);
   }, [dspConfig, parameters, chain, selectedParam, onUpdateDsp]);
 
-  // ── Drag and drop ──────────────────────────────────────────────────
+  // ── Drag and drop (chain view) ──────────────────────────────────────
 
   const handleDragStart = useCallback((e, index) => {
     setDragNode(index);
@@ -257,6 +169,13 @@ const DSPEditor = ({ dspConfig, onUpdateDsp }) => {
     setDragNode(null);
     setDragOver(null);
   }, [dragNode, moveNode]);
+
+  // ── Graph view node selection ───────────────────────────────────────
+
+  const handleGraphSelectNode = useCallback((nodeId) => {
+    setSelectedNode(nodeId);
+    setSelectedParam(null);
+  }, []);
 
   // ── No DSP config ──────────────────────────────────────────────────
 
@@ -294,9 +213,23 @@ const DSPEditor = ({ dspConfig, onUpdateDsp }) => {
       {/* ── Toolbar ── */}
       <div className={styles.toolbar}>
         <div className={styles.toolbarLeft}>
-          <span className={styles.toolbarLabel}>
-            <i className="fa-solid fa-wave-square" /> DSP Chain
-          </span>
+          {/* View toggle */}
+          <div className={styles.viewToggle}>
+            <button
+              className={`${styles.viewToggleBtn} ${viewMode === 'graph' ? styles.viewToggleBtnActive : ''}`}
+              onClick={() => setViewMode('graph')}
+              title="Free-form graph view"
+            >
+              <i className="fa-solid fa-diagram-project" /> Graph
+            </button>
+            <button
+              className={`${styles.viewToggleBtn} ${viewMode === 'chain' ? styles.viewToggleBtnActive : ''}`}
+              onClick={() => setViewMode('chain')}
+              title="Linear chain view"
+            >
+              <i className="fa-solid fa-bars" /> Chain
+            </button>
+          </div>
           <span className={styles.toolbarMeta}>
             {chain.length} node{chain.length !== 1 ? 's' : ''} &middot; {parameters.length} param{parameters.length !== 1 ? 's' : ''}
           </span>
@@ -323,141 +256,152 @@ const DSPEditor = ({ dspConfig, onUpdateDsp }) => {
       </div>
 
       <div className={styles.mainArea}>
-        {/* ── Chain View ── */}
-        <div className={styles.chainArea} ref={chainRef}>
-          {/* Input node */}
-          <div className={styles.ioNode}>
-            <div className={styles.ioIcon}><i className="fa-solid fa-right-to-bracket" /></div>
-            <span>{routing.input}</span>
+        {viewMode === 'graph' ? (
+          /* ── Graph View ── */
+          <div className={styles.graphArea}>
+            <DSPGraphEditor
+              dspConfig={dspConfig}
+              onUpdateDsp={onUpdateDsp}
+              onSelectNode={handleGraphSelectNode}
+            />
           </div>
+        ) : (
+          /* ── Chain View (existing) ── */
+          <div className={styles.chainArea} ref={chainRef}>
+            {/* Input node */}
+            <div className={styles.ioNode}>
+              <div className={styles.ioIcon}><i className="fa-solid fa-right-to-bracket" /></div>
+              <span>{routing.input}</span>
+            </div>
 
-          {chain.map((node, idx) => {
-            const cat = getCategoryForType(node.type);
-            const color = CATEGORY_COLORS[cat] || '#90a4ae';
-            const isSelected = selectedNode === node.id;
-            const isDragTarget = dragOver === idx && dragNode !== idx;
-            const boundParams = Object.entries(node.params || {}).filter(
-              ([, v]) => typeof v === 'string' && v.startsWith('@')
-            );
+            {chain.map((node, idx) => {
+              const cat = getCategoryForType(node.type);
+              const color = CATEGORY_COLORS[cat] || '#90a4ae';
+              const isSelected = selectedNode === node.id;
+              const isDragTarget = dragOver === idx && dragNode !== idx;
+              const boundParams = Object.entries(node.params || {}).filter(
+                ([, v]) => typeof v === 'string' && v.startsWith('@')
+              );
 
-            return (
-              <React.Fragment key={node.id}>
-                {/* Wire + insert button */}
-                <div
-                  className={`${styles.wire} ${isDragTarget ? styles.wireDragOver : ''}`}
-                  onDragOver={e => handleDragOver(e, idx)}
-                  onDrop={e => handleDrop(e, idx)}
-                >
-                  <div className={styles.wireLine} />
-                  <button
-                    className={styles.insertBtn}
-                    onClick={() => setShowAddMenu(showAddMenu === idx ? null : idx)}
-                    title="Insert node"
+              return (
+                <React.Fragment key={node.id}>
+                  {/* Wire + insert button */}
+                  <div
+                    className={`${styles.wire} ${isDragTarget ? styles.wireDragOver : ''}`}
+                    onDragOver={e => handleDragOver(e, idx)}
+                    onDrop={e => handleDrop(e, idx)}
                   >
-                    <i className="fa-solid fa-plus" />
-                  </button>
-                  {showAddMenu === idx && (
-                    <AddNodeMenu
-                      filter={addMenuFilter}
-                      onFilterChange={setAddMenuFilter}
-                      onSelect={(type) => addNode(type, idx)}
-                      onClose={() => { setShowAddMenu(null); setAddMenuFilter(''); }}
-                    />
-                  )}
-                </div>
-
-                {/* Node box */}
-                <div
-                  className={`${styles.node} ${isSelected ? styles.nodeSelected : ''}`}
-                  style={{ '--node-color': color }}
-                  onClick={() => { setSelectedNode(node.id); setSelectedParam(null); }}
-                  draggable
-                  onDragStart={e => handleDragStart(e, idx)}
-                  onDragOver={e => handleDragOver(e, idx)}
-                  onDrop={e => handleDrop(e, idx)}
-                >
-                  {/* Header */}
-                  <div className={styles.nodeHeader} style={{ background: color }}>
-                    <span className={styles.nodeType}>{node.type}</span>
+                    <div className={styles.wireLine} />
                     <button
-                      className={styles.nodeRemove}
-                      onClick={e => { e.stopPropagation(); removeNode(node.id); }}
-                      title="Remove node"
+                      className={styles.insertBtn}
+                      onClick={() => setShowAddMenu(showAddMenu === idx ? null : idx)}
+                      title="Insert node"
                     >
-                      <i className="fa-solid fa-xmark" />
+                      <i className="fa-solid fa-plus" />
                     </button>
-                  </div>
-
-                  {/* ID */}
-                  <div className={styles.nodeId}>{node.id}</div>
-
-                  {/* Inline params */}
-                  <div className={styles.nodeParams}>
-                    {Object.entries(node.params || {}).map(([key, val]) => {
-                      const isBound = typeof val === 'string' && val.startsWith('@');
-                      const paramDef = isBound ? parameters.find(p => p.id === val.slice(1)) : null;
-                      return (
-                        <div key={key} className={styles.nodeParam}>
-                          <span className={styles.nodeParamKey}>{key}</span>
-                          {isBound ? (
-                            <span
-                              className={styles.nodeParamBound}
-                              title={paramDef ? `${paramDef.name} (${paramDef.min}-${paramDef.max} ${paramDef.unit || ''})` : val}
-                            >
-                              <i className="fa-solid fa-link" /> {val.slice(1)}
-                            </span>
-                          ) : (
-                            <span className={styles.nodeParamVal}>
-                              {typeof val === 'number' ? (Number.isInteger(val) ? val : val.toFixed(2)) : String(val)}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {Object.keys(node.params || {}).length === 0 && (
-                      <div className={styles.nodeParamEmpty}>no params</div>
+                    {showAddMenu === idx && (
+                      <AddNodeMenu
+                        filter={addMenuFilter}
+                        onFilterChange={setAddMenuFilter}
+                        onSelect={(type) => addNode(type, idx)}
+                        onClose={() => { setShowAddMenu(null); setAddMenuFilter(''); }}
+                      />
                     )}
                   </div>
 
-                  {/* Binding indicators */}
-                  {boundParams.length > 0 && (
-                    <div className={styles.nodeBindings}>
-                      {boundParams.map(([key, val]) => (
-                        <div key={key} className={styles.bindingDot} style={{ background: color }} title={`${key} → ${val}`} />
-                      ))}
+                  {/* Node box */}
+                  <div
+                    className={`${styles.node} ${isSelected ? styles.nodeSelected : ''}`}
+                    style={{ '--node-color': color }}
+                    onClick={() => { setSelectedNode(node.id); setSelectedParam(null); }}
+                    draggable
+                    onDragStart={e => handleDragStart(e, idx)}
+                    onDragOver={e => handleDragOver(e, idx)}
+                    onDrop={e => handleDrop(e, idx)}
+                  >
+                    {/* Header */}
+                    <div className={styles.nodeHeader} style={{ background: color }}>
+                      <span className={styles.nodeType}>{node.type}</span>
+                      <button
+                        className={styles.nodeRemove}
+                        onClick={e => { e.stopPropagation(); removeNode(node.id); }}
+                        title="Remove node"
+                      >
+                        <i className="fa-solid fa-xmark" />
+                      </button>
                     </div>
-                  )}
-                </div>
-              </React.Fragment>
-            );
-          })}
 
-          {/* Final wire + add */}
-          <div className={styles.wire}>
-            <div className={styles.wireLine} />
-            <button
-              className={styles.insertBtn}
-              onClick={() => setShowAddMenu(showAddMenu === chain.length ? null : chain.length)}
-              title="Add node at end"
-            >
-              <i className="fa-solid fa-plus" />
-            </button>
-            {showAddMenu === chain.length && (
-              <AddNodeMenu
-                filter={addMenuFilter}
-                onFilterChange={setAddMenuFilter}
-                onSelect={(type) => addNode(type, chain.length)}
-                onClose={() => { setShowAddMenu(null); setAddMenuFilter(''); }}
-              />
-            )}
-          </div>
+                    {/* ID */}
+                    <div className={styles.nodeId}>{node.id}</div>
 
-          {/* Output node */}
-          <div className={styles.ioNode}>
-            <div className={styles.ioIcon}><i className="fa-solid fa-right-from-bracket" /></div>
-            <span>{routing.output}</span>
+                    {/* Inline params */}
+                    <div className={styles.nodeParams}>
+                      {Object.entries(node.params || {}).map(([key, val]) => {
+                        const isBound = typeof val === 'string' && val.startsWith('@');
+                        const paramDef = isBound ? parameters.find(p => p.id === val.slice(1)) : null;
+                        return (
+                          <div key={key} className={styles.nodeParam}>
+                            <span className={styles.nodeParamKey}>{key}</span>
+                            {isBound ? (
+                              <span
+                                className={styles.nodeParamBound}
+                                title={paramDef ? `${paramDef.name} (${paramDef.min}-${paramDef.max} ${paramDef.unit || ''})` : val}
+                              >
+                                <i className="fa-solid fa-link" /> {val.slice(1)}
+                              </span>
+                            ) : (
+                              <span className={styles.nodeParamVal}>
+                                {typeof val === 'number' ? (Number.isInteger(val) ? val : val.toFixed(2)) : String(val)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {Object.keys(node.params || {}).length === 0 && (
+                        <div className={styles.nodeParamEmpty}>no params</div>
+                      )}
+                    </div>
+
+                    {/* Binding indicators */}
+                    {boundParams.length > 0 && (
+                      <div className={styles.nodeBindings}>
+                        {boundParams.map(([key, val]) => (
+                          <div key={key} className={styles.bindingDot} style={{ background: color }} title={`${key} → ${val}`} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </React.Fragment>
+              );
+            })}
+
+            {/* Final wire + add */}
+            <div className={styles.wire}>
+              <div className={styles.wireLine} />
+              <button
+                className={styles.insertBtn}
+                onClick={() => setShowAddMenu(showAddMenu === chain.length ? null : chain.length)}
+                title="Add node at end"
+              >
+                <i className="fa-solid fa-plus" />
+              </button>
+              {showAddMenu === chain.length && (
+                <AddNodeMenu
+                  filter={addMenuFilter}
+                  onFilterChange={setAddMenuFilter}
+                  onSelect={(type) => addNode(type, chain.length)}
+                  onClose={() => { setShowAddMenu(null); setAddMenuFilter(''); }}
+                />
+              )}
+            </div>
+
+            {/* Output node */}
+            <div className={styles.ioNode}>
+              <div className={styles.ioIcon}><i className="fa-solid fa-right-from-bracket" /></div>
+              <span>{routing.output}</span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* ── Detail Panel (right side) ── */}
         <div className={styles.detailPanel}>
@@ -505,6 +449,13 @@ const DSPEditor = ({ dspConfig, onUpdateDsp }) => {
             </div>
           </div>
 
+          {/* Presets section */}
+          <PresetsPanel
+            presets={dspConfig?.presets || []}
+            parameters={parameters}
+            onUpdatePresets={(presets) => onUpdateDsp({ ...dspConfig, presets })}
+          />
+
           {/* Selected node detail */}
           {selNode && (
             <NodeDetail
@@ -531,7 +482,115 @@ const DSPEditor = ({ dspConfig, onUpdateDsp }) => {
   );
 };
 
-// ── Add Node Menu (dropdown) ───────────────────────────────────────────────
+// ── Presets Panel ─────────────────────────────────────────────────────────
+
+const PresetsPanel = ({ presets, parameters, onUpdatePresets }) => {
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [editName, setEditName] = useState('');
+
+  const addPreset = () => {
+    const values = Object.fromEntries(
+      parameters.map(p => [p.id, p.default != null ? p.default : 0.5])
+    );
+    const name = `Preset ${presets.length + 1}`;
+    onUpdatePresets([...presets, { name, values }]);
+  };
+
+  const removePreset = (idx) => {
+    onUpdatePresets(presets.filter((_, i) => i !== idx));
+    if (editingIdx === idx) setEditingIdx(null);
+  };
+
+  const updatePresetName = (idx, name) => {
+    const updated = [...presets];
+    updated[idx] = { ...updated[idx], name };
+    onUpdatePresets(updated);
+  };
+
+  const updatePresetValue = (presetIdx, paramId, value) => {
+    const updated = [...presets];
+    updated[presetIdx] = {
+      ...updated[presetIdx],
+      values: { ...updated[presetIdx].values, [paramId]: value },
+    };
+    onUpdatePresets(updated);
+  };
+
+  return (
+    <div className={styles.paramSection} style={{ marginTop: 8 }}>
+      <div className={styles.paramHeader}>
+        <span><i className="fa-solid fa-layer-group" /> Presets</span>
+        <button className={styles.addParamBtn} onClick={addPreset} title="Add preset">
+          <i className="fa-solid fa-plus" />
+        </button>
+      </div>
+      <div className={styles.paramList}>
+        {presets.map((preset, idx) => (
+          <div key={idx} className={styles.paramItem} style={{ cursor: 'pointer' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              {editingIdx === idx ? (
+                <input
+                  className={styles.addMenuSearch}
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  onBlur={() => { updatePresetName(idx, editName); setEditingIdx(null); }}
+                  onKeyDown={e => { if (e.key === 'Enter') { updatePresetName(idx, editName); setEditingIdx(null); } }}
+                  autoFocus
+                  style={{ flex: 1, fontSize: 12, padding: '2px 6px', margin: 0 }}
+                />
+              ) : (
+                <div
+                  className={styles.paramName}
+                  onDoubleClick={() => { setEditingIdx(idx); setEditName(preset.name); }}
+                  style={{ flex: 1 }}
+                >
+                  {preset.name}
+                </div>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); removePreset(idx); }}
+                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 11, padding: '0 4px' }}
+                title="Delete preset"
+              >
+                <i className="fa-solid fa-trash" />
+              </button>
+            </div>
+            {/* Param values — always visible for quick editing */}
+            <div style={{ width: '100%', marginTop: 4 }}>
+              {parameters.map(p => {
+                const val = preset.values?.[p.id] ?? p.default ?? 0.5;
+                return (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '1px 0', fontSize: 11 }}>
+                    <span style={{ color: 'rgba(255,255,255,0.5)', width: 60, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.name || p.id}
+                    </span>
+                    <input
+                      type="range"
+                      min={p.min ?? 0}
+                      max={p.max ?? 1}
+                      step={0.01}
+                      value={val}
+                      onChange={e => updatePresetValue(idx, p.id, parseFloat(e.target.value))}
+                      style={{ flex: 1, height: 12, accentColor: '#ba9cff' }}
+                    />
+                    <span style={{ color: 'rgba(255,255,255,0.4)', width: 32, textAlign: 'right', fontSize: 10 }}>
+                      {typeof val === 'number' ? val.toFixed(2) : val}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {presets.length === 0 && (
+          <div className={styles.emptyParams}>No presets — add one to include factory presets in your plugin</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── Add Node Menu (dropdown, used by chain view) ──────────────────────────
 
 const AddNodeMenu = ({ filter, onFilterChange, onSelect, onClose }) => {
   const menuRef = useRef(null);

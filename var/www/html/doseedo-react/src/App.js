@@ -29,12 +29,14 @@ import Tools from './components/Tools/Tools';
 import WhatsNew from './components/WhatsNew/WhatsNew';
 import Research from './components/Research/Research';
 import Plugins from './components/Plugins/Plugins';
+import PublicProfile from './components/PublicProfile/PublicProfile';
 import About from './components/Legal/About';
 import Privacy from './components/Legal/Privacy';
 import Terms from './components/Legal/Terms';
 import ChordWindow from './components/ChordWindow/ChordWindow';
 import AudioLabeler from './components/AudioLabeler/AudioLabeler';
 import DataMonitor from './components/DataMonitor/DataMonitor';
+import AdminUsers from './components/AdminUsers/AdminUsers';
 // ThemeEditor removed
 import LiquidGlassFilters from './components/LiquidGlassFilters/LiquidGlassFilters';
 
@@ -191,6 +193,7 @@ function AppContent() {
   const currentView = location.pathname === '/dashboard' ? 'home' :
                       location.pathname === '/projects' ? 'dashboard' :
                       location.pathname === '/search' ? 'search' :
+                      location.pathname.startsWith('/profile/') && location.pathname.split('/').length >= 3 ? 'publicProfile' :
                       location.pathname === '/profile' ? 'userinfo' :
                       location.pathname === '/tools' ? 'tools' :
                       location.pathname === '/whats-new' ? 'whatsnew' :
@@ -203,6 +206,7 @@ function AppContent() {
                       location.pathname === '/demo' ? 'daw' :
                       location.pathname === '/label' ? 'label' :
                       location.pathname === '/monitor' ? 'monitor' :
+                      location.pathname === '/admin' ? 'admin' :
                       location.pathname === '/' ? 'home' : 'home';
 
   // Check if we're in demo mode
@@ -630,6 +634,33 @@ function AppContent() {
     );
   }
 
+  // Show public profile view with sidebar
+  if (currentView === 'publicProfile') {
+    const profileUsername = location.pathname.split('/')[2];
+    return (
+      <div className="App">
+        <LiquidGlassFilters />
+        <LeftSidebar
+          onBackToDashboard={handleBackToDashboard}
+          onGoToHome={handleGoToHome}
+          onGoToSearch={handleGoToSearch}
+          onGoToUserInfo={handleGoToUserInfo}
+          onGoToTools={handleGoToTools}
+          onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
+          onToggleSearch={handleToggleSearch}
+          onShowGenerationPanel={handleShowGenerationPanel}
+          onShowMidiBrowser={handleShowMidiBrowser}
+          showMidiBrowser={showMidiBrowser}
+          onToggleChat={handleToggleChat}
+          showChatWindow={showChatWindow}
+        />
+        <PublicProfile username={profileUsername} />
+      </div>
+    );
+  }
+
   // Show audio labeler view (standalone, no sidebar needed)
   if (currentView === 'label') {
     return (
@@ -644,6 +675,15 @@ function AppContent() {
     return (
       <div className="App">
         <DataMonitor />
+      </div>
+    );
+  }
+
+  // Show admin view (standalone, no sidebar)
+  if (currentView === 'admin') {
+    return (
+      <div className="App">
+        <AdminUsers />
       </div>
     );
   }

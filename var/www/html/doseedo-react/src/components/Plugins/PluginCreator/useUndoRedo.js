@@ -40,8 +40,15 @@ export default function useUndoRedo(initialState) {
     return null;
   }, []);
 
+  const reset = useCallback((newInitial) => {
+    const val = newInitial !== undefined ? newInitial : initialState;
+    historyRef.current = [JSON.stringify(val)];
+    indexRef.current = 0;
+    setState(val);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const canUndo = indexRef.current > 0;
   const canRedo = indexRef.current < historyRef.current.length - 1;
 
-  return { state, pushState, undo, redo, canUndo, canRedo, setState };
+  return { state, pushState, undo, redo, canUndo, canRedo, setState, reset };
 }

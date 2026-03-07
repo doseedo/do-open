@@ -2,12 +2,15 @@ import React, { useState, useCallback } from 'react';
 import { generateImage, searchImages } from '../../../services/chatAPI';
 import styles from './PluginCreator.module.css';
 
+const MAX_UPLOAD_SIZE = 2 * 1024 * 1024; // 2MB
+
 const ImageBrowser = ({ onSelect, onClose }) => {
-  const [tab, setTab] = useState('generate'); // 'generate' | 'search'
+  const [tab, setTab] = useState('generate'); // 'generate' | 'search' | 'upload'
   const [prompt, setPrompt] = useState('');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [generatedImage, setGeneratedImage] = useState(null);
+  const [uploadedImage, setUploadedImage] = useState(null); // data URL
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -41,6 +44,25 @@ const ImageBrowser = ({ onSelect, onClose }) => {
     }
   }, [query, loading]);
 
+  const handleFileUpload = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setUploadedImage(null);
+    if (!file.type.match(/^image\/(png|jpe?g|webp)$/)) {
+      setError('Only PNG, JPG, and WebP images are supported');
+      return;
+    }
+    if (file.size > MAX_UPLOAD_SIZE) {
+      setError(`Image too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max 2MB.`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setUploadedImage(reader.result);
+    reader.onerror = () => setError('Failed to read file');
+    reader.readAsDataURL(file);
+  }, []);
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       if (tab === 'generate') handleGenerate();
@@ -72,9 +94,16 @@ const ImageBrowser = ({ onSelect, onClose }) => {
           >
             <i className="fa-solid fa-magnifying-glass" /> Search
           </button>
+          <button
+            className={`${styles.ibTab} ${tab === 'upload' ? styles.ibTabActive : ''}`}
+            onClick={() => setTab('upload')}
+          >
+            <i className="fa-solid fa-upload" /> Upload
+          </button>
         </div>
 
         {/* Input */}
+        {tab !== 'upload' && (
         <div className={styles.ibInputRow}>
           {tab === 'generate' ? (
             <>
@@ -106,6 +135,7 @@ const ImageBrowser = ({ onSelect, onClose }) => {
             </>
           )}
         </div>
+        )}
 
         {error && (
           <div className={styles.ibError}>
@@ -115,6 +145,38 @@ const ImageBrowser = ({ onSelect, onClose }) => {
 
         {/* Results */}
         <div className={styles.ibResults}>
+          {tab === 'upload' && (
+            <div className={styles.ibGenResult}>
+              <label
+                className={styles.ibUploadArea}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  padding: '32px 16px', border: '2px dashed rgba(186,156,255,0.3)', borderRadius: 12,
+                  cursor: 'pointer', textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: 13,
+                  background: 'rgba(255,255,255,0.03)', marginBottom: 12,
+                }}
+              >
+                <i className="fa-solid fa-cloud-arrow-up" style={{ fontSize: 28, marginBottom: 8, color: 'rgba(186,156,255,0.5)' }} />
+                <span>Click to upload an image</span>
+                <span style={{ fontSize: 11, marginTop: 4 }}>PNG, JPG, WebP &middot; Max 2MB</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                />
+              </label>
+              {uploadedImage && (
+                <>
+                  <img src={uploadedImage} alt="Uploaded" style={{ maxWidth: '100%', borderRadius: 8 }} />
+                  <button className={styles.ibSelectBtn} onClick={() => onSelect(uploadedImage)}>
+                    Use This Image
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
           {tab === 'generate' && generatedImage && (
             <div className={styles.ibGenResult}>
               <img src={generatedImage.url} alt={generatedImage.revised_prompt || 'Generated'} />

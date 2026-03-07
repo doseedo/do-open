@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { sendCodegenChatMessage, generatePluginCode } from '../../../services/chatAPI';
+import { buildPlugin, buildPluginStream } from '../../../services/pluginProjectsAPI';
 import styles from './PluginCreator.module.css';
 
 const DSP_SYSTEM_PROMPT = `You are a DSP engineer and JUCE C++ plugin developer. You design audio plugin DSP architectures using a structured "DSP Language" format.
@@ -119,9 +120,52 @@ DSP CHEAT SHEET:
 - Delay: keep feedback < 0.9 to prevent runaway. Typical times 100-500ms.
 - Filter resonance: keep < 0.95 to prevent self-oscillation (unless desired).
 
+ADVANCED DSP PATTERNS — Use these to create sophisticated, creative plugins:
+
+**Parallel Processing (NY-style)**:
+- Place a "mix" node to blend dry signal with a heavily processed wet path.
+- Example: NY compression — compressor with extreme settings, then mix dry/wet for punch.
+- Use multiple "mix" nodes for parallel distortion bands.
+
+**Feedback Networks**:
+- Route delay output back through filters for Karplus-Strong string synthesis.
+- Comb filter + allpass cascade = physical modeling (plucked strings, tubes).
+- delay → lowpass → gain(feedback) creates natural resonance.
+
+**Sidechain Processing**:
+- Use "envelope_follower" node to extract dynamics from the signal.
+- Route the envelope to modulate filter cutoff, gain, or other parameters.
+- Example: envelope_follower → LFO depth control for auto-ducking.
+
+**Multi-Band Processing**:
+- Split signal with crossover filters: lowpass + highpass at same frequency.
+- Process each band independently (different compression, saturation, etc.).
+- Recombine with gain staging. Use parametric_eq for 3-band splits.
+
+**Modulation Matrix**:
+- Multiple LFOs targeting different parameters at different rates.
+- LFO1 (slow 0.1Hz) → filter cutoff, LFO2 (fast 3Hz) → tremolo depth.
+- Ring modulator + LFO creates complex timbral movement.
+
+**Creative Chains**:
+- Bitcrusher → reverb = lo-fi ambient textures.
+- Reverse delay (negative feedback comb) → chorus = ethereal wash.
+- Waveshaper → bandpass → delay = screaming feedback leads.
+- Envelope follower → ladder filter cutoff = auto-wah.
+- Ping-pong delay → phaser → reverb = massive spatial depth.
+- FM operator self-modulation = harsh digital textures (for instruments).
+
+**Signal Flow Best Practices**:
+- Place dynamics BEFORE time-based effects (compress → delay → reverb).
+- Place EQ/filters both pre and post distortion for tone shaping.
+- dc_blocker at the end prevents speaker damage from DC offset.
+- Always monitor output levels — place peak_meter before final gain.
+
 MODE:
 - "replace" (default): Replaces current DSP config entirely.
 - "merge": Adds new nodes and parameters to existing config.
+
+IMPORTANT: Be CREATIVE with your DSP designs. Don't just chain basic effects linearly. Use parallel processing, feedback, modulation, and unusual combinations to create unique-sounding plugins. Every design should have personality.
 
 EXAMPLE — Compressor:
 \`\`\`dsplang
@@ -297,6 +341,9 @@ const BackendChat = ({ pluginConfig, components, dspConfig, onApplyDsp }) => {
   const [codePreview, setCodePreview] = useState(null); // { files: {...} }
   const [activeCodeFile, setActiveCodeFile] = useState(null);
   const [generatingCode, setGeneratingCode] = useState(false);
+  const [buildingPlugin, setBuildingPlugin] = useState(false);
+  const [buildLogs, setBuildLogs] = useState([]); // streaming build log lines
+  const [buildStage, setBuildStage] = useState(''); // current build stage label
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -369,7 +416,26 @@ const BackendChat = ({ pluginConfig, components, dspConfig, onApplyDsp }) => {
     setGeneratingCode(true);
     setError(null);
     try {
-      const result = await generatePluginCode(dsp);
+      // Try validated generation first, fall back to regular
+      let result;
+      try {
+        const resp = await fetch('/_chat/api/codegen/generate-validated', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dsp),
+        });
+        if (resp.ok) {
+          result = await resp.json();
+          if (result.validation_issues?.length > 0) {
+            console.log(`Code validated with ${result.validation_issues.length} fixes applied`);
+          }
+        } else {
+          // Fall back to regular generation
+          result = await generatePluginCode(dsp);
+        }
+      } catch {
+        result = await generatePluginCode(dsp);
+      }
       setCodePreview(result);
       setActiveCodeFile(Object.keys(result.files)[0] || null);
     } catch (err) {
@@ -378,6 +444,36 @@ const BackendChat = ({ pluginConfig, components, dspConfig, onApplyDsp }) => {
       setGeneratingCode(false);
     }
   }, []);
+
+  const handleBuildPlugin = useCallback(async () => {
+    if (!codePreview?.files) return;
+    setBuildingPlugin(true);
+    setBuildLogs([]);
+    setBuildStage('Queuing build...');
+    setError(null);
+    try {
+      const name = pluginConfig?.name || 'MyPlugin';
+      const result = await buildPluginStream(name, codePreview.files, {
+        onLog: (line) => setBuildLogs(prev => [...prev.slice(-50), line]),
+        onStage: (stage) => setBuildStage(stage),
+      });
+      // result is a blob
+      const url = URL.createObjectURL(result);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${name.replace(/[^a-zA-Z0-9_-]/g, '_')}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setBuildStage('Build complete!');
+    } catch (err) {
+      setError(err.message || 'Build failed');
+      setBuildStage('');
+    } finally {
+      setBuildingPlugin(false);
+    }
+  }, [codePreview, pluginConfig]);
 
   const clearChat = () => {
     setMessages([{
@@ -426,10 +522,35 @@ const BackendChat = ({ pluginConfig, components, dspConfig, onApplyDsp }) => {
                 {fname}
               </button>
             ))}
+            <button
+              onClick={handleBuildPlugin}
+              disabled={buildingPlugin}
+              style={{
+                marginLeft: 'auto', padding: '3px 10px', borderRadius: 6, border: 'none',
+                fontSize: 11, fontWeight: 600, cursor: buildingPlugin ? 'wait' : 'pointer',
+                background: buildingPlugin ? 'rgba(102,126,234,0.2)' : 'linear-gradient(135deg, #667eea, #764ba2)',
+                color: '#fff', display: 'flex', alignItems: 'center', gap: 4,
+              }}
+              title="Compile VST3 + AU"
+            >
+              <i className={`fa-solid ${buildingPlugin ? 'fa-spinner fa-spin' : 'fa-hammer'}`} />
+              {buildingPlugin ? 'Building...' : 'Build'}
+            </button>
           </div>
-          <pre className={styles.codePreview}>
-            <code>{codePreview.files[activeCodeFile] || ''}</code>
-          </pre>
+          {buildingPlugin && buildLogs.length > 0 && (
+            <div style={{
+              padding: '6px 10px', background: '#0a0a0a', borderTop: '1px solid rgba(255,255,255,0.06)',
+              fontSize: 10, fontFamily: 'monospace', maxHeight: 120, overflowY: 'auto', color: '#88ff88',
+            }}>
+              {buildStage && <div style={{ color: '#ffaa00', marginBottom: 2 }}>{buildStage}</div>}
+              {buildLogs.map((line, i) => <div key={i} style={{ opacity: 0.8 }}>{line}</div>)}
+            </div>
+          )}
+          {!buildingPlugin && (
+            <pre className={styles.codePreview}>
+              <code>{codePreview.files[activeCodeFile] || ''}</code>
+            </pre>
+          )}
         </div>
       )}
 

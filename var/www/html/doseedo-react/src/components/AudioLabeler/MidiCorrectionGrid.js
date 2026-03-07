@@ -37,7 +37,7 @@ const ONSET_STEM_COLORS = {
   cymbals: 'rgba(200, 100, 255, 0.85)',
 };
 
-const MidiCorrectionGrid = ({ audioPath, isDrumMode, onSave, currentTime = 0, duration = 0, isPlaying = false, onsets = null, isOnsetMode = false }) => {
+const MidiCorrectionGrid = ({ audioPath, isDrumMode, onSave, currentTime = 0, duration = 0, isPlaying = false, onsets = null, isOnsetMode = false, bpMidiPath = null, refinedMidiPath = null, isComparisonMode = false }) => {
   const canvasRef = useRef(null);
   const canvasWrapperRef = useRef(null);
   const [notes, setNotes] = useState([]);
@@ -122,30 +122,36 @@ const MidiCorrectionGrid = ({ audioPath, isDrumMode, onSave, currentTime = 0, du
         const corrRes = await fetch(`${API_BASE}/midi-corrections?path=${encodeURIComponent(audioPath)}`);
         const corrData = await corrRes.json();
 
-        // 2. Get MIDI path from audio path
-        const pathRes = await fetch(`${API_BASE}/midi-path?audio_path=${encodeURIComponent(audioPath)}`);
-        const pathData = await pathRes.json();
+        // 2. Get MIDI path — in comparison mode, use direct path from backend
+        let actualMidiPath;
+        if (isComparisonMode && bpMidiPath) {
+          actualMidiPath = bpMidiPath;
+        } else {
+          const pathRes = await fetch(`${API_BASE}/midi-path?audio_path=${encodeURIComponent(audioPath)}`);
+          const pathData = await pathRes.json();
 
-        if (!pathData.exists) {
-          setError('No BasicPitch MIDI available for this entry');
-          setMidiPath(null);
-          setNotes([]);
-          setOriginalNotes([]);
+          if (!pathData.exists) {
+            setError('No BasicPitch MIDI available for this entry');
+            setMidiPath(null);
+            setNotes([]);
+            setOriginalNotes([]);
 
-          // But if we have corrections, show those
-          if (corrData.correction) {
-            setCorrectedNotes(corrData.correction);
-            setNotes(corrData.correction.notes || []);
-            setOriginalNotes(corrData.correction.original_notes || []);
+            // But if we have corrections, show those
+            if (corrData.correction) {
+              setCorrectedNotes(corrData.correction);
+              setNotes(corrData.correction.notes || []);
+              setOriginalNotes(corrData.correction.original_notes || []);
+            }
+            setIsLoading(false);
+            return;
           }
-          setIsLoading(false);
-          return;
+          actualMidiPath = pathData.midi_path;
         }
 
-        setMidiPath(pathData.midi_path);
+        setMidiPath(actualMidiPath);
 
         // 3. Fetch and parse the MIDI file
-        const midiRes = await fetch(`${API_BASE}/midi?path=${encodeURIComponent(pathData.midi_path)}`);
+        const midiRes = await fetch(`${API_BASE}/midi?path=${encodeURIComponent(actualMidiPath)}`);
         if (!midiRes.ok) throw new Error(`MIDI fetch failed: ${midiRes.status}`);
         const midiBuffer = await midiRes.arrayBuffer();
         const parsed = parseMIDI(midiBuffer);
@@ -167,6 +173,32 @@ const MidiCorrectionGrid = ({ audioPath, isDrumMode, onSave, currentTime = 0, du
           setCorrectedNotes(null);
           setNotes(JSON.parse(JSON.stringify(midiNotes))); // Deep copy
         }
+
+        // 4. In comparison mode, auto-load refined MIDI
+        if (isComparisonMode && refinedMidiPath) {
+          try {
+            const refinedRes = await fetch(`${API_BASE}/midi?path=${encodeURIComponent(refinedMidiPath)}`);
+            if (refinedRes.ok) {
+              const refinedBuffer = await refinedRes.arrayBuffer();
+              const refinedParsed = parseMIDI(refinedBuffer);
+              const refinedMidi = (refinedParsed.notes || []).map(n => ({
+                note: n.note, time: n.time, duration: n.duration, velocity: n.velocity || 100,
+              }));
+              setRefinedNotes(refinedMidi);
+              setShowRefined(true);
+              setRefinedInfo({
+                strategy: 'pre-computed',
+                stats: { note_count: refinedMidi.length },
+                comparison: {
+                  baseline_count: midiNotes.length,
+                  refined_count: refinedMidi.length,
+                },
+              });
+            }
+          } catch (e) {
+            console.error('Failed to load refined MIDI for comparison:', e);
+          }
+        }
       } catch (e) {
         console.error('Failed to load MIDI:', e);
         setError(e.message);
@@ -176,7 +208,7 @@ const MidiCorrectionGrid = ({ audioPath, isDrumMode, onSave, currentTime = 0, du
     };
 
     loadMidi();
-  }, [audioPath, isOnsetMode]);
+  }, [audioPath, isOnsetMode, isComparisonMode, bpMidiPath, refinedMidiPath]);
 
   // Determine if drum mode based on group or explicit prop
   const effectiveDrumMode = isDrumMode;
@@ -225,7 +257,24 @@ const MidiCorrectionGrid = ({ audioPath, isDrumMode, onSave, currentTime = 0, du
   }), [zoomX, zoomY, noteRange, effectiveDrumMode]);
 
   const totalNotes = config.maxNote - config.minNote + 1;
-  const gridDuration = Math.max(duration || 10, notes.length > 0 ? Math.max(...notes.map(n => n.time + n.duration)) + 2 : 10);
+
+  // Calculate grid duration - must account for onset times in onset mode
+  const gridDuration = useMemo(() => {
+    let maxTime = duration || 10;
+    if (notes.length > 0) {
+      maxTime = Math.max(maxTime, Math.max(...notes.map(n => n.time + n.duration)) + 2);
+    }
+    // In onset mode, find the max onset time across all stems
+    if (isOnsetMode && onsets) {
+      for (const stemData of Object.values(onsets)) {
+        if (stemData?.times?.length > 0) {
+          maxTime = Math.max(maxTime, stemData.times[stemData.times.length - 1] + 1);
+        }
+      }
+    }
+    return Math.max(maxTime, 10);
+  }, [duration, notes, isOnsetMode, onsets]);
+
   const canvasWidth = config.leftMargin + (config.gridWidth * gridDuration) + 20;
   const canvasHeight = config.topMargin + (config.noteHeight * totalNotes) + config.bottomMargin;
 
@@ -817,11 +866,13 @@ const MidiCorrectionGrid = ({ audioPath, isDrumMode, onSave, currentTime = 0, du
         <div className="midi-grid-toggles">
           {!isOnsetMode && (
             <>
-            <label className="midi-toggle">
-              <input type="checkbox" checked={showOriginal} onChange={e => setShowOriginal(e.target.checked)} />
-              <span>Original</span>
-            </label>
-            {correctedNotes && (
+            {!isComparisonMode && (
+              <label className="midi-toggle">
+                <input type="checkbox" checked={showOriginal} onChange={e => setShowOriginal(e.target.checked)} />
+                <span>Original</span>
+              </label>
+            )}
+            {correctedNotes && !isComparisonMode && (
               <label className="midi-toggle">
                 <input type="checkbox" checked={showCorrected} onChange={e => setShowCorrected(e.target.checked)} />
                 <span>Prev Corrections</span>
@@ -837,6 +888,7 @@ const MidiCorrectionGrid = ({ audioPath, isDrumMode, onSave, currentTime = 0, du
           )}
           {effectiveDrumMode && !isOnsetMode && <span className="midi-drum-badge">DRUM MODE</span>}
           {isOnsetMode && <span className="midi-drum-badge" style={{ background: '#e07050' }}>ONSET REVIEW</span>}
+          {isComparisonMode && <span className="midi-drum-badge" style={{ background: '#f59e0b' }}>COMPARISON</span>}
         </div>
         {!isOnsetMode && (
         <div className="midi-grid-actions">

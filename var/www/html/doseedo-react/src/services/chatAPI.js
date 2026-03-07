@@ -79,6 +79,45 @@ export async function generateImage(payload) {
 }
 
 /**
+ * Generate an image using Flux (via Replicate) — better for backgrounds
+ * @param {Object} payload
+ * @param {string} payload.prompt - Image description
+ * @param {string} [payload.aspect_ratio] - Aspect ratio (default "16:9")
+ * @returns {Promise<Object>} - { url }
+ */
+export async function generateFluxImage(payload) {
+  const response = await fetch(`${CHAT_API_BASE_URL}/images/generate-flux`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Generate a seamless texture image via DALL-E
+ * @param {Object} payload
+ * @param {string} payload.prompt - Texture description
+ * @returns {Promise<Object>} - { url, revised_prompt }
+ */
+export async function generateTexture(payload) {
+  const response = await fetch(`${CHAT_API_BASE_URL}/images/generate-texture`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
  * Search stock images via Unsplash
  * @param {Object} payload
  * @param {string} payload.query - Search query
@@ -136,6 +175,73 @@ export async function generatePluginCode(dspConfig) {
     throw new Error(err.detail || `HTTP ${response.status}`);
   }
   return response.json();
+}
+
+/**
+ * Generate a photorealistic component image using Flux, post-processed for SVG embedding.
+ * @param {Object} payload
+ * @param {string} payload.component_type - "knob", "slider-track", "slider-thumb", "button"
+ * @param {string} payload.style_description - Visual description of the component
+ * @param {number} [payload.size] - Output pixel size (default 128)
+ * @returns {Promise<Object>} - { data_url, size }
+ */
+export async function generateComponentImage(payload) {
+  const response = await fetch(`${CHAT_API_BASE_URL}/images/generate-component`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Analyze a reference image using GPT-4o vision to extract layout, colors, and style.
+ * @param {Object} payload
+ * @param {string} payload.image_data - Base64 data URL of the image
+ * @returns {Promise<Object>} - { description: string }
+ */
+export async function analyzeReferenceImage(payload) {
+  const response = await fetch(`${CHAT_API_BASE_URL}/images/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Build a plugin via streaming SSE — returns an EventSource URL.
+ * @param {string} pluginName
+ * @param {Object} files - { "CMakeLists.txt": "...", ... }
+ * @returns {{ eventSourceUrl: string, projectId: string }}
+ */
+export function getBuildStreamUrl(pluginName, files) {
+  const projectId = Math.random().toString(36).slice(2, 10);
+  return {
+    eventSourceUrl: `${CHAT_API_BASE_URL}/codegen/build-stream?project_id=${projectId}`,
+    projectId,
+    // Call startBuildStream() after connecting EventSource
+    startBuild: async () => {
+      const response = await fetch(`${CHAT_API_BASE_URL}/codegen/build-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plugin_name: pluginName, files, project_id: projectId }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${response.status}`);
+      }
+      return response;
+    },
+  };
 }
 
 /**
