@@ -4,6 +4,7 @@ import { getCurrentUser } from '../../../services/authService';
 import SidebarLink from './SidebarLink';
 import SidebarSection from './SidebarSection';
 import styles from './LeftSidebar.module.css';
+import logoImg from '../../../assets/transparentlogo.png';
 
 /**
  * LeftSidebar Component
@@ -59,7 +60,7 @@ const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, o
       {/* Logo and toggle button at top */}
       {state.sidebar.isExpanded ? (
         <div className={styles.logoHeader}>
-          <img src={`${process.env.PUBLIC_URL}/assets/icons/transparentlogo.png`} alt="Doseedo" className={styles.logo} />
+          <img src={logoImg} alt="Doseedo" className={styles.logo} />
           {!isSpecialView && (
             <button className={styles.collapseBtn} onClick={toggleSidebar}>
               <i className="fa-solid fa-chevron-left"></i>
