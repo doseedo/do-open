@@ -59,7 +59,7 @@ const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, o
       {/* Logo and toggle button at top */}
       {state.sidebar.isExpanded ? (
         <div className={styles.logoHeader}>
-          <img src="/assets/icons/transparentlogo.png" alt="Doseedo" className={styles.logo} />
+          <img src={`${process.env.PUBLIC_URL}/assets/icons/transparentlogo.png`} alt="Doseedo" className={styles.logo} />
           {!isSpecialView && (
             <button className={styles.collapseBtn} onClick={toggleSidebar}>
               <i className="fa-solid fa-chevron-left"></i>

@@ -259,19 +259,19 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, zoneClass, to
   }, []);
 
   return (
-    <div className={`${styles.trackContent} ${zoneClass || ''}`}>
-      <div className={styles.automationLane}>
-        <canvas
-          ref={canvasRef}
-          className={styles.automationCanvas}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onContextMenu={handleRightClick}
-        />
-        <span className={styles.automationValue}>{label}</span>
-      </div>
+    <div className={`${styles.automationLane} ${zoneClass || ''}`}>
+      <canvas
+        ref={canvasRef}
+        className={styles.automationCanvas}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onContextMenu={handleRightClick}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => e.preventDefault()}
+      />
+      {label && <span className={styles.automationValue}>{label}</span>}
     </div>
   );
 };
@@ -612,8 +612,7 @@ const DO1 = () => {
                 <span className={styles.legendDot} style={{ background: '#2E75B6', marginLeft: 8 }} /> CFG
               </div>
             </div>
-            <div className={`${styles.trackContent} ${styles.trackContentTall}`} style={{ position: 'relative' }}>
-              {/* Mask layer (0-1, scaled to top third visually) */}
+            <div className={styles.automationUnified}>
               <AutomationLane
                 points={maskPoints}
                 setPoints={setMaskPoints}
@@ -624,8 +623,7 @@ const DO1 = () => {
                 totalDuration={defaultDuration}
                 tool={automationTool}
               />
-              {/* CFG overlaid — rendered as a second pass with pointer-events when not hovering mask points */}
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none' }}>
+              <div className={styles.automationOverlay}>
                 <AutomationLane
                   points={cfgPoints}
                   setPoints={setCfgPoints}
@@ -637,7 +635,6 @@ const DO1 = () => {
                   tool={automationTool}
                 />
               </div>
-              <span className={styles.automationValue}>Mask + CFG</span>
             </div>
           </div>
         )}
