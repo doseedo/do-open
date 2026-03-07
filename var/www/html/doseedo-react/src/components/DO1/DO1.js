@@ -100,8 +100,10 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, zoneClass, to
     ctx.lineTo(timeToX(last.time, w), h);
     ctx.lineTo(timeToX(sorted[0].time, w), h);
     ctx.closePath();
-    ctx.fillStyle = color.replace(')', ', 0.06)').replace('rgb', 'rgba');
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = color;
     ctx.fill();
+    ctx.globalAlpha = 1.0;
 
     // Draw points (not edge points)
     sorted.forEach((pt) => {
