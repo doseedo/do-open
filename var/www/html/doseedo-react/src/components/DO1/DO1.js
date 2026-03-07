@@ -34,213 +34,152 @@ const LIBRARY_ITEMS = [
   { name: 'Tape Saturation', category: 'FX', duration: '1.8s' },
 ];
 
-// ─── Point-based Automation Lane (rewritten from AutomationWindow.js pattern) ───
-// Click to add point, drag to move, right-click to delete.
-// "draw" tool: freehand with smoothing.
 const LANE_HEIGHT = 64;
 
+// Draw a single curve (line + fill + points) on a canvas context
+function drawCurve(ctx, points, w, h, maxVal, color, totalDuration, selectedIdx) {
+  const sorted = [...points].sort((a, b) => a.time - b.time);
+  if (sorted.length === 0) return;
+
+  const tx = (t) => (t / totalDuration) * w;
+  const vy = (v) => h - (v / maxVal) * h;
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  sorted.forEach((pt, i) => {
+    const x = tx(pt.time);
+    const y = vy(pt.value);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Fill under
+  const last = sorted[sorted.length - 1];
+  ctx.lineTo(tx(last.time), h);
+  ctx.lineTo(tx(sorted[0].time), h);
+  ctx.closePath();
+  ctx.globalAlpha = 0.05;
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.globalAlpha = 1.0;
+
+  // Points (skip edge)
+  sorted.forEach((pt) => {
+    if (pt.isEdge) return;
+    const origIdx = points.indexOf(pt);
+    const x = tx(pt.time);
+    const y = vy(pt.value);
+    ctx.fillStyle = origIdx === selectedIdx ? '#ffffff' : color;
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  });
+}
+
+// Smooth and downsample a freehand path aggressively
+function smoothPath(rawPath, targetPoints) {
+  if (rawPath.length < 3) return rawPath;
+  const target = targetPoints || 12;
+  // Downsample to target number of points
+  const step = Math.max(1, Math.floor(rawPath.length / target));
+  const sampled = [];
+  for (let i = 0; i < rawPath.length; i += step) sampled.push(rawPath[i]);
+  if (sampled[sampled.length - 1] !== rawPath[rawPath.length - 1]) sampled.push(rawPath[rawPath.length - 1]);
+  // Three passes of moving-average smoothing
+  let result = sampled;
+  for (let pass = 0; pass < 3; pass++) {
+    result = result.map((pt, i) => {
+      if (i === 0 || i === result.length - 1) return pt;
+      const prev = result[i - 1];
+      const next = result[i + 1];
+      return { time: (prev.time + pt.time + next.time) / 3, value: (prev.value + pt.value + next.value) / 3 };
+    });
+  }
+  return result;
+}
+
+// ─── Single-curve Automation Lane ───────────────────────────────
 const AutomationLane = ({ points, setPoints, maxVal, color, label, totalDuration, tool }) => {
   const canvasRef = useRef(null);
-  const containerRef = useRef(null);
   const [selectedIdx, setSelectedIdx] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const isDrawingRef = useRef(false);
   const drawPathRef = useRef([]);
-  const widthRef = useRef(400);
 
-  const POINT_RADIUS = 6;
-  const GRAB_THRESHOLD = 15;
-
-  // Coordinate conversions
-  const valToY = useCallback((val) => {
-    const h = LANE_HEIGHT;
-    return h - (val / maxVal) * h;
-  }, [maxVal]);
-
-  const yToVal = useCallback((y) => {
-    const h = LANE_HEIGHT;
-    return Math.max(0, Math.min(maxVal, (1 - y / h) * maxVal));
-  }, [maxVal]);
-
-  const timeToX = useCallback((t) => {
-    return (t / totalDuration) * widthRef.current;
-  }, [totalDuration]);
-
-  const xToTime = useCallback((x) => {
-    return Math.max(0, Math.min(totalDuration, (x / widthRef.current) * totalDuration));
-  }, [totalDuration]);
-
-  // Resize canvas to match container
-  const resizeCanvas = useCallback(() => {
+  const resizeAndDraw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
-
-    // Set display size explicitly via inline style
     canvas.style.width = '100%';
     canvas.style.height = LANE_HEIGHT + 'px';
-
-    // Measure actual rendered size
     const rect = canvas.getBoundingClientRect();
-    widthRef.current = rect.width;
-
-    // Set canvas buffer resolution
+    if (rect.width === 0) return;
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
-
-    // Scale context
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }, []);
+    ctx.clearRect(0, 0, rect.width, rect.height);
 
-  // Draw the automation lane
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    const w = canvas.offsetWidth;
-    const h = canvas.offsetHeight;
-
-    if (w === 0 || h === 0) return;
-
-    ctx.clearRect(0, 0, w, h);
-
-    // Grid lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+    // Grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
     ctx.lineWidth = 1;
     const divs = maxVal <= 1 ? 4 : 6;
     for (let i = 1; i < divs; i++) {
-      const y = (h / divs) * i;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
+      const y = (rect.height / divs) * i;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(rect.width, y); ctx.stroke();
     }
 
-    // Sort points by time
-    const sorted = [...points].sort((a, b) => a.time - b.time);
-    if (sorted.length === 0) return;
+    drawCurve(ctx, points, rect.width, rect.height, maxVal, color, totalDuration, selectedIdx);
+  }, [points, maxVal, color, totalDuration, selectedIdx]);
 
-    // Draw automation line
-    ctx.beginPath();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    sorted.forEach((pt, i) => {
-      const x = (pt.time / totalDuration) * w;
-      const y = h - (pt.value / maxVal) * h;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-
-    // Fill under curve (very subtle)
-    const lastPt = sorted[sorted.length - 1];
-    ctx.lineTo((lastPt.time / totalDuration) * w, h);
-    ctx.lineTo((sorted[0].time / totalDuration) * w, h);
-    ctx.closePath();
-    ctx.globalAlpha = 0.05;
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.globalAlpha = 1.0;
-
-    // Draw points (skip edge points)
-    sorted.forEach((pt) => {
-      if (pt.isEdge) return;
-      const origIdx = points.indexOf(pt);
-      const x = (pt.time / totalDuration) * w;
-      const y = h - (pt.value / maxVal) * h;
-      const isActive = origIdx === selectedIdx;
-
-      ctx.fillStyle = isActive ? '#ffffff' : color;
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(x, y, POINT_RADIUS, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    });
-  }, [points, color, maxVal, totalDuration, selectedIdx]);
-
-  // Initialize: resize then draw
   useEffect(() => {
-    // Use double rAF to ensure layout is complete (same as AutomationWindow.js)
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        resizeCanvas();
-        draw();
-      });
-    });
-  }, [resizeCanvas, draw]);
+    requestAnimationFrame(() => requestAnimationFrame(resizeAndDraw));
+  }, [resizeAndDraw]);
 
-  // Redraw when points or selection change
   useEffect(() => {
-    draw();
-  }, [draw]);
+    window.addEventListener('resize', resizeAndDraw);
+    return () => window.removeEventListener('resize', resizeAndDraw);
+  }, [resizeAndDraw]);
 
-  // Handle window resize
-  useEffect(() => {
-    const handleResize = () => {
-      resizeCanvas();
-      draw();
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [resizeCanvas, draw]);
-
-  // Get mouse coords relative to canvas
   const getCoords = (e) => {
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
+    const rect = canvasRef.current.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  // Find a point near the cursor
-  const findPoint = (mx, my) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return -1;
-    const w = canvas.offsetWidth;
-    const h = canvas.offsetHeight;
-
-    for (let i = 0; i < points.length; i++) {
-      const pt = points[i];
-      if (pt.isEdge) continue;
-      const px = (pt.time / totalDuration) * w;
-      const py = h - (pt.value / maxVal) * h;
-      const dist = Math.sqrt((mx - px) ** 2 + (my - py) ** 2);
-      if (dist <= GRAB_THRESHOLD) return i;
-    }
-    return -1;
+  const getSize = () => {
+    const c = canvasRef.current;
+    return { w: c.offsetWidth, h: c.offsetHeight };
   };
 
-  // Smooth freehand path
-  const smoothPath = (rawPath) => {
-    if (rawPath.length < 3) return rawPath;
-    const step = Math.max(1, Math.floor(rawPath.length / Math.max(5, rawPath.length / 3)));
-    const sampled = [];
-    for (let i = 0; i < rawPath.length; i += step) sampled.push(rawPath[i]);
-    if (sampled[sampled.length - 1] !== rawPath[rawPath.length - 1]) sampled.push(rawPath[rawPath.length - 1]);
-    return sampled.map((pt, i) => {
-      if (i === 0 || i === sampled.length - 1) return pt;
-      const prev = sampled[i - 1];
-      const next = sampled[i + 1];
-      return { time: pt.time, value: (prev.value + pt.value + next.value) / 3 };
-    });
+  const findPoint = (mx, my) => {
+    const { w, h } = getSize();
+    for (let i = 0; i < points.length; i++) {
+      if (points[i].isEdge) continue;
+      const px = (points[i].time / totalDuration) * w;
+      const py = h - (points[i].value / maxVal) * h;
+      if (Math.sqrt((mx - px) ** 2 + (my - py) ** 2) <= 15) return i;
+    }
+    return -1;
   };
 
   const handleMouseDown = (e) => {
     if (e.button === 2) return;
     const { x, y } = getCoords(e);
-    const w = canvasRef.current.offsetWidth;
-    const h = canvasRef.current.offsetHeight;
+    const { w, h } = getSize();
+    if (w === 0) return;
 
     if (tool === 'draw') {
       isDrawingRef.current = true;
-      drawPathRef.current = [{ time: xToTime(x), value: yToVal(y) }];
+      drawPathRef.current = [{ time: (x / w) * totalDuration, value: Math.max(0, Math.min(maxVal, (1 - y / h) * maxVal)) }];
       return;
     }
 
-    // Point tool
     const idx = findPoint(x, y);
     if (idx !== -1) {
       setSelectedIdx(idx);
@@ -249,45 +188,40 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, totalDuration
     } else {
       const time = (x / w) * totalDuration;
       const value = Math.max(0, Math.min(maxVal, (1 - y / h) * maxVal));
-      const newPoints = [...points, { time, value, isEdge: false }].sort((a, b) => a.time - b.time);
-      setPoints(newPoints);
+      setPoints([...points, { time, value, isEdge: false }].sort((a, b) => a.time - b.time));
     }
   };
 
   const handleMouseMove = (e) => {
     const { x, y } = getCoords(e);
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const w = canvas.offsetWidth;
-    const h = canvas.offsetHeight;
+    const { w, h } = getSize();
+    if (w === 0) return;
 
     if (tool === 'draw' && isDrawingRef.current) {
-      drawPathRef.current.push({ time: xToTime(x), value: yToVal(y) });
+      drawPathRef.current.push({ time: (x / w) * totalDuration, value: Math.max(0, Math.min(maxVal, (1 - y / h) * maxVal)) });
+      // Live preview with aggressive downsampling
       const path = drawPathRef.current;
       const minT = Math.min(path[0].time, path[path.length - 1].time);
       const maxT = Math.max(path[0].time, path[path.length - 1].time);
       const kept = points.filter(p => p.isEdge || p.time < minT || p.time > maxT);
-      const preview = [...kept, ...path.map(p => ({ ...p, isEdge: false }))].sort((a, b) => a.time - b.time);
-      setPoints(preview);
+      // Show smoothed preview
+      const smoothed = smoothPath(path, 20).map(p => ({ ...p, isEdge: false }));
+      setPoints([...kept, ...smoothed].sort((a, b) => a.time - b.time));
       return;
     }
 
     if (isDragging && selectedIdx !== null) {
       const time = Math.max(0, Math.min(totalDuration, (x / w) * totalDuration));
       const value = Math.max(0, Math.min(maxVal, (1 - y / h) * maxVal));
-
-      const updatedPoints = points.map((pt, i) =>
-        i === selectedIdx ? { ...pt, time, value } : pt
-      );
-      const sorted = [...updatedPoints].sort((a, b) => a.time - b.time);
-      const draggedPt = updatedPoints[selectedIdx];
+      const updated = points.map((pt, i) => i === selectedIdx ? { ...pt, time, value } : pt);
+      const sorted = [...updated].sort((a, b) => a.time - b.time);
+      const draggedPt = updated[selectedIdx];
       const newIdx = sorted.findIndex(p => p.time === draggedPt.time && p.value === draggedPt.value);
       setSelectedIdx(newIdx);
       setPoints(sorted);
     } else if (!isDragging) {
-      // Hover cursor
       const idx = findPoint(x, y);
-      canvas.style.cursor = idx !== -1 ? 'grab' : (tool === 'draw' ? 'crosshair' : 'crosshair');
+      canvasRef.current.style.cursor = idx !== -1 ? 'grab' : 'crosshair';
     }
   };
 
@@ -299,7 +233,7 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, totalDuration
         const minT = Math.min(path[0].time, path[path.length - 1].time);
         const maxT = Math.max(path[0].time, path[path.length - 1].time);
         const kept = points.filter(p => p.isEdge || p.time < minT || p.time > maxT);
-        const smoothed = smoothPath(path).map(p => ({ ...p, isEdge: false }));
+        const smoothed = smoothPath(path, 10).map(p => ({ ...p, isEdge: false }));
         setPoints([...kept, ...smoothed].sort((a, b) => a.time - b.time));
       }
       drawPathRef.current = [];
@@ -319,31 +253,17 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, totalDuration
     }
   };
 
-  // Global mouseup to catch drags that leave the canvas
   useEffect(() => {
-    const up = () => {
-      setIsDragging(false);
-      setSelectedIdx(null);
-      isDrawingRef.current = false;
-    };
+    const up = () => { setIsDragging(false); setSelectedIdx(null); isDrawingRef.current = false; };
     window.addEventListener('mouseup', up);
     return () => window.removeEventListener('mouseup', up);
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        flex: 1,
-        minWidth: 0,
-        height: LANE_HEIGHT + 'px',
-        position: 'relative',
-        background: '#12121A',
-        cursor: 'crosshair',
-      }}
-    >
+    <div style={{ flex: 1, minWidth: 0, height: LANE_HEIGHT, position: 'relative', background: '#12121A' }}>
       <canvas
         ref={canvasRef}
+        style={{ cursor: 'crosshair' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -355,26 +275,248 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, totalDuration
   );
 };
 
+// ─── Unified dual-curve Automation Lane (mask + cfg on one canvas) ──
+const UnifiedAutomationLane = ({
+  maskPoints, setMaskPoints, cfgPoints, setCfgPoints, totalDuration, tool,
+}) => {
+  const canvasRef = useRef(null);
+  // Which curve is active: 'mask' or 'cfg'
+  const [activeCurve, setActiveCurve] = useState('mask');
+  const [selectedIdx, setSelectedIdx] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const isDrawingRef = useRef(false);
+  const drawPathRef = useRef([]);
+
+  const activePoints = activeCurve === 'mask' ? maskPoints : cfgPoints;
+  const setActivePoints = activeCurve === 'mask' ? setMaskPoints : setCfgPoints;
+  const activeMaxVal = activeCurve === 'mask' ? 1.0 : 3.0;
+  const activeColor = activeCurve === 'mask' ? '#D4A843' : '#2E75B6';
+  const inactivePoints = activeCurve === 'mask' ? cfgPoints : maskPoints;
+  const inactiveMaxVal = activeCurve === 'mask' ? 3.0 : 1.0;
+  const inactiveColor = activeCurve === 'mask' ? '#2E75B6' : '#D4A843';
+
+  const resizeAndDraw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = '100%';
+    canvas.style.height = LANE_HEIGHT + 'px';
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0) return;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    // Grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 4; i++) {
+      const y = (rect.height / 4) * i;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(rect.width, y); ctx.stroke();
+    }
+
+    // Draw inactive curve first (dimmer)
+    ctx.globalAlpha = 0.4;
+    drawCurve(ctx, inactivePoints, rect.width, rect.height, inactiveMaxVal, inactiveColor, totalDuration, -1);
+    ctx.globalAlpha = 1.0;
+
+    // Draw active curve on top
+    drawCurve(ctx, activePoints, rect.width, rect.height, activeMaxVal, activeColor, totalDuration, selectedIdx);
+  }, [activePoints, inactivePoints, activeMaxVal, inactiveMaxVal, activeColor, inactiveColor, totalDuration, selectedIdx]);
+
+  useEffect(() => {
+    requestAnimationFrame(() => requestAnimationFrame(resizeAndDraw));
+  }, [resizeAndDraw]);
+
+  useEffect(() => {
+    window.addEventListener('resize', resizeAndDraw);
+    return () => window.removeEventListener('resize', resizeAndDraw);
+  }, [resizeAndDraw]);
+
+  const getCoords = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const getSize = () => {
+    const c = canvasRef.current;
+    return { w: c.offsetWidth, h: c.offsetHeight };
+  };
+
+  // Find point in a specific curve
+  const findPointIn = (pts, maxVal, mx, my) => {
+    const { w, h } = getSize();
+    for (let i = 0; i < pts.length; i++) {
+      if (pts[i].isEdge) continue;
+      const px = (pts[i].time / totalDuration) * w;
+      const py = h - (pts[i].value / maxVal) * h;
+      if (Math.sqrt((mx - px) ** 2 + (my - py) ** 2) <= 15) return i;
+    }
+    return -1;
+  };
+
+  const handleMouseDown = (e) => {
+    if (e.button === 2) return;
+    const { x, y } = getCoords(e);
+    const { w, h } = getSize();
+    if (w === 0) return;
+
+    if (tool === 'draw') {
+      isDrawingRef.current = true;
+      drawPathRef.current = [{ time: (x / w) * totalDuration, value: Math.max(0, Math.min(activeMaxVal, (1 - y / h) * activeMaxVal)) }];
+      return;
+    }
+
+    // Check active curve first, then inactive
+    let idx = findPointIn(activePoints, activeMaxVal, x, y);
+    if (idx !== -1) {
+      setSelectedIdx(idx);
+      setIsDragging(true);
+      canvasRef.current.style.cursor = 'grabbing';
+      return;
+    }
+
+    // Check if clicking near the inactive curve's points - switch active curve
+    const inIdx = findPointIn(inactivePoints, inactiveMaxVal, x, y);
+    if (inIdx !== -1) {
+      setActiveCurve(activeCurve === 'mask' ? 'cfg' : 'mask');
+      setSelectedIdx(inIdx);
+      setIsDragging(true);
+      canvasRef.current.style.cursor = 'grabbing';
+      return;
+    }
+
+    // Add new point to active curve
+    const time = (x / w) * totalDuration;
+    const value = Math.max(0, Math.min(activeMaxVal, (1 - y / h) * activeMaxVal));
+    setActivePoints([...activePoints, { time, value, isEdge: false }].sort((a, b) => a.time - b.time));
+  };
+
+  const handleMouseMove = (e) => {
+    const { x, y } = getCoords(e);
+    const { w, h } = getSize();
+    if (w === 0) return;
+
+    const pts = activeCurve === 'mask' ? maskPoints : cfgPoints;
+    const setPts = activeCurve === 'mask' ? setMaskPoints : setCfgPoints;
+    const mv = activeCurve === 'mask' ? 1.0 : 3.0;
+
+    if (tool === 'draw' && isDrawingRef.current) {
+      drawPathRef.current.push({ time: (x / w) * totalDuration, value: Math.max(0, Math.min(mv, (1 - y / h) * mv)) });
+      const path = drawPathRef.current;
+      const minT = Math.min(path[0].time, path[path.length - 1].time);
+      const maxT = Math.max(path[0].time, path[path.length - 1].time);
+      const kept = pts.filter(p => p.isEdge || p.time < minT || p.time > maxT);
+      const smoothed = smoothPath(path, 20).map(p => ({ ...p, isEdge: false }));
+      setPts([...kept, ...smoothed].sort((a, b) => a.time - b.time));
+      return;
+    }
+
+    if (isDragging && selectedIdx !== null) {
+      const time = Math.max(0, Math.min(totalDuration, (x / w) * totalDuration));
+      const value = Math.max(0, Math.min(mv, (1 - y / h) * mv));
+      const updated = pts.map((pt, i) => i === selectedIdx ? { ...pt, time, value } : pt);
+      const sorted = [...updated].sort((a, b) => a.time - b.time);
+      const draggedPt = updated[selectedIdx];
+      const newIdx = sorted.findIndex(p => p.time === draggedPt.time && p.value === draggedPt.value);
+      setSelectedIdx(newIdx);
+      setPts(sorted);
+    } else if (!isDragging) {
+      const idx = findPointIn(pts, mv, x, y);
+      canvasRef.current.style.cursor = idx !== -1 ? 'grab' : 'crosshair';
+    }
+  };
+
+  const handleMouseUp = () => {
+    const pts = activeCurve === 'mask' ? maskPoints : cfgPoints;
+    const setPts = activeCurve === 'mask' ? setMaskPoints : setCfgPoints;
+    const mv = activeCurve === 'mask' ? 1.0 : 3.0;
+
+    if (tool === 'draw' && isDrawingRef.current) {
+      isDrawingRef.current = false;
+      const path = drawPathRef.current;
+      if (path.length > 2) {
+        const minT = Math.min(path[0].time, path[path.length - 1].time);
+        const maxT = Math.max(path[0].time, path[path.length - 1].time);
+        const kept = pts.filter(p => p.isEdge || p.time < minT || p.time > maxT);
+        const smoothed = smoothPath(path, 10).map(p => ({ ...p, isEdge: false }));
+        setPts([...kept, ...smoothed].sort((a, b) => a.time - b.time));
+      }
+      drawPathRef.current = [];
+      return;
+    }
+    setIsDragging(false);
+    setSelectedIdx(null);
+    if (canvasRef.current) canvasRef.current.style.cursor = 'crosshair';
+  };
+
+  const handleRightClick = (e) => {
+    e.preventDefault();
+    const { x, y } = getCoords(e);
+    const pts = activeCurve === 'mask' ? maskPoints : cfgPoints;
+    const setPts = activeCurve === 'mask' ? setMaskPoints : setCfgPoints;
+    const mv = activeCurve === 'mask' ? 1.0 : 3.0;
+    const idx = findPointIn(pts, mv, x, y);
+    if (idx !== -1 && !pts[idx].isEdge) {
+      setPts(pts.filter((_, i) => i !== idx));
+    }
+  };
+
+  useEffect(() => {
+    const up = () => { setIsDragging(false); setSelectedIdx(null); isDrawingRef.current = false; };
+    window.addEventListener('mouseup', up);
+    return () => window.removeEventListener('mouseup', up);
+  }, []);
+
+  return (
+    <div style={{ flex: 1, minWidth: 0, height: LANE_HEIGHT, position: 'relative', background: '#12121A' }}>
+      <canvas
+        ref={canvasRef}
+        style={{ cursor: 'crosshair' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onContextMenu={handleRightClick}
+      />
+      {/* Toggle which curve is active */}
+      <div style={{ position: 'absolute', top: 4, right: 8, display: 'flex', gap: 6, pointerEvents: 'auto' }}>
+        <button
+          onClick={() => setActiveCurve('mask')}
+          style={{
+            fontSize: 10, padding: '2px 6px', borderRadius: 3, border: 'none', cursor: 'pointer',
+            background: activeCurve === 'mask' ? 'rgba(212,168,67,0.3)' : 'rgba(255,255,255,0.06)',
+            color: activeCurve === 'mask' ? '#D4A843' : 'rgba(200,200,208,0.5)',
+          }}
+        >Mask</button>
+        <button
+          onClick={() => setActiveCurve('cfg')}
+          style={{
+            fontSize: 10, padding: '2px 6px', borderRadius: 3, border: 'none', cursor: 'pointer',
+            background: activeCurve === 'cfg' ? 'rgba(46,117,182,0.3)' : 'rgba(255,255,255,0.06)',
+            color: activeCurve === 'cfg' ? '#2E75B6' : 'rgba(200,200,208,0.5)',
+          }}
+        >CFG</button>
+      </div>
+    </div>
+  );
+};
+
 // ─── Main DO1 Component ───────────────────────────────────────
 const DO1 = () => {
-  // Transport
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
   const [bpm, setBpm] = useState(120);
   const [currentTime, setCurrentTime] = useState(0);
-
-  // Tracks
   const [xCondFile, setXCondFile] = useState(null);
   const [xCondType, setXCondType] = useState('audio');
   const [xRefFile, setXRefFile] = useState(null);
   const [outputReady, setOutputReady] = useState(false);
-
-  // Automation: point-based
   const defaultDuration = 30;
   const [splitLanes, setSplitLanes] = useState(false);
-  const [automationTool, setAutomationTool] = useState('point'); // 'point' | 'draw'
-
-  // Unified lane: mask points (value 0-1) and cfg points (value 0-3)
+  const [automationTool, setAutomationTool] = useState('point');
   const [maskPoints, setMaskPoints] = useState([
     { time: 0, value: 1.0, isEdge: true },
     { time: defaultDuration, value: 1.0, isEdge: true },
@@ -383,21 +525,15 @@ const DO1 = () => {
     { time: 0, value: 1.0, isEdge: true },
     { time: defaultDuration, value: 1.0, isEdge: true },
   ]);
-
-  // Generation
   const [seed, setSeed] = useState(42);
   const [seedLocked, setSeedLocked] = useState(false);
   const [steps, setSteps] = useState(50);
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [selectedPreset, setSelectedPreset] = useState(null);
-
-  // UI
   const [activeTab, setActiveTab] = useState('presets');
   const [libraryCategory, setLibraryCategory] = useState('All');
   const [librarySearch, setLibrarySearch] = useState('');
-
-  // Waveform canvases
   const xCondCanvasRef = useRef(null);
   const outputCanvasRef = useRef(null);
 
@@ -408,7 +544,6 @@ const DO1 = () => {
     return `${m}:${String(s).padStart(2, '0')}.${String(ms).padStart(2, '0')}`;
   };
 
-  // Draw waveform placeholder
   const drawWaveform = useCallback((canvas, color, hasData) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -430,7 +565,6 @@ const DO1 = () => {
 
   useEffect(() => { drawWaveform(xCondCanvasRef.current, 'rgba(74, 155, 142, 0.6)', !!xCondFile); }, [xCondFile, drawWaveform]);
   useEffect(() => { drawWaveform(outputCanvasRef.current, 'rgba(212, 168, 67, 0.6)', outputReady); }, [outputReady, drawWaveform]);
-
   useEffect(() => {
     const handleResize = () => {
       drawWaveform(xCondCanvasRef.current, 'rgba(74, 155, 142, 0.6)', !!xCondFile);
@@ -440,7 +574,6 @@ const DO1 = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, [xCondFile, outputReady, drawWaveform]);
 
-  // File handling
   const handleDrop = useCallback((e, target) => {
     e.preventDefault();
     const files = e.dataTransfer?.files;
@@ -473,7 +606,6 @@ const DO1 = () => {
     input.click();
   }, []);
 
-  // Apply preset
   const applyPreset = useCallback((preset) => {
     setSelectedPreset(preset.name);
     if (preset.mask !== null) {
@@ -488,7 +620,6 @@ const DO1 = () => {
     ]);
   }, [defaultDuration]);
 
-  // Generate (mock)
   const handleGenerate = useCallback(async () => {
     if (generating) return;
     setGenerating(true);
@@ -519,26 +650,15 @@ const DO1 = () => {
 
   return (
     <div className={styles.do1}>
-      {/* Header */}
       <div className={styles.header}>
         <h1 className={styles.title}>DO<span className={styles.titleAccent}>1</span></h1>
         <div className={styles.headerControls}>
-          <button
-            className={generateBtnClass}
-            onClick={handleGenerate}
-            disabled={!canGenerate}
-            title={!xCondFile ? 'Load audio or MIDI into Input track' : 'Generate'}
-          >
-            {generating ? (
-              <><i className="fa-solid fa-spinner fa-spin" /> {Math.round(progress)}%</>
-            ) : (
-              <><i className="fa-solid fa-bolt" /> Generate</>
-            )}
+          <button className={generateBtnClass} onClick={handleGenerate} disabled={!canGenerate} title={!xCondFile ? 'Load audio or MIDI into Input track' : 'Generate'}>
+            {generating ? (<><i className="fa-solid fa-spinner fa-spin" /> {Math.round(progress)}%</>) : (<><i className="fa-solid fa-bolt" /> Generate</>)}
           </button>
         </div>
       </div>
 
-      {/* Transport Bar */}
       <div className={styles.transport}>
         <button className={`${styles.transportBtn} ${isPlaying ? styles.transportBtnActive : ''}`} onClick={() => setIsPlaying(!isPlaying)}>
           <i className={`fa-solid ${isPlaying ? 'fa-pause' : 'fa-play'}`} />
@@ -555,34 +675,17 @@ const DO1 = () => {
           <span>BPM</span>
         </div>
         <div className={styles.transportSpacer} />
-
-        {/* Automation tool selector */}
         <div className={styles.toolSelector}>
-          <button
-            className={`${styles.transportBtn} ${automationTool === 'point' ? styles.transportBtnActive : ''}`}
-            onClick={() => setAutomationTool('point')}
-            title="Point tool: click to add, drag to move, right-click to delete"
-          >
+          <button className={`${styles.transportBtn} ${automationTool === 'point' ? styles.transportBtnActive : ''}`} onClick={() => setAutomationTool('point')} title="Point tool: click to add, drag to move, right-click to delete">
             <i className="fa-solid fa-circle-dot" />
           </button>
-          <button
-            className={`${styles.transportBtn} ${automationTool === 'draw' ? styles.transportBtnActive : ''}`}
-            onClick={() => setAutomationTool('draw')}
-            title="Draw tool: freehand draw (smoothed)"
-          >
+          <button className={`${styles.transportBtn} ${automationTool === 'draw' ? styles.transportBtnActive : ''}`} onClick={() => setAutomationTool('draw')} title="Draw tool: freehand draw (smoothed)">
             <i className="fa-solid fa-pencil" />
           </button>
         </div>
-
-        {/* Split/unified toggle */}
-        <button
-          className={`${styles.transportBtn} ${splitLanes ? styles.transportBtnActive : ''}`}
-          onClick={() => setSplitLanes(!splitLanes)}
-          title={splitLanes ? 'Merge Mask & CFG lanes' : 'Split Mask & CFG into separate lanes'}
-        >
+        <button className={`${styles.transportBtn} ${splitLanes ? styles.transportBtnActive : ''}`} onClick={() => setSplitLanes(!splitLanes)} title={splitLanes ? 'Merge Mask & CFG lanes' : 'Split Mask & CFG into separate lanes'}>
           <i className={`fa-solid ${splitLanes ? 'fa-compress' : 'fa-expand'}`} />
         </button>
-
         {generating && (
           <div className={styles.progressBar} style={{ width: 200 }}>
             <div className={styles.progressFill} style={{ width: `${progress}%` }} />
@@ -590,20 +693,15 @@ const DO1 = () => {
         )}
       </div>
 
-      {/* Track Workspace */}
       <div className={styles.workspace}>
-        {/* x_cond Track */}
+        {/* Input Track */}
         <div className={styles.trackRow}>
           <div className={styles.trackHeader}>
             <div className={styles.trackLabel}>Input</div>
             <div className={styles.trackSublabel}>{xCondFile ? xCondFile.name : xCondType === 'midi' ? 'MIDI' : 'Audio'}</div>
             <div className={styles.trackHeaderControls}>
-              <button className={`${styles.trackSmallBtn} ${xCondType === 'audio' ? styles.trackSmallBtnActive : ''}`} onClick={() => setXCondType('audio')} title="Audio mode">
-                <i className="fa-solid fa-wave-square" />
-              </button>
-              <button className={`${styles.trackSmallBtn} ${xCondType === 'midi' ? styles.trackSmallBtnActive : ''}`} onClick={() => setXCondType('midi')} title="MIDI mode">
-                <i className="fa-solid fa-music" />
-              </button>
+              <button className={`${styles.trackSmallBtn} ${xCondType === 'audio' ? styles.trackSmallBtnActive : ''}`} onClick={() => setXCondType('audio')} title="Audio mode"><i className="fa-solid fa-wave-square" /></button>
+              <button className={`${styles.trackSmallBtn} ${xCondType === 'midi' ? styles.trackSmallBtnActive : ''}`} onClick={() => setXCondType('midi')} title="MIDI mode"><i className="fa-solid fa-music" /></button>
               <button className={styles.trackSmallBtn} title="Mute">M</button>
               <button className={styles.trackSmallBtn} title="Solo">S</button>
             </div>
@@ -622,7 +720,7 @@ const DO1 = () => {
           </div>
         </div>
 
-        {/* x_ref Track */}
+        {/* Reference Track */}
         <div className={styles.trackRow}>
           <div className={styles.trackHeader}>
             <div className={styles.trackLabel}>Reference</div>
@@ -642,44 +740,25 @@ const DO1 = () => {
           </div>
         </div>
 
-        {/* Automation Lanes */}
+        {/* Automation */}
         {splitLanes ? (
           <>
-            {/* Separate Mask Lane */}
             <div className={styles.trackRow}>
               <div className={styles.trackHeader}>
                 <div className={styles.trackLabel}>Mask</div>
                 <div className={styles.trackSublabel}>0.0 - 1.0</div>
               </div>
-              <AutomationLane
-                points={maskPoints}
-                setPoints={setMaskPoints}
-                maxVal={1.0}
-                color="#D4A843"
-                label="Mask"
-                totalDuration={defaultDuration}
-                tool={automationTool}
-              />
+              <AutomationLane points={maskPoints} setPoints={setMaskPoints} maxVal={1.0} color="#D4A843" label="Mask" totalDuration={defaultDuration} tool={automationTool} />
             </div>
-            {/* Separate CFG Lane */}
             <div className={styles.trackRow}>
               <div className={styles.trackHeader}>
                 <div className={styles.trackLabel}>CFG Scale</div>
                 <div className={styles.trackSublabel}>0.0 - 3.0</div>
               </div>
-              <AutomationLane
-                points={cfgPoints}
-                setPoints={setCfgPoints}
-                maxVal={3.0}
-                color="#2E75B6"
-                label="CFG"
-                totalDuration={defaultDuration}
-                tool={automationTool}
-              />
+              <AutomationLane points={cfgPoints} setPoints={setCfgPoints} maxVal={3.0} color="#2E75B6" label="CFG" totalDuration={defaultDuration} tool={automationTool} />
             </div>
           </>
         ) : (
-          /* Unified Mask + CFG Lane */
           <div className={styles.trackRow}>
             <div className={styles.trackHeader}>
               <div className={styles.trackLabel}>Automation</div>
@@ -689,28 +768,11 @@ const DO1 = () => {
                 <span className={styles.legendDot} style={{ background: '#2E75B6', marginLeft: 8 }} /> CFG
               </div>
             </div>
-            <div style={{ flex: 1, position: 'relative', height: LANE_HEIGHT + 'px', minWidth: 0 }}>
-              <AutomationLane
-                points={maskPoints}
-                setPoints={setMaskPoints}
-                maxVal={1.0}
-                color="#D4A843"
-                label=""
-                totalDuration={defaultDuration}
-                tool={automationTool}
-              />
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none' }}>
-                <AutomationLane
-                  points={cfgPoints}
-                  setPoints={setCfgPoints}
-                  maxVal={3.0}
-                  color="#2E75B6"
-                  label=""
-                  totalDuration={defaultDuration}
-                  tool={automationTool}
-                />
-              </div>
-            </div>
+            <UnifiedAutomationLane
+              maskPoints={maskPoints} setMaskPoints={setMaskPoints}
+              cfgPoints={cfgPoints} setCfgPoints={setCfgPoints}
+              totalDuration={defaultDuration} tool={automationTool}
+            />
           </div>
         )}
 
@@ -723,9 +785,7 @@ const DO1 = () => {
               <button className={styles.trackSmallBtn} title="Mute">M</button>
               <button className={styles.trackSmallBtn} title="Solo">S</button>
               {outputReady && (
-                <button className={styles.trackSmallBtn} onClick={handleGenerate} title="Re-generate (new seed)">
-                  <i className="fa-solid fa-rotate" />
-                </button>
+                <button className={styles.trackSmallBtn} onClick={handleGenerate} title="Re-generate (new seed)"><i className="fa-solid fa-rotate" /></button>
               )}
             </div>
           </div>
@@ -756,7 +816,6 @@ const DO1 = () => {
             </button>
           ))}
         </div>
-
         <div className={styles.bottomContent}>
           {activeTab === 'presets' && (
             <div className={styles.presetsGrid}>
@@ -772,7 +831,6 @@ const DO1 = () => {
               ))}
             </div>
           )}
-
           {activeTab === 'properties' && (
             <div className={styles.propertiesGrid}>
               <div className={styles.propertyItem}>
@@ -799,7 +857,6 @@ const DO1 = () => {
               </div>
             </div>
           )}
-
           {activeTab === 'library' && (
             <>
               <div className={styles.librarySearch}>
