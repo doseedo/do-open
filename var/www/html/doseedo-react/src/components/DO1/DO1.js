@@ -59,8 +59,10 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, zoneClass, to
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const w = canvas.offsetWidth;
-    const h = canvas.offsetHeight;
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+    if (w === 0 || h === 0) return;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
@@ -129,16 +131,21 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, zoneClass, to
     return () => window.removeEventListener('resize', handleResize);
   }, [draw]);
 
+  const getCanvasSize = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { w: 0, h: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return { w: rect.width, h: rect.height };
+  };
+
   const getCoords = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
   const findPoint = (mx, my) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return -1;
-    const w = canvas.offsetWidth;
-    const h = canvas.offsetHeight;
+    const { w, h } = getCanvasSize();
+    if (w === 0 || h === 0) return -1;
     for (let i = 0; i < points.length; i++) {
       if (points[i].isEdge) continue;
       const px = timeToX(points[i].time, w);
@@ -167,11 +174,12 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, zoneClass, to
   };
 
   const handleMouseDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (e.button === 2) return; // right-click handled separately
     const { x, y } = getCoords(e);
-    const canvas = canvasRef.current;
-    const w = canvas.offsetWidth;
-    const h = canvas.offsetHeight;
+    const { w, h } = getCanvasSize();
+    if (w === 0 || h === 0) return;
 
     if (tool === 'draw') {
       isDrawingRef.current = true;
@@ -183,7 +191,7 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, zoneClass, to
     const idx = findPoint(x, y);
     if (idx !== -1) {
       setDraggingIdx(idx);
-      canvas.style.cursor = 'grabbing';
+      canvasRef.current.style.cursor = 'grabbing';
     } else {
       const time = xToTime(x, w);
       const value = yToVal(y, h);
@@ -193,15 +201,13 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, zoneClass, to
   };
 
   const handleMouseMove = (e) => {
+    e.preventDefault();
     const { x, y } = getCoords(e);
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const w = canvas.offsetWidth;
-    const h = canvas.offsetHeight;
+    const { w, h } = getCanvasSize();
+    if (w === 0 || h === 0) return;
 
     if (tool === 'draw' && isDrawingRef.current) {
       drawPathRef.current.push({ time: xToTime(x, w), value: yToVal(y, h) });
-      // Live preview: replace non-edge points in drawn time range with path
       const path = drawPathRef.current;
       const minT = path[0].time;
       const maxT = path[path.length - 1].time;
@@ -223,7 +229,7 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, zoneClass, to
     } else {
       const idx = findPoint(x, y);
       setHoverIdx(idx !== -1 ? idx : null);
-      canvas.style.cursor = idx !== -1 ? 'grab' : (tool === 'draw' ? 'crosshair' : 'copy');
+      canvasRef.current.style.cursor = idx !== -1 ? 'grab' : (tool === 'draw' ? 'crosshair' : 'default');
     }
   };
 
@@ -242,11 +248,12 @@ const AutomationLane = ({ points, setPoints, maxVal, color, label, zoneClass, to
       return;
     }
     setDraggingIdx(null);
-    if (canvasRef.current) canvasRef.current.style.cursor = tool === 'draw' ? 'crosshair' : 'copy';
+    if (canvasRef.current) canvasRef.current.style.cursor = tool === 'draw' ? 'crosshair' : 'default';
   };
 
   const handleRightClick = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     const { x, y } = getCoords(e);
     const idx = findPoint(x, y);
     if (idx !== -1 && !points[idx].isEdge) {
