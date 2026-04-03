@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { useApp } from '../../context/AppContext';
 import styles from './ChatWindow.module.css';
 import { useAgentWebSocket } from './useAgentWebSocket';
-import SlashCommandPalette from './SlashCommandPalette';
 
 /**
  * ChatWindow — Full agent chatbot with streaming, tool execution, slash commands.
