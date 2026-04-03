@@ -465,8 +465,9 @@ location /media/audio/ {
 }
 
     location /register/ {
-        proxy_pass http://localhost:8001;
-        proxy_set_header Host $host;
+        proxy_pass https://doseedo-auth-wd7h2yezlq-uc.a.run.app;
+        proxy_ssl_server_name on;
+        proxy_set_header Host doseedo-auth-wd7h2yezlq-uc.a.run.app;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -485,8 +486,9 @@ location /media/audio/ {
 
 
     location /token {
-        proxy_pass http://localhost:8001;
-        proxy_set_header Host $host;
+        proxy_pass https://doseedo-auth-wd7h2yezlq-uc.a.run.app;
+        proxy_ssl_server_name on;
+        proxy_set_header Host doseedo-auth-wd7h2yezlq-uc.a.run.app;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -496,8 +498,9 @@ location /media/audio/ {
     }
 
     location /api/keys {
-        proxy_pass http://localhost:8001;
-        proxy_set_header Host $host;
+        proxy_pass https://doseedo-auth-wd7h2yezlq-uc.a.run.app;
+        proxy_ssl_server_name on;
+        proxy_set_header Host doseedo-auth-wd7h2yezlq-uc.a.run.app;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -507,8 +510,9 @@ location /media/audio/ {
     }
 
     location /verify-google-id-token/ {
-        proxy_pass http://localhost:8001;
-        proxy_set_header Host $host;
+        proxy_pass https://doseedo-auth-wd7h2yezlq-uc.a.run.app;
+        proxy_ssl_server_name on;
+        proxy_set_header Host doseedo-auth-wd7h2yezlq-uc.a.run.app;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
