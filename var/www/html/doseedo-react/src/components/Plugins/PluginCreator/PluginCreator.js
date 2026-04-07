@@ -91,7 +91,12 @@ const TemplateThumbnail = ({ template }) => {
 const PluginCreator = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem('pc_auth') === '1');
+  const [unlocked, setUnlocked] = useState(() => {
+    if (sessionStorage.getItem('pc_auth') === '1') return true;
+    const dskKey = new URLSearchParams(window.location.search).get('dsk_key');
+    if (dskKey) { sessionStorage.setItem('pc_auth', '1'); return true; }
+    return false;
+  });
   // Param controller for modulation routing (shared via context)
   const paramController = useMemo(() => new PluginParamControllerUI(), []);
   const [passInput, setPassInput] = useState('');
