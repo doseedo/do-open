@@ -273,6 +273,7 @@ const Plugins = () => {
     listMyProjects().then(data => {
       setMyCreations(Array.isArray(data) ? data : []);
     }).catch(() => setMyCreations([])).finally(() => setLoadingCreations(false));
+  }, [mainTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch DAW-cloned plugins from auth service
   useEffect(() => {
@@ -286,8 +287,6 @@ const Plugins = () => {
       setDawPlugins(Array.isArray(data) ? data : []);
       setLoadingDaw(false);
     }).catch(() => setLoadingDaw(false));
-  }, [mainTab]);
-
   }, [mainTab]);
 
   // Fetch community when tab opens or search/sort changes (DB-backed)
