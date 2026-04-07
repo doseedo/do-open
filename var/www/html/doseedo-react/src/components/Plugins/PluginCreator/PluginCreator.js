@@ -362,6 +362,7 @@ const PluginCreator = () => {
       if (cfg?.dsp_config) {
         setDspConfig(cfg.dsp_config);
       }
+      setShowWelcome(false);
       setSearchParams({}, { replace: true });
       showToast(`Loaded "${data.name}" from Dø Desktop`, null, 'success');
     }).catch(err => {
