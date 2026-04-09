@@ -82,18 +82,21 @@ export function parseDoae(buf) {
 export class LatentPlayer {
   constructor({
     audioContext,
-    decoderUrl = "/api/onnx/oobleck_decoder_packed.onnx",
-    encoderUrl = "/api/onnx/oobleck_encoder_packed.onnx",
+    decoderUrl       = "/api/onnx/oobleck_decoder_packed.onnx",
+    encoderUrl       = "/api/onnx/oobleck_encoder_packed.onnx",
+    latentDemucsUrl  = "/api/onnx/latent_demucs_student_packed.onnx",
     chunkFrames = 64,           // ~2.5s of audio per ORT call
     fallbackToWav = true,
   } = {}) {
     this.audioContext = audioContext || (typeof AudioContext !== "undefined" ? new AudioContext({ sampleRate: SAMPLE_RATE }) : null);
     this.decoderUrl = decoderUrl;
     this.encoderUrl = encoderUrl;
+    this.latentDemucsUrl = latentDemucsUrl;
     this.chunkFrames = chunkFrames;
     this.fallbackToWav = fallbackToWav;
     this.decoderSession = null;
     this.encoderSession = null;
+    this.latentDemucsSession = null;
     this.expectedVaeVersion = null;
     this.useWebGPU = isWebGPUSupported();
   }
@@ -141,6 +144,91 @@ export class LatentPlayer {
       graphOptimizationLevel: "all",
     });
     return this.encoderSession;
+  }
+
+  async _ensureLatentDemucs() {
+    if (this.latentDemucsSession) return this.latentDemucsSession;
+    if (!this.useWebGPU) throw new Error("WebGPU not available for latent_demucs");
+    const ort = await _loadOrt();
+    const buf = await fetch(this.latentDemucsUrl).then(r => r.arrayBuffer());
+    this.latentDemucsSession = await ort.InferenceSession.create(buf, {
+      executionProviders: ["webgpu"],
+      graphOptimizationLevel: "all",
+    });
+    console.log("[latentPlayer] WebGPU latent_demucs student ready");
+    return this.latentDemucsSession;
+  }
+
+  /**
+   * Run the latent_demucs student LOCALLY in the browser. Takes an
+   * AudioBuffer (any sample rate, mono or stereo) and returns a dict
+   * { drums, bass, vocals, other } where each value is the parsed
+   * latent ready to feed into `_decodeLatentTensor` for playback.
+   *
+   * No backend round-trip — separation happens entirely on the user's
+   * GPU. The browser never uploads the source audio.
+   *
+   * @param {AudioBuffer} audioBuffer
+   * @returns {Promise<Record<string, { latents: Float32Array, T: number, D: number }>>}
+   */
+  async separateLocally(audioBuffer) {
+    if (!this.useWebGPU) {
+      throw new Error("separateLocally requires WebGPU. Fall back to /separate-stems.");
+    }
+    const sess = await this._ensureLatentDemucs();
+    const ort = await _loadOrt();
+
+    // Convert to 48k stereo, pad to a multiple of 1920
+    const stereo = await this._toStereo48k(audioBuffer);
+    let n = stereo[0].length;
+    const padded = Math.ceil(n / SAMPLES_PER_FRAME) * SAMPLES_PER_FRAME;
+    const interleaved = new Float32Array(2 * padded);
+    interleaved.set(stereo[0]);
+    interleaved.set(stereo[1], padded);
+    const inputTensor = new ort.Tensor("float32", interleaved, [1, 2, padded]);
+
+    const t0 = performance.now();
+    const out = await sess.run({ audio: inputTensor });
+    const elapsed = performance.now() - t0;
+    const stems = out.stem_latents || out[Object.keys(out)[0]];
+    // Output: [1, 4, 64, T]
+    const dims = stems.dims;     // [1, 4, 64, T]
+    const data = stems.data;     // Float32Array length = 4 * 64 * T
+    const N = dims[1];           // 4 stems
+    const D = dims[2];           // 64 channels
+    const T = dims[3];           // frames
+    console.log(`[latentPlayer] latent_demucs ${(padded/SAMPLE_RATE).toFixed(1)}s in ${elapsed.toFixed(0)}ms → ${T} frames`);
+
+    // Slice each stem out as a row-major [T, D] Float32Array so it
+    // matches the .doae body layout that _decodeLatentTensor expects.
+    const result = {};
+    for (let s = 0; s < N; s++) {
+      const stemName = LATENT_DEMUCS_STEMS[s];
+      const rowMajor = new Float32Array(T * D);
+      // source layout is [N, D, T] (channels-first per stem). Reshape to row-major [T, D].
+      for (let t = 0; t < T; t++) {
+        for (let d = 0; d < D; d++) {
+          rowMajor[t * D + d] = data[((s * D) + d) * T + t];
+        }
+      }
+      result[stemName] = { latents: rowMajor, T, D };
+    }
+    return result;
+  }
+
+  /**
+   * Convenience: run separateLocally + immediately decode each stem to
+   * an AudioBuffer. Returns { drums: AudioBuffer, bass: ..., vocals: ..., other: ... }.
+   * The full chain is local — no network calls beyond the one-time
+   * model fetch.
+   */
+  async separateAndDecodeLocally(audioBuffer) {
+    const stems = await this.separateLocally(audioBuffer);
+    const out = {};
+    for (const [name, { latents, T, D }] of Object.entries(stems)) {
+      out[name] = await this._decodeLatentTensor(latents, T, D);
+    }
+    return out;
   }
 
   /**
