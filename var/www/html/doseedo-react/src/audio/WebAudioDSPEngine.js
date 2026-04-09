@@ -783,6 +783,125 @@ function buildMixer(ctx, node, paramDefs) {
   return { input: gain, output: gain, paramTargets: targets };
 }
 
+// Cache of registered worklet module URLs so addModule() is called once per
+// processor file per AudioContext (Web Audio rejects double-registration).
+const _workletModuleRegistry = new WeakMap();
+
+/**
+ * `custom_worklet` node — universal escape hatch.
+ * Lets a DSP-lang graph host any AudioWorkletProcessor as a node.
+ *
+ * Schema params (set on the node, NOT the running plugin):
+ *   processorName : string  (required) — name registered by registerProcessor()
+ *   processorUrl  : string  (required) — URL to the processor JS file
+ *   inputChannels : number  (default 2)
+ *   outputChannels: number  (default 2)
+ *   processorOptions : object — passed verbatim to AudioWorkletNode constructor
+ *
+ * Param bindings: any node param using the `@paramId` form will be wired to
+ * the worklet node's parameters[name] AudioParam (if it exists in
+ * parameterDescriptors). This means a worklet param IS automatable by the
+ * normal Web Audio param-ramp path — no shim needed.
+ *
+ * Async loading: addModule() is async; we resolve it eagerly via the
+ * `_workletModuleRegistry` cache, but the *node* must already be reachable
+ * synchronously by the engine. To bridge this, the builder returns a Gain
+ * passthrough placeholder and swaps in the real AudioWorkletNode once the
+ * module finishes loading. Audio plays through the passthrough until then.
+ */
+function buildCustomWorklet(ctx, node, paramDefs) {
+  const params = node.params || {};
+  const processorName = params.processor_name || params.processorName;
+  const processorUrl  = params.processor_url  || params.processorUrl;
+  const inputChannels  = params.input_channels  || params.inputChannels  || 2;
+  const outputChannels = params.output_channels || params.outputChannels || 2;
+  const processorOptions = params.processor_options || params.processorOptions || {};
+
+  // Synchronous placeholder while we load the worklet module
+  const inputNode  = ctx.createGain();
+  const outputNode = ctx.createGain();
+  inputNode.connect(outputNode);
+
+  const targets = {};
+  // Pre-record param bindings so we can wire them once the worklet exists
+  const pendingParamBindings = [];
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val === 'string' && val.startsWith('@')) {
+      const paramId = val.slice(1);
+      pendingParamBindings.push({ key, paramId });
+    }
+  }
+
+  if (!processorName || !processorUrl) {
+    console.warn(`[custom_worklet ${node.id}] missing processor_name or processor_url; passing through audio unchanged`);
+    return { input: inputNode, output: outputNode, paramTargets: targets };
+  }
+
+  // Make sure the processor module is registered exactly once per AudioContext
+  let registry = _workletModuleRegistry.get(ctx);
+  if (!registry) {
+    registry = new Map();
+    _workletModuleRegistry.set(ctx, registry);
+  }
+  let modulePromise = registry.get(processorUrl);
+  if (!modulePromise) {
+    modulePromise = ctx.audioWorklet.addModule(processorUrl).catch(e => {
+      console.error(`[custom_worklet] addModule(${processorUrl}) failed:`, e);
+      throw e;
+    });
+    registry.set(processorUrl, modulePromise);
+  }
+
+  modulePromise.then(() => {
+    let worklet;
+    try {
+      worklet = new AudioWorkletNode(ctx, processorName, {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        channelCount: Math.max(inputChannels, outputChannels),
+        channelCountMode: 'explicit',
+        channelInterpretation: 'speakers',
+        processorOptions,
+      });
+    } catch (e) {
+      console.error(`[custom_worklet ${node.id}] new AudioWorkletNode(${processorName}) failed:`, e);
+      return;
+    }
+    // Hot-swap the passthrough graph so audio routes through the worklet.
+    try { inputNode.disconnect(outputNode); } catch (e) {}
+    inputNode.connect(worklet);
+    worklet.connect(outputNode);
+
+    // Wire pending @param bindings to the worklet's AudioParams.
+    // Falls back to port.postMessage for processors that use the
+    // legacy `{type:'setParams', params:{...}}` convention or the new
+    // `{type:'param', name, value}` format. Both messages are sent so
+    // any existing worklet processor works as a custom_worklet host
+    // without needing source modifications.
+    for (const { key, paramId } of pendingParamBindings) {
+      const ap = worklet.parameters?.get?.(key);
+      if (!ap) {
+        targets[paramId] = {
+          paramDef: paramDefs[paramId] || { min: 0, max: 1 },
+          customSetter: (v) => {
+            try {
+              worklet.port.postMessage({ type: 'param', name: key, value: v });
+              worklet.port.postMessage({ type: 'setParams', params: { [key]: v } });
+            } catch (e) {}
+          },
+        };
+      } else {
+        targets[paramId] = {
+          audioParam: ap,
+          paramDef: paramDefs[paramId] || { min: ap.minValue, max: ap.maxValue },
+        };
+      }
+    }
+  }).catch(() => { /* already logged */ });
+
+  return { input: inputNode, output: outputNode, paramTargets: targets };
+}
+
 // ── Node builder registry ──────────────────────────────────────────────────
 
 const NODE_BUILDERS = {
@@ -809,6 +928,8 @@ const NODE_BUILDERS = {
   mixer: buildMixer, mix_bus: buildMixer,
   // Passthrough for unsupported types
   dc_blocker: buildGain, mix: buildGain, splitter: buildGain, merger: buildGain,
+  // Universal escape hatch — host any AudioWorkletProcessor as a node
+  custom_worklet: buildCustomWorklet,
 };
 
 // ── Main Engine Class ──────────────────────────────────────────────────────
