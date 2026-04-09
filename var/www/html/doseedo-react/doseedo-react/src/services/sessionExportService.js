@@ -14,7 +14,9 @@
  */
 
 import * as gcsUploadService from './gcsUploadService';
+import { getLatentPlayer } from './latentPlayer';
 import { getCurrentUser } from './authService';
+import sessionAPI from './sessionAPI';
 
 /**
  * Generate a unique session ID
@@ -24,7 +26,8 @@ function generateSessionId() {
 }
 
 /**
- * Convert audio URL (blob or data URL) to File object
+ * Convert audio URL (blob or data URL) to File object — legacy fallback
+ * for environments without WebGPU.
  */
 async function urlToFile(url, filename, mimeType) {
   if (!url) return null;
@@ -40,22 +43,76 @@ async function urlToFile(url, filename, mimeType) {
 }
 
 /**
- * Extract all audio and MIDI files from tracks
+ * Convert an audio blob URL to a .doae latent File. Uses the WebGPU
+ * encoder via LatentPlayer to compress the audio ~30× before upload.
+ */
+async function urlToDoaeFile(url, filename, audioContext, player) {
+  if (!url) return null;
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    const doaeAb = await player.encodeBufferToDoae(audioBuffer);
+    return new File([doaeAb], filename, { type: 'application/x-doae' });
+  } catch (error) {
+    console.warn(`Failed to encode track to .doae: ${filename}`, error);
+    return null;
+  }
+}
+
+/**
+ * Extract all audio and MIDI files from tracks. Audio tracks are
+ * encoded LOCALLY into .doae latent format via the WebGPU encoder
+ * (~30× smaller than wav). Falls back to wav if WebGPU isn't available.
  */
 async function extractTrackFiles(buses) {
   const files = [];
+
+  // Lazy-init the latent player; this also fetches the encoder ONNX
+  // bundle on first call (cached for the rest of the session).
+  let player = null;
+  let useLatents = false;
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    player = await getLatentPlayer(audioCtx);
+    useLatents = !!player.useWebGPU;
+    if (useLatents) console.log('[session export] using .doae latent format');
+    else console.warn('[session export] WebGPU unavailable — falling back to wav');
+  } catch (e) {
+    console.warn('[session export] latent encoder unavailable, will save raw wavs:', e);
+    useLatents = false;
+  }
 
   for (const bus of buses) {
     for (const track of bus.tracks || []) {
       // Extract audio file if exists
       if (track.audioUrl) {
+        if (useLatents && track.type === 'audio') {
+          const audioFile = await urlToDoaeFile(
+            track.audioUrl,
+            `track-${track.id}.doae`,
+            player.audioContext,
+            player,
+          );
+          if (audioFile) {
+            files.push({
+              file: audioFile,
+              path: `tracks/${track.id}/audio.doae`,
+              trackId: track.id,
+              type: 'audio_latent',
+            });
+            continue;
+          }
+          // If encode failed, fall through to wav fallback below
+        }
+        // Wav fallback (legacy / non-WebGPU)
         const ext = track.type === 'audio' ? 'wav' : 'mp3';
         const audioFile = await urlToFile(
           track.audioUrl,
           `track-${track.id}.${ext}`,
           `audio/${ext === 'wav' ? 'wav' : 'mpeg'}`
         );
-
         if (audioFile) {
           files.push({
             file: audioFile,
@@ -68,10 +125,8 @@ async function extractTrackFiles(buses) {
 
       // Extract MIDI data if exists
       if (track.midiData && track.midiData.notes && track.midiData.notes.length > 0) {
-        // Convert MIDI data to MIDI file blob
         const midiBlob = createMidiFile(track.midiData);
         const midiFile = new File([midiBlob], `track-${track.id}.mid`, { type: 'audio/midi' });
-
         files.push({
           file: midiFile,
           path: `tracks/${track.id}/midi.mid`,
@@ -100,17 +155,22 @@ function createMidiFile(midiData) {
  * Prepare session data for export (remove non-serializable data)
  */
 function prepareSessionData(state, projectName) {
-  // Create a clean copy of buses without audio URLs (files will be uploaded separately)
+  // Create a clean copy of buses without audio URLs (files will be
+  // uploaded separately). Audio paths point to .doae latents (preferred)
+  // or .wav (legacy fallback) — the loader auto-detects from extension.
   const cleanBuses = state.buses.map(bus => ({
     ...bus,
     tracks: bus.tracks.map(track => ({
       ...track,
       // Remove blob URLs - we'll store file paths instead
-      audioUrl: track.audioUrl ? `tracks/${track.id}/audio` : null,
+      audioUrl: track.audioUrl
+        ? (track.type === 'audio'
+            ? `tracks/${track.id}/audio.doae`
+            : `tracks/${track.id}/audio.mp3`)
+        : null,
       // Keep MIDI data reference
       midiData: track.midiData ? {
         ...track.midiData,
-        // Keep essential MIDI data but reference the file
         midiFile: track.midiData.notes?.length > 0 ? `tracks/${track.id}/midi.mid` : null
       } : null
     }))
@@ -299,9 +359,14 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
 }
 
 /**
- * Import session from GCS
- * @param {string} sessionId - Session ID to import
- * @returns {Promise<object>} Restored session state
+ * Import session from GCS. Downloads session.json + each referenced
+ * track file (`.doae` latent or `.wav`/`.mp3` legacy) and reconstructs
+ * the studio state with playable blob URLs.
+ *
+ * For .doae tracks: fetches the latent, decodes via WebGPU, encodes
+ * the resulting AudioBuffer back to a wav blob (only because the
+ * existing studio mixer reads `track.audioUrl` as a blob URL — the
+ * AudioBuffer never leaves the browser).
  */
 export async function importSessionFromGCS(sessionId) {
   try {
@@ -313,20 +378,107 @@ export async function importSessionFromGCS(sessionId) {
     const basePath = `users/${user.id}/sessions/${sessionId}`;
     console.log(`📥 Importing session from ${basePath}`);
 
-    // TODO: Implement session import
-    // This would:
-    // 1. Download session.json from GCS
-    // 2. Parse the metadata
-    // 3. Download all referenced track files
-    // 4. Recreate blob URLs for audio files
-    // 5. Return complete state object
+    // 1. Fetch session.json metadata via the auth backend's session API
+    const sessionMeta = await sessionAPI.getSession(sessionId);
+    if (!sessionMeta) throw new Error('Session not found');
 
-    throw new Error('Session import not yet implemented');
+    // session.json was uploaded to {basePath}/session.json — pull a
+    // signed URL for it from gcsUploadService
+    const sessionJsonUrl = sessionMeta.session_json_url
+      || `${basePath}/session.json`;
+    const signedJsonUrl = await gcsUploadService.getSignedUrl(sessionJsonUrl);
+    const sessionJson = await fetch(signedJsonUrl).then(r => r.json());
+    console.log(`  loaded session.json (${sessionJson.projectName})`);
+
+    // 2. Lazy player for .doae decode
+    let player = null;
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+      player = await getLatentPlayer(audioCtx);
+    } catch (e) {
+      console.warn('[session import] latent player unavailable; .doae tracks will be skipped:', e);
+    }
+
+    // 3. Walk every track and re-fetch its audio file
+    const restoredBuses = [];
+    for (const bus of sessionJson.buses || []) {
+      const restoredTracks = [];
+      for (const track of bus.tracks || []) {
+        let audioUrl = null;
+        if (track.audioUrl) {
+          const trackPath = `${basePath}/${track.audioUrl}`;
+          try {
+            const signed = await gcsUploadService.getSignedUrl(trackPath);
+            const ab = await fetch(signed).then(r => r.arrayBuffer());
+            if (track.audioUrl.endsWith('.doae')) {
+              if (!player || !player.useWebGPU) {
+                console.warn(`  skip ${track.id}: WebGPU required to decode .doae`);
+              } else {
+                const audioBuffer = await player.decodeDoaeToBuffer(ab);
+                // Convert AudioBuffer back to a wav blob URL so the
+                // existing mixer/Wavesurfer code can play it.
+                const wavBlob = audioBufferToWavBlob(audioBuffer);
+                audioUrl = URL.createObjectURL(wavBlob);
+              }
+            } else {
+              // Legacy wav/mp3 — use directly
+              audioUrl = URL.createObjectURL(new Blob([ab], { type: 'audio/wav' }));
+            }
+          } catch (e) {
+            console.warn(`  failed to load ${track.id} audio:`, e);
+          }
+        }
+        restoredTracks.push({ ...track, audioUrl });
+      }
+      restoredBuses.push({ ...bus, tracks: restoredTracks });
+    }
+
+    return {
+      ...sessionJson,
+      buses: restoredBuses,
+    };
 
   } catch (error) {
     console.error('❌ Session import failed:', error);
     throw error;
   }
+}
+
+/**
+ * Encode an AudioBuffer to a 16-bit PCM wav Blob (browser-friendly,
+ * no extra dependency). Used to feed decoded .doae latents back into
+ * the existing wav-blob mixer code path.
+ */
+function audioBufferToWavBlob(audioBuffer) {
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const numSamples = audioBuffer.length;
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = numSamples * blockAlign;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  // WAV RIFF header
+  let p = 0;
+  const ws = (s) => { for (let i = 0; i < s.length; i++) view.setUint8(p++, s.charCodeAt(i)); };
+  const w16 = (v) => { view.setUint16(p, v, true); p += 2; };
+  const w32 = (v) => { view.setUint32(p, v, true); p += 4; };
+  ws('RIFF'); w32(36 + dataSize); ws('WAVE');
+  ws('fmt '); w32(16); w16(1); w16(numChannels);
+  w32(sampleRate); w32(byteRate); w16(blockAlign); w16(8 * bytesPerSample);
+  ws('data'); w32(dataSize);
+  // PCM samples (interleaved)
+  const channels = [];
+  for (let c = 0; c < numChannels; c++) channels.push(audioBuffer.getChannelData(c));
+  for (let i = 0; i < numSamples; i++) {
+    for (let c = 0; c < numChannels; c++) {
+      let s = Math.max(-1, Math.min(1, channels[c][i]));
+      view.setInt16(p, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      p += 2;
+    }
+  }
+  return new Blob([buffer], { type: 'audio/wav' });
 }
 
 /**

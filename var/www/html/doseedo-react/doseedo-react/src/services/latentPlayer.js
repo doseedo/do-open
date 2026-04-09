@@ -217,6 +217,54 @@ export class LatentPlayer {
   }
 
   /**
+   * Encode an AudioBuffer locally → .doae ArrayBuffer (no upload).
+   * Used by session-save to convert each track's audio to a tiny
+   * latent before pushing to GCS. ~30× smaller than the wav.
+   */
+  async encodeBufferToDoae(audioBuffer, fps = 25) {
+    if (!this.useWebGPU) throw new Error("encodeBufferToDoae requires WebGPU");
+    const enc = await this._ensureEncoder();
+    const ort = await _loadOrt();
+    const stereo = await this._toStereo48k(audioBuffer);
+    const n = stereo[0].length;
+    const padded = Math.ceil(n / SAMPLES_PER_FRAME) * SAMPLES_PER_FRAME;
+    const interleaved = new Float32Array(2 * padded);
+    interleaved.set(stereo[0]);
+    interleaved.set(stereo[1], padded);
+    const tensor = new ort.Tensor("float32", interleaved, [1, 2, padded]);
+    const out = await enc.run({ audio: tensor });
+    const latent = out.latent || out[Object.keys(out)[0]];
+    const D = latent.dims[1];
+    const T = latent.dims[2];
+    const data = latent.data;
+    const rowMajor = new Float32Array(T * D);
+    for (let t = 0; t < T; t++) {
+      for (let d = 0; d < D; d++) {
+        rowMajor[t * D + d] = data[d * T + t];
+      }
+    }
+    return this._writeDoae(rowMajor, T, D, fps);
+  }
+
+  /**
+   * Decode a .doae ArrayBuffer locally → AudioBuffer.
+   * Used by session-load to reconstruct each track from its stored latent.
+   */
+  async decodeDoaeToBuffer(arrayBuffer) {
+    if (!this.useWebGPU || !this.decoderSession) {
+      throw new Error("decodeDoaeToBuffer requires WebGPU + decoder loaded");
+    }
+    const { vaeVersion, fps, T, D, latents } = parseDoae(arrayBuffer);
+    if (this.expectedVaeVersion && vaeVersion !== this.expectedVaeVersion) {
+      console.warn(
+        `[latentPlayer] vae_version mismatch on session load: stored ${vaeVersion}, ` +
+        `current ${this.expectedVaeVersion}. Decoded audio may not match the original.`
+      );
+    }
+    return this._decodeLatentTensor(latents, T, D);
+  }
+
+  /**
    * Convenience: run separateLocally + immediately decode each stem to
    * an AudioBuffer. Returns { drums: AudioBuffer, bass: ..., vocals: ..., other: ... }.
    * The full chain is local — no network calls beyond the one-time
