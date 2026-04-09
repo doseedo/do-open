@@ -256,7 +256,9 @@ export async function generateRisers(params) {
 /**
  * Separate stems from audio
  * @param {string} audioUrl - URL of audio to separate
- * @returns {Promise<Object>} - Response with separated stem URLs
+ * @returns {Promise<Object>} - Response with separated stem URLs and
+ *   stem_latents/drum_substem_latents (latent_id keys for fast browser
+ *   playback via /api/latent/<id>).
  */
 export async function separateStems(audioUrl) {
   const response = await fetch('/separate-stems', {
@@ -270,6 +272,59 @@ export async function separateStems(audioUrl) {
   }
 
   return await response.json();
+}
+
+/**
+ * Repaint a list of stems for a meter change. New (latent-only) path:
+ * the backend processes the drum substems entirely in latent space and
+ * returns drum_substem_latents (a dict of {name: {latent_id, latent_url}})
+ * — NO wav round-trip. Browser fetches each latent_id via
+ * latentPlayer.fetchAndDecode() and plays them in the studio mixer.
+ *
+ * @param {Array<{latent_id: string, stem_type: string}>} stems
+ * @param {[number, number]} srcMeter
+ * @param {[number, number]} tgtMeter
+ * @param {number} srcBpm
+ * @param {number} tgtBpm
+ * @returns {Promise<{ results: Array, splice_meter: Array }>}
+ */
+export async function repaintMeter(stems, srcMeter, tgtMeter, srcBpm, tgtBpm = null) {
+  const body = {
+    stems,
+    src_meter: srcMeter,
+    tgt_meter: tgtMeter,
+    src_bpm: srcBpm,
+    tgt_bpm: tgtBpm == null ? srcBpm : tgtBpm,
+  };
+  const response = await fetch('/api/repaint-meter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`repaint-meter HTTP ${response.status}`);
+  return await response.json();
+}
+
+/**
+ * Fetch a cached latent's binary .doae blob. Use this directly when you
+ * need the bytes (e.g. for `LatentPlayer._decodeLatentTensor`); usually
+ * you'll just call `latentPlayer.fetchAndDecode(latent_id)` which wraps
+ * this + parsing + WebGPU decode.
+ */
+export async function fetchLatent(latentId) {
+  const r = await fetch(`/api/latent/${latentId}`);
+  if (!r.ok) throw new Error(`/api/latent/${latentId} → ${r.status}`);
+  return await r.arrayBuffer();
+}
+
+/**
+ * Get the backend's current VAE checkpoint hash. Browser pins this on
+ * load and rejects any latent whose .doae header doesn't match.
+ */
+export async function getVaeVersion() {
+  const r = await fetch('/api/vae-version');
+  if (!r.ok) throw new Error(`/api/vae-version → ${r.status}`);
+  return (await r.json()).vae_version;
 }
 
 /**
