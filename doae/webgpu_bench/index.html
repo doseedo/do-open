@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Oobleck Decoder — WebGPU Benchmark</title>
+<style>
+  body { font-family: monospace; background: #0a0a0a; color: #ccc; padding: 32px; max-width: 700px; }
+  h2 { color: #8B7FF0; margin-bottom: 4px; }
+  .sub { color: #444; font-size: 0.8em; margin-bottom: 24px; }
+  button { background: #8B7FF0; color: white; border: none; padding: 10px 24px;
+           font-family: monospace; font-size: 1em; cursor: pointer; border-radius: 4px; margin: 4px; }
+  button:disabled { background: #333; color: #555; cursor: not-allowed; }
+  #log { background: #111; border: 1px solid #1e1e1e; border-radius: 4px;
+         padding: 16px; margin-top: 16px; min-height: 200px; white-space: pre-wrap;
+         font-size: 0.85em; line-height: 1.6; }
+  .ok     { color: #4CAF50; }
+  .warn   { color: #FF9800; }
+  .err    { color: #F44336; }
+  .dim    { color: #555; }
+  .result { color: #8B7FF0; font-weight: bold; }
+  #progress { height: 3px; background: #8B7FF0; width: 0%; transition: width 0.3s; margin-bottom: 8px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<h2>Oobleck VAE Decoder — WebGPU Benchmark</h2>
+<div class="sub">oobleck_decoder_packed.onnx · latent [1,64,T] → audio [1,2,N]</div>
+
+<div id="progress"></div>
+<button id="btnWebGPU">▶ Run WebGPU</button>
+<button id="btnWASM">▶ Run WASM (CPU)</button>
+<button id="btnQuality">▶ Quality Check vs CPU Reference</button>
+<button onclick="document.getElementById('log').innerHTML=''">Clear</button>
+
+<div id="log"><span class="dim">Click a button to start...</span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.all.min.js"></script>
+<script>
+const logEl  = document.getElementById('log')
+const progEl = document.getElementById('progress')
+
+const log = (msg, cls='') => {
+  if (logEl.innerHTML.includes('Click a button')) logEl.innerHTML = ''
+  logEl.innerHTML += `<span class="${cls}">${msg}</span>\n`
+  logEl.scrollTop = logEl.scrollHeight
+}
+
+async function loadModel(provider) {
+  log(`Loading 339MB model... (may take 10-30s first time)`)
+
+  const res = await fetch('oobleck_decoder_packed.onnx')
+  const total = +res.headers.get('content-length') || 0
+  const reader = res.body.getReader()
+  const chunks = []
+  let received = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    received += value.length
+    if (total) progEl.style.width = (received / total * 100) + '%'
+  }
+  progEl.style.width = '100%'
+  const modelBuffer = new Uint8Array(received)
+  let offset = 0
+  for (const c of chunks) { modelBuffer.set(c, offset); offset += c.length }
+  log(`Downloaded: ${(received/1e6).toFixed(1)} MB`, 'ok')
+
+  const opts = { executionProviders: [provider] }
+  ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4
+
+  log(`Creating ${provider} session...`)
+  const t0 = performance.now()
+  const session = await ort.InferenceSession.create(modelBuffer.buffer, opts)
+  log(`Session ready in ${((performance.now()-t0)/1000).toFixed(2)}s`, 'ok')
+  return session
+}
+
+async function runBench(provider) {
+  const btnId = provider === 'webgpu' ? 'btnWebGPU' : 'btnWASM'
+  document.getElementById(btnId).disabled = true
+  log(`\n=== ${provider.toUpperCase()} ===`)
+
+  if (provider === 'webgpu') {
+    if (!navigator.gpu) { log('WebGPU not supported', 'err'); document.getElementById(btnId).disabled = false; return }
+    const adapter = await navigator.gpu.requestAdapter()
+    const info = await adapter?.requestAdapterInfo?.() ?? {}
+    log(`GPU: ${info.description || info.vendor || adapter?.name || 'unknown'}`, 'dim')
+  }
+
+  let session
+  try { session = await loadModel(provider) }
+  catch(e) { log(`Load failed: ${e?.message ?? e}`, 'err'); document.getElementById(btnId).disabled = false; return }
+
+  const mkInput = (T) => {
+    const d = new Float32Array(64 * T)
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() - 0.5) * 2
+    return new ort.Tensor('float32', d, [1, 64, T])
+  }
+
+  log(`Warming up...`)
+  try { await session.run({ latent: mkInput(50) }); log(`Warmup done`, 'ok') }
+  catch(e) { log(`Warmup failed: ${e?.message ?? e}`, 'err'); document.getElementById(btnId).disabled = false; return }
+
+  log(`\nT=50 (2s audio) × 10 runs:`)
+  const t50 = []
+  for (let i = 0; i < 10; i++) {
+    const t0 = performance.now()
+    await session.run({ latent: mkInput(50) })
+    t50.push(performance.now() - t0)
+    log(`  run ${i+1}: ${t50.at(-1).toFixed(0)}ms`, 'dim')
+  }
+  const mean50 = t50.reduce((a,b)=>a+b)/t50.length
+  log(`min=${Math.min(...t50).toFixed(0)}ms  mean=${mean50.toFixed(0)}ms  max=${Math.max(...t50).toFixed(0)}ms`, 'result')
+  log(`→ ${(2000/mean50).toFixed(1)}x realtime`, 'result')
+
+  log(`\nT=200 (8s audio) × 5 runs:`)
+  const t200 = []
+  for (let i = 0; i < 5; i++) {
+    const t0 = performance.now()
+    await session.run({ latent: mkInput(200) })
+    t200.push(performance.now() - t0)
+    log(`  run ${i+1}: ${t200.at(-1).toFixed(0)}ms`, 'dim')
+  }
+  const mean200 = t200.reduce((a,b)=>a+b)/t200.length
+  log(`min=${Math.min(...t200).toFixed(0)}ms  mean=${mean200.toFixed(0)}ms  max=${Math.max(...t200).toFixed(0)}ms`, 'result')
+  log(`→ ${(8000/mean200).toFixed(1)}x realtime`, 'result')
+
+  document.getElementById(btnId).disabled = false
+}
+
+// ---- Quality check: decode the exact same latent as Python ONNX CPU reference ----
+async function runQuality() {
+  document.getElementById('btnQuality').disabled = true
+  log('\n=== QUALITY CHECK: WebGPU vs ONNX CPU reference ===')
+
+  if (!navigator.gpu) { log('WebGPU not supported', 'err'); document.getElementById('btnQuality').disabled = false; return }
+
+  // Load test latent (raw float32, shape [1,64,50])
+  log('Loading test latent...')
+  const latRes = await fetch('test_latent.bin')
+  const latBuf = await latRes.arrayBuffer()
+  const latData = new Float32Array(latBuf)
+  const T = latData.length / 64   // = 50
+  log(`Latent: [1, 64, ${T}] = ${latData.length} floats`, 'dim')
+
+  // Load CPU reference output (raw float32, shape [2, 96000])
+  log('Loading CPU reference...')
+  const refRes = await fetch('ref_onnx_cpu.bin')
+  const refBuf = await refRes.arrayBuffer()
+  const refData = new Float32Array(refBuf)
+  log(`Reference: [2, ${refData.length/2}] samples`, 'dim')
+
+  // Load model and decode with WebGPU
+  let session
+  try { session = await loadModel('webgpu') }
+  catch(e) { log(`Load failed: ${e?.message ?? e}`, 'err'); document.getElementById('btnQuality').disabled = false; return }
+
+  log('Decoding with WebGPU...')
+  const latTensor = new ort.Tensor('float32', latData, [1, 64, T])
+  const t0 = performance.now()
+  const result = await session.run({ latent: latTensor })
+  const elapsed = performance.now() - t0
+  const gpuOut = result.audio.data  // Float32Array, length = 2 * N
+
+  log(`Decoded in ${elapsed.toFixed(0)}ms`, 'ok')
+
+  // Numeric comparison
+  if (gpuOut.length !== refData.length) {
+    log(`Shape mismatch! GPU=${gpuOut.length} ref=${refData.length}`, 'err')
+    document.getElementById('btnQuality').disabled = false
+    return
+  }
+
+  let maxDiff = 0, sumDiff = 0, maxAbsRef = 0
+  for (let i = 0; i < gpuOut.length; i++) {
+    const d = Math.abs(gpuOut[i] - refData[i])
+    if (d > maxDiff) maxDiff = d
+    sumDiff += d
+    if (Math.abs(refData[i]) > maxAbsRef) maxAbsRef = Math.abs(refData[i])
+  }
+  const meanDiff = sumDiff / gpuOut.length
+  const snr = 20 * Math.log10(maxAbsRef / maxDiff)
+
+  log(`\nSamples compared: ${gpuOut.length}`, 'dim')
+  log(`max_diff:  ${maxDiff.toFixed(8)}`, maxDiff < 0.001 ? 'ok' : 'warn')
+  log(`mean_diff: ${meanDiff.toFixed(10)}`, 'dim')
+  log(`max_ref:   ${maxAbsRef.toFixed(6)}`, 'dim')
+  log(`SNR vs CPU: ${snr.toFixed(1)} dB`, snr > 60 ? 'ok' : snr > 40 ? 'warn' : 'err')
+
+  if (snr > 60) {
+    log('\n✓ WebGPU output matches CPU reference (>60dB SNR — perceptually identical)', 'ok')
+  } else if (snr > 40) {
+    log('\n~ Minor numerical differences (40-60dB SNR — inaudible)', 'warn')
+  } else {
+    log('\n✗ Significant differences detected', 'err')
+  }
+
+  // Save GPU output as WAV for listening
+  const N = gpuOut.length / 2
+  const wavBuf = encodeWAV(gpuOut, 2, 48000)
+  const blob = new Blob([wavBuf], { type: 'audio/wav' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = 'webgpu_decoded.wav'; a.click()
+  log('→ webgpu_decoded.wav downloaded for listening', 'ok')
+
+  document.getElementById('btnQuality').disabled = false
+}
+
+function encodeWAV(pcm, numChannels, sampleRate) {
+  // pcm is interleaved float32 if numChannels>1?
+  // ONNX output is [2, N] flattened as [ch0_0, ch0_1, ..., ch0_N-1, ch1_0, ...]
+  // WAV expects interleaved: L0 R0 L1 R1 ...
+  const N = pcm.length / numChannels
+  const interleaved = new Float32Array(pcm.length)
+  for (let i = 0; i < N; i++) {
+    interleaved[i*2]   = pcm[i]     // L
+    interleaved[i*2+1] = pcm[N + i] // R
+  }
+
+  const byteLen = interleaved.length * 2  // 16-bit
+  const buf = new ArrayBuffer(44 + byteLen)
+  const view = new DataView(buf)
+  const ws = (o, s) => { for (let i=0; i<s.length; i++) view.setUint8(o+i, s.charCodeAt(i)) }
+  ws(0, 'RIFF'); view.setUint32(4, 36 + byteLen, true)
+  ws(8, 'WAVE'); ws(12, 'fmt ')
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true)
+  view.setUint16(22, numChannels, true); view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * numChannels * 2, true)
+  view.setUint16(32, numChannels * 2, true); view.setUint16(34, 16, true)
+  ws(36, 'data'); view.setUint32(40, byteLen, true)
+  let o = 44
+  for (let i = 0; i < interleaved.length; i++) {
+    const s = Math.max(-1, Math.min(1, interleaved[i]))
+    view.setInt16(o, s < 0 ? s * 32768 : s * 32767, true); o += 2
+  }
+  return buf
+}
+
+document.getElementById('btnWebGPU').onclick  = () => runBench('webgpu')
+document.getElementById('btnWASM').onclick    = () => runBench('wasm')
+document.getElementById('btnQuality').onclick = () => runQuality()
+</script>
+</body>
+</html>
