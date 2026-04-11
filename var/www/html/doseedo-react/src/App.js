@@ -236,10 +236,13 @@ function AppContent() {
           console.log('Redirecting to /dashboard');
           navigate('/dashboard', { replace: true });
         } else if (attempts >= maxAttempts) {
-          // After 750ms of retries, assume not authenticated — leave the SPA and
-          // land directly on the Framer marketing site.
-          console.log('Max attempts reached, redirecting to https://do.doseedo.com/');
-          window.location.replace('https://do.doseedo.com/');
+          // After 750ms of retries, assume not authenticated — leave the SPA.
+          // /home is routed to the doseedo-frontend Cloud Run service which
+          // proxies the Framer marketing site, so the browser stays on
+          // doseedo.com and sees Framer content with no visible cross-origin
+          // redirect.
+          console.log('Max attempts reached, redirecting to /home');
+          window.location.replace('/home');
         } else {
           // Try again
           setTimeout(checkAuth, checkInterval);

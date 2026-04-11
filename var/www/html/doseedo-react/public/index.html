@@ -11,7 +11,16 @@
     leave the page before the SPA mounts and flashes the in-app landing.
     The SPA-level backstop in src/App.js handles the race where the auth
     cookie is written after first paint (e.g. during /verify-google-id-token).
+
     Auth contract: services/authService.js reads `username` from document.cookie.
+
+    Target: /home (same-origin). The bassify URL map routes /home to the
+    doseedo-frontend Cloud Run service, whose nginx.conf has
+    `location = /home { proxy_pass https://heartwarming-friday-546447.framer.app/ }`.
+    The browser therefore sees Framer HTML at doseedo.com/home without any
+    visible redirect to do.doseedo.com. If that routing is ever reverted,
+    public/home/index.html is still the static bucket fallback (which meta-
+    refreshes to do.doseedo.com as a safety net).
   -->
   <script>
     (function () {
@@ -20,7 +29,7 @@
         if (p !== '/' && p !== '/home') return;
         var hasAuth = /(?:^|;\s*)username=/.test(document.cookie);
         if (!hasAuth) {
-          window.location.replace('https://do.doseedo.com/');
+          window.location.replace('/home');
         }
       } catch (e) { /* fall through to React */ }
     })();
