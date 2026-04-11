@@ -3,7 +3,11 @@
 .homeContainer {
   width: 100%;
   min-height: 100vh;
-  padding-top: 60px;
+  /* No top padding — slideshow runs flush to the top of the viewport.
+     Nothing is rendered above Home in the home view (App.js renders
+     LiquidGlassFilters SVG defs + the position:fixed LeftSidebar +
+     Home itself; no navbar, no header). The CTA / AI Tools sections
+     below the slideshow keep their own internal padding. */
   background: linear-gradient(180deg, rgb(18, 18, 18) 0%, rgb(10, 10, 10) 100%);
   overflow-y: auto;
 }
@@ -18,7 +22,8 @@
 .slideshow {
   width: auto;
   margin: 0 0 0 200px;
-  padding: 40px 0;
+  /* Flush to top of viewport, 40px breathing room before the CTA below. */
+  padding: 0 0 40px 0;
 }
 
 .slide {
@@ -288,12 +293,11 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
-  .homeContainer {
-    padding-top: 40px;
-  }
-
   /* Mobile: sidebar is an off-canvas overlay, not a fixed flow element,
-     so the slideshow should start flush at the viewport left edge. */
+     so the slideshow should start flush at the viewport left edge.
+     The position:fixed mobileMenuBtn (LeftSidebar.module.css) floats
+     above the slideshow at top-left without reserving flow space, so
+     no padding-top needed here either. */
   .slideshow {
     margin-left: 0;
   }
