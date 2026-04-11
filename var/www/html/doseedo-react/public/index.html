@@ -4,6 +4,28 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+  <!--
+    Pre-React marketing gate. MUST stay first in <head> (before any blocking
+    resource and before React's main.js loads) so unauthenticated visitors
+    leave the page before the SPA mounts and flashes the in-app landing.
+    The SPA-level backstop in src/App.js handles the race where the auth
+    cookie is written after first paint (e.g. during /verify-google-id-token).
+    Auth contract: services/authService.js reads `username` from document.cookie.
+  -->
+  <script>
+    (function () {
+      try {
+        var p = window.location.pathname;
+        if (p !== '/' && p !== '/home') return;
+        var hasAuth = /(?:^|;\s*)username=/.test(document.cookie);
+        if (!hasAuth) {
+          window.location.replace('https://do.doseedo.com/');
+        }
+      } catch (e) { /* fall through to React */ }
+    })();
+  </script>
+
   <title>Doseedo - Music Production Studio</title>
 
   <!-- Favicon -->

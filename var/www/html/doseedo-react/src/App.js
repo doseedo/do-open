@@ -214,9 +214,14 @@ function AppContent() {
   // Check if we're in demo mode
   const isDemo = location.pathname === '/demo';
 
-  // Redirect root based on auth status - retry multiple times to handle cookie timing
+  // Redirect root based on auth status - retry multiple times to handle cookie timing.
+  // Note: the primary gate lives in public/index.html as an inline <script> that
+  // runs before React mounts, so unauthenticated visitors are usually gone before
+  // this effect ever fires. This effect is the backstop for the edge case where
+  // the auth cookie is written *after* first paint (e.g. race with /verify-
+  // google-id-token), so we still need the retry loop here.
   useEffect(() => {
-    if (location.pathname === '/') {
+    if (location.pathname === '/' || location.pathname === '/home') {
       let attempts = 0;
       const maxAttempts = 5;
       const checkInterval = 150; // ms between checks
@@ -231,9 +236,10 @@ function AppContent() {
           console.log('Redirecting to /dashboard');
           navigate('/dashboard', { replace: true });
         } else if (attempts >= maxAttempts) {
-          // After 750ms of retries, assume not authenticated
-          console.log('Max attempts reached, redirecting to /home');
-          window.location.href = '/home';
+          // After 750ms of retries, assume not authenticated — leave the SPA and
+          // land directly on the Framer marketing site.
+          console.log('Max attempts reached, redirecting to https://do.doseedo.com/');
+          window.location.replace('https://do.doseedo.com/');
         } else {
           // Try again
           setTimeout(checkAuth, checkInterval);
