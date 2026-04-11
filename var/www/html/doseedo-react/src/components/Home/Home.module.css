@@ -24,6 +24,62 @@
   margin: 0 0 0 200px;
   /* Flush to top of viewport, 40px breathing room before the CTA below. */
   padding: 0 0 40px 0;
+  /* position:relative so the absolutely-positioned .slideTextOverlay
+     below is anchored to this container, not the document. */
+  position: relative;
+}
+
+/* Headline + copy overlay that does NOT slide.
+   Lives outside the react-slideshow-image library and is positioned
+   absolutely over the bottom region of the centered 800×500 slide
+   canvas (which sits at the top of .slideshow because we removed the
+   container's top padding). The 800px width and centered horizontal
+   position match .slideFrameWrap so the overlay aligns with whichever
+   slide is currently visible. The actual headline + copy text is
+   driven by Home.js (SLIDE_LABELS + activeIndex via the slideshow
+   library's onStartChange callback) and animated with framer-motion. */
+.slideTextOverlay {
+  position: absolute;
+  top: 380px;            /* 500 (slide height) − 120 (overlay reserve) */
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  max-width: 100%;
+  height: 120px;
+  padding: 20px 40px 32px;
+  box-sizing: border-box;
+  pointer-events: none;  /* let clicks fall through to the slideshow nav */
+  background: linear-gradient(
+    to top,
+    rgba(5, 5, 8, 0.95) 0%,
+    rgba(5, 5, 8, 0.7) 60%,
+    transparent 100%
+  );
+  border-radius: 0 0 20px 20px; /* match slideFrameWrap rounded bottom */
+  z-index: 5;
+}
+
+.slideTextOverlayInner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.slideHeadline {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 6px 0;
+  text-shadow: 0 0 30px rgba(168, 127, 255, 0.3);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.slideCopy {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.5;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .slide {

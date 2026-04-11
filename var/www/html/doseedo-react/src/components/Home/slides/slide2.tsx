@@ -7,7 +7,6 @@
  * This prevents 60fps React re-renders which cause Framer's compositor to black out.
  */
 import React, { useState, useEffect, useRef } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { addPropertyControls, ControlType } from "./framer-stub"
 import {
     C,
@@ -849,40 +848,11 @@ function Slide7_Generate(props: {
                 />
             </div>
 
-            {/* Text */}
-            <div
-                style={{
-                    position: "absolute",
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    padding: "20px 40px 32px",
-                    background:
-                        "linear-gradient(to top, rgba(5,5,8,0.96) 0%, rgba(5,5,8,0.65) 60%, transparent 100%)",
-                }}
-            >
-                <div
-                    style={{
-                        fontSize: 24,
-                        fontWeight: 700,
-                        color: "#fff",
-                        marginBottom: 6,
-                        textShadow: `0 0 30px rgba(${GLOW},0.3)`,
-                    }}
-                >
-                    Track-aware generation
-                </div>
-                <div
-                    style={{
-                        fontSize: 14,
-                        color: "rgba(255,255,255,0.6)",
-                        lineHeight: 1.5,
-                    }}
-                >
-                    Our stem generation models have session awareness, providing
-                    musically accurate results reliably.
-                </div>
-            </div>
+            {/* Text overlay removed — slide2 used to inline its own bottom-
+                aligned headline + copy block (it bypasses SlideFrame). The
+                text now lives in Home.js SLIDE_LABELS so it doesn't slide
+                along with the canvas. The "Track-aware generation" copy
+                is at index 1 there. */}
         </div>
     )
 }

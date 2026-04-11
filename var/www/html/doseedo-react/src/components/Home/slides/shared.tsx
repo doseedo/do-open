@@ -457,19 +457,28 @@ export function GlassFilters() {
 }
 
 // ── Slide wrapper — consistent frame for all slides ──
+/**
+ * SlideFrame — visual chrome (glow + animation area) for an individual slide.
+ *
+ * The `headline` and `copy` props are still accepted for backwards compat
+ * with the existing slide1/3/4/5 call sites, but the bottom text overlay
+ * has been removed: the headline + copy are now rendered ONCE in Home.js
+ * outside the slideshow library so they don't slide along with the canvas.
+ * See Home.js SLIDE_LABELS for the (single) source of those strings now.
+ */
 export function SlideFrame({
     children,
     glowRGB,
-    headline,
-    copy,
+    headline: _headline,
+    copy: _copy,
     width,
     height,
     style,
 }: {
     children: React.ReactNode
     glowRGB: string
-    headline: string
-    copy: string
+    headline?: string
+    copy?: string
     width: number
     height: number
     style?: React.CSSProperties
@@ -501,7 +510,10 @@ export function SlideFrame({
                 }}
             />
 
-            {/* Animation area */}
+            {/* Animation area — keeps the same top:40 / bottom:120 reserve as
+                when the text overlay lived inside the frame, so individual
+                slide layouts don't need to re-tune themselves. The Home-level
+                overlay sits over that bottom 120px region. */}
             <div
                 style={{
                     position: "absolute",
@@ -512,40 +524,6 @@ export function SlideFrame({
                 }}
             >
                 {children}
-            </div>
-
-            {/* Text overlay — bottom */}
-            <div
-                style={{
-                    position: "absolute",
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    padding: "20px 40px 32px",
-                    background:
-                        "linear-gradient(to top, rgba(5,5,8,0.95) 0%, rgba(5,5,8,0.7) 60%, transparent 100%)",
-                }}
-            >
-                <div
-                    style={{
-                        fontSize: 24,
-                        fontWeight: 700,
-                        color: "#fff",
-                        marginBottom: 6,
-                        textShadow: `0 0 30px rgba(${glowRGB},0.3)`,
-                    }}
-                >
-                    {headline}
-                </div>
-                <div
-                    style={{
-                        fontSize: 14,
-                        color: "rgba(255,255,255,0.6)",
-                        lineHeight: 1.5,
-                    }}
-                >
-                    {copy}
-                </div>
             </div>
         </div>
     )
