@@ -111,7 +111,7 @@ const UserInfo = ({ onLogout }) => {
       if (onLogout) {
         onLogout();
       } else {
-        window.location.href = '/login.html';
+        window.location.href = '/login';
       }
     }
   };
@@ -235,7 +235,7 @@ const UserInfo = ({ onLogout }) => {
                   {userInfo?.subscriptionStatus || 'Free'}
                 </span>
                 {userInfo?.subscriptionStatus === 'Free' && (
-                  <a href="/plans.html" className={styles.upgradeLink}>
+                  <a href="/plans" className={styles.upgradeLink}>
                     Upgrade to Pro+
                   </a>
                 )}

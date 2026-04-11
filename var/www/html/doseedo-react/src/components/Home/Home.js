@@ -60,12 +60,14 @@ const Home = () => {
               Sign Up for Open Beta
             </a>
           ) : (
-            <a href="/register" className={styles.primaryBtn}>
+            /* /login hosts both signin AND registration — the toggle is inside
+               login.html. There is no standalone /register SPA route. */
+            <a href="/login" className={styles.primaryBtn}>
               <i className="fa-solid fa-user-plus"></i>
               Create an Account
             </a>
           )}
-          <a href="/plans.html" className={styles.secondaryBtn}>
+          <a href="/plans" className={styles.secondaryBtn}>
             <i className="fa-solid fa-arrow-up-right-dots"></i>
             View Plans
           </a>

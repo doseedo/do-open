@@ -87,7 +87,7 @@ const Home = () => {
             <i className="fa-solid fa-play"></i>
             Get Started
           </button>
-          <a href="/plans.html" className={styles.secondaryBtn}>
+          <a href="/plans" className={styles.secondaryBtn}>
             <i className="fa-solid fa-arrow-up-right-dots"></i>
             View Plans
           </a>
