@@ -33,6 +33,9 @@ import PublicProfile from './components/PublicProfile/PublicProfile';
 import About from './components/Legal/About';
 import Privacy from './components/Legal/Privacy';
 import Terms from './components/Legal/Terms';
+import Help from './components/Legal/Help';
+import Feedback from './components/Legal/Feedback';
+import Plans from './components/Legal/Plans';
 import ChordWindow from './components/ChordWindow/ChordWindow';
 import AudioLabeler from './components/AudioLabeler/AudioLabeler';
 import DataMonitor from './components/DataMonitor/DataMonitor';
@@ -201,6 +204,9 @@ function AppContent() {
                       location.pathname === '/about' ? 'about' :
                       location.pathname === '/privacy' ? 'privacy' :
                       location.pathname === '/terms' ? 'terms' :
+                      location.pathname === '/help' ? 'help' :
+                      location.pathname === '/feedback' ? 'feedback' :
+                      location.pathname === '/plans' ? 'plans' :
                       location.pathname.startsWith('/research') ? 'research' :
                       location.pathname.startsWith('/plugins') ? 'plugins' :
                       location.pathname === '/studio' ? 'daw' :
@@ -601,9 +607,25 @@ function AppContent() {
     );
   }
 
-  // Show about/privacy/terms views with sidebar
-  if (currentView === 'about' || currentView === 'privacy' || currentView === 'terms') {
-    const LegalComponent = currentView === 'about' ? About : currentView === 'privacy' ? Privacy : Terms;
+  // Show about/privacy/terms/help/feedback/plans views with sidebar.
+  // Help, Feedback, and Plans aren't strictly "legal" pages but they reuse
+  // Legal.module.css and the same sidebar-plus-centered-content layout, so
+  // they ride this branch.
+  if (
+    currentView === 'about' ||
+    currentView === 'privacy' ||
+    currentView === 'terms' ||
+    currentView === 'help' ||
+    currentView === 'feedback' ||
+    currentView === 'plans'
+  ) {
+    const LegalComponent =
+      currentView === 'about' ? About :
+      currentView === 'privacy' ? Privacy :
+      currentView === 'terms' ? Terms :
+      currentView === 'help' ? Help :
+      currentView === 'feedback' ? Feedback :
+      Plans;
     return (
       <div className="App">
         <LiquidGlassFilters />
