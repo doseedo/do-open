@@ -4,6 +4,19 @@ import 'react-slideshow-image/dist/styles.css';
 import * as authService from '../../services/authService';
 import styles from './Home.module.css';
 
+// Animated slide components (framer-motion, ported from /home/arlo/do2/slides).
+// Each component renders an 800×500 canvas with its own SlideFrame that already
+// contains the headline + copy overlay, so Home.js only has to center them.
+import Slide1 from './slides/slide1';
+import Slide2 from './slides/slide2';
+import Slide3 from './slides/slide3';
+import Slide4 from './slides/slide4';
+import Slide5 from './slides/slide5';
+
+const SLIDE_W = 800;
+const SLIDE_H = 500;
+const SLIDES = [Slide1, Slide2, Slide3, Slide4, Slide5];
+
 /**
  * Home Component
  * Landing page with feature slideshow
@@ -11,58 +24,24 @@ import styles from './Home.module.css';
 const Home = () => {
   const user = authService.getCurrentUser();
 
-  const slides = [
-    {
-      title: 'Professional DAW Interface',
-      description: 'Edit and arrange your tracks with our powerful timeline and mixing tools',
-      gradient: 'linear-gradient(135deg, rgba(186, 156, 255, 0.9), rgba(156, 130, 200, 0.9))',
-      icon: 'fa-sliders'
-    },
-    {
-      title: 'Multi-Track Recording',
-      description: 'Layer multiple instruments and vocals with real-time audio processing',
-      gradient: 'linear-gradient(135deg, rgba(118, 75, 162, 0.9), rgba(102, 126, 234, 0.9))',
-      icon: 'fa-microphone-lines'
-    },
-    {
-      title: 'Orchestra & Instrument Library',
-      description: 'Access a vast library of orchestral instruments and synthesizers',
-      gradient: 'linear-gradient(135deg, rgba(156, 130, 200, 0.9), rgba(186, 156, 255, 0.9))',
-      icon: 'fa-music'
-    },
-    {
-      title: 'Video to Music',
-      description: 'Upload your videos and generate perfectly synced soundtracks',
-      gradient: 'linear-gradient(135deg, rgba(102, 126, 234, 0.9), rgba(186, 156, 255, 0.9))',
-      icon: 'fa-video'
-    }
-  ];
-
   const slideProperties = {
-    duration: 5000,
+    duration: 8000,
     autoplay: true,
     transitionDuration: 500,
     arrows: true,
     infinite: true,
     easing: 'ease',
-    indicators: true
+    indicators: true,
   };
 
   return (
     <div className={styles.homeContainer}>
       <div className={styles.slideshow}>
         <Slide {...slideProperties}>
-          {slides.map((slide, index) => (
+          {SLIDES.map((SlideComponent, index) => (
             <div key={index} className={styles.slide}>
-              <div
-                className={styles.slideContent}
-                style={{ background: slide.gradient }}
-              >
-                <div className={styles.slideIcon}>
-                  <i className={`fa-solid ${slide.icon}`}></i>
-                </div>
-                <h1 className={styles.slideTitle}>{slide.title}</h1>
-                <p className={styles.slideDescription}>{slide.description}</p>
+              <div className={styles.slideFrameWrap}>
+                <SlideComponent width={SLIDE_W} height={SLIDE_H} />
               </div>
             </div>
           ))}
