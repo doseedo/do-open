@@ -195,9 +195,13 @@ function AppContent() {
   // Check if we're in demo mode
   const isDemo = location.pathname === '/demo';
 
-  // Redirect root based on auth status - retry multiple times to handle cookie timing
+  // Redirect root based on auth status - retry multiple times to handle cookie timing.
+  // Unauthenticated visitors to /home also leave the SPA and go to the Framer
+  // marketing page (do.doseedo.com). The /home path is only handled here if
+  // the static redirect stub at /home/index.html wasn't served for some reason
+  // (e.g. a stale CDN cache of the SPA fallback).
   useEffect(() => {
-    if (location.pathname === '/') {
+    if (location.pathname === '/' || location.pathname === '/home') {
       let attempts = 0;
       const maxAttempts = 5;
       const checkInterval = 150; // ms between checks
@@ -213,8 +217,8 @@ function AppContent() {
           navigate('/dashboard', { replace: true });
         } else if (attempts >= maxAttempts) {
           // After 750ms of retries, assume not authenticated
-          console.log('Max attempts reached, redirecting to /home');
-          window.location.href = '/home';
+          console.log('Max attempts reached, redirecting to https://do.doseedo.com/');
+          window.location.replace('https://do.doseedo.com/');
         } else {
           // Try again
           setTimeout(checkAuth, checkInterval);
