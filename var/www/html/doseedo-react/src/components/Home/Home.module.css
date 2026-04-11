@@ -8,12 +8,17 @@
   overflow-y: auto;
 }
 
-/* Slideshow Section */
+/* Slideshow Section —
+   Fills the entire dashboard content area, from the LeftSidebar's right edge
+   (the sidebar is position:fixed width:200px when expanded, and Home force-
+   expands it — see LeftSidebar.js isSpecialView effect) all the way to the
+   viewport right edge. No max-width or auto-margin: we explicitly clear the
+   sidebar with margin-left and let the container fill the remainder of the
+   homeContainer flow. Mobile override is in the responsive block below. */
 .slideshow {
-  width: 100%;
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 40px 20px;
+  width: auto;
+  margin: 0 0 0 200px;
+  padding: 40px 0;
 }
 
 .slide {
@@ -22,6 +27,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Match the slide canvas base color (see shared.tsx SlideFrame: "#050508")
+     so the area around the centered 800×500 frame doesn't show the homeContainer
+     gradient as a grey border. */
+  background: #050508;
 }
 
 /* Wrapper that centers the 800×500 animated slide canvas inside the
@@ -96,6 +105,10 @@
 :global(.react-slideshow-container) {
   border-radius: 20px;
   overflow: hidden;
+  /* Same #050508 as .slide and SlideFrame — covers the library's own wrapper
+     area during transitions so the gap between incoming and outgoing slides
+     stays the slide hue instead of flashing the homeContainer gradient. */
+  background: #050508;
 }
 
 :global(.react-slideshow-container .nav) {
@@ -277,6 +290,12 @@
 @media (max-width: 768px) {
   .homeContainer {
     padding-top: 40px;
+  }
+
+  /* Mobile: sidebar is an off-canvas overlay, not a fixed flow element,
+     so the slideshow should start flush at the viewport left edge. */
+  .slideshow {
+    margin-left: 0;
   }
 
   .slide {
