@@ -284,14 +284,10 @@ position:relative;
         color: rgba(128, 128, 128, 0.423);
     }
 
-head{
-    background-image: url('../images/home.jpeg'); 
-    background-size: cover; 
-    background-repeat: no-repeat; 
-    background-attachment: fixed; 
-    background-position: center center; 
-    background-repeat:repeat-y;
-    }
+/* Dead rule: `head` is not rendered. Kept empty so diff stays contained;
+   image refs removed because the source assets aren't checked in and
+   webpack was failing on cold clones. */
+
 
 body {
     margin: 0;
@@ -416,7 +412,9 @@ textarea:focus, input:focus{
     box-shadow: 0 3.2px 4.8px rgba(0, 0, 0, 0.1);
     border-radius: 16px;
     color: white;
-    float:calc();
+    /* Removed `float:calc();` — invalid declaration (float doesn't accept calc,
+       and the calc() was empty). It was a no-op at runtime but broke the
+       production postcss-calc minifier pass. */
 }
 .header {
     text-align: center;
@@ -3133,7 +3131,8 @@ bottom: 80px;
     text-align: right;
 }
 .trysection{
-    background-image: url('../images/hues.png');
+    /* background-image: url('../images/hues.png') removed — legacy asset not in repo,
+       class unused by any React component (grep: components/ + pages/). */
     background-size:contain;
     background-blend-mode:lighten;
     background-repeat:repeat;
@@ -3159,7 +3158,8 @@ bottom: 80px;
     width: 100%;
     height: 320px;
     padding-top: 40px;
-    background-image: url('../images/glam.png');
+    /* background-image: url('../images/glam.png') removed — legacy asset not in repo,
+       class unused by any React component. */
     display: inline-flex;
     border: 1.6px rgba(255, 255, 255, 0.400) solid;
 }
@@ -3191,7 +3191,8 @@ bottom: 80px;
     justify-content: center;
     gap: 16px;
     padding-top: 40px;
-    background-image: url('../images/glam2.png');
+    /* background-image: url('../images/glam2.png') removed — legacy asset not in repo,
+       class unused by any React component. */
     background-size: cover;
     margin-bottom: 40px;
  height: 560px;

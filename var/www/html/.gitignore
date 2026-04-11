@@ -63,3 +63,18 @@ checkpoints/
 # Embedded git repositories
 pyaaf2/
 pyaafenv/
+
+# ---------------------------------------------------------------------------
+# Un-ignore React source-tree files that CRA needs for cold-clone builds.
+# These negations MUST stay after the blanket *.png/*.jpg/*.json excludes
+# above. Without them tsconfig.json, package-lock.json, and public-tree
+# assets (ort-wasm-*, favicon, images) get stripped from fresh clones and
+# `npm run build` dies with "Module not found". See /CLAUDE.md for the
+# full cold-clone build contract.
+# ---------------------------------------------------------------------------
+!doseedo-react/tsconfig.json
+!doseedo-react/package-lock.json
+!doseedo-react/public/
+!doseedo-react/public/**
+!doseedo-react/src/assets/
+!doseedo-react/src/assets/**
