@@ -6,10 +6,23 @@
   <title>Sign in · Doseedo</title>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
+    /*
+     * Login theme — mirrors the SPA's purple-glass aesthetic (see
+     * src/components/Legal/Legal.module.css). Colors pulled from there:
+     *   accent:       rgba(186, 156, 255, ...)   // light purple
+     *   card bg:      rgba(255, 255, 255, 0.03) on a near-black body
+     *   borders:      rgba(186, 156, 255, 0.15-0.55)
+     *   text:         rgba(255, 255, 255, 0.6-0.95)
+     * The auth logic below is untouched — this is a visual-only refresh.
+     */
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
-      background: #0d0d0d;
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(186, 156, 255, 0.10), transparent 60%),
+        radial-gradient(800px 500px at 80% 100%, rgba(186, 156, 255, 0.06), transparent 60%),
+        #0a0a0d;
       color: #fff;
       min-height: 100vh;
       display: flex;
@@ -17,35 +30,108 @@
       justify-content: center;
       padding: 24px;
     }
-    .card { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 20px; }
-    .logo { text-align: center; font-size: 1.5em; font-weight: 700; letter-spacing: -0.5px; }
-    .subtitle { text-align: center; color: #555; font-size: 0.83em; margin-top: 4px; }
+    .card {
+      width: 100%;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      padding: 36px 32px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(186, 156, 255, 0.18);
+      border-radius: 18px;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+    }
+    .logo {
+      text-align: center;
+      font-size: 1.8em;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #fff;
+    }
+    .subtitle {
+      text-align: center;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 0.88em;
+      margin-top: 6px;
+    }
     input {
-      width: 100%; background: #111; border: 1px solid #222; border-radius: 6px;
-      color: #fff; padding: 10px 14px; font-size: 0.9em; outline: none;
-      transition: border-color 0.15s;
+      width: 100%;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(186, 156, 255, 0.2);
+      border-radius: 10px;
+      color: #fff;
+      padding: 12px 14px;
+      font-size: 0.92em;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s ease, background 0.15s ease;
     }
-    input:focus { border-color: #444; }
-    .fields { display: flex; flex-direction: column; gap: 10px; }
+    input::placeholder { color: rgba(255, 255, 255, 0.35); }
+    input:focus {
+      border-color: rgba(186, 156, 255, 0.55);
+      background: rgba(0, 0, 0, 0.35);
+    }
+    .fields { display: flex; flex-direction: column; gap: 12px; }
     .btn {
-      width: 100%; border: none; border-radius: 6px; padding: 10px;
-      font-size: 0.9em; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+      width: 100%;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 0.92em;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
     }
-    .btn-primary { background: #e8e8e8; color: #000; }
-    .btn-primary:hover { background: #fff; }
-    .btn-primary:disabled { background: #222; color: #555; cursor: default; }
+    .btn:active { transform: scale(0.985); }
+    .btn-primary {
+      background: rgba(186, 156, 255, 0.22);
+      border-color: rgba(186, 156, 255, 0.55);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: rgba(186, 156, 255, 0.32);
+      border-color: rgba(186, 156, 255, 0.8);
+    }
+    .btn-primary:disabled {
+      background: rgba(186, 156, 255, 0.08);
+      border-color: rgba(186, 156, 255, 0.15);
+      color: rgba(255, 255, 255, 0.4);
+      cursor: default;
+    }
     .btn-google {
-      background: #111; color: #fff; border: 1px solid #222;
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(186, 156, 255, 0.2);
+      color: #fff;
       display: flex; align-items: center; justify-content: center; gap: 10px;
     }
-    .btn-google:hover { background: #1a1a1a; border-color: #333; }
+    .btn-google:hover {
+      background: rgba(255, 255, 255, 0.07);
+      border-color: rgba(186, 156, 255, 0.4);
+    }
     .btn-google:disabled { opacity: 0.4; cursor: default; }
-    .divider { display: flex; align-items: center; gap: 10px; }
-    .divider-line { flex: 1; height: 1px; background: #1e1e1e; }
-    .divider-text { color: #444; font-size: 0.78em; }
-    .error { color: #ef4444; font-size: 0.8em; text-align: center; }
-    .toggle { text-align: center; font-size: 0.8em; color: #555; }
-    .toggle a { color: #888; cursor: pointer; text-decoration: underline; }
+    .divider { display: flex; align-items: center; gap: 12px; }
+    .divider-line { flex: 1; height: 1px; background: rgba(186, 156, 255, 0.15); }
+    .divider-text { color: rgba(255, 255, 255, 0.35); font-size: 0.78em; letter-spacing: 0.5px; }
+    .error {
+      color: #ff8a8a;
+      background: rgba(255, 100, 100, 0.08);
+      border: 1px solid rgba(255, 100, 100, 0.25);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.82em;
+      text-align: center;
+    }
+    .toggle { text-align: center; font-size: 0.85em; color: rgba(255, 255, 255, 0.5); }
+    .toggle a {
+      color: rgba(186, 156, 255, 0.9);
+      cursor: pointer;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .toggle a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
