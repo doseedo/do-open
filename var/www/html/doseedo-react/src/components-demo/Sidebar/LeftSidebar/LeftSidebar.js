@@ -1,4 +1,5 @@
 import React, { useCallback, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../../context/AppContext';
 import { getCurrentUser } from '../../../services/authService';
 import SidebarLink from './SidebarLink';
@@ -10,6 +11,7 @@ import styles from './LeftSidebar.module.css';
  * Main navigation sidebar with collapsible menu
  */
 const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, onGoToUserInfo, onGoToTools, onGoToWhatsNew, onToggleSearch: onToggleMidiBrowser, onShowGenerationPanel, onShowMidiBrowser, showMidiBrowser, onToggleChat, showChatWindow, isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView, isWhatsNewView }) => {
+  const navigate = useNavigate();
   const { state, dispatch } = useApp();
   const [userInfo, setUserInfo] = useState(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -128,15 +130,42 @@ const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, o
             />
             {showMoreMenu && (
               <div className={styles.moreDropdown}>
-                <a href="https://docs.doseedo.com" target="_blank" rel="noopener noreferrer" className={styles.moreItem}>
+                {/* Internal SPA navigation — see production LeftSidebar for the
+                    reasoning. docs.doseedo.com doesn't exist, and /about,
+                    /help, /feedback all live inside the SPA. */}
+                <a
+                  href="/help"
+                  className={styles.moreItem}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowMoreMenu(false);
+                    navigate('/help');
+                  }}
+                >
                   <i className="fa-solid fa-circle-question"></i>
                   <span>Help</span>
                 </a>
-                <a href="https://doseedo.com/about" target="_blank" rel="noopener noreferrer" className={styles.moreItem}>
+                <a
+                  href="/about"
+                  className={styles.moreItem}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowMoreMenu(false);
+                    navigate('/about');
+                  }}
+                >
                   <i className="fa-solid fa-info-circle"></i>
                   <span>About</span>
                 </a>
-                <a href="https://doseedo.com/feedback" target="_blank" rel="noopener noreferrer" className={styles.moreItem}>
+                <a
+                  href="/feedback"
+                  className={styles.moreItem}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowMoreMenu(false);
+                    navigate('/feedback');
+                  }}
+                >
                   <i className="fa-solid fa-message"></i>
                   <span>Feedback</span>
                 </a>
