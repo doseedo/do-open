@@ -2,6 +2,9 @@ import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react'
 import { useApp } from '../../context/AppContext';
 import PlayheadCursor from './PlayheadCursor';
 import styles from './DAW.module.css';
+import {
+  analyzeAudio, iconForType, separateStemsAuto,
+} from '../../services/trackAnalysisAPI';
 
 /**
  * Timeline Component - Complete Rewrite with Modern React Patterns
@@ -33,6 +36,11 @@ const Timeline = React.memo(({
   onZoomYOut = null
 }) => {
   const { state, dispatch } = useApp();
+  const beatsPerBar = state.beatsPerBar || 4;
+  const meterDenominator = state.meterDenominator || 4;
+  // For /8 meters one beat in the bar is an eighth note (half a quarter), so
+  // bar duration is (beatsPerBar / 2) quarter notes worth of time.
+  const beatUnitFactor = meterDenominator === 8 ? 0.5 : 1;
   const [containerWidth, setContainerWidth] = useState(700);
   const [actualGridWidth, setActualGridWidth] = useState(700);
   const [isClickEnabled, setIsClickEnabled] = useState(true);
@@ -145,12 +153,12 @@ const Timeline = React.memo(({
         const sceneBPM = sceneTempos[sceneIdx];
         const sceneStart = sceneChanges[sceneIdx];
         const sceneEnd = sceneChanges[sceneIdx + 1] || totalDuration;
-        const secondsPerBeat = 60 / sceneBPM;
-        const secondsPerBar = secondsPerBeat * 4; // 4/4 time signature
+        const secondsPerBeat = (60 / sceneBPM) * beatUnitFactor;
+        const secondsPerBar = secondsPerBeat * beatsPerBar;
 
         // Calculate where the next bar should start based on accumulated beats
-        const beatsIntoFirstBar = accumulatedBeats % 4;
-        const beatsUntilNextBar = beatsIntoFirstBar === 0 ? 0 : (4 - beatsIntoFirstBar);
+        const beatsIntoFirstBar = accumulatedBeats % beatsPerBar;
+        const beatsUntilNextBar = beatsIntoFirstBar === 0 ? 0 : (beatsPerBar - beatsIntoFirstBar);
         const firstBarTime = sceneStart + (beatsUntilNextBar * secondsPerBeat);
 
         // Render bars starting from first bar boundary in this scene
@@ -171,7 +179,7 @@ const Timeline = React.memo(({
             });
 
             // Add beat and sub-beat subdivisions
-            const totalSubdivisions = 4 * subdivisionLevel; // 4 beats per bar * subdivision
+            const totalSubdivisions = beatsPerBar * subdivisionLevel;
             for (let sub = 1; sub < totalSubdivisions; sub++) {
               const subTime = barTime + (sub * secondsPerBeat / subdivisionLevel);
               if (subTime >= sceneEnd || subTime > totalDuration) break;
@@ -200,13 +208,56 @@ const Timeline = React.memo(({
         accumulatedBeats += sceneDuration / secondsPerBeat;
       }
 
+    } else if (
+      state.beatMap && state.beatMap.length >= beatsPerBar &&
+      // Only use the detected beat map when the user hasn't switched
+      // meter away from what was detected. Otherwise the bar grouping
+      // (every 4 beats) would still be 4/4 even when state says 7/8.
+      meterDenominator === 4 &&
+      // Detected meter inferred from beat map: max pos value.
+      state.beatMap.reduce((m, b) => Math.max(m, b.pos), 0) === beatsPerBar
+    ) {
+      const bm = state.beatMap;
+      let barNumber = 1;
+      for (let i = 0; i < bm.length; i++) {
+        if (bm[i].pos !== 1) continue;
+        const time = bm[i].t;
+        if (time > totalDuration) break;
+        const barPosition = (time / totalDuration) * width;
+        tickArray.push({
+          id: `bar-${barNumber}`,
+          time,
+          position: barPosition,
+          label: `${barNumber}`,
+          isMajor: true,
+          isBar: true,
+          subdivision: 1,
+        });
+        // Sub-beats: the next (beatsPerBar - 1) beats from this downbeat
+        for (let j = 1; j < beatsPerBar && (i + j) < bm.length; j++) {
+          const subTime = bm[i + j].t;
+          if (subTime > totalDuration) break;
+          tickArray.push({
+            id: `bar-${barNumber}-sub-${j}`,
+            time: subTime,
+            position: (subTime / totalDuration) * width,
+            isMajor: false,
+            isBeat: true,
+            isSubBeat: false,
+            subdivision: 1,
+          });
+        }
+        barNumber++;
+      }
     } else {
-      // Render with constant BPM
-      const secondsPerBeat = 60 / bpm;
-      const secondsPerBar = secondsPerBeat * 4; // 4/4 time signature
+      // Render with constant BPM, offset by state.timelineOffset so bar 1
+      // lands on the detected downbeat (silence-before-downbeat == bar 0).
+      const secondsPerBeat = (60 / bpm) * beatUnitFactor;
+      const secondsPerBar = secondsPerBeat * beatsPerBar;
+      const tlOffset = state.timelineOffset || 0;
       let barNumber = 1;
 
-      for (let time = 0; time <= totalDuration; time += secondsPerBar) {
+      for (let time = tlOffset; time <= totalDuration; time += secondsPerBar) {
         const barPosition = (time / totalDuration) * width;
 
         // Add bar marker
@@ -221,7 +272,7 @@ const Timeline = React.memo(({
         });
 
         // Add beat and sub-beat subdivisions
-        const totalSubdivisions = 4 * subdivisionLevel; // 4 beats per bar * subdivision
+        const totalSubdivisions = beatsPerBar * subdivisionLevel;
         for (let sub = 1; sub < totalSubdivisions; sub++) {
           const subTime = time + (sub * secondsPerBeat / subdivisionLevel);
           if (subTime > totalDuration) break;
@@ -246,7 +297,7 @@ const Timeline = React.memo(({
     }
 
     return tickArray;
-  }, [isBPMMode, bpm, sceneTempos, sceneChanges, totalDuration, effectiveContainerWidth, zoomLevel, subdivisionLevel]);
+  }, [isBPMMode, bpm, beatsPerBar, beatUnitFactor, sceneTempos, sceneChanges, totalDuration, effectiveContainerWidth, zoomLevel, subdivisionLevel, state.beatMap, state.timelineOffset]);
 
   // Generate time tick marks (seconds)
   const timeTicks = useMemo(() => {
@@ -563,45 +614,67 @@ const Timeline = React.memo(({
 
         console.log('✅ Audio file added to timeline with blob URL at', dropTime.toFixed(2) + 's');
 
-        // Upload file to server in the background
-        const uploadFile = async () => {
-          try {
-            const formData = new FormData();
-            formData.append('audioFile', file);
+        // Fire the window-level event the parent DAW listens for to
+        // open the "Detect tempo & key?" import modal.
+        window.dispatchEvent(new CustomEvent('doseedo-audio-imported', {
+          detail: { file, busId, trackId },
+        }));
 
-            console.log('📤 Uploading file to server in background...');
-            const response = await fetch('/api/upload-audio', {
-              method: 'POST',
-              body: formData
-            });
+        // Background analysis: basic-pitch + PANNs + VAE latent encode
+        analyzeAudio(file).then((res) => {
+          const cls = res.classification;
+          const midi = res.midi;
+          const latent = res.latent;
+          const instType = cls?.type || 'other';
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: {
+              busId, trackId,
+              updates: {
+                metadata: {
+                  type: 'uploaded',
+                  originalFilename: file.name,
+                  instrument: instType,
+                  instrumentLabel: cls?.label || null,
+                  icon: iconForType(instType),
+                  midi: midi?.midi_url || null,
+                  latent: latent?.latent_url || null,
+                  latentId: latent?.latent_id || null,
+                  inputFiles: midi?.midi_url ? { midiPath: midi.midi_url } : {},
+                },
+              },
+            },
+          });
+          console.log(`🎯 timeline analysis done: ${instType}, midi=${midi?.n_notes}n, latent=${latent?.n_frames}f`);
+        }).catch((err) => console.warn('analyze failed (timeline drop):', err.message));
 
-            if (!response.ok) {
-              throw new Error(`Upload failed: ${response.status}`);
-            }
-
-            const result = await response.json();
-            console.log('✅ File uploaded to server:', result);
-
-            // Update the track with the server URL
-            dispatch({
-              type: 'UPDATE_TRACK',
-              payload: {
-                busId: busId,
-                trackId: trackId,
-                updates: {
-                  audioUrl: result.url
-                }
-              }
-            });
-
-            console.log('✅ Track updated with server URL');
-          } catch (error) {
-            console.error('❌ Background upload failed:', error);
-            // Track still works with blob URL, just won't persist across refreshes
-          }
-        };
-
-        uploadFile();
+        // Background stem separation → bulk add stem children, collapse bus
+        separateStemsAuto(file).then((sep) => {
+          if (!sep?.stems) return;
+          const stemNames = Object.keys(sep.stems);
+          const stemTracks = stemNames.map((stemName) => ({
+            id: `stem-${trackId}-${stemName}`,
+            name: `${file.name.replace(/\.[^.]+$/, '')} — ${stemName}`,
+            audioUrl: sep.stems[stemName],
+            duration,
+            startPosition: dropTime,
+            gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
+            fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
+            metadata: {
+              type: 'stem',
+              stemType: stemName,
+              parentTrackId: trackId,
+              instrument: stemName,
+              icon: iconForType(stemName),
+            },
+          }));
+          dispatch({
+            type: 'ADD_TRACKS_BULK',
+            payload: { busId, tracks: stemTracks },
+          });
+          dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: false } });
+          console.log(`🎚️ timeline auto-separated → ${stemNames.length} stems, bus collapsed`);
+        }).catch((err) => console.warn('auto-separation failed (timeline drop):', err.message));
       });
     }
   }, [timelineRef, totalDuration, dispatch]);

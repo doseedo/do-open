@@ -91,12 +91,7 @@ const TemplateThumbnail = ({ template }) => {
 const PluginCreator = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [unlocked, setUnlocked] = useState(() => {
-    if (sessionStorage.getItem('pc_auth') === '1') return true;
-    const dskKey = new URLSearchParams(window.location.search).get('dsk_key');
-    if (dskKey) { sessionStorage.setItem('pc_auth', '1'); return true; }
-    return false;
-  });
+  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem('pc_auth') === '1');
   // Param controller for modulation routing (shared via context)
   const paramController = useMemo(() => new PluginParamControllerUI(), []);
   const [passInput, setPassInput] = useState('');
@@ -324,52 +319,6 @@ const PluginCreator = () => {
       });
     }
   }, [unlocked, projectParam, resetProject]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Load DAW-cloned plugin from Dø Desktop (dsk_plugin param) ─────────────
-  const dskPluginId = searchParams.get('dsk_plugin');
-  const dskKey = searchParams.get('dsk_key');
-  useEffect(() => {
-    if (!dskPluginId || !dskKey || !unlocked) return;
-    fetch(`https://doseedo-auth-wd7h2yezlq-uc.a.run.app/api/plugins/${dskPluginId}`, {
-      headers: { 'X-API-Key': dskKey },
-    }).then(r => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    }).then(data => {
-      let cfg = null;
-      try { cfg = data.content ? JSON.parse(data.content) : null; } catch {}
-      setPluginConfig({
-        name: data.name || 'Cloned Plugin',
-        width: 600, height: 400, bgColor: '#1a1a2e', titleBarColor: '#2d2d4e', bgImage: '',
-      });
-      if (cfg?.components?.length) {
-        const comps = cfg.components.map((p, i) => ({
-          id: `dsk_${p.id || i}_${i}`,
-          type: 'knob',
-          x: 30 + (i % 4) * 140,
-          y: 60 + Math.floor(i / 4) * 110,
-          width: 60, height: 70,
-          label: p.label || p.id || `Param ${i}`,
-          color: '#667eea',
-          min: p.min ?? 0, max: p.max ?? 1,
-          defaultValue: p.default ?? 0.5,
-          value: p.default ?? 0.5,
-          unit: p.unit || '',
-          paramId: p.id,
-        }));
-        pushComponents(comps);
-      }
-      if (cfg?.dsp_config) {
-        setDspConfig(cfg.dsp_config);
-      }
-      setShowWelcome(false);
-      setSearchParams({}, { replace: true });
-      showToast(`Loaded "${data.name}" from Dø Desktop`, null, 'success');
-    }).catch(err => {
-      showToast('Failed to load DAW plugin: ' + (err.message || 'Unknown error'), null, 'error');
-    });
-  }, [unlocked, dskPluginId, dskKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
 
   // ── Collect images from UI state ─────────────────────────────────────────
   const collectImages = useCallback(() => {

@@ -156,6 +156,10 @@ export async function cacheAudio(url, blob) {
   }
 }
 
+// In-flight Promise registry: when N components ask for the same URL
+// concurrently we share ONE fetch instead of hitting the network N times.
+const _inflight = new Map();
+
 /**
  * Fetch audio with caching
  * Checks cache first, fetches and caches if not found
@@ -171,29 +175,39 @@ export async function fetchAudioWithCache(url) {
     return { blob: cachedBlob, objectUrl, fromCache: true };
   }
 
+  // Dedupe concurrent requests for the same URL
+  if (_inflight.has(url)) {
+    return _inflight.get(url);
+  }
+
   // Fetch from network
   console.log(`Fetching audio: ${url.substring(0, 50)}...`);
 
-  try {
-    const response = await fetch(url);
+  const promise = (async () => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio: ${response.status}`);
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch audio: ${response.status}`);
+      // Cache in background (don't await)
+      cacheAudio(url, blob).catch(err => {
+        console.warn('Failed to cache audio:', err);
+      });
+
+      return { blob, objectUrl, fromCache: false };
+    } catch (error) {
+      console.error('Audio fetch error:', error);
+      throw error;
+    } finally {
+      // Always remove the in-flight entry, even on error, so retries work
+      _inflight.delete(url);
     }
-
-    const blob = await response.blob();
-    const objectUrl = URL.createObjectURL(blob);
-
-    // Cache in background (don't await)
-    cacheAudio(url, blob).catch(err => {
-      console.warn('Failed to cache audio:', err);
-    });
-
-    return { blob, objectUrl, fromCache: false };
-  } catch (error) {
-    console.error('Audio fetch error:', error);
-    throw error;
-  }
+  })();
+  _inflight.set(url, promise);
+  return promise;
 }
 
 /**

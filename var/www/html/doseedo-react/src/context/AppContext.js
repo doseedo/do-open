@@ -87,6 +87,16 @@ const initialState = {
   selectedBus: null,  // For when a collapsed bus is clicked
   copiedTrack: null,  // Track copied with Cmd+C for paste operation
   bpm: 120,
+  beatsPerBar: 4,
+  meterDenominator: 4,
+  // Detected per-beat tempo map: [{ t: seconds, pos: 1..beatsPerBar }, ...]
+  // Where present, all timeline/chord/metronome renderers should use
+  // these times directly rather than assuming a constant BPM.
+  beatMap: null,
+  // Pre-roll seconds before bar 1 (the "pickup"). When an audio import
+  // is detected to start with silence + a downbeat at t=N seconds, set
+  // timelineOffset = N so bar 1 lands on the actual downbeat.
+  timelineOffset: 0,
   // Demo tempo automation - internal tempo changes by time (in seconds at base 120 BPM)
   // Bars at 120 BPM: 1 bar = 2 seconds
   // Bar 11 = 20s, Bar 13 = 24s, Bar 17 = 32s, Bar 21 = 42s
@@ -96,7 +106,7 @@ const initialState = {
     { time: 24, bpm: 130 },     // Bars 13-16: 130 BPM
     { time: 32, bpm: 130, rampTo: 145, rampEnd: 42 }  // Bars 17-21: ramp 130->145 BPM
   ],
-  isBPMMode: false,
+  isBPMMode: true,
   isMetronomeOn: false,
   subdivisionLevel: 1,  // 1 = quarter notes, 2 = 8th notes, 4 = 16th notes
   masterGain: 0.8,  // 80% to prevent clipping (20% reduction)
@@ -148,32 +158,7 @@ const initialState = {
     beatIndex: null  // Which beat is being edited
   },
   chordTrack: {
-    chords: {
-      // Placeholder chord progression (shifted 4 bars, 4/4 time)
-      // Only beat 1 (index 0) and beat 3 (index 2) per bar
-      0: 'Bb-Δ7',    // Bar 1 Beat 1
-      16: 'Eb-9',    // Bar 5 Beat 1
-      20: 'Ab7',      // Bar 6 Beat 1
-      24: 'DbΔ9',     // Bar 7 Beat 1
-      26: 'Gb',       // Bar 7 Beat 3
-      28: 'F-',       // Bar 8 Beat 1
-      30: 'B+',       // Bar 8 Beat 3
-      32: 'Eb-9',     // Bar 9 Beat 1
-      36: 'Ab7',      // Bar 10 Beat 1
-      40: 'Ab-7',     // Bar 11 Beat 1
-      44: 'Db7',      // Bar 12 Beat 1
-      48: 'GbΔ7',     // Bar 13 Beat 1
-      52: 'F-7',      // Bar 14 Beat 1
-      54: 'Bb7',      // Bar 14 Beat 3
-      56: 'Eb-9',     // Bar 15 Beat 1
-      58: 'Ab7',      // Bar 15 Beat 3
-      60: 'DbΔ9',     // Bar 16 Beat 1
-      64: 'C-7b5',    // Bar 17 Beat 1
-      66: 'F7',       // Bar 17 Beat 3
-      68: 'Bb-9',     // Bar 18 Beat 1
-      72: 'Bb-9',     // Bar 19 Beat 1
-      76: 'Bb-9'      // Bar 20 Beat 1
-    }
+    chords: {}
   },
   zoomLevel: 1.3,  // Default zoom level (130%)
   trackHeight: 48,  // Default track height in pixels (vertical zoom) - zoomed out 2 levels from 72
@@ -505,6 +490,37 @@ function appReducer(state, action) {
         totalDuration: Math.max(state.totalDuration, maxTrackDuration)
       };
 
+    case 'ADD_TRACKS_BULK': {
+      // Adds multiple tracks to a bus in ONE state update so the
+      // tree only re-renders once instead of N times. Used by the
+      // auto-stem-separation flow which produces 6 stems at once.
+      const { busId: bulkBusId, tracks: bulkTracks } = action.payload;
+      let bulkBuses;
+      const bulkBusExists = state.buses.some(bus => bus.id === bulkBusId);
+      if (!bulkBusExists) {
+        bulkBuses = [...state.buses, {
+          id: bulkBusId, type: 'Music', name: 'Music',
+          tracks: [...bulkTracks],
+          gain: 1.0, pan: 0, reverbSend: 0, mute: false, solo: false, expanded: false,
+        }];
+      } else {
+        bulkBuses = state.buses.map(bus =>
+          bus.id === bulkBusId
+            ? { ...bus, tracks: [...bus.tracks, ...bulkTracks] }
+            : bus
+        );
+      }
+      let bulkMaxDur = state.totalDuration || 10;
+      bulkBuses.forEach(bus => {
+        bus.tracks.forEach(t => {
+          const td = t.duration || t.length || 0;
+          const te = (t.startPosition || 0) + td;
+          if (te > bulkMaxDur) bulkMaxDur = te;
+        });
+      });
+      return { ...state, buses: bulkBuses, totalDuration: bulkMaxDur };
+    }
+
     case 'REPLACE_TRACK':
       const { busId: replaceBusId, trackId, newTrack } = action.payload;
       console.log(`🔄 REPLACE_TRACK: Replacing track ${trackId} in bus ${replaceBusId}`);
@@ -777,6 +793,16 @@ function appReducer(state, action) {
         buses: state.buses.map(bus =>
           bus.id === action.payload.busId
             ? { ...bus, expanded: !bus.expanded }
+            : bus
+        )
+      };
+
+    case 'SET_BUS_EXPANDED':
+      return {
+        ...state,
+        buses: state.buses.map(bus =>
+          bus.id === action.payload.busId
+            ? { ...bus, expanded: !!action.payload.expanded }
             : bus
         )
       };
@@ -1231,6 +1257,35 @@ function appReducer(state, action) {
           isVisible: false,
           beatIndex: null
         }
+      };
+
+    case 'SET_BEATS_PER_BAR':
+      return { ...state, beatsPerBar: Math.max(1, parseInt(action.payload, 10) || 4) };
+    case 'SET_BEAT_MAP':
+      return { ...state, beatMap: action.payload || null };
+    case 'SET_METER': {
+      // payload: "N/D" string e.g. "7/8"
+      const [n, d] = String(action.payload).split('/').map((x) => parseInt(x, 10));
+      if (!n || !d) return state;
+      return { ...state, beatsPerBar: n, meterDenominator: d };
+    }
+
+    case 'SET_TIMELINE_OFFSET':
+      return { ...state, timelineOffset: Math.max(0, parseFloat(action.payload) || 0) };
+
+    case 'SET_CHORDS':
+      return {
+        ...state,
+        chordTrack: {
+          ...state.chordTrack,
+          chords: action.payload || {}
+        }
+      };
+
+    case 'CLEAR_CHORDS':
+      return {
+        ...state,
+        chordTrack: { ...state.chordTrack, chords: {} }
       };
 
     case 'SET_CHORD_FOR_BEAT':

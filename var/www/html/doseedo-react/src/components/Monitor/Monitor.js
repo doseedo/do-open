@@ -48,16 +48,19 @@ const Monitor = () => {
   // Fetch decrypt key once
   const fetchDecryptKey = useCallback(async () => {
     if (decryptKeyRef.current) return decryptKeyRef.current;
-    try {
-      const response = await fetch('/api/monitor/decrypt-key');
-      if (!response.ok) throw new Error('Failed to fetch decrypt key');
-      const data = await response.json();
-      decryptKeyRef.current = data.key;
-      return data.key;
-    } catch (err) {
-      console.error('Failed to fetch decrypt key:', err);
-      throw err;
+    const response = await fetch('/api/monitor/decrypt-key');
+    if (!response.ok) {
+      // Backend not deployed — caller will surface a friendly message
+      throw new Error(`Monitor backend offline (HTTP ${response.status})`);
     }
+    // Some 404 fallbacks return HTML; detect that
+    const ct = response.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      throw new Error('Monitor backend offline');
+    }
+    const data = await response.json();
+    decryptKeyRef.current = data.key;
+    return data.key;
   }, []);
 
   // Fetch stats from API

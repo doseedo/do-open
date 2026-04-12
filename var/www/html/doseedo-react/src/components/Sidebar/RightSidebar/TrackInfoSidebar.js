@@ -3,6 +3,7 @@ import { useApp } from '../../../context/AppContext';
 import * as generationAPI from '../../../services/generationAPI';
 import GlassButtonWrapper from '../../GlassButton/GlassButtonWrapper';
 import { logFeedback } from '../../../utils/feedbackLogger';
+import { compressAudioForUpload } from '../../../utils/audioCompress';
 import styles from './TrackInfoSidebar.module.css';
 
 /**
@@ -34,6 +35,7 @@ const TrackInfoSidebar = React.memo(() => {
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(null); // 'like' or 'dislike'
   const [trumpetMuted, setTrumpetMuted] = useState(false); // For trumpet mute toggle
   const [muteProcessing, setMuteProcessing] = useState(false); // Loading state for mute FX
+  const [chordDetecting, setChordDetecting] = useState(false);
 
   // Sync trumpetMuted state with selected track's metadata
   useEffect(() => {
@@ -117,6 +119,63 @@ const TrackInfoSidebar = React.memo(() => {
 
     console.log('📥 Downloading track:', selectedTrack.name);
   }, [selectedTrack]);
+
+  const midiUrl = selectedTrack?.metadata?.midi
+    || selectedTrack?.metadata?.inputFiles?.midiPath
+    || null;
+
+  const handleDownloadMidi = useCallback(() => {
+    if (!midiUrl) return;
+    const link = document.createElement('a');
+    link.href = midiUrl;
+    link.download = `${(selectedTrack?.name || 'track').replace(/\.(wav|mp3|flac)$/i, '')}.mid`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [midiUrl, selectedTrack]);
+
+  const latentUrl = selectedTrack?.metadata?.latent || null;
+  const handleDownloadLatent = useCallback(() => {
+    if (!latentUrl) return;
+    const link = document.createElement('a');
+    link.href = latentUrl;
+    link.download = `${(selectedTrack?.name || 'track').replace(/\.(wav|mp3|flac)$/i, '')}.pt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [latentUrl, selectedTrack]);
+
+  const handleDetectChords = useCallback(async (mode = 'master') => {
+    if (!selectedTrack?.audioUrl) return;
+    setChordDetecting(true);
+    try {
+      const audioRes = await fetch(selectedTrack.audioUrl);
+      if (!audioRes.ok) throw new Error(`Audio fetch failed: ${audioRes.status}`);
+      const rawBlob = await audioRes.blob();
+      const audioBlob = await compressAudioForUpload(rawBlob);
+      const fd = new FormData();
+      fd.append('audioFile', audioBlob, (selectedTrack.name || 'track') + '.wav');
+      fd.append('mode', mode);
+      const resp = await fetch('/api/detect-chords', { method: 'POST', body: fd });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+
+      // Convert string keys → numeric for the chord-track reducer
+      const chordsNum = {};
+      Object.entries(data.chords || {}).forEach(([k, v]) => { chordsNum[parseInt(k, 10)] = v; });
+
+      if (data.bpm) dispatch({ type: 'UPDATE_BPM', payload: Math.round(data.bpm) });
+      if (data.beats_per_bar) dispatch({ type: 'SET_BEATS_PER_BAR', payload: data.beats_per_bar });
+      dispatch({ type: 'SET_CHORDS', payload: chordsNum });
+      console.log(`🎼 [${mode}] Detected ${Object.keys(chordsNum).length} chords @ ${data.bpm} bpm, meter=${data.beats_per_bar}/4`);
+    } catch (err) {
+      console.error('❌ Chord detection failed:', err);
+      alert(`Chord detection failed: ${err.message}`);
+    } finally {
+      setChordDetecting(false);
+    }
+  }, [selectedTrack, dispatch]);
 
   // Download track with FX applied
   const handleDownloadWithFX = useCallback(async () => {
@@ -1459,8 +1518,11 @@ const TrackInfoSidebar = React.memo(() => {
         throw new Error(`Failed to fetch audio: ${response.status}`);
       }
 
-      const audioBlob = await response.blob();
-      console.log('✅ Audio fetched, size:', audioBlob.size);
+      const rawAudioBlob = await response.blob();
+      console.log('✅ Audio fetched, size:', rawAudioBlob.size);
+
+      // Compress to fit Cloudflare/Cloud Run upload caps
+      const audioBlob = await compressAudioForUpload(rawAudioBlob);
 
       // Create FormData
       const formData = new FormData();
@@ -1599,8 +1661,11 @@ const TrackInfoSidebar = React.memo(() => {
         throw new Error(`Failed to fetch audio: ${response.status}`);
       }
 
-      const audioBlob = await response.blob();
-      console.log('✅ Audio fetched, size:', audioBlob.size);
+      const rawAudioBlob = await response.blob();
+      console.log('✅ Audio fetched, size:', rawAudioBlob.size);
+
+      // Compress for upload size cap
+      const audioBlob = await compressAudioForUpload(rawAudioBlob);
 
       // Create FormData
       const formData = new FormData();
@@ -2125,20 +2190,17 @@ const TrackInfoSidebar = React.memo(() => {
                 </div>
               </div>
 
-              {/* Bus Icon - Show trumpet for brass bus */}
+              {/* Bus Icon - Show trumpet ensemble for brass bus */}
               {selectedBus.name && selectedBus.name.toLowerCase().includes('brass') && (
                 <div className={styles.instrument3DSection}>
-                  <div className={styles.instrument3DIcon}>
+                  <div
+                    className={styles.instrument3DIcon}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 180 }}
+                  >
                     <img
-                      src={`${process.env.PUBLIC_URL}/assets/2d/drytp.png`}
+                      src="/assets/icons/trumpetens.png"
                       alt="Brass"
-                      style={{
-                        width: '100%',
-                        height: 'auto',
-                        maxHeight: '280px',
-                        objectFit: 'contain',
-                        filter: 'invert(1)'
-                      }}
+                      style={{ width: '100%', maxWidth: 220, maxHeight: 220, objectFit: 'contain', opacity: 0.9 }}
                     />
                   </div>
                 </div>
@@ -2170,103 +2232,93 @@ const TrackInfoSidebar = React.memo(() => {
           ) : (
             // Track Info Content
             <div className={styles.infoContent}>
-              {/* 3D Instrument Icon Section */}
-              {selectedTrack && (
-                <div className={styles.instrument3DSection}>
-                  {(() => {
-                    // Check track instrument info
-                    const instrumentGroup = selectedTrack.instrumentGroup ||
-                      selectedTrack.metadata?.params?.instrumentGroup ||
-                      selectedTrack.metadata?.instrumentGroup;
-                    const instrumentSubgroup = selectedTrack.instrumentSubgroup ||
-                      selectedTrack.metadata?.params?.instrumentSubgroup ||
-                      selectedTrack.metadata?.instrumentSubgroup;
-                    const trackName = selectedTrack.name?.toLowerCase() || '';
+              {/* Instrument Icon (white PNG) */}
+              {selectedTrack && (() => {
+                const group = selectedTrack.instrumentGroup ||
+                  selectedTrack.metadata?.params?.instrumentGroup ||
+                  selectedTrack.metadata?.instrumentGroup;
+                const sub = selectedTrack.instrumentSubgroup ||
+                  selectedTrack.metadata?.params?.instrumentSubgroup ||
+                  selectedTrack.metadata?.instrumentSubgroup;
+                const classified = selectedTrack.metadata?.instrument;
+                const tn = (selectedTrack.name || '').toLowerCase();
 
-                    // Check for trumpet/brass
-                    const isTrumpet = instrumentGroup === 'brass' ||
-                      instrumentSubgroup === 'trumpet' ||
-                      instrumentSubgroup === 'ensemble_brass' ||
-                      trackName.includes('trumpet') ||
-                      trackName.includes('brass');
+                const SUB_ICON = {
+                  acoustic_piano: '/assets/icons/piano.png', keys: '/assets/icons/keyboard.png',
+                  acoustic_guitar: '/assets/icons/acguitar.png', electric_guitar: '/assets/icons/elecgtr.png',
+                  electric_bass: '/assets/icons/elecbass.png', upright_bass: '/assets/icons/elecbass.png',
+                  violin: '/assets/icons/violin.png', viola: '/assets/icons/violin.png', cello: '/assets/icons/cello.png',
+                  ensemble_strings: '/assets/icons/viollinensemble.png',
+                  trumpet: '/assets/icons/tpt.png', trombone: '/assets/icons/tbn.png',
+                  french_horn: '/assets/icons/tuba.png', tuba: '/assets/icons/tuba.png', ensemble_brass: '/assets/icons/trumpetens.png',
+                  bassoon: '/assets/icons/sax.png', clarinet: '/assets/icons/sax.png',
+                  flute: '/assets/icons/flute.png', oboe: '/assets/icons/flute.png', sax: '/assets/icons/sax.png',
+                  ensemble_winds: '/assets/icons/sax.png',
+                  drum_kit: '/assets/icons/drumkit.png', electronic: '/assets/icons/elecdrums.png', percussion: '/assets/icons/drumkit.png',
+                };
+                const GROUP_ICON = {
+                  piano: '/assets/icons/piano.png', guitar: '/assets/icons/acguitar.png', bass: '/assets/icons/elecbass.png',
+                  strings: '/assets/icons/violin.png', brass: '/assets/icons/trumpetens.png', winds: '/assets/icons/sax.png',
+                  drums: '/assets/icons/drumkit.png',
+                };
+                let iconSrc = SUB_ICON[sub] || GROUP_ICON[group] || GROUP_ICON[classified];
+                if (!iconSrc) {
+                  if (tn.includes('trumpet') || tn.includes('brass')) iconSrc = '/assets/icons/trumpetens.png';
+                  else if (tn.includes('elec') && tn.includes('guitar')) iconSrc = '/assets/icons/elecgtr.png';
+                  else if (tn.includes('guitar')) iconSrc = '/assets/icons/acguitar.png';
+                  else if (tn.includes('piano')) iconSrc = '/assets/icons/piano.png';
+                  else if (tn.includes('key')) iconSrc = '/assets/icons/keyboard.png';
+                  else if (tn.includes('drum')) iconSrc = '/assets/icons/drumkit.png';
+                  else if (tn.includes('bass')) iconSrc = '/assets/icons/elecbass.png';
+                  else if (tn.includes('cello')) iconSrc = '/assets/icons/cello.png';
+                  else if (tn.includes('violin') || tn.includes('string')) iconSrc = '/assets/icons/violin.png';
+                  else if (tn.includes('sax')) iconSrc = '/assets/icons/sax.png';
+                  else if (tn.includes('flute')) iconSrc = '/assets/icons/flute.png';
+                  else if (tn.includes('trombone')) iconSrc = '/assets/icons/tbn.png';
+                  else if (tn.includes('tuba')) iconSrc = '/assets/icons/tuba.png';
+                }
+                const isTrumpet = iconSrc && (iconSrc.includes('tpt') || iconSrc.includes('trumpet') || iconSrc.includes('tbn') || iconSrc.includes('tuba'));
 
-                    // Check for electric guitar
-                    const isElectricGuitar = instrumentSubgroup === 'electric_guitar' ||
-                      trackName.includes('electric guitar') ||
-                      trackName.includes('elec guitar') ||
-                      (instrumentGroup === 'guitar' && (
-                        instrumentSubgroup === 'electric_guitar' ||
-                        trackName.includes('electric')
-                      ));
+                if (!iconSrc) return null;
 
-                    if (isTrumpet) {
-                      return (
-                        <>
-                          <div className={styles.instrument3DIcon}>
-                            <img
-                              src={trumpetMuted
-                                ? `${process.env.PUBLIC_URL}/assets/2d/mutetp.png`
-                                : `${process.env.PUBLIC_URL}/assets/2d/drytp.png`
-                              }
-                              alt={trumpetMuted ? "Muted Trumpet" : "Trumpet"}
-                              style={{
-                                width: '100%',
-                                height: 'auto',
-                                maxHeight: '280px',
-                                objectFit: 'contain',
-                                filter: 'invert(1)'
-                              }}
-                            />
-                          </div>
-                          <div className={styles.instrument3DControls}>
-                            <label className={styles.muteToggle}>
-                              <input
-                                type="checkbox"
-                                checked={trumpetMuted}
-                                disabled={muteProcessing}
-                                onChange={(e) => handleMuteToggle(e.target.checked)}
-                              />
-                              <span>{muteProcessing ? 'Processing...' : 'Muted'}</span>
-                            </label>
-                          </div>
-                        </>
-                      );
-                    } else if (isElectricGuitar) {
-                      return (
-                        <div className={styles.instrument3DIcon}>
-                          <img
-                            src={`${process.env.PUBLIC_URL}/assets/3d/egtr.png`}
-                            alt="Electric Guitar"
-                            style={{
-                              width: '100%',
-                              height: 'auto',
-                              maxHeight: '180px',
-                              objectFit: 'contain'
-                            }}
+                return (
+                  <div className={styles.instrument3DSection}>
+                    <div
+                      className={styles.instrument3DIcon}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        minHeight: 180,
+                      }}
+                    >
+                      <img
+                        src={iconSrc}
+                        alt={selectedTrack.name || 'instrument'}
+                        style={{
+                          width: '100%',
+                          maxWidth: 220,
+                          maxHeight: 220,
+                          objectFit: 'contain',
+                          opacity: trumpetMuted && isTrumpet ? 0.35 : 0.9,
+                          transition: 'opacity 0.2s ease',
+                        }}
+                      />
+                    </div>
+                    {isTrumpet && (
+                      <div className={styles.instrument3DControls}>
+                        <label className={styles.muteToggle}>
+                          <input
+                            type="checkbox"
+                            checked={trumpetMuted}
+                            disabled={muteProcessing}
+                            onChange={(e) => handleMuteToggle(e.target.checked)}
                           />
-                        </div>
-                      );
-                    } else {
-                      // Default to trumpet icon for other instruments
-                      return (
-                        <div className={styles.instrument3DIcon}>
-                          <img
-                            src={`${process.env.PUBLIC_URL}/assets/2d/drytp.png`}
-                            alt="Instrument"
-                            style={{
-                              width: '100%',
-                              height: 'auto',
-                              maxHeight: '280px',
-                              objectFit: 'contain',
-                              filter: 'invert(1)'
-                            }}
-                          />
-                        </div>
-                      );
-                    }
-                  })()}
-                </div>
-              )}
+                          <span>{muteProcessing ? 'Processing...' : 'Muted'}</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Composite MIDI Track Info */}
               {selectedTrack && selectedTrack.isComposite && selectedTrack.midiData && (
@@ -2542,6 +2594,27 @@ const TrackInfoSidebar = React.memo(() => {
                     <i className="fa-solid fa-download"></i> Download Track
                   </GlassButtonWrapper>
 
+                  {midiUrl && (
+                    <GlassButtonWrapper
+                      className={styles.downloadBtn}
+                      onClick={handleDownloadMidi}
+                      style={{ flex: 1 }}
+                    >
+                      <i className="fa-solid fa-music"></i> Download MIDI
+                    </GlassButtonWrapper>
+                  )}
+
+                  {latentUrl && (
+                    <GlassButtonWrapper
+                      className={styles.downloadBtn}
+                      onClick={handleDownloadLatent}
+                      style={{ flex: 1 }}
+                      title="VAE latent (.pt) — usable as cover_src for stemphonic"
+                    >
+                      <i className="fa-solid fa-cube"></i> Download Latent
+                    </GlassButtonWrapper>
+                  )}
+
                   {/* Like/Dislike buttons - only for generated tracks */}
                   {isGeneratedTrack && selectedTrack.metadata?.params && (
                     <div style={{ display: 'flex', gap: '4px' }}>
@@ -2590,6 +2663,30 @@ const TrackInfoSidebar = React.memo(() => {
                     </div>
                   )}
                 </div>
+
+                {/* Detect & apply tempo + chord progression */}
+                {selectedTrack?.audioUrl && selectedTrack.type !== 'midi' && (
+                  <>
+                    <GlassButtonWrapper
+                      className={styles.downloadBtn}
+                      onClick={() => handleDetectChords('master')}
+                      style={{ marginTop: '8px', width: '100%' }}
+                      disabled={chordDetecting}
+                    >
+                      <i className={`fa-solid ${chordDetecting ? 'fa-spinner fa-spin' : 'fa-guitar'}`}></i>
+                      {' '}{chordDetecting ? 'Detecting…' : 'Apply Tempo & Chords'}
+                    </GlassButtonWrapper>
+                    <GlassButtonWrapper
+                      className={styles.downloadBtn}
+                      onClick={() => handleDetectChords('stems')}
+                      style={{ marginTop: '8px', width: '100%', background: 'var(--gradient-variant-1)' }}
+                      disabled={chordDetecting}
+                    >
+                      <i className={`fa-solid ${chordDetecting ? 'fa-spinner fa-spin' : 'fa-layer-group'}`}></i>
+                      {' '}{chordDetecting ? 'Detecting…' : 'Separate + Apply Tempo & Chords'}
+                    </GlassButtonWrapper>
+                  </>
+                )}
 
                 {/* Download with FX button - only for audio tracks (not MIDI) */}
                 {selectedTrack.type !== 'midi' && (

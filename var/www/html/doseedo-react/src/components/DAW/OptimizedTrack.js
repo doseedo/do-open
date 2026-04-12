@@ -169,19 +169,23 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
     0  // No crop on rendering
   );
 
-  // Update track duration when audio loads (if different from stored duration)
+  // Update track duration when audio loads — only when the delta is
+  // meaningful (>10ms). The Web Audio decoded duration often differs
+  // from the metadata duration by microseconds, which would otherwise
+  // trigger an UPDATE_TRACK on every load and cascade re-renders
+  // (and re-fetches) across every track in the project.
   useEffect(() => {
-    if (actualDuration && actualDuration !== track.duration) {
-      console.log(`Updating track ${track.id} duration from ${track.duration} to ${actualDuration}`);
-      dispatch({
-        type: 'UPDATE_TRACK',
-        payload: {
-          busId,
-          trackId: track.id,
-          updates: { duration: actualDuration }
-        }
-      });
-    }
+    if (!actualDuration) return;
+    if (Math.abs(actualDuration - (track.duration || 0)) < 0.01) return;
+    dispatch({
+      type: 'UPDATE_TRACK',
+      payload: {
+        busId,
+        trackId: track.id,
+        updates: { duration: actualDuration },
+        skipHistory: true,
+      }
+    });
   }, [actualDuration, track.duration, track.id, busId, dispatch]);
 
   // Calculate transform-based position

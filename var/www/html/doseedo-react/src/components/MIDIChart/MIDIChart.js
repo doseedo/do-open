@@ -5,6 +5,34 @@ import midiPlayer from '../../utils/midiPlayer';
 import { parseMIDI } from '../../utils/midiParser';
 import styles from './MIDIChart.module.css';
 
+// Drum-roll mode: maps GM percussion note numbers to the 16 drum classes
+// the stemphonic backend recognises (see GM_DRUM_NOTE_TO_CHANNEL in
+// stemphonic_server.py). Note storage stays in raw MIDI numbers; only
+// the y-axis labels and y-range change visually.
+const DRUM_NOTE_LABELS = {
+  35: 'Kick', 36: 'Kick',
+  37: 'Rim', 39: 'Clap',
+  38: 'Snare', 40: 'Snare',
+  41: 'LowTom', 43: 'LowTom',
+  42: 'HiHat', 44: 'HiHat',
+  45: 'MidTom', 47: 'MidTom',
+  46: 'OpenHH',
+  48: 'HighTom', 50: 'HighTom',
+  49: 'Crash', 57: 'Crash',
+  51: 'Ride', 59: 'Ride',
+  52: 'China',
+  53: 'Bell',
+  54: 'Tamb',
+  55: 'Splash',
+  56: 'Cowbell',
+  58: 'Vibra',
+};
+// Range that contains all the labels above (35..59 inclusive = 25 rows).
+// Drum cells are rendered at 2x the piano-roll height for legibility.
+const DRUM_ROLL_MIN_NOTE = 35;
+const DRUM_ROLL_MAX_NOTE = 59;
+const DRUM_NOTE_HEIGHT_MULT = 2;
+
 /**
  * MIDIChart - Interactive piano roll for placing MIDI notes
  * Can work standalone or display/edit a selected MIDI track
@@ -34,6 +62,31 @@ const MIDIChart = () => {
   const [zoomY, setZoomY] = useState(1.0); // Vertical zoom (0.5 to 3.0)
   const [zoomMode, setZoomMode] = useState('horizontal'); // 'horizontal' or 'vertical'
   const [chartMode, setChartMode] = useState('midi'); // 'midi', 'f0', or 'score'
+  // rollMode is kept in sync with state.generationParams.midiRollMode so
+  // that switching the GenerationPanel's Drums tab also flips this editor.
+  const externalRollMode = state.generationParams?.midiRollMode;
+  const [rollMode, setRollMode] = useState(externalRollMode === 'drum' ? 'drum' : 'piano');
+  useEffect(() => {
+    if (externalRollMode && externalRollMode !== rollMode) {
+      setRollMode(externalRollMode === 'drum' ? 'drum' : 'piano');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalRollMode]);
+
+  // Vox mode: per-note lyric/syllable assignment. When on, hovering a
+  // note shows a small inline input. Synced with state.generationParams.voxMode
+  // so the Vocals tab can flip it on automatically.
+  const externalVoxMode = state.generationParams?.voxMode;
+  const [voxMode, setVoxMode] = useState(externalVoxMode === true);
+  useEffect(() => {
+    if (typeof externalVoxMode === 'boolean' && externalVoxMode !== voxMode) {
+      setVoxMode(externalVoxMode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalVoxMode]);
+  // Inline lyric editor for the currently-hovered note
+  const [lyricEditNote, setLyricEditNote] = useState(null); // index or null
+  const [lyricEditValue, setLyricEditValue] = useState('');
   const [f0Contour, setF0Contour] = useState([]); // Array of {time, frequency} for F0 mode
   const [isDrawingF0, setIsDrawingF0] = useState(false); // Track if currently drawing F0 contour
   const [midiTempo, setMidiTempo] = useState(120); // Track MIDI tempo for grid display
@@ -101,6 +154,11 @@ const MIDIChart = () => {
 
   // Calculate note range from notes (or use default)
   const noteRange = useMemo(() => {
+    // Drum-roll mode: fixed 25-row range covering the GM percussion
+    // notes labelled in DRUM_NOTE_LABELS. Independent of note content.
+    if (rollMode === 'drum') {
+      return { min: DRUM_ROLL_MIN_NOTE, max: DRUM_ROLL_MAX_NOTE };
+    }
     const defaultRange = { min: 36, max: 84 }; // Default C2-C6 (48 notes)
     if (notes.length === 0) return defaultRange;
 
@@ -133,20 +191,21 @@ const MIDIChart = () => {
     }
 
     return { min, max };
-  }, [notes]);
+  }, [notes, rollMode]);
 
   // Configuration - memoized to prevent re-renders, scales with zoom
   const config = useMemo(() => ({
     minNote: noteRange.min,
     maxNote: noteRange.max,
     gridWidth: 40 * zoomX, // pixels per SECOND (scaled by horizontal zoom) - notes are stored in seconds
-    noteHeight: 20 * zoomY, // pixels per note (scaled by vertical zoom)
+    // Drum-roll mode: 2× larger cells for legibility (fewer rows total).
+    noteHeight: 20 * zoomY * (rollMode === 'drum' ? DRUM_NOTE_HEIGHT_MULT : 1),
     duration: calculatedDuration,
-    leftMargin: 60, // space for piano keys (not scaled)
+    leftMargin: rollMode === 'drum' ? 80 : 60, // wider gutter for drum labels
     topMargin: 30,
     bottomMargin: 20,
     resizeHandleWidth: 8 // Width of resize handle in pixels
-  }), [zoomX, zoomY, calculatedDuration, noteRange]);
+  }), [zoomX, zoomY, calculatedDuration, noteRange, rollMode]);
 
   const totalNotes = config.maxNote - config.minNote + 1;
   const canvasWidth = config.leftMargin + (config.gridWidth * config.duration) + 20;
@@ -336,13 +395,16 @@ const MIDIChart = () => {
   // Load MIDI data from selected track
   useEffect(() => {
     if (isMidiTrack && selectedTrack.midiData && selectedTrack.midiData.notes) {
-      // Convert track MIDI data to piano roll format
+      // Convert track MIDI data to piano roll format. Preserve `lyric`
+      // (vox mode) — earlier the strip was wiping it on every store
+      // sync, causing the inline editor to vanish on each keystroke.
       const trackNotes = selectedTrack.midiData.notes
         .map(note => ({
           note: note.midi || note.note, // Support both field names
           time: note.time,
           duration: note.duration,
-          velocity: note.velocity || 100
+          velocity: note.velocity || 100,
+          ...(note.lyric !== undefined ? { lyric: note.lyric } : {}),
         }))
         .filter(note =>
           Number.isFinite(note.note) &&
@@ -374,7 +436,8 @@ const MIDIChart = () => {
             note: note.midi || note.note,
             time: note.time,
             duration: note.duration,
-            velocity: note.velocity || 100
+            velocity: note.velocity || 100,
+            ...(note.lyric !== undefined ? { lyric: note.lyric } : {}),
           }))
           .filter(note =>
             Number.isFinite(note.note) &&
@@ -532,23 +595,31 @@ const MIDIChart = () => {
 
       if (!trackBusId) return;
 
-      // Convert piano roll notes back to MIDI format
+      // Convert piano roll notes back to MIDI format. Preserve any
+      // per-note metadata (lyric for vox mode) — earlier we were
+      // dropping it on every save round trip.
       const updatedNotes = notes.map(note => ({
         note: note.note,  // Use 'note' field to match midiParser output
         time: note.time,
         duration: note.duration,
         velocity: note.velocity || 100,
         name: '', // Not used in piano roll
-        ticks: 0 // Will be recalculated if needed
+        ticks: 0, // Will be recalculated if needed
+        ...(note.lyric !== undefined ? { lyric: note.lyric } : {}),
       }));
 
       if (isMidiTrack) {
-        // For MIDI tracks, sync to timeline BPM
+        // For MIDI tracks, sync to timeline BPM. rollMode + voxMode are
+        // persisted so the right-sidebar generation flow knows whether
+        // to render this track as a drum roll (channels 128..143), a
+        // vocal track (lyrics + word onsets on channel 144), or pitched.
         const updatedMidiData = {
           ...selectedTrack.midiData,
           notes: updatedNotes,
           duration: calculatedDuration,
-          tempo: midiTempo // Sync to current timeline BPM
+          tempo: midiTempo, // Sync to current timeline BPM
+          rollMode: rollMode,
+          voxMode: voxMode,
         };
 
         dispatch({
@@ -588,16 +659,22 @@ const MIDIChart = () => {
     return () => clearTimeout(timeoutId);
   }, [notes, isMidiTrack, hasGeneratedMidi, selectedTrack, calculatedDuration, midiTempo, state.buses, dispatch]);
 
-  // Note names for display
+  // Note names for display. Drum-roll mode returns the percussion class
+  // label from DRUM_NOTE_LABELS instead of a pitched name.
   const getNoteNameFromMidi = (midiNote) => {
+    if (rollMode === 'drum') {
+      return DRUM_NOTE_LABELS[midiNote] || '';
+    }
     const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     const octave = Math.floor(midiNote / 12) - 1;
     const noteName = noteNames[midiNote % 12];
     return `${noteName}${octave}`;
   };
 
-  // Check if note is a black key
+  // Check if note is a black key. In drum mode every row is uniform
+  // (no black/white distinction), so always return false.
   const isBlackKey = (midiNote) => {
+    if (rollMode === 'drum') return false;
     const noteInOctave = midiNote % 12;
     return [1, 3, 6, 8, 10].includes(noteInOctave); // C#, D#, F#, G#, A#
   };
@@ -630,11 +707,15 @@ const MIDIChart = () => {
       ctx.lineWidth = 1;
       ctx.strokeRect(0, y, config.leftMargin, config.noteHeight);
 
-      // Draw note label - only for C notes (C1, C2, C3, etc.)
-      if (midiNote % 12 === 0) {
-        const noteName = getNoteNameFromMidi(midiNote);
+      // Draw note label — only for C notes in piano mode, every named
+      // drum class in drum mode.
+      const noteName = getNoteNameFromMidi(midiNote);
+      const shouldLabel = rollMode === 'drum'
+        ? noteName.length > 0
+        : (midiNote % 12 === 0);
+      if (shouldLabel) {
         ctx.fillStyle = '#888888'; // Light grey
-        ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(noteName, config.leftMargin / 2, y + config.noteHeight / 2);
@@ -1109,7 +1190,8 @@ const MIDIChart = () => {
         // Play the note sound (short preview)
         if (playerInitialized) {
           await midiPlayer.resume(); // Resume audio context if needed
-          midiPlayer.playNote(note.note, 0.7, 0.3); // velocity 0.7, duration 0.3s
+          if (rollMode === 'drum') midiPlayer.playDrum(note.note, 0.7);
+          else midiPlayer.playNote(note.note, 0.7, 0.3);
           console.log(`🔊 Playing note: ${getNoteNameFromMidi(note.note)}`);
         }
 
@@ -1195,7 +1277,8 @@ const MIDIChart = () => {
           // Play the newly placed note sound
           if (playerInitialized) {
             await midiPlayer.resume(); // Resume audio context if needed
-            midiPlayer.playNote(midiNote, 0.7, 0.3); // velocity 0.7, duration 0.3s
+            if (rollMode === 'drum') midiPlayer.playDrum(midiNote, 0.7);
+            else midiPlayer.playNote(midiNote, 0.7, 0.3);
             console.log(`🔊 Playing new note: ${getNoteNameFromMidi(midiNote)}`);
           }
 
@@ -1293,7 +1376,8 @@ const MIDIChart = () => {
           // Update the last played note to avoid playing repeatedly
           if (!dragState.lastPlayedNote || dragState.lastPlayedNote !== newNote) {
             midiPlayer.resume().then(() => {
-              midiPlayer.playNote(newNote, 0.5, 0.2); // Quieter and shorter during drag
+              if (rollMode === 'drum') midiPlayer.playDrum(newNote, 0.5);
+              else midiPlayer.playNote(newNote, 0.5, 0.2);
             });
             // Store the last played note in drag state
             dragState.lastPlayedNote = newNote;
@@ -1843,6 +1927,54 @@ const MIDIChart = () => {
               >
                 <i className="fa-solid fa-gear"></i>
               </button>
+              {/* Piano roll vs drum roll toggle. Drum roll uses the same
+                  tools (draw, select, move, resize, delete) but constrains
+                  the visible y-axis to the 16 GM percussion classes the
+                  stemphonic backend recognises. Also writes back to
+                  state.generationParams.midiRollMode so the
+                  GenerationPanel's Drums-tab sync stays consistent. */}
+              <button
+                className={styles.settingsToggle}
+                onClick={() => {
+                  const next = rollMode === 'piano' ? 'drum' : 'piano';
+                  setRollMode(next);
+                  dispatch({
+                    type: 'UPDATE_GENERATION_PARAMS',
+                    payload: { midiRollMode: next },
+                  });
+                }}
+                title={rollMode === 'piano'
+                  ? 'Switch to drum roll'
+                  : 'Switch to piano roll'}
+                style={{ marginLeft: '4px' }}
+              >
+                <i className={rollMode === 'piano'
+                  ? 'fa-solid fa-drum'
+                  : 'fa-solid fa-music'}></i>
+                {rollMode === 'piano' ? ' Drum' : ' Piano'}
+              </button>
+              {/* Vox toggle: enables per-note lyric assignment. Off by
+                  default. Auto-on when the GenerationPanel's Vocals tab
+                  is active. Per-note lyrics are stored on the note
+                  object as `lyric` and persisted with UPDATE_TRACK_MIDI_DATA. */}
+              <button
+                className={`${styles.settingsToggle} ${voxMode ? styles.active : ''}`}
+                onClick={() => {
+                  const next = !voxMode;
+                  setVoxMode(next);
+                  dispatch({
+                    type: 'UPDATE_GENERATION_PARAMS',
+                    payload: { voxMode: next },
+                  });
+                }}
+                title={voxMode
+                  ? 'Disable per-note lyric editing'
+                  : 'Enable per-note lyric editing (vox)'}
+                style={{ marginLeft: '4px' }}
+              >
+                <i className="fa-solid fa-microphone"></i>
+                {' Vox'}
+              </button>
             </>
           )}
         </div>
@@ -2075,17 +2207,142 @@ const MIDIChart = () => {
       )}
 
       <div ref={canvasWrapperRef} className={styles.canvasWrapper} onWheel={handleWheel}>
-        <canvas
-          ref={canvasRef}
-          width={canvasWidth}
-          height={canvasHeight}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onDoubleClick={handleDoubleClick}
-          className={styles.canvas}
-        />
+        {/* Inner positioning context that matches the canvas's box
+            exactly (no padding offset, sized to the canvas). The lyric
+            overlay layer below positions against this, so its
+            coordinates match the in-canvas drawNotes math 1:1. */}
+        <div style={{ position: 'relative', display: 'inline-block' }}>
+          <canvas
+            ref={canvasRef}
+            width={canvasWidth}
+            height={canvasHeight}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onDoubleClick={handleDoubleClick}
+            className={styles.canvas}
+          />
+        {/* Vox-mode lyric overlay: each note carries an INSIDE-note
+            label/affordance so the mouse never leaves the note's hit
+            zone when reaching for the input. Tagged notes show the
+            lyric, untagged notes show "+ lyric" — both clickable.
+            Editing replaces them with an input. Coords match drawNotes:
+            x = leftMargin + time*gridWidth,
+            y = topMargin + (maxNote - note)*noteHeight,
+            w = duration * gridWidth,
+            h = noteHeight. */}
+        {voxMode && notes.map((n, idx) => {
+          const x = config.leftMargin + n.time * config.gridWidth;
+          const y = config.topMargin + (config.maxNote - n.note) * config.noteHeight;
+          const w = Math.max(50, n.duration * config.gridWidth);
+          const h = config.noteHeight;
+          const baseStyle = {
+            position: 'absolute',
+            left: `${x}px`,
+            top: `${y}px`,
+            width: `${w}px`,
+            height: `${h}px`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            paddingLeft: '4px',
+            paddingRight: '4px',
+            fontSize: '10px',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            cursor: 'text',
+            zIndex: 5,
+            boxSizing: 'border-box',
+          };
+          if (idx === lyricEditNote) {
+            return (
+              <input
+                key={`lyric-edit-${idx}`}
+                autoFocus
+                value={lyricEditValue}
+                onChange={(e) => setLyricEditValue(e.target.value)}
+                onBlur={() => {
+                  setNotes((prev) => prev.map((nn, i) =>
+                    i === idx ? { ...nn, lyric: lyricEditValue } : nn));
+                  setLyricEditNote(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === 'Escape') e.target.blur();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  ...baseStyle,
+                  paddingLeft: '4px',
+                  fontSize: '11px',
+                  background: '#1a1a2e',
+                  color: '#fff',
+                  border: '1px solid #88a3f7',
+                  borderRadius: '2px',
+                  zIndex: 100,
+                }}
+              />
+            );
+          }
+          if (n.lyric) {
+            return (
+              <div
+                key={`lyric-label-${idx}`}
+                onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setLyricEditNote(idx);
+                  setLyricEditValue(n.lyric || '');
+                }}
+                style={{
+                  ...baseStyle,
+                  color: '#fff',
+                  background: 'rgba(102, 126, 234, 0.85)',
+                  borderRadius: '2px',
+                  fontWeight: 600,
+                  textShadow: '0 1px 2px rgba(0,0,0,0.7)',
+                  pointerEvents: 'auto',
+                  zIndex: 50,
+                }}
+              >
+                {n.lyric}
+              </div>
+            );
+          }
+          // Untagged note: persistent "+ lyric" affordance INSIDE the
+          // note. The mouse never leaves the hover zone since the
+          // affordance IS the note overlay. Click target is the whole
+          // note rectangle.
+          return (
+            <div
+              key={`lyric-add-${idx}`}
+              onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setLyricEditNote(idx);
+                setLyricEditValue('');
+              }}
+              style={{
+                ...baseStyle,
+                color: '#fff',
+                background: 'rgba(255, 200, 80, 0.55)',
+                border: '1px dashed rgba(255, 200, 80, 0.95)',
+                fontStyle: 'italic',
+                fontWeight: 600,
+                borderRadius: '2px',
+                pointerEvents: 'auto',
+                zIndex: 50,
+              }}
+            >
+              + lyric
+            </div>
+          );
+        })}
+        </div>
       </div>
     </div>
   );

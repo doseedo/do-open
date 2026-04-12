@@ -7,6 +7,7 @@ import { sceneToDurations } from '../../services/videoAPI';
 import * as generationAPI from '../../services/generationAPI';
 import DrumSampler from '../DrumSampler/DrumSampler';
 import GlassButtonWrapper from '../GlassButton/GlassButtonWrapper';
+import { CheckpointDropdown, TimbreVariantCycler, DOPERFORMER_ID } from './StemphonicControls';
 import styles from './GenerationPanel.module.css';
 
 /**
@@ -94,7 +95,91 @@ const CollapsibleSection = React.memo(({ title, isCollapsed, onToggle, children,
 CollapsibleSection.displayName = 'CollapsibleSection';
 
 // ========== Instrument Selection Component ==========
-const InstrumentSelection = React.memo(({ params, updateParam }) => {
+// Drum subgroups for the Drums tab — same shape as instrument groups,
+// only 3 entries inline. Backend matches DRUM_KIT_PROGRAMS in
+// stemphonic_server.py.
+const DRUM_GROUPS = [
+  { id: 'drum_kit',   label: 'Drum Kit',    iconImg: '/assets/icons/drumkit.png' },
+  { id: 'electronic', label: 'Electronic',  iconImg: '/assets/icons/elecdrums.png' },
+  { id: 'percussion', label: 'Percussion',  iconImg: '/assets/icons/drumkit.png' },
+];
+
+// Local-state lyrics textarea. Decouples typing from the redux store
+// so re-renders from the auto-distribute / reverse-sync effects don't
+// reset the input value mid-keystroke. Commits to the store onBlur
+// and on a 600ms idle debounce.
+const LyricsTextarea = React.memo(({ storeValue, onCommit, disabled }) => {
+  const [local, setLocal] = useState(storeValue);
+  const lastStoreSeen = React.useRef(storeValue);
+  const idleTimer = React.useRef(null);
+  // Sync IN from store only when the store value differs from what
+  // we last saw AND from our current local value (other path made
+  // the change). This avoids stomping on what the user is typing.
+  useEffect(() => {
+    if (storeValue !== lastStoreSeen.current && storeValue !== local) {
+      setLocal(storeValue);
+    }
+    lastStoreSeen.current = storeValue;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeValue]);
+  const commit = useCallback((text) => {
+    if (text !== lastStoreSeen.current) {
+      lastStoreSeen.current = text;
+      onCommit(text);
+    }
+  }, [onCommit]);
+  const handleChange = useCallback((e) => {
+    const v = e.target.value;
+    setLocal(v);
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    idleTimer.current = setTimeout(() => commit(v), 600);
+  }, [commit]);
+  const handleBlur = useCallback(() => {
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    commit(local);
+  }, [commit, local]);
+  return (
+    <div style={{ padding: '4px 8px 8px' }}>
+      <label style={{ fontSize: '11px', opacity: 0.85, display: 'block', marginBottom: '4px' }}>
+        Lyrics (auto-assigned to MIDI notes by word)
+      </label>
+      <textarea
+        value={local}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        placeholder="Type lyrics — words auto-map to notes in time order on commit"
+        rows={3}
+        disabled={disabled}
+        style={{
+          width: '100%',
+          padding: '6px 8px',
+          background: '#222',
+          color: '#fff',
+          border: '1px solid #444',
+          borderRadius: '3px',
+          fontSize: '12px',
+          resize: 'vertical',
+          fontFamily: 'inherit',
+        }}
+      />
+      <div style={{ fontSize: '10px', opacity: 0.55, marginTop: '4px' }}>
+        Words land on note onsets in time order. Per-note edits in the MIDI editor sync back here on blur.
+      </div>
+    </div>
+  );
+});
+LyricsTextarea.displayName = 'LyricsTextarea';
+
+// Vocal subgroups for the Vocals tab. Backend matches VOCAL_PROGRAMS
+// in stemphonic_server.py.
+const VOCAL_GROUPS = [
+  { id: 'lead_vox',  label: 'Lead Vox',   icon: 'fa-microphone' },
+  { id: 'bg_vox',    label: 'BG Vox',     icon: 'fa-microphone-lines' },
+  { id: 'choir',     label: 'Choir',      icon: 'fa-people-group' },
+  { id: 'synth_vox', label: 'Synth Vox',  icon: 'fa-wave-square' },
+];
+
+const InstrumentSelection = React.memo(({ params, updateParam, activeTab = 'instruments' }) => {
   // Instrument group to subgroup mapping - MUST match backend APPROVED_SUBGROUPS
   const instrumentSubgroups = useMemo(() => ({
     piano: ['acoustic_piano', 'keys'],
@@ -105,17 +190,17 @@ const InstrumentSelection = React.memo(({ params, updateParam }) => {
     winds: ['ensemble_winds', 'flute', 'sax']
   }), []);
 
-  // Instrument groups with custom icon images
+  // Instrument groups — custom 2D white PNG icons
   const instrumentGroups = useMemo(() => [
-    { id: 'piano', label: 'Piano', iconImg: '/assets/icons/piano.png' },
-    { id: 'guitar', label: 'Guitar', iconImg: '/assets/icons/acguitar.png' },
-    { id: 'bass', label: 'Bass', iconImg: '/assets/icons/elecbass.png' },
+    { id: 'piano',   label: 'Piano',   iconImg: '/assets/icons/piano.png' },
+    { id: 'guitar',  label: 'Guitar',  iconImg: '/assets/icons/acguitar.png' },
+    { id: 'bass',    label: 'Bass',    iconImg: '/assets/icons/elecbass.png' },
     { id: 'strings', label: 'Strings', iconImg: '/assets/icons/violin.png' },
-    { id: 'brass', label: 'Brass', iconImg: '/assets/2d/drytp.png' },
-    { id: 'winds', label: 'Winds', iconImg: '/assets/icons/sax.png' }
+    { id: 'brass',   label: 'Brass',   iconImg: '/assets/icons/trumpetens.png' },
+    { id: 'winds',   label: 'Winds',   iconImg: '/assets/icons/sax.png' }
   ], []);
 
-  // Subgroup icon mapping
+  // Subgroup icon mapping (white PNG paths)
   const subgroupIcons = useMemo(() => ({
     // Piano subgroups
     'acoustic_piano': '/assets/icons/piano.png',
@@ -125,41 +210,26 @@ const InstrumentSelection = React.memo(({ params, updateParam }) => {
     'electric_guitar': '/assets/icons/elecgtr.png',
     // Bass subgroups
     'electric_bass': '/assets/icons/elecbass.png',
-    'upright_bass': '/assets/icons/elecbass.png', // Use same icon for now
+    'upright_bass': '/assets/icons/elecbass.png',
     // Strings subgroups
     'violin': '/assets/icons/violin.png',
-    'viola': '/assets/icons/violin.png', // Use violin icon
+    'viola': '/assets/icons/violin.png',
     'cello': '/assets/icons/cello.png',
-    'ensemble_strings': '/assets/icons/violin.png', // Use violin icon as fallback
+    'ensemble_strings': '/assets/icons/viollinensemble.png',
     // Brass subgroups
-    'trumpet': '/assets/2d/drytp.png',
-    'trombone': '/assets/2d/drytp.png',
-    'french_horn': '/assets/2d/drytp.png',
-    'tuba': '/assets/2d/drytp.png',
-    'ensemble_brass': '/assets/2d/drytp.png',
+    'trumpet': '/assets/icons/tpt.png',
+    'trombone': '/assets/icons/tbn.png',
+    'french_horn': '/assets/icons/tuba.png',
+    'tuba': '/assets/icons/tuba.png',
+    'ensemble_brass': '/assets/icons/trumpetens.png',
     // Winds subgroups
-    'bassoon': '/assets/icons/clarinet.png', // Use clarinet as fallback
-    'clarinet': '/assets/icons/clarinet.png',
+    'bassoon': '/assets/icons/sax.png',
+    'clarinet': '/assets/icons/sax.png',
     'flute': '/assets/icons/flute.png',
-    'oboe': '/assets/icons/flute.png', // Use flute as fallback
+    'oboe': '/assets/icons/flute.png',
     'sax': '/assets/icons/sax.png',
-    'ensemble_winds': '/assets/icons/windens.png'
+    'ensemble_winds': '/assets/icons/sax.png'
   }), []);
-
-  // Preload all instrument icons on mount
-  useEffect(() => {
-    const allIcons = new Set([
-      ...instrumentGroups.map(g => g.iconImg),
-      ...Object.values(subgroupIcons)
-    ]);
-
-    allIcons.forEach(iconPath => {
-      if (iconPath) {
-        const img = new Image();
-        img.src = iconPath;
-      }
-    });
-  }, [instrumentGroups, subgroupIcons]);
 
   // Get available subgroups for current instrument group
   const availableSubgroups = useMemo(() => {
@@ -200,9 +270,62 @@ const InstrumentSelection = React.memo(({ params, updateParam }) => {
     }
   }, [params.instrumentSubgroup, params.monophonicMode, params.arrangeMode, updateParam]);
 
+  // When the Drums tab is active, the instrument grid is replaced with
+  // 3 drum-subgroup buttons. The selected drum subgroup is stored on
+  // params.instrumentSubgroup directly (no instrumentGroup) so the
+  // backend's TRAINING_CAPTIONS / DRUM_KIT_PROGRAMS lookup hits.
+  const isDrumsTab = activeTab === 'drums';
+  const isVocalsTab = activeTab === 'vocals';
+  const handleDrumPick = useCallback((id) => {
+    updateParam('instrumentGroup', 'drums');
+    updateParam('instrumentSubgroup', id);
+  }, [updateParam]);
+  const handleVocalPick = useCallback((id) => {
+    updateParam('instrumentGroup', 'vocals');
+    updateParam('instrumentSubgroup', id);
+  }, [updateParam]);
+
   return (
     <>
       {/* Instrument Group Grid */}
+      {isDrumsTab ? (
+        <div className={styles.instrumentGroupGrid}>
+          {DRUM_GROUPS.map(group => (
+            <button
+              key={group.id}
+              type="button"
+              className={`${styles.instrumentGroupBtn} ${params.instrumentSubgroup === group.id ? styles.active : ''}`}
+              onClick={() => handleDrumPick(group.id)}
+            >
+              <img
+                src={group.iconImg}
+                alt={group.label}
+                style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.9 }}
+                aria-hidden="true"
+              />
+              <span>{group.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : isVocalsTab ? (
+        <div className={styles.instrumentGroupGrid}>
+          {VOCAL_GROUPS.map(group => (
+            <button
+              key={group.id}
+              type="button"
+              className={`${styles.instrumentGroupBtn} ${params.instrumentSubgroup === group.id ? styles.active : ''}`}
+              onClick={() => handleVocalPick(group.id)}
+            >
+              <i
+                className={`fa-solid ${group.icon}`}
+                style={{ fontSize: '32px', color: 'rgba(255,255,255,0.85)' }}
+                aria-hidden="true"
+              />
+              <span>{group.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
       <div className={styles.instrumentGroupGrid}>
         {instrumentGroups.map(group => (
           <button
@@ -214,21 +337,18 @@ const InstrumentSelection = React.memo(({ params, updateParam }) => {
             <img
               src={group.iconImg}
               alt={group.label}
-              style={{
-                width: '40px',
-                height: '40px',
-                objectFit: 'contain',
-                filter: 'invert(1)'
-              }}
+              style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.9 }}
               aria-hidden="true"
             />
             <span>{group.label}</span>
           </button>
         ))}
       </div>
+      )}
 
-      {/* Instrument Subgroup Grid - Only show when a group is selected */}
-      {params.instrumentGroup && (
+      {/* Instrument Subgroup Grid - Only show when a group is selected
+          (hidden for drums and vocals tabs which already use subgroups) */}
+      {!isDrumsTab && !isVocalsTab && params.instrumentGroup && (
         <>
           <div className={styles.instrumentGroupLabel} style={{ marginTop: '15px' }}>Instrument Subgroup:</div>
           <div className={styles.instrumentSubgroupGrid}>
@@ -250,12 +370,7 @@ const InstrumentSelection = React.memo(({ params, updateParam }) => {
                     <img
                       src={subgroupIcons[subgroup]}
                       alt={subgroup}
-                      style={{
-                        width: '40px',
-                        height: '40px',
-                        objectFit: 'contain',
-                        filter: 'invert(1)'
-                      }}
+                      style={{ width: 36, height: 36, objectFit: 'contain', opacity: 0.9 }}
                       aria-hidden="true"
                     />
                   )}
@@ -283,6 +398,22 @@ const InstrumentSelection = React.memo(({ params, updateParam }) => {
           </select>
         </label>
       </div>
+
+      {/* Stemphonic checkpoint selector. DoPerformer (default) → original
+          do-v1 path; any other ckpt → stemphonic backend.  */}
+      <CheckpointDropdown
+        value={params.stemphonicCkpt || DOPERFORMER_ID}
+        onChange={(id) => updateParam('stemphonicCkpt', id)}
+      />
+
+      {/* Variant cycler — only shown when a stemphonic ckpt is active */}
+      {(params.stemphonicCkpt && params.stemphonicCkpt !== DOPERFORMER_ID) && (
+        <TimbreVariantCycler
+          instrumentSubgroup={params.instrumentSubgroup}
+          value={params.timbreVariant ?? 0}
+          onChange={(idx) => updateParam('timbreVariant', idx)}
+        />
+      )}
     </>
   );
 });
@@ -1927,9 +2058,359 @@ const GenerationPanelOptimized = React.memo(() => {
     }
   }, [state.generationParams.instrumentGroup, state.generationParams.instrumentSubgroup, state.generationParams.midiTarget, state.generationParams.midiMode, dispatch]);
 
+  // When the user selects a separated stem track, auto-route the
+  // GenerationPanel to the matching tab + subgroup + voice/drum mode
+  // so they don't have to click 4 things before generating. Demucs
+  // names → stemphonic subgroups:
+  //   drums  → Drums tab,  drum_kit subgroup,    rollMode='drum'
+  //   bass   → Instruments tab, electric_bass
+  //   vocals → Vocals tab, lead_vox,             voxMode=true
+  //   guitar → Instruments tab, electric_guitar
+  //   piano  → Instruments tab, acoustic_piano
+  //   other  → Instruments tab, electric_guitar (fallback)
+  const lastAutoAppliedTrackRef = React.useRef(null);
+  useEffect(() => {
+    const track = state.selectedTrack;
+    const stemType = track?.metadata?.stemType;
+    if (!track || !stemType) return;
+    // Only auto-apply once per selected track to preserve manual edits
+    if (lastAutoAppliedTrackRef.current === track.id) return;
+    lastAutoAppliedTrackRef.current = track.id;
+
+    const STEM_TO_PRESET = {
+      drums:  { tab: 'drums',       subgroup: 'drum_kit',       group: 'drums',  vox: false, roll: 'drum'  },
+      bass:   { tab: 'instruments', subgroup: 'electric_bass',  group: 'bass',   vox: false, roll: 'piano' },
+      vocals: { tab: 'vocals',      subgroup: 'lead_vox',       group: 'vocals', vox: true,  roll: 'piano' },
+      guitar: { tab: 'instruments', subgroup: 'electric_guitar',group: 'guitar', vox: false, roll: 'piano' },
+      piano:  { tab: 'instruments', subgroup: 'acoustic_piano', group: 'piano',  vox: false, roll: 'piano' },
+      other:  { tab: 'instruments', subgroup: 'electric_guitar',group: 'guitar', vox: false, roll: 'piano' },
+    };
+    const preset = STEM_TO_PRESET[stemType];
+    if (!preset) return;
+    setActiveTab(preset.tab);
+    setGenerationMode(preset.tab === 'vocals' ? 'do-v1' : (preset.tab === 'drums' ? 'do-v1' : 'do-v1'));
+    dispatch({
+      type: 'UPDATE_GENERATION_PARAMS',
+      payload: {
+        instrumentGroup: preset.group,
+        instrumentSubgroup: preset.subgroup,
+        voxMode: preset.vox,
+        midiRollMode: preset.roll,
+        // Auto-select stemphonic ckpt if the user is still on DoPerformer
+        stemphonicCkpt: state.generationParams.stemphonicCkpt &&
+                        state.generationParams.stemphonicCkpt !== DOPERFORMER_ID
+                        ? state.generationParams.stemphonicCkpt
+                        : 'stage2d-130k',
+        // Reset the timbre variant to 0 so the variant cycler starts
+        // on a known-good slice for the new instrument.
+        timbreVariant: 0,
+      },
+    });
+    console.log(`🎯 Auto-routed stem track "${track.name}" (${stemType}) → ${preset.tab}/${preset.subgroup}`);
+
+    // Also: pull the stem track's audio into state.uploadedFile so the
+    // Generate button uses it as refAudio (instead of requiring a
+    // separate file upload). For vocals stems, also POST the audio to
+    // /api/transcribe-vocals to get lyrics + word timings, then
+    // populate state.generationParams.lyrics.
+    (async () => {
+      if (!track.audioUrl) return;
+      try {
+        const fetchUrl = track.audioUrl.startsWith('http') || track.audioUrl.startsWith('blob:')
+          ? track.audioUrl
+          : `https://doseedo.com${track.audioUrl}`;
+        const resp = await fetch(fetchUrl);
+        if (!resp.ok) {
+          console.warn('Stem auto-load: fetch failed', resp.status);
+          return;
+        }
+        const blob = await resp.blob();
+        const file = new File([blob], `${track.name || 'stem'}.wav`, { type: 'audio/wav' });
+        dispatch({
+          type: 'SET_UPLOADED_FILE',
+          payload: { file, fileType: 'audio', previewUrl: URL.createObjectURL(blob) },
+        });
+        console.log(`📥 Auto-loaded stem audio (${(blob.size / 1024).toFixed(1)} KB)`);
+
+        // Vocals: transcribe with whisper and apply lyrics
+        if (preset.vox) {
+          try {
+            const fd = new FormData();
+            fd.append('audioFile', blob, 'vocals.wav');
+            const tResp = await fetch('/api/transcribe-vocals', { method: 'POST', body: fd });
+            if (!tResp.ok) {
+              console.warn('Whisper transcribe failed:', tResp.status);
+              return;
+            }
+            const t = await tResp.json();
+            const lyricsText = (t.text || '').trim();
+            if (lyricsText) {
+              dispatch({
+                type: 'UPDATE_GENERATION_PARAMS',
+                payload: { lyrics: lyricsText },
+              });
+              console.log(`🎤 Auto-transcribed vocals (${(t.words || []).length} words): ${lyricsText.slice(0, 80)}`);
+            }
+          } catch (e) {
+            console.warn('Vocal transcription error:', e);
+          }
+        }
+      } catch (e) {
+        console.warn('Stem auto-load error:', e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.selectedTrack?.id]);
+
+  // Two-way sync between the Vocals lyrics textarea and per-note
+  // lyric assignments on the active MIDI track. A ref tracks where
+  // the most recent change came from to break the feedback loop.
+  const lyricSyncOriginRef = React.useRef(null); // 'text' | 'notes' | null
+
+  // (1) textarea → notes: when the user types in the Lyrics textarea,
+  // distribute words across the active track's notes by time order.
+  useEffect(() => {
+    const lyricsText = state.generationParams.lyrics || '';
+    const isVoxActive =
+      state.generationParams.voxMode === true || activeTab === 'vocals';
+    if (!isVoxActive) return;
+    // Skip if this change was caused by the reverse sync (notes→text)
+    if (lyricSyncOriginRef.current === 'notes') {
+      lyricSyncOriginRef.current = null;
+      return;
+    }
+    const track = state.selectedTrack;
+    if (!track || track.type !== 'midi') return;
+    const notes = track.midiData?.notes;
+    if (!Array.isArray(notes) || notes.length === 0) return;
+
+    const words = lyricsText.split(/\s+/).filter(Boolean);
+
+    // Sort by time so word #i lands on the i-th onset
+    const order = notes
+      .map((n, i) => ({ i, time: n.time }))
+      .sort((a, b) => a.time - b.time);
+    const updatedNotes = notes.map((n) => ({ ...n }));
+    let dirty = false;
+    for (let k = 0; k < order.length; k++) {
+      const idx = order[k].i;
+      const word = words[k] || ''; // clears notes past the word count
+      if ((updatedNotes[idx].lyric || '') !== word) {
+        updatedNotes[idx].lyric = word || undefined;
+        dirty = true;
+      }
+    }
+    if (!dirty) return;
+
+    const bus = state.buses?.find((b) =>
+      b.tracks?.some((t) => t.id === track.id)
+    );
+    if (!bus) return;
+
+    lyricSyncOriginRef.current = 'text';
+    dispatch({
+      type: 'UPDATE_TRACK_MIDI_DATA',
+      payload: {
+        busId: bus.id,
+        trackId: track.id,
+        midiData: {
+          ...track.midiData,
+          notes: updatedNotes,
+          voxMode: true,
+        },
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.generationParams.lyrics, state.generationParams.voxMode, activeTab, state.selectedTrack?.id]);
+
+  // (2) notes → textarea: when the user edits a note's lyric directly
+  // in the MIDI editor, gather all per-note lyrics in time order and
+  // write them back to the Lyrics textarea so the two stay in sync.
+  useEffect(() => {
+    const isVoxActive =
+      state.generationParams.voxMode === true || activeTab === 'vocals';
+    if (!isVoxActive) return;
+    // Skip if this change was caused by the forward sync (text→notes)
+    if (lyricSyncOriginRef.current === 'text') {
+      lyricSyncOriginRef.current = null;
+      return;
+    }
+    const track = state.selectedTrack;
+    if (!track || track.type !== 'midi') return;
+    const notes = track.midiData?.notes;
+    if (!Array.isArray(notes) || notes.length === 0) return;
+
+    const ordered = [...notes].sort((a, b) => a.time - b.time);
+    const joined = ordered
+      .map((n) => (n.lyric || '').trim())
+      .filter((w) => w.length > 0)
+      .join(' ');
+    const current = (state.generationParams.lyrics || '').trim();
+    if (joined === current) return;
+
+    lyricSyncOriginRef.current = 'notes';
+    dispatch({
+      type: 'UPDATE_GENERATION_PARAMS',
+      payload: { lyrics: joined },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.selectedTrack?.midiData?.notes, state.generationParams.voxMode, activeTab]);
+
   // Handle generation
   const handleGenerate = useCallback(async () => {
     console.log('🎵 Starting generation...');
+
+    // Stemphonic mode: any non-DoPerformer checkpoint routes through the
+    // stemphonic backend. Reuses the active instrument subgroup as both
+    // the prompt source and the timbre key. Drums and Vocals tabs ALWAYS
+    // route here regardless of ckpt selection — they don't have a
+    // legacy backend equivalent.
+    const isStemTab = activeTab === 'drums' || activeTab === 'vocals';
+    let stemphonicCkpt = state.generationParams.stemphonicCkpt;
+    if (isStemTab && (!stemphonicCkpt || stemphonicCkpt === DOPERFORMER_ID)) {
+      stemphonicCkpt = 'stage2d-130k';
+    }
+    if (stemphonicCkpt && stemphonicCkpt !== DOPERFORMER_ID) {
+      console.log('🎼 Stemphonic mode:', stemphonicCkpt);
+      setIsGenerating(true);
+      setGenerationError(null);
+      startTimer();
+      try {
+        const subgroup = state.generationParams.instrumentSubgroup || 'acoustic_piano';
+        const variant = state.generationParams.timbreVariant ?? 0;
+        // If the loaded MIDI was created as a drum roll OR the active
+        // tab is Drums, force drum_mode so the backend routes the MIDI
+        // to channels 128..143 even if the selected instrument isn't a
+        // drum subgroup. The drum-roll metadata travels via
+        // state.generationParams.midiRollMode (set by both tab clicks
+        // and the MIDIChart toggle).
+        const isDrumRoll =
+          state.generationParams.midiRollMode === 'drum' ||
+          ['drum_kit', 'electronic', 'percussion'].includes(subgroup);
+        const isVoxMode =
+          state.generationParams.voxMode === true ||
+          ['lead_vox', 'bg_vox', 'choir', 'synth_vox', 'voice'].includes(subgroup);
+
+        // Lyric map: when vox mode is on, gather per-note lyrics from
+        // the loaded MIDI track's notes. Falls back to a global
+        // generationParams.lyrics text if no per-note assignments.
+        let lyricMap = null;
+        let lyricsText = state.generationParams.lyrics || '';
+        if (isVoxMode) {
+          const trackNotes =
+            state.selectedTrack?.midiData?.notes ||
+            state.uploadedFile?.notes ||
+            [];
+          if (Array.isArray(trackNotes) && trackNotes.length > 0) {
+            const tagged = trackNotes
+              .filter((n) => n && (n.lyric || '').toString().trim().length > 0)
+              .map((n) => ({ time: n.time, lyric: n.lyric }));
+            if (tagged.length > 0) lyricMap = tagged;
+          }
+          // Auto-distribute global lyrics text across note onsets when
+          // no per-note assignments and a lyrics string is provided.
+          if (!lyricMap && lyricsText && Array.isArray(trackNotes) && trackNotes.length > 0) {
+            const words = lyricsText.split(/\s+/).filter(Boolean);
+            const ordered = [...trackNotes].sort((a, b) => a.time - b.time);
+            lyricMap = ordered.slice(0, words.length).map((n, i) => ({
+              time: n.time,
+              lyric: words[i],
+            }));
+          }
+        }
+
+        const stemParams = {
+          checkpoint: stemphonicCkpt,
+          prompt: state.generationParams.prompt || subgroup.replace(/_/g, ' '),
+          instrument: subgroup,
+          timbre_preset: `${subgroup}:${variant}`,
+          duration: state.generationParams.duration ?? 16,
+          steps: state.generationParams.inferenceSteps ?? 50,
+          cfg: state.generationParams.guidanceScale ?? 7.0,
+          seed: state.generationParams.seed ?? -1,
+          cover_noise_strength: state.generationParams.coverNoiseStrength ?? 0.0,
+          audio_cover_strength: state.generationParams.audioCoverStrength ?? 1.0,
+          drum_mode: isDrumRoll ? 'true' : 'false',
+          vox_mode: isVoxMode ? 'true' : 'false',
+        };
+        if (isVoxMode && lyricsText) stemParams.lyrics = lyricsText;
+        if (isVoxMode && lyricMap) stemParams.lyric_map = JSON.stringify(lyricMap);
+        // Forward whichever input the user loaded — MIDI goes to midiFile,
+        // audio goes to refAudio. Backend's audio branch runs BasicPitch
+        // in parallel with VAE encode, so audio still drives the MIDI hook.
+        const midiFile =
+          state.uploadedFile && state.fileType === 'midi' ? state.uploadedFile : null;
+        const refAudioFile =
+          state.uploadedFile && state.fileType === 'audio' ? state.uploadedFile : null;
+
+        const start = await generationAPI.generateStemphonic(stemParams, midiFile, refAudioFile);
+        if (!start.task_id) throw new Error('No task_id returned');
+
+        const result = await generationAPI.pollStemphonicUntilComplete(
+          start.task_id,
+          (p) => setGenerationProgress({
+            status: p.status,
+            progress: Math.min(0.95, p.attempts * 0.02),
+            message: `Stemphonic… (${p.status})`,
+          }),
+        );
+
+        const filePaths = result?.file_paths || [];
+        const midiUrl = result?.input_files?.midi || null;
+        if (filePaths.length > 0) {
+          let musicBusId = state.buses.find((b) => b.type === 'Music')?.id;
+          if (!musicBusId) {
+            musicBusId = `music-${Date.now()}`;
+            dispatch({
+              type: 'CREATE_BUS',
+              payload: { id: musicBusId, type: 'Music', name: 'Music 1', expanded: true },
+            });
+          }
+          filePaths.forEach((filePath, index) => {
+            dispatch({
+              type: 'ADD_TRACK',
+              payload: {
+                busId: musicBusId,
+                track: {
+                  id: `stemphonic-${Date.now()}-${index}`,
+                  name: `Stemphonic ${subgroup} ${index + 1}`,
+                  audioUrl: filePath,
+                  duration: stemParams.duration,
+                  startPosition: 0,
+                  gain: 1.0,
+                  isMuted: false,
+                  isSolo: false,
+                  cropStart: 0,
+                  cropEnd: 0,
+                  metadata: {
+                    type: 'generated',
+                    source: 'stemphonic',
+                    subgroup,
+                    activeTab,
+                    tempo: 120,
+                    midi: midiUrl,
+                    inputFiles: midiUrl ? { midiPath: midiUrl } : undefined,
+                    params: { ...stemParams },
+                  },
+                },
+              },
+            });
+          });
+        }
+
+        setIsGenerating(false);
+        setGenerationProgress(null);
+        stopTimer();
+      } catch (error) {
+        console.error('❌ Stemphonic generation error:', error);
+        setGenerationError(error.message);
+        setIsGenerating(false);
+        setGenerationProgress(null);
+        stopTimer();
+        alert(`Stemphonic generation failed: ${error.message}`);
+      }
+      return;
+    }
 
     // Check if dø vox mode is selected
     if (generationMode === 'ace-step') {
@@ -2504,6 +2985,8 @@ const GenerationPanelOptimized = React.memo(() => {
           onClick={() => {
             setActiveTab('instruments');
             setGenerationMode('do-v1');
+            updateParam('midiRollMode', 'piano');
+            updateParam('voxMode', false);
           }}
         >
           <i className="fa-solid fa-guitar"></i>
@@ -2513,7 +2996,24 @@ const GenerationPanelOptimized = React.memo(() => {
           className={`${styles.folderTab} ${activeTab === 'vocals' ? styles.active : ''}`}
           onClick={() => {
             setActiveTab('vocals');
-            setGenerationMode('ace-step');
+            // Vocals tab uses the stemphonic flow now, not the legacy
+            // dø-vox / ace-step path. Auto-select the default ckpt if
+            // the user is still on DoPerformer.
+            setGenerationMode('do-v1');
+            updateParam('midiRollMode', 'piano');
+            updateParam('voxMode', true);
+            if (
+              !state.generationParams.stemphonicCkpt ||
+              state.generationParams.stemphonicCkpt === DOPERFORMER_ID
+            ) {
+              updateParam('stemphonicCkpt', 'stage2d-130k');
+            }
+            if (
+              !state.generationParams.instrumentSubgroup ||
+              !['lead_vox', 'bg_vox', 'choir', 'synth_vox'].includes(state.generationParams.instrumentSubgroup)
+            ) {
+              updateParam('instrumentSubgroup', 'lead_vox');
+            }
           }}
         >
           <i className="fa-solid fa-microphone"></i>
@@ -2523,7 +3023,26 @@ const GenerationPanelOptimized = React.memo(() => {
           className={`${styles.folderTab} ${activeTab === 'drums' ? styles.active : ''}`}
           onClick={() => {
             setActiveTab('drums');
-            setGenerationMode('mido');
+            // Drums tab uses the stemphonic flow. Auto-select default
+            // stemphonic ckpt + a drum subgroup so the right Advanced
+            // Parameters block renders and handleGenerate routes to
+            // /api/generate-stemphonic instead of falling through to
+            // the legacy dø-vox / mido path.
+            setGenerationMode('do-v1');
+            updateParam('midiRollMode', 'drum');
+            updateParam('voxMode', false);
+            if (
+              !state.generationParams.stemphonicCkpt ||
+              state.generationParams.stemphonicCkpt === DOPERFORMER_ID
+            ) {
+              updateParam('stemphonicCkpt', 'stage2d-130k');
+            }
+            if (
+              !state.generationParams.instrumentSubgroup ||
+              !['drum_kit', 'electronic', 'percussion'].includes(state.generationParams.instrumentSubgroup)
+            ) {
+              updateParam('instrumentSubgroup', 'drum_kit');
+            }
           }}
         >
           <i className="fa-solid fa-drum"></i>
@@ -2567,10 +3086,22 @@ const GenerationPanelOptimized = React.memo(() => {
           isCollapsed={collapsedSections.instrument}
           onToggle={() => toggleSection('instrument')}
         >
-          {!state.generationParams.midiMode ? (
+          {/* Drums + Vocals tabs always use their dedicated subgroup
+              pickers (kit/electronic/percussion or vox subgroups)
+              regardless of MIDI mode — the old MIDITargetSelection
+              (chords/melody/bass/drums) only applies to the do-v1
+              instruments path. */}
+          {(activeTab === 'drums' || activeTab === 'vocals') ? (
             <InstrumentSelection
               params={state.generationParams}
               updateParam={updateParam}
+              activeTab={activeTab}
+            />
+          ) : !state.generationParams.midiMode ? (
+            <InstrumentSelection
+              params={state.generationParams}
+              updateParam={updateParam}
+              activeTab={activeTab}
             />
           ) : (
             <MIDITargetSelection
@@ -2582,7 +3113,112 @@ const GenerationPanelOptimized = React.memo(() => {
       )}
 
       {/* Hide advanced sections in MIDI mode and dø mode */}
-      {generationMode !== 'mido' && generationMode !== 'ace-step' && (
+      {/* Stemphonic-specific advanced parameters (replaces DoPerformer block) */}
+      {state.generationParams.stemphonicCkpt && state.generationParams.stemphonicCkpt !== DOPERFORMER_ID && (
+        <CollapsibleSection
+          title="Advanced Parameters (Stemphonic)"
+          number="3"
+          isCollapsed={collapsedSections.advanced}
+          onToggle={() => toggleSection('advanced')}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', padding: '8px' }}>
+            <label style={{ fontSize: '11px', opacity: 0.85 }}>
+              Duration (s)
+              <input
+                type="number"
+                min={4} max={120} step={1}
+                value={state.generationParams.duration ?? 16}
+                onChange={(e) => updateParam('duration', parseFloat(e.target.value))}
+                disabled={isGenerating}
+                style={{ width: '100%', padding: '4px 6px', background: '#222', color: '#fff', border: '1px solid #444', borderRadius: '3px', marginTop: '2px' }}
+              />
+            </label>
+            <label style={{ fontSize: '11px', opacity: 0.85 }}>
+              Inference steps
+              <input
+                type="number"
+                min={10} max={150} step={1}
+                value={state.generationParams.inferenceSteps ?? 50}
+                onChange={(e) => updateParam('inferenceSteps', parseInt(e.target.value, 10))}
+                disabled={isGenerating}
+                style={{ width: '100%', padding: '4px 6px', background: '#222', color: '#fff', border: '1px solid #444', borderRadius: '3px', marginTop: '2px' }}
+              />
+            </label>
+            <label style={{ fontSize: '11px', opacity: 0.85 }}>
+              CFG scale
+              <input
+                type="number"
+                min={1} max={15} step={0.5}
+                value={state.generationParams.guidanceScale ?? 7.0}
+                onChange={(e) => updateParam('guidanceScale', parseFloat(e.target.value))}
+                disabled={isGenerating}
+                style={{ width: '100%', padding: '4px 6px', background: '#222', color: '#fff', border: '1px solid #444', borderRadius: '3px', marginTop: '2px' }}
+              />
+            </label>
+            <label style={{ fontSize: '11px', opacity: 0.85 }}>
+              Seed (-1 = random)
+              <input
+                type="number"
+                min={-1}
+                value={state.generationParams.seed ?? -1}
+                onChange={(e) => updateParam('seed', parseInt(e.target.value, 10))}
+                disabled={isGenerating}
+                style={{ width: '100%', padding: '4px 6px', background: '#222', color: '#fff', border: '1px solid #444', borderRadius: '3px', marginTop: '2px' }}
+              />
+            </label>
+          </div>
+
+          {/* Lyrics — only relevant for vocals. Local-state textarea
+              (uncontrolled relative to redux) so re-renders from the
+              auto-distribute / reverse-sync effects don't clobber
+              what the user is typing. Commits on blur. */}
+          {(activeTab === 'vocals' || state.generationParams.voxMode === true) && (
+            <LyricsTextarea
+              storeValue={state.generationParams.lyrics || ''}
+              onCommit={(text) => updateParam('lyrics', text)}
+              disabled={isGenerating}
+            />
+          )}
+
+          {/* Noise (init blend: noise vs source latent) */}
+          <div style={{ padding: '4px 8px 8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.85 }}>
+              <span>Noise (init blend)</span>
+              <span>{(state.generationParams.coverNoiseStrength ?? 0.0).toFixed(2)}</span>
+            </div>
+            <input
+              type="range" min="0" max="1" step="0.05"
+              value={state.generationParams.coverNoiseStrength ?? 0.0}
+              onChange={(e) => updateParam('coverNoiseStrength', parseFloat(e.target.value))}
+              disabled={isGenerating}
+              style={{ width: '100%' }}
+            />
+            <div style={{ fontSize: '10px', opacity: 0.55 }}>
+              0 = pure noise (full denoise from random) · 1 = start at the soundfont render (almost no denoising). Requires MIDI.
+            </div>
+          </div>
+
+          {/* Cover strength (how many steps run with cover-mode encoder) */}
+          <div style={{ padding: '4px 8px 8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.85 }}>
+              <span>Cover strength</span>
+              <span>{(state.generationParams.audioCoverStrength ?? 1.0).toFixed(2)}</span>
+            </div>
+            <input
+              type="range" min="0" max="1" step="0.05"
+              value={state.generationParams.audioCoverStrength ?? 1.0}
+              onChange={(e) => updateParam('audioCoverStrength', parseFloat(e.target.value))}
+              disabled={isGenerating}
+              style={{ width: '100%' }}
+            />
+            <div style={{ fontSize: '10px', opacity: 0.55 }}>
+              Fraction of denoising steps that use the cover-mode encoder context. 1 = full cover, 0 = pure text2music after init.
+            </div>
+          </div>
+        </CollapsibleSection>
+      )}
+
+      {generationMode !== 'mido' && generationMode !== 'ace-step' && !(state.generationParams.stemphonicCkpt && state.generationParams.stemphonicCkpt !== DOPERFORMER_ID) && (
         <CollapsibleSection
           title="Advanced Parameters"
           number="3"

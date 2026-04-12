@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { regenStemForChord } from '../../services/trackAnalysisAPI';
 import styles from './ChordWindow.module.css';
 
 /**
@@ -28,16 +29,126 @@ const ChordWindow = () => {
   const currentKey = state.generationParams?.aceKey || 'C';
   const availableChords = chordsByKey[currentKey] || chordsByKey['C'];
 
-  const handleChordSelect = (chord) => {
-    if (state.chordWindow.beatIndex !== null) {
-      dispatch({
-        type: 'SET_CHORD_FOR_BEAT',
-        payload: {
-          beatIndex: state.chordWindow.beatIndex,
-          chord: chord
-        }
+  const handleChordSelect = async (chord) => {
+    if (state.chordWindow.beatIndex === null) return;
+    const beatIndex = state.chordWindow.beatIndex;
+    const oldChord = state.chordTrack?.chords?.[beatIndex] || '';
+
+    dispatch({
+      type: 'SET_CHORD_FOR_BEAT',
+      payload: { beatIndex, chord },
+    });
+    handleClose();
+
+    // ----- Phase B+C: smart per-stem regen -----
+    if (!chord || chord === oldChord) return;
+
+    // Convert beat index → time range for the affected bar
+    const bpm = state.bpm || 120;
+    const beatsPerBar = state.beatsPerBar || 4;
+    const secondsPerBeat = 60 / bpm;
+    const barIndex = Math.floor(beatIndex / beatsPerBar);
+    const regionStart = barIndex * beatsPerBar * secondsPerBeat;
+    const regionEnd = regionStart + beatsPerBar * secondsPerBeat;
+
+    // Find tracks overlapping this bar with analyzed metadata
+    const candidates = [];
+    state.buses.forEach((bus) => {
+      bus.tracks?.forEach((tr) => {
+        if (!tr.audioUrl || !tr.metadata?.instrument) return;
+        const sp = tr.startPosition || 0;
+        const dur = tr.duration || 0;
+        if (sp + dur < regionStart || sp > regionEnd) return;
+        candidates.push({ bus, track: tr });
       });
-      handleClose();
+    });
+    if (candidates.length === 0) {
+      console.log('🎼 No analyzed tracks overlap bar', barIndex);
+      return;
+    }
+
+    // Arrangement decision: only ONE harmonic instrument owns extensions.
+    // Pick the highest-register harmonic candidate to receive 9/11/13.
+    const HARMONIC = new Set(['guitar', 'piano', 'keys', 'synth', 'harmony']);
+    const harmonics = candidates.filter(({ track }) => HARMONIC.has(track.metadata.instrument));
+    let extensionOwnerId = null;
+    if (harmonics.length > 0) {
+      // Heuristic: piano > keys > guitar > synth > harmony
+      const PRIORITY = { piano: 5, keys: 4, guitar: 3, synth: 2, harmony: 1 };
+      harmonics.sort((a, b) =>
+        (PRIORITY[b.track.metadata.instrument] || 0) - (PRIORITY[a.track.metadata.instrument] || 0)
+      );
+      extensionOwnerId = harmonics[0].track.id;
+    }
+
+    console.log(`🎼 Chord ${oldChord || '∅'} → ${chord} @ bar ${barIndex+1}, ${candidates.length} candidate tracks, extension owner: ${extensionOwnerId}`);
+
+    for (const { track } of candidates) {
+      const role = track.metadata.instrument;
+      // Strip extensions from non-owner harmonic instruments by sending them a triad version
+      let chordForThisTrack = chord;
+      if (HARMONIC.has(role) && track.id !== extensionOwnerId) {
+        chordForThisTrack = chord.replace(/(9|11|13|maj9|m9|maj11|m11|maj13|m13|add9)$/i, '');
+      }
+      try {
+        const audioBlob = await (await fetch(track.audioUrl)).blob();
+        const audioFile = new File([audioBlob], (track.name || 'stem') + '.wav', { type: 'audio/wav' });
+        let midiFile = null;
+        if (track.metadata?.midi) {
+          try {
+            const mb = await (await fetch(track.metadata.midi)).blob();
+            midiFile = new File([mb], 'input.mid', { type: 'audio/midi' });
+          } catch {}
+        }
+        const result = await regenStemForChord({
+          audioFile, midiFile, role,
+          oldChord, newChord: chordForThisTrack,
+          regionStart, regionEnd,
+          coverNoise: 0.7,
+          duration: track.duration,
+        });
+        if (result.skipped) {
+          console.log(`  ⏩ ${role} skipped: ${result.reason}`);
+          continue;
+        }
+        // Poll the task and replace the track audio when done
+        const taskId = result.task_id;
+        console.log(`  🎛️ ${role} regenerating, task ${taskId}`);
+        const poll = async () => {
+          for (let i = 0; i < 300; i++) {
+            await new Promise((r) => setTimeout(r, 2000));
+            const r2 = await fetch(`/api/generate-stemphonic/task/${taskId}`);
+            if (!r2.ok) continue;
+            const tr2 = await r2.json();
+            if (tr2.state === 'SUCCESS' && tr2.result?.file_paths?.[0]) {
+              const newUrl = tr2.result.file_paths[0];
+              dispatch({
+                type: 'UPDATE_TRACK',
+                payload: {
+                  busId: state.buses.find((b) => b.tracks.some((t) => t.id === track.id))?.id,
+                  trackId: track.id,
+                  updates: {
+                    audioUrl: newUrl,
+                    metadata: {
+                      ...track.metadata,
+                      lastChordRegen: { from: oldChord, to: chordForThisTrack, at: Date.now() },
+                    },
+                  },
+                },
+              });
+              console.log(`  ✅ ${role} replaced with ${newUrl}`);
+              return;
+            }
+            if (tr2.state === 'FAILURE') {
+              console.error(`  ❌ ${role} regen failed:`, tr2.error);
+              return;
+            }
+          }
+        };
+        poll();
+      } catch (err) {
+        console.error(`  ❌ ${role} regen error:`, err);
+      }
     }
   };
 

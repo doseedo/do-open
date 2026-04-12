@@ -44,12 +44,12 @@ const VoiceToInstrumentTool = ({ tool }) => {
   }), []);
 
   const instrumentGroups = useMemo(() => [
-    { id: 'piano', label: 'Piano', iconImg: '/assets/icons/piano.png' },
-    { id: 'guitar', label: 'Guitar', iconImg: '/assets/icons/acguitar.png' },
-    { id: 'bass', label: 'Bass', iconImg: '/assets/icons/elecbass.png' },
+    { id: 'piano',   label: 'Piano',   iconImg: '/assets/icons/piano.png' },
+    { id: 'guitar',  label: 'Guitar',  iconImg: '/assets/icons/acguitar.png' },
+    { id: 'bass',    label: 'Bass',    iconImg: '/assets/icons/elecbass.png' },
     { id: 'strings', label: 'Strings', iconImg: '/assets/icons/violin.png' },
-    { id: 'brass', label: 'Brass', iconImg: '/assets/icons/tpt.png' },
-    { id: 'winds', label: 'Winds', iconImg: '/assets/icons/sax.png' }
+    { id: 'brass',   label: 'Brass',   iconImg: '/assets/icons/trumpetens.png' },
+    { id: 'winds',   label: 'Winds',   iconImg: '/assets/icons/sax.png' }
   ], []);
 
   const subgroupIcons = useMemo(() => ({
@@ -61,13 +61,13 @@ const VoiceToInstrumentTool = ({ tool }) => {
     'upright_bass': '/assets/icons/elecbass.png',
     'violin': '/assets/icons/violin.png',
     'cello': '/assets/icons/cello.png',
-    'ensemble_strings': '/assets/icons/violin.png',
+    'ensemble_strings': '/assets/icons/viollinensemble.png',
     'trumpet': '/assets/icons/tpt.png',
     'trombone': '/assets/icons/tbn.png',
-    'ensemble_brass': '/assets/icons/brassens.png',
+    'ensemble_brass': '/assets/icons/trumpetens.png',
     'flute': '/assets/icons/flute.png',
     'sax': '/assets/icons/sax.png',
-    'ensemble_winds': '/assets/icons/windens.png'
+    'ensemble_winds': '/assets/icons/sax.png'
   }), []);
 
   // Handle group change
@@ -209,6 +209,8 @@ const VoiceToInstrumentTool = ({ tool }) => {
                 src={group.iconImg}
                 alt={group.label}
                 className={styles.instrumentIcon}
+                style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.9 }}
+                aria-hidden="true"
               />
               <span>{group.label}</span>
             </button>
@@ -233,6 +235,8 @@ const VoiceToInstrumentTool = ({ tool }) => {
                     src={subgroupIcons[subgroup]}
                     alt={subgroup}
                     className={styles.instrumentIcon}
+                    style={{ width: 36, height: 36, objectFit: 'contain', opacity: 0.9 }}
+                    aria-hidden="true"
                   />
                 )}
                 <span>{displayLabel}</span>

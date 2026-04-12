@@ -655,3 +655,63 @@ export async function downloadTrackWithFX(trackData, busData, masterFX, rc20FX =
     throw error;
   }
 }
+
+// ============================================================================
+// Stemphonic API
+// ============================================================================
+
+export async function listStemphonicCheckpoints() {
+  const r = await fetch('/api/generate-stemphonic/checkpoints');
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+export async function switchStemphonicCheckpoint(checkpointId) {
+  const r = await fetch('/api/generate-stemphonic/checkpoint', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ checkpoint: checkpointId }),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+export async function listStemphonicTimbres() {
+  const r = await fetch('/api/generate-stemphonic/timbres');
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+export async function generateStemphonic(params, midiFile = null, refAudioFile = null) {
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') fd.append(k, String(v));
+  }
+  if (midiFile) fd.append('midiFile', midiFile);
+  if (refAudioFile) fd.append('refAudio', refAudioFile);
+  const r = await fetch('/api/generate-stemphonic', { method: 'POST', body: fd });
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+export async function pollStemphonicUntilComplete(
+  taskId,
+  onProgress = null,
+  maxAttempts = 600,
+) {
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    const r = await fetch(`/api/generate-stemphonic/task/${taskId}`);
+    if (!r.ok) throw new Error(`Failed to poll stemphonic: ${r.status}`);
+    const status = await r.json();
+    if (onProgress) onProgress({ attempts, status: status.status });
+    if (status.status === 'completed') return status.result;
+    if (status.status === 'failed') {
+      throw new Error(status.error || 'Stemphonic generation failed');
+    }
+    attempts += 1;
+    await new Promise((res) => setTimeout(res, 1500));
+  }
+  throw new Error(`Stemphonic task timed out after ${maxAttempts} polls`);
+}

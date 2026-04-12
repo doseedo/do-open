@@ -9,7 +9,12 @@ import { useEffect, useRef, useCallback } from 'react';
  * - Handles tempo changes across scenes
  * - Downbeat emphasis (higher pitch for bar start)
  */
-export function useMetronome(isPlaying, playheadPosition, isMetronomeOn, bpm, sceneTempos, sceneChanges) {
+export function useMetronome(isPlaying, playheadPosition, isMetronomeOn, bpm, sceneTempos, sceneChanges, beatsPerBar = 4, meterDenominator = 4, timelineOffset = 0, beatMap = null) {
+  // For /4 meters one click = one quarter note (BPM unit).
+  // For /8 meters one click = one eighth note (half a quarter).
+  // beatsPerBar is the numerator of the time signature, i.e. # of clicks per bar.
+  const clickFactor = meterDenominator === 8 ? 2 : 1; // clicks per quarter note
+  const clicksPerBar = beatsPerBar;
   const audioContextRef = useRef(null);
   const schedulerTimeoutRef = useRef(null);
   const lastScheduledBeatRef = useRef(-1);
@@ -49,10 +54,17 @@ export function useMetronome(isPlaying, playheadPosition, isMetronomeOn, bpm, sc
 
   // Calculate total beats elapsed from start, accounting for tempo changes
   const calculateBeatsElapsed = useCallback((time) => {
+    if (beatMap && beatMap.length > 0) {
+      // Count how many beats in the map are <= current time
+      let n = 0;
+      while (n < beatMap.length && beatMap[n].t <= time) n++;
+      return n;
+    }
     if (!sceneTempos || !sceneChanges || sceneTempos.length === 0 || sceneChanges.length <= 1) {
       // Constant BPM mode
-      const secondsPerBeat = 60 / bpm;
-      return time / secondsPerBeat;
+      const secondsPerBeat = (60 / bpm) / clickFactor;
+      // Subtract pre-roll so click 1 lands on the song's actual downbeat.
+      return Math.max(0, (time - timelineOffset)) / secondsPerBeat;
     }
 
     let totalBeats = 0;
@@ -62,7 +74,7 @@ export function useMetronome(isPlaying, playheadPosition, isMetronomeOn, bpm, sc
       const sceneStart = sceneChanges[i];
       const sceneEnd = sceneChanges[i + 1] || time;
       const sceneBPM = sceneTempos[i];
-      const secondsPerBeat = 60 / sceneBPM;
+      const secondsPerBeat = (60 / sceneBPM) / clickFactor;
 
       if (time <= sceneStart) {
         break;
@@ -83,14 +95,23 @@ export function useMetronome(isPlaying, playheadPosition, isMetronomeOn, bpm, sc
 
   // Calculate time of next beat after current position
   const calculateNextBeatTime = useCallback((currentTime) => {
+    if (beatMap && beatMap.length > 0) {
+      for (let i = 0; i < beatMap.length; i++) {
+        if (beatMap[i].t > currentTime) return beatMap[i].t;
+      }
+      // After the last beat: extrapolate at the local tempo
+      const last = beatMap[beatMap.length - 1].t;
+      const prev = beatMap.length > 1 ? beatMap[beatMap.length - 2].t : last - 60 / bpm;
+      return last + (last - prev);
+    }
     const beatsElapsed = calculateBeatsElapsed(currentTime);
     const nextBeatNumber = Math.floor(beatsElapsed) + 1;
 
     // Work backwards to find the time of this beat number
     if (!sceneTempos || !sceneChanges || sceneTempos.length === 0 || sceneChanges.length <= 1) {
       // Constant BPM mode
-      const secondsPerBeat = 60 / bpm;
-      return nextBeatNumber * secondsPerBeat;
+      const secondsPerBeat = (60 / bpm) / clickFactor;
+      return timelineOffset + nextBeatNumber * secondsPerBeat;
     }
 
     let accumulatedBeats = 0;
@@ -99,7 +120,7 @@ export function useMetronome(isPlaying, playheadPosition, isMetronomeOn, bpm, sc
       const sceneStart = sceneChanges[i];
       const sceneEnd = sceneChanges[i + 1] || currentTime + 100; // Fallback
       const sceneBPM = sceneTempos[i];
-      const secondsPerBeat = 60 / sceneBPM;
+      const secondsPerBeat = (60 / sceneBPM) / clickFactor;
       const sceneDuration = sceneEnd - sceneStart;
       const beatsInScene = sceneDuration / secondsPerBeat;
 
@@ -113,7 +134,7 @@ export function useMetronome(isPlaying, playheadPosition, isMetronomeOn, bpm, sc
     }
 
     // Fallback
-    return currentTime + (60 / bpm);
+    return currentTime + ((60 / bpm) / clickFactor);
   }, [bpm, sceneTempos, sceneChanges, calculateBeatsElapsed]);
 
   // Schedule metronome clicks based on current playback position
@@ -125,7 +146,21 @@ export function useMetronome(isPlaying, playheadPosition, isMetronomeOn, bpm, sc
     // Calculate total beats elapsed and determine beat in bar
     const beatsElapsed = calculateBeatsElapsed(currentTime);
     const currentBeatNumber = Math.floor(beatsElapsed);
-    const beatInBar = currentBeatNumber % 4; // 0, 1, 2, 3 (0 is downbeat)
+    let beatInBar = currentBeatNumber % clicksPerBar;
+    // If we have a beat map, use the actual madmom-tagged bar position
+    // for the NEXT beat so the downbeat fires on its true position even
+    // when bar lengths drift.
+    let useBeatMapDownbeat = false;
+    let nextBeatMapPos = null;
+    if (beatMap && beatMap.length > 0) {
+      // Find next beat index >= currentTime
+      let i = 0;
+      while (i < beatMap.length && beatMap[i].t <= currentTime) i++;
+      if (i < beatMap.length) {
+        nextBeatMapPos = beatMap[i].pos; // 1..beatsPerBar
+        useBeatMapDownbeat = true;
+      }
+    }
 
     // Calculate next beat time
     const nextBeatTime = calculateNextBeatTime(currentTime);
@@ -137,7 +172,9 @@ export function useMetronome(isPlaying, playheadPosition, isMetronomeOn, bpm, sc
 
       // If next beat is within scheduling window (150ms), schedule it
       if (timeUntilNextBeat > 0 && timeUntilNextBeat <= 0.15) {
-        const nextBeatInBar = (beatInBar + 1) % 4;
+        const nextBeatInBar = useBeatMapDownbeat
+          ? ((nextBeatMapPos - 1) % clicksPerBar)
+          : ((beatInBar + 1) % clicksPerBar);
         const isDownbeat = nextBeatInBar === 0;
 
         // Schedule the click

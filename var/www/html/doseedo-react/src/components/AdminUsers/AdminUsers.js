@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const ACCESS_KEY = '***REDACTED***';
+const ACCESS_KEY = process.env.REACT_APP_ADMIN_KEY || '***REDACTED***';
 
 const AdminUsers = () => {
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem('admin_auth') === '1');

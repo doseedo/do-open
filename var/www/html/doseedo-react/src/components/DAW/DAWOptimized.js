@@ -5,6 +5,8 @@ import { useAudioPlayback } from '../../hooks/useAudioPlayback';
 import { useKeyboardControls } from '../../hooks/useKeyboardControls';
 import { useMetronome } from '../../hooks/useMetronome';
 import { parseMIDIFile } from '../../utils/midiParser';
+import { analyzeAudio, iconForType, separateStemsAuto, repaintMeter, encodeLatentsBulk, detectChordsAndTempo } from '../../services/trackAnalysisAPI';
+import ImportAudioModal from './ImportAudioModal';
 import TransportControls from './TransportControls';
 import Timeline from './Timeline';
 import TimelineGrid from './TimelineGrid';
@@ -81,7 +83,11 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
     state.isMetronomeOn,
     state.bpm || 120,
     state.video?.sceneTempos || [],
-    state.video?.sceneChanges || []
+    state.video?.sceneChanges || [],
+    state.beatsPerBar || 4,
+    state.meterDenominator || 4,
+    state.timelineOffset || 0,
+    state.beatMap || null
   );
 
   // Drag and drop handlers for bus reordering
@@ -302,20 +308,287 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
     });
   }, [dispatch, state.automationWindow.points, state.video.sceneChanges, state.totalDuration]);
 
-  // BPM mode toggle handler
-  const toggleBPMMode = useCallback(() => {
-    dispatch({ type: 'TOGGLE_BPM_MODE' });
-    console.log('🎵 BPM Mode:', !state.isBPMMode ? 'ON' : 'OFF');
-  }, [dispatch, state.isBPMMode]);
-
   // Metronome toggle handler
   const toggleMetronome = useCallback(() => {
     dispatch({ type: 'TOGGLE_METRONOME' });
     console.log('🥁 Metronome:', !state.isMetronomeOn ? 'ON' : 'OFF');
   }, [dispatch, state.isMetronomeOn]);
 
+  // ─── Auto-repaint on BPM/meter change ──────────────────────────────
+  // Snapshot what we last successfully repainted from. The next change
+  // remaps every track's cached latent from the snapshot to the current
+  // values via stemphonic stage2d-130k.
+  const [repaintApplying, setRepaintApplying] = React.useState(false);
+  const repaintLastRef = React.useRef({ bpm: state.bpm, beatsPerBar: state.beatsPerBar || 4, meterDen: state.meterDenominator || 4 });
+  const repaintDebounceRef = React.useRef(null);
+  const repaintInFlightRef = React.useRef(false);
+
+  const runRepaintNow = useCallback(async () => {
+    if (repaintInFlightRef.current) return;
+    const srcBpm = repaintLastRef.current.bpm;
+    const srcBeats = repaintLastRef.current.beatsPerBar;
+    const srcDen = repaintLastRef.current.meterDen || 4;
+    const tgtBpm = state.bpm;
+    const tgtBeats = state.beatsPerBar || 4;
+    const tgtDen = state.meterDenominator || 4;
+    if (srcBpm === tgtBpm && srcBeats === tgtBeats && srcDen === tgtDen) return;
+
+    // Collect STEM tracks. Stem tracks may NOT have a cached latent
+    // yet (we deferred their encoding to save upfront cost on upload).
+    // We'll lazy-encode any missing latents in one bulk call below.
+    const stemTracksToProcess = []; // {bus, track}
+    const parentsToMute = [];
+    state.buses?.forEach((bus) => {
+      const busStems = (bus.tracks || []).filter((t) => t.metadata?.type === 'stem');
+      const busParents = (bus.tracks || []).filter(
+        (t) => t.metadata?.type !== 'stem' && t.metadata?.latentId
+      );
+      busStems.forEach((track) => {
+        stemTracksToProcess.push({ bus, track });
+      });
+      // Mute parents only if THIS bus has stems (so we don't hear master + stems doubled)
+      if (busStems.length > 0) {
+        busParents.forEach((p) => parentsToMute.push({ busId: bus.id, trackId: p.id }));
+      }
+    });
+
+    // Lazy-encode any stem tracks that don't have a latent yet
+    const needsEncode = stemTracksToProcess
+      .filter(({ track }) => !track.metadata?.latentId && track.audioUrl)
+      .map(({ track }) => track.audioUrl);
+
+    if (needsEncode.length > 0) {
+      console.log(`🎚️ lazy-encoding ${needsEncode.length} stem latents before repaint…`);
+      try {
+        const enc = await encodeLatentsBulk(needsEncode);
+        // Map URL → latent_id and dispatch UPDATE_TRACK for each
+        const urlToLatent = {};
+        (enc.results || []).forEach((r) => {
+          if (r.latent_id) urlToLatent[r.url] = { id: r.latent_id, url: r.latent_url };
+        });
+        stemTracksToProcess.forEach(({ bus, track }) => {
+          const lat = urlToLatent[track.audioUrl];
+          if (lat) {
+            track.metadata = { ...track.metadata, latentId: lat.id, latent: lat.url };
+            dispatch({
+              type: 'UPDATE_TRACK',
+              payload: {
+                busId: bus.id, trackId: track.id,
+                updates: { metadata: track.metadata },
+              },
+            });
+          }
+        });
+      } catch (err) {
+        console.error('lazy stem-latent encode failed:', err);
+      }
+    }
+
+    // Now build the stems array from tracks that have a latent.
+    // CRITICAL: pull the SOURCE BPM from the parent track's
+    // metadata.detectedBpm. The latent_remap_meter math depends on
+    // frames_per_beat = (60/bpm)*25 — if we pass the timeline default
+    // instead of the song's actual BPM, the bar slicing falls on the
+    // wrong latent frames and the diffusion model just smears the
+    // result into "everything sounds slowed down".
+    const stems = [];
+    const trackRefs = [];
+    let detectedSrcBpm = null;
+    let detectedDownbeatOffset = 0;
+    stemTracksToProcess.forEach(({ bus, track }) => {
+      const latentId = track.metadata?.latentId;
+      if (!latentId) return;
+      stems.push({
+        latent_id: latentId,
+        stem_type: track.metadata?.stemType || track.metadata?.instrument || 'other',
+      });
+      trackRefs.push({ busId: bus.id, trackId: track.id });
+      // Find the parent (un-stemmed) track for this stem to read the
+      // detected BPM applied during ImportAudioModal flow.
+      if (!detectedSrcBpm) {
+        const parent = bus.tracks.find(
+          (t) => t.id === track.metadata?.parentTrackId && t.metadata?.detectedBpm
+        );
+        if (parent) {
+          detectedSrcBpm = parent.metadata.detectedBpm;
+          if (typeof parent.metadata.downbeatOffset === 'number') {
+            detectedDownbeatOffset = parent.metadata.downbeatOffset;
+          }
+        }
+      }
+    });
+
+    // Fallback: if there are no stem tracks at all, repaint any track with a latent
+    if (stems.length === 0) {
+      state.buses?.forEach((bus) => {
+        bus.tracks?.forEach((track) => {
+          const latentId = track.metadata?.latentId;
+          if (!latentId) return;
+          stems.push({
+            latent_id: latentId,
+            stem_type: track.metadata?.instrument || track.metadata?.stemType || 'other',
+          });
+          trackRefs.push({ busId: bus.id, trackId: track.id });
+        });
+      });
+    }
+
+    if (stems.length === 0) {
+      repaintLastRef.current = { bpm: tgtBpm, beatsPerBar: tgtBeats, meterDen: tgtDen };
+      return;
+    }
+
+    // Mute parents now so playback only carries the stems
+    parentsToMute.forEach((p) => {
+      dispatch({
+        type: 'UPDATE_TRACK',
+        payload: { busId: p.busId, trackId: p.trackId, updates: { isMuted: true } },
+      });
+    });
+
+    repaintInFlightRef.current = true;
+    setRepaintApplying(true);
+    try {
+      // Use the detected source BPM if we have it — otherwise the
+      // timeline default may be wrong and bars will slice at wrong
+      // frames. Same for tgt: if user changed BPM, that's the target.
+      const effectiveSrcBpm = detectedSrcBpm || srcBpm;
+      const result = await repaintMeter({
+        stems,
+        srcMeter: [srcBeats, srcDen],
+        tgtMeter: [tgtBeats, tgtDen],
+        srcBpm: effectiveSrcBpm,
+        tgtBpm,
+        coverNoise: 0.55,
+        prompt: 'preserve original style and instrument timbre',
+        downbeatOffset: detectedDownbeatOffset,
+      });
+      console.log(`🎚️ repaint with srcBpm=${effectiveSrcBpm} (detected=${detectedSrcBpm ? 'yes' : 'no, using timeline ' + srcBpm})`);
+      console.log(`🎚️ auto-repaint ${srcBeats}/${srcDen} ${srcBpm} → ${tgtBeats}/${tgtDen} ${tgtBpm} for ${stems.length} stems`, result);
+
+      (result.results || []).forEach((r, i) => {
+        if (r.error || !r.task_id) return;
+        const ref = trackRefs[i];
+        const taskId = r.task_id;
+        (async () => {
+          for (let p = 0; p < 120; p++) {
+            await new Promise((res) => setTimeout(res, 2500));
+            const tr = await fetch(`/api/generate-stemphonic/task/${taskId}`);
+            if (!tr.ok) continue;
+            const td = await tr.json();
+            if (td.state === 'SUCCESS' && td.result?.file_paths?.[0]) {
+              dispatch({
+                type: 'UPDATE_TRACK',
+                payload: {
+                  busId: ref.busId,
+                  trackId: ref.trackId,
+                  updates: {
+                    audioUrl: td.result.file_paths[0],
+                    metadata: { latentId: r.new_latent_id },
+                  },
+                },
+              });
+              return;
+            }
+            if (td.state === 'FAILURE') return;
+          }
+        })();
+      });
+
+      repaintLastRef.current = { bpm: tgtBpm, beatsPerBar: tgtBeats, meterDen: tgtDen };
+    } catch (err) {
+      console.error('auto-repaint failed', err);
+    } finally {
+      repaintInFlightRef.current = false;
+      setRepaintApplying(false);
+    }
+  }, [state.bpm, state.beatsPerBar, state.meterDenominator, state.buses, dispatch]);
+
+  // Debounce: schedule a repaint 1.2s after the last BPM/meter change
+  useEffect(() => {
+    if (repaintDebounceRef.current) clearTimeout(repaintDebounceRef.current);
+    const srcBpm = repaintLastRef.current.bpm;
+    const srcBeats = repaintLastRef.current.beatsPerBar;
+    const srcDen = repaintLastRef.current.meterDen || 4;
+    if (state.bpm === srcBpm && (state.beatsPerBar || 4) === srcBeats && (state.meterDenominator || 4) === srcDen) return;
+    repaintDebounceRef.current = setTimeout(runRepaintNow, 1200);
+    return () => {
+      if (repaintDebounceRef.current) clearTimeout(repaintDebounceRef.current);
+    };
+  }, [state.bpm, state.beatsPerBar, state.meterDenominator, runRepaintNow]);
+
   // Drag and drop state for entire DAW area
   const [isDragOver, setIsDragOver] = React.useState(false);
+
+  // Import audio modal — asks the user whether to detect tempo/key on
+  // each new audio drop, then runs detect-chords + applies to timeline.
+  const [importModal, setImportModal] = React.useState(null); // { file, busId, trackId } | null
+
+  // Listen for the window event Timeline.js fires when an audio file is
+  // dropped onto the timeline (separate from the whole-DAW drop handler).
+  // Both code paths now route through the same import modal.
+  useEffect(() => {
+    const onAudioImported = (e) => {
+      const detail = e.detail || {};
+      if (detail.file) setImportModal({
+        file: detail.file,
+        busId: detail.busId,
+        trackId: detail.trackId,
+      });
+    };
+    window.addEventListener('doseedo-audio-imported', onAudioImported);
+    return () => window.removeEventListener('doseedo-audio-imported', onAudioImported);
+  }, []);
+
+  // Apply detected tempo + meter + downbeat offset to the timeline.
+  // The downbeat offset becomes the timeline pre-roll so bar 1 lands
+  // exactly on the song's first downbeat (silence + pickup → bar 0).
+  const applyDetection = useCallback(async (file, trackId, busId) => {
+    try {
+      const det = await detectChordsAndTempo(file);
+      if (det.bpm) dispatch({ type: 'UPDATE_BPM', payload: Math.round(det.bpm) });
+      if (det.beats_per_bar) dispatch({ type: 'SET_BEATS_PER_BAR', payload: det.beats_per_bar });
+      if (det.beat_map) dispatch({ type: 'SET_BEAT_MAP', payload: det.beat_map });
+      // Detection-driven changes are NOT user meter changes — they
+      // establish the baseline. Bump the repaint snapshot so the debounced
+      // auto-repaint sees no diff and doesn't fire a meter conversion.
+      if (repaintDebounceRef.current) clearTimeout(repaintDebounceRef.current);
+      repaintLastRef.current = {
+        bpm: det.bpm ? Math.round(det.bpm) : repaintLastRef.current.bpm,
+        beatsPerBar: det.beats_per_bar || repaintLastRef.current.beatsPerBar,
+        meterDen: repaintLastRef.current.meterDen || 4,
+      };
+      if (typeof det.downbeat_offset === 'number') {
+        dispatch({ type: 'SET_TIMELINE_OFFSET', payload: det.downbeat_offset });
+      }
+      // Populate chord row
+      if (det.chords) {
+        const chordsNum = {};
+        Object.entries(det.chords).forEach(([k, v]) => { chordsNum[parseInt(k, 10)] = v; });
+        dispatch({ type: 'SET_CHORDS', payload: chordsNum });
+      }
+      // Stash the source BPM on the track metadata so the repaint flow
+      // uses the actual song BPM (not the timeline default) when
+      // computing latent bar boundaries.
+      dispatch({
+        type: 'UPDATE_TRACK',
+        payload: {
+          busId, trackId,
+          updates: {
+            metadata: {
+              detectedBpm: det.bpm,
+              detectedMeter: det.beats_per_bar,
+              downbeatOffset: det.downbeat_offset,
+              detected: true,
+            },
+          },
+        },
+      });
+      console.log(`🎵 detected: ${Math.round(det.bpm)} BPM, ${det.beats_per_bar}/4, downbeat at ${det.downbeat_offset?.toFixed(2)}s`);
+    } catch (err) {
+      console.warn('detection failed:', err.message);
+    }
+  }, [dispatch]);
 
   // Drag and drop handlers for audio files on entire DAW area
   const handleDragOver = useCallback((e) => {
@@ -467,9 +740,10 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
           }
         });
 
-        // Create the track
+        // Create the track (analysis pending — runs in background below)
+        const trackId = `track-${Date.now()}`;
         const track = {
-          id: `track-${Date.now()}`,
+          id: trackId,
           name: file.name,
           audioUrl: audioUrl,
           duration: duration,
@@ -479,20 +753,101 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
           isSolo: false,
           cropStart: 0,
           cropEnd: 0,
-          fx: {
-            reverb: 0,
-            fadeIn: 0.2,
-            fadeOut: 1.0
-          }
+          fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
+          metadata: {
+            type: 'uploaded',
+            instrument: null,         // filled in by classifier
+            instrumentLabel: null,
+            instrumentScore: null,
+            icon: 'fa-spinner fa-spin',
+            midi: null,               // filled in by basic-pitch
+            inputFiles: {},
+            analysisStatus: 'pending',
+          },
         };
 
-        // Add track to the new bus
-        dispatch({
-          type: 'ADD_TRACK',
-          payload: { busId, track }
+        dispatch({ type: 'ADD_TRACK', payload: { busId, track } });
+        console.log(`✅ Audio file added to new SFX bus, analyzing…`);
+
+        // Pop the import modal — user can detect tempo/key/meter
+        setImportModal({ file, busId, trackId });
+
+        // Background analysis: basic-pitch + PANNs + VAE latent in parallel
+        analyzeAudio(file).then((res) => {
+          const cls = res.classification;
+          const midi = res.midi;
+          const latent = res.latent;
+          const instType = cls?.type || 'other';
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: {
+              busId,
+              trackId,
+              updates: {
+                metadata: {
+                  ...track.metadata,
+                  instrument: instType,
+                  instrumentLabel: cls?.label || null,
+                  instrumentScore: cls?.score || null,
+                  icon: iconForType(instType),
+                  midi: midi?.midi_url || null,
+                  latent: latent?.latent_url || null,
+                  latentId: latent?.latent_id || null,
+                  inputFiles: midi?.midi_url ? { midiPath: midi.midi_url } : {},
+                  analysisStatus: 'done',
+                  analysisErrors: {
+                    midi: res.midiError,
+                    classify: res.classifyError,
+                    latent: res.latentError,
+                  },
+                },
+              },
+            },
+          });
+          console.log(`🎯 Analysis done for ${file.name}: ${instType} (${cls?.label}), midi=${midi?.n_notes}n, latent=${latent?.n_frames}f`);
+        }).catch((err) => {
+          console.error('❌ Track analysis failed:', err);
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: { busId, trackId, updates: { metadata: { ...track.metadata, analysisStatus: 'failed', analysisError: err.message } } },
+          });
         });
 
-        console.log(`✅ Audio file added to new SFX bus`);
+        // Background stem separation: turn this single track into a
+        // collapsed bus stack. Demucs can take ~30s; we kick it off in
+        // parallel and add all 6 stems in ONE bulk dispatch so the
+        // track tree re-renders once instead of 6× (which previously
+        // caused all existing tracks to re-fetch their audio on every
+        // ADD_TRACK).
+        separateStemsAuto(file).then((sep) => {
+          if (!sep?.stems) return;
+          const stemNames = Object.keys(sep.stems);
+          const stemTracks = stemNames.map((stemName) => ({
+            id: `stem-${trackId}-${stemName}`,
+            name: `${file.name.replace(/\.[^.]+$/, '')} — ${stemName}`,
+            audioUrl: sep.stems[stemName],
+            duration,
+            startPosition: 0,
+            gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
+            fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
+            metadata: {
+              type: 'stem',
+              stemType: stemName,
+              parentTrackId: trackId,
+              instrument: stemName,
+              icon: iconForType(stemName),
+            },
+          }));
+          dispatch({
+            type: 'ADD_TRACKS_BULK',
+            payload: { busId, tracks: stemTracks },
+          });
+          // Collapse the bus so stems don't clutter the UI
+          dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: false } });
+          console.log(`🎚️ Auto-separated ${file.name} → ${stemNames.length} stems (bulk add, bus collapsed)`);
+        }).catch((err) => {
+          console.warn('auto-separation failed (non-fatal):', err.message);
+        });
       });
     }
   }, [dispatch, state.buses]);
@@ -698,6 +1053,19 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
 
   return (
     <div ref={dawGridRef} className={`${styles.dawGrid} ${pluginMode ? styles.pluginMode : ''}`}>
+      {/* Import audio detection modal */}
+      {importModal && (
+        <ImportAudioModal
+          filename={importModal.file?.name || 'audio'}
+          onYes={() => {
+            const m = importModal;
+            setImportModal(null);
+            applyDetection(m.file, m.trackId, m.busId);
+          }}
+          onNo={() => setImportModal(null)}
+        />
+      )}
+
       {/* Zoom controls moved to timeline spacer */}
 
       {/* Controls Row - spans all columns with 2-column grid (NO scroll) */}
@@ -716,26 +1084,17 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
           <div className={styles.timelineContainer}>
           {/* Combined spacer - spans columns 1 & 2 with transport controls */}
           <div className={styles.timelineSpacer1} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 8px 4px 8px', justifyContent: 'space-between', paddingRight: '18px' }}>
-            {/* Tempo Group: BPM Mode + Metronome + BPM Input (LEFT) */}
+            {/* Tempo + Meter Group: Metronome + BPM + Meter (LEFT) */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '2px',
+              gap: '6px',
               background: 'rgba(30, 30, 30, 0.6)',
               padding: '4px',
               borderRadius: '6px',
               border: '1px solid rgba(102, 126, 234, 0.2)',
               flex: '0 0 auto'
             }}>
-              <Button
-                id="bpm-mode-btn"
-                icon="fa-solid fa-music"
-                onClick={toggleBPMMode}
-                isActive={state.isBPMMode}
-                title="Toggle BPM Mode"
-                style={{ padding: '6px 10px' }}
-              />
-
               <Button
                 id="metronome-btn"
                 icon="fa-solid fa-drum"
@@ -769,6 +1128,40 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
                   }}
                 />
               </div>
+
+              {/* Meter Select */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Time signature">
+                <label htmlFor="meter-input" style={{ color: '#c5cae9', fontSize: '11px', fontWeight: '600' }}>
+                  Meter
+                </label>
+                <select
+                  id="meter-input"
+                  value={`${state.beatsPerBar || 4}/${state.meterDenominator || 4}`}
+                  onChange={(e) => dispatch({ type: 'SET_METER', payload: e.target.value })}
+                  style={{
+                    width: '60px',
+                    padding: '4px 5px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(102, 126, 234, 0.3)',
+                    background: 'rgba(20, 20, 20, 0.8)',
+                    color: 'white',
+                    fontSize: '12px',
+                    textAlign: 'center'
+                  }}
+                >
+                  <option value="3/4">3/4</option>
+                  <option value="4/4">4/4</option>
+                  <option value="5/4">5/4</option>
+                  <option value="6/8">6/8</option>
+                  <option value="7/8">7/8</option>
+                </select>
+              </div>
+
+              {repaintApplying && (
+                <i className="fa-solid fa-wand-magic-sparkles fa-spin"
+                   style={{ color: '#8B7FF0', marginLeft: 4, fontSize: 14 }}
+                   title="Repainting tracks via stemphonic stage2d-130k" />
+              )}
             </div>
 
             {/* Automation + Transport Group (RIGHT) */}

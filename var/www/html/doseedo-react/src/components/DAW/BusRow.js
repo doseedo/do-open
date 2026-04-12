@@ -42,52 +42,44 @@ const BusRow = React.memo(({
 
   // Determine which instrument icon to use based on track metadata
   const getInstrumentIcon = useCallback(() => {
-    // Check first track for instrument information
+    // Resolve an instrument icon path (white PNG) for the bus
     if (bus.tracks.length > 0) {
       const firstTrack = bus.tracks[0];
-
-      // Check instrumentSubgroup first (most specific)
       const subgroup = firstTrack.instrumentSubgroup?.toLowerCase();
-      if (subgroup) {
-        // Map instrument subgroups to icon filenames
-        const iconMap = {
-          'violin': '/assets/icons/violin.png',
-          'cello': '/assets/icons/cello.png',
-          'piano': '/assets/icons/piano.png',
-          'acoustic guitar': '/assets/icons/acguitar.png',
-          'electric guitar': '/assets/icons/elecgtr.png',
-          'trumpet': '/assets/icons/tpt.png',
-          'trombone': '/assets/icons/tpt.png',
-          'tuba': '/assets/icons/tpt.png'
-        };
+      const SUB = {
+        'violin': '/assets/icons/violin.png', 'viola': '/assets/icons/violin.png', 'cello': '/assets/icons/cello.png',
+        'piano': '/assets/icons/piano.png', 'acoustic_piano': '/assets/icons/piano.png', 'keys': '/assets/icons/keyboard.png',
+        'acoustic guitar': '/assets/icons/acguitar.png', 'acoustic_guitar': '/assets/icons/acguitar.png',
+        'electric guitar': '/assets/icons/elecgtr.png', 'electric_guitar': '/assets/icons/elecgtr.png',
+        'electric_bass': '/assets/icons/elecbass.png', 'upright_bass': '/assets/icons/elecbass.png',
+        'trumpet': '/assets/icons/tpt.png', 'trombone': '/assets/icons/tbn.png', 'tuba': '/assets/icons/tuba.png',
+        'french_horn': '/assets/icons/tuba.png', 'ensemble_brass': '/assets/icons/trumpetens.png',
+        'sax': '/assets/icons/sax.png', 'clarinet': '/assets/icons/sax.png', 'bassoon': '/assets/icons/sax.png',
+        'flute': '/assets/icons/flute.png', 'oboe': '/assets/icons/flute.png',
+        'drum_kit': '/assets/icons/drumkit.png', 'percussion': '/assets/icons/drumkit.png', 'electronic': '/assets/icons/elecdrums.png',
+      };
+      if (subgroup && SUB[subgroup]) return SUB[subgroup];
 
-        if (iconMap[subgroup]) {
-          return iconMap[subgroup];
-        }
-      }
-
-      // Fall back to instrumentGroup
       const group = firstTrack.instrumentGroup?.toLowerCase();
-      if (group) {
-        const groupIconMap = {
-          'strings': '/assets/icons/violin.png',
-          'brass': '/assets/icons/tpt.png',
-          'piano': '/assets/icons/piano.png',
-          'guitar': '/assets/icons/acguitar.png'
-        };
+      const GROUP = {
+        'strings': '/assets/icons/violin.png', 'brass': '/assets/icons/trumpetens.png', 'winds': '/assets/icons/sax.png',
+        'piano': '/assets/icons/piano.png', 'guitar': '/assets/icons/acguitar.png', 'bass': '/assets/icons/elecbass.png',
+        'drums': '/assets/icons/drumkit.png',
+      };
+      if (group && GROUP[group]) return GROUP[group];
 
-        if (groupIconMap[group]) {
-          return groupIconMap[group];
-        }
-      }
+      // PANNs classifier may have set metadata.instrument as a coarse type
+      const classified = firstTrack.metadata?.instrument;
+      if (classified && GROUP[classified]) return GROUP[classified];
     }
 
-    // Check bus name for brass
-    if (bus.name?.toLowerCase().includes('brass')) {
-      return '/assets/icons/tpt.png';
-    }
-
-    // No instrument icon found, return null to use font awesome fallback
+    // Check bus name as a final fallback
+    const n = bus.name?.toLowerCase() || '';
+    if (n.includes('brass')) return '/assets/icons/trumpetens.png';
+    if (n.includes('drum')) return '/assets/icons/drumkit.png';
+    if (n.includes('string')) return '/assets/icons/violin.png';
+    if (n.includes('guitar')) return '/assets/icons/acguitar.png';
+    if (n.includes('piano') || n.includes('key')) return '/assets/icons/piano.png';
     return null;
   }, [bus.tracks, bus.name]);
 
@@ -537,10 +529,13 @@ const BusRow = React.memo(({
               src={instrumentIcon}
               alt="Instrument"
               className={styles.busIconImage}
-              style={{ filter: 'invert(1)' }}
+              style={{ width: 28, height: 28, objectFit: 'contain', opacity: 0.9 }}
             />
           ) : (
-            <i className={`fa-solid ${icon} ${styles.busIcon}`}></i>
+            <i
+              className={`fa-solid ${icon} ${styles.busIcon}`}
+              style={{ color: 'rgba(255,255,255,0.85)' }}
+            />
           )}
         </div>
 
@@ -716,59 +711,28 @@ const BusRow = React.memo(({
       {bus.expanded && (
         <div className={styles.trackLabelsColumn}>
           {bus.tracks.map((track, index) => {
-            // Get instrument icon based on track metadata
-            const getTrackIcon = () => {
-              // Map instrument groups to icon files from assets folder
-              const iconMap = {
-                'piano': '/assets/icons/piano.png',
-                'guitar': '/assets/icons/acguitar.png',
-                'bass': '/assets/icons/elecbass.png',
-                'strings': '/assets/icons/violin.png',
-                'brass': '/assets/icons/tpt.png',
-                'woodwind': '/assets/icons/tpt.png', // Use trumpet as fallback
-                'winds': '/assets/icons/sax.png',
-                'keys': '/assets/icons/keyboard.png',
-                'drums': '/assets/icons/drumkit.png',
-                'cello': '/assets/icons/cello.png',
-                'trombone': '/assets/icons/tpt.png',
-                'tuba': '/assets/icons/tpt.png',
-                'trumpet': '/assets/icons/tpt.png'
+            // Resolve a white-PNG icon path for the track from any
+            // metadata source (PANNs classification, generation params,
+            // stem type, instrument group).
+            const getTrackIconImg = () => {
+              const GROUP = {
+                piano: '/assets/icons/piano.png', guitar: '/assets/icons/acguitar.png', bass: '/assets/icons/elecbass.png',
+                strings: '/assets/icons/violin.png', brass: '/assets/icons/trumpetens.png', winds: '/assets/icons/sax.png',
+                woodwind: '/assets/icons/sax.png', keys: '/assets/icons/keyboard.png',
+                drums: '/assets/icons/drumkit.png', cello: '/assets/icons/cello.png',
+                trumpet: '/assets/icons/tpt.png', trombone: '/assets/icons/tbn.png', tuba: '/assets/icons/tuba.png',
               };
-
-              // Map stem types to icons
-              const stemIconMap = {
-                'vocals': 'microphone', // Will use FontAwesome icon
-                'drums': '/assets/icons/drumkit.png',
-                'bass': '/assets/icons/elecbass.png',
-                'guitar': '/assets/icons/acguitar.png',
-                'piano': '/assets/icons/piano.png',
-                'other': 'music' // Will use FontAwesome music icon
-              };
-
-              // Check if this is a stem track
               if (track.metadata?.type === 'stem' && track.metadata?.stemType) {
-                const stemType = track.metadata.stemType;
-                if (stemIconMap[stemType] !== undefined) {
-                  return stemIconMap[stemType];
-                }
+                return GROUP[track.metadata.stemType] || null;
               }
-
-              // Check if track has custom instrument icon (from presets)
-              if (track.instrument?.icon) {
-                return track.instrument.icon;
+              const ig = track.metadata?.params?.instrumentGroup || track.metadata?.instrumentGroup;
+              if (ig && GROUP[ig]) return GROUP[ig];
+              if (track.metadata?.instrument && GROUP[track.metadata.instrument]) {
+                return GROUP[track.metadata.instrument];
               }
-
-              // Check metadata for instrument group
-              const instrumentGroup = track.metadata?.params?.instrumentGroup || track.metadata?.instrumentGroup;
-              if (instrumentGroup && iconMap[instrumentGroup]) {
-                return iconMap[instrumentGroup];
-              }
-
-              // Default - return null for no icon
               return null;
             };
-
-            const trackIconSrc = getTrackIcon();
+            const trackIconImg = getTrackIconImg();
 
             return (
               <div key={track.id} className={styles.trackRow} style={{ height: `${trackHeight}px` }}>
@@ -778,20 +742,18 @@ const BusRow = React.memo(({
                   {/* Track Icon Container */}
                   <div className={styles.trackIconContainer}>
                     <i className={`fa-solid fa-caret-right ${styles.trackExpandCaret}`}></i>
-                    {trackIconSrc ? (
-                      // Check if it's a FontAwesome icon name or image path
-                      trackIconSrc.startsWith('/') || trackIconSrc.startsWith('http') ? (
-                        <img
-                          src={trackIconSrc}
-                          alt="Instrument"
-                          className={styles.trackIconImage}
-                          style={{ filter: 'invert(1)' }}
-                        />
-                      ) : (
-                        <i className={`fa-solid fa-${trackIconSrc} ${styles.trackIcon}`}></i>
-                      )
+                    {trackIconImg ? (
+                      <img
+                        src={trackIconImg}
+                        alt="Instrument"
+                        className={styles.trackIconImage}
+                        style={{ width: 24, height: 24, objectFit: 'contain', opacity: 0.9 }}
+                      />
                     ) : (
-                      <i className={`fa-solid ${track.type === 'midi' ? 'fa-music' : 'fa-waveform-lines'} ${styles.trackIcon}`}></i>
+                      <i
+                        className={`fa-solid ${track.type === 'midi' ? 'fa-music' : 'fa-waveform-lines'} ${styles.trackIcon}`}
+                        style={{ color: 'rgba(255,255,255,0.85)' }}
+                      />
                     )}
                   </div>
 
@@ -832,6 +794,13 @@ const BusRow = React.memo(({
                       <>
                         <div className={styles.trackControlsLayout}>
                           <div className={styles.trackNameRow}>
+                            {track.metadata?.icon && (
+                              <i
+                                className={`fa-solid ${track.metadata.icon}`}
+                                title={track.metadata.instrumentLabel || track.metadata.instrument || 'analyzing'}
+                                style={{ marginRight: 6, opacity: 0.7, color: 'rgba(255,255,255,0.9)' }}
+                              />
+                            )}
                             <div className={styles.trackNameLabel} title={track.name || track.audioUrl?.split('/').pop() || 'Untitled'}>
                               {(() => {
                                 const displayName = track.name || track.audioUrl?.split('/').pop() || 'Untitled';

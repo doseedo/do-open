@@ -538,26 +538,6 @@ export const NODE_CATEGORIES = {
         feedback:      { default: 0.5, min: 0, max: 0.99, modulatable: true },
       },
     },
-    // ── Universal escape hatch ────────────────────────────────────────
-    // Hosts any AudioWorkletProcessor as a node. Use for FFT effects,
-    // phase vocoders, granular, custom IIRs — anything Web Audio's
-    // built-in nodes can't express. Built-in studio plugins that have
-    // their own AudioWorkletProcessor become a one-node graph that
-    // wraps the existing processor file.
-    {
-      type: 'custom_worklet', label: 'Custom Worklet',
-      io: { in: 1, out: 1 },
-      params: {
-        processor_name: { default: '', type: 'string' },
-        processor_url:  { default: '', type: 'string' },
-        input_channels:  { default: 2, min: 1, max: 8, step: 1 },
-        output_channels: { default: 2, min: 1, max: 8, step: 1 },
-        // Free-form parameter bindings; the @param machinery picks up
-        // any param key whose value starts with '@' and binds it to
-        // the worklet's AudioParam of the same key (or, if no such
-        // AudioParam exists, posts a message to the worklet port).
-      },
-    },
   ],
 
   'Math': [

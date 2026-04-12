@@ -39,22 +39,58 @@ function SessionText({ text }) {
 
 // ── Tool Row ──
 
-function ToolRow({ tool, frame }) {
-  const glyph = tool.status === 'running'
+/**
+ * Group consecutive same-name tool calls so the UI shows
+ * "added_track ×4" instead of 4 separate rows. Status precedence:
+ * running > error > ok.
+ */
+function groupTools(tools) {
+  const groups = [];
+  for (const tool of tools) {
+    const last = groups[groups.length - 1];
+    if (last && last.name === tool.name) {
+      last.count++;
+      if (tool.status === 'running') last.status = 'running';
+      else if (tool.status === 'error' && last.status !== 'running') last.status = 'error';
+      if (tool.endMs && (!last.endMs || tool.endMs > last.endMs)) last.endMs = tool.endMs;
+      if (tool.status === 'error' && tool.result) last.result = tool.result;
+    } else {
+      groups.push({
+        name: tool.name,
+        count: 1,
+        status: tool.status,
+        startMs: tool.startMs,
+        endMs: tool.endMs,
+        result: tool.result,
+      });
+    }
+  }
+  return groups;
+}
+
+function ToolRow({ group, frame }) {
+  const glyph = group.status === 'running'
     ? <span style={{ color: CLAUDE_INDIGO }}>{STAR_FRAMES[frame % STAR_FRAMES.length]}</span>
-    : tool.status === 'ok'
+    : group.status === 'ok'
     ? <span style={{ color: '#4CAF50' }}>{'\u2713'}</span>
     : <span style={{ color: '#F44336' }}>{'\u2717'}</span>;
+
+  // Single ok call with a meaningful result → use it as the label
+  const hasCustomLabel = group.count === 1 && group.status === 'ok'
+    && group.result && group.result !== 'done' && group.result !== 'failed';
+  const label = hasCustomLabel
+    ? group.result
+    : group.name.replace(/_/g, ' ') + (group.count > 1 ? ` \u00D7${group.count}` : '');
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '1px 0', fontSize: '0.82em' }}>
       {glyph}
-      <span style={{ color: '#888888' }}>{tool.name.replace(/_/g, ' ')}</span>
+      <span style={{ color: '#888888' }}>{label}</span>
       <span style={{ color: '#444444', fontSize: '0.88em' }}>
-        {tool.endMs ? formatElapsed(tool.startMs, tool.endMs) : '\u2026'}
+        {group.endMs ? formatElapsed(group.startMs, group.endMs) : '\u2026'}
       </span>
-      {tool.status === 'error' && tool.result && (
-        <span style={{ color: '#F44336', opacity: 0.75 }}>{'\u2014'} {tool.result.slice(0, 60)}</span>
+      {group.status === 'error' && group.result && (
+        <span style={{ color: '#F44336', opacity: 0.75 }}>{'\u2014'} {group.result.slice(0, 60)}</span>
       )}
     </div>
   );
@@ -89,7 +125,11 @@ const SystemMsg = memo(function SystemMsg({ text }) {
 function AssistantMsg({ msg, frame }) {
   const verb = msg.verb ?? 'Generating';
 
-  const streamingLabel = msg.streaming
+  // Use split text if available (new messages); fall back for legacy ones.
+  const textBefore = msg.textBefore ?? (msg.tools.length === 0 ? msg.text : '');
+  const textAfter  = msg.textAfter  ?? (msg.tools.length > 0  ? msg.text : '');
+
+  const streamingLabel = msg.streaming && !textBefore && msg.tools.length === 0
     ? (
       <div style={{ color: CLAUDE_INDIGO, display: 'flex', alignItems: 'center', gap: 6 }}>
         <span>{STAR_FRAMES[frame % STAR_FRAMES.length]}</span>
@@ -103,16 +143,18 @@ function AssistantMsg({ msg, frame }) {
     ? <div style={{ color: '#444444' }}>{'\u2234'} Thought for {(msg.thinkingStatus / 1000).toFixed(1)}s</div>
     : null;
 
+  const groups = groupTools(msg.tools);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       {streamingLabel}
       {thinkingLine}
-      {!msg.streaming && msg.text && (
+      {textBefore && (
         <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6 }}>
-          <SessionText text={msg.text} />
+          <SessionText text={textBefore} />
         </div>
       )}
-      {msg.tools.length > 0 && (
+      {groups.length > 0 && (
         <div style={{
           borderLeft: '1px solid #2a2a2a',
           paddingLeft: 10,
@@ -121,7 +163,12 @@ function AssistantMsg({ msg, frame }) {
           flexDirection: 'column',
         }}>
           <div style={{ color: '#333333', fontSize: '0.78em', marginBottom: 2 }}>{'\u23BF'}</div>
-          {msg.tools.map(t => <ToolRow key={t.id} tool={t} frame={frame} />)}
+          {groups.map((g, i) => <ToolRow key={i} group={g} frame={frame} />)}
+        </div>
+      )}
+      {textAfter && (
+        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6 }}>
+          <SessionText text={textAfter} />
         </div>
       )}
     </div>
@@ -241,7 +288,7 @@ const ChatWindow = ({ onClose }) => {
     inputTokens, outputTokens, totalCost,
     pendingPermission, pendingQuestion, todos,
     sendChat, sendRaw, respondPermission, respondQuestion,
-    setMode, setModel,
+    setMode, setModel, pushSystemMessage,
   } = useAgentWebSocket(state);
 
   // Spinner animation when streaming
@@ -263,21 +310,30 @@ const ChatWindow = ({ onClose }) => {
 
   // ── Slash commands ──
   const COMMANDS = [
-    { name: '/help', desc: 'Show all commands', action: () => alert(COMMANDS.map(c => `${c.name} — ${c.desc}`).join('\n')) },
+    { name: '/help', desc: 'Show all commands', action: () => {
+      const lines = COMMANDS.map(c => `${c.name} \u2014 ${c.desc}`).join('\n');
+      pushSystemMessage(lines);
+    }},
     { name: '/clear', desc: 'Clear conversation', action: () => sendRaw({ type: 'clear_history' }) },
-    { name: '/status', desc: 'Show project status', action: () => sendRaw({ type: 'status_request' }) },
-    { name: '/tracks', desc: 'List all tracks', action: () => sendChat('List all tracks in this session') },
-    { name: '/session', desc: 'Show session info', action: () => sendChat('Show full session info') },
-    { name: '/model', desc: 'Switch AI model', action: (args) => setModel(args) },
-    { name: '/mode', desc: 'Set mode (default|auto|plan)', action: (args) => setMode(args) },
+    { name: '/status', desc: 'Show studio status', action: () => sendChat('Summarize the current studio session: tracks, BPM, key, chord progression.') },
+    { name: '/tracks', desc: 'List all tracks', action: () => sendChat('List all tracks on the timeline with their instrument types.') },
+    { name: '/score', desc: 'Generate score for current video', action: () => sendChat('Generate a full music score for the video on the timeline.') },
+    { name: '/regen', desc: 'Regenerate selected track', action: () => sendChat('Regenerate the currently selected track to better fit the chord progression.') },
+    { name: '/chords', desc: 'Detect chords from audio', action: () => sendChat('Detect chords and BPM from the selected audio track.') },
+    { name: '/model', desc: 'Switch AI model', args: '<model>', action: (args) => { if (args?.trim()) setModel(args.trim()); } },
+    { name: '/mode', desc: 'Set mode (default|auto|plan)', args: '<mode>', action: (args) => { const m = args?.trim(); if (['default','auto','plan'].includes(m)) setMode(m); } },
     { name: '/auto', desc: 'Toggle auto-approve', action: () => setMode(mode === 'auto' ? 'default' : 'auto') },
     { name: '/plan', desc: 'Toggle plan mode', action: () => setMode(mode === 'plan' ? 'default' : 'plan') },
     { name: '/compact', desc: 'Compress history', action: () => sendRaw({ type: 'compact' }) },
-    { name: '/cost', desc: 'Show token usage', action: () => {
-      const cost = `Tokens: ${inputTokens.toLocaleString()} in / ${outputTokens.toLocaleString()} out\nCost: $${totalCost.toFixed(4)}\nContext: ${(contextPct * 100).toFixed(0)}%`;
-      alert(cost);
+    { name: '/cost', desc: 'Show token usage + cost', action: () => {
+      const lines = [
+        `Input:   ${inputTokens.toLocaleString()} tokens`,
+        `Output:  ${outputTokens.toLocaleString()} tokens`,
+        `Cost:    $${totalCost.toFixed(4)}`,
+        `Context: ${(contextPct * 100).toFixed(0)}% used`,
+      ].join('\n');
+      pushSystemMessage(lines);
     }},
-    { name: '/sync', desc: 'Sync session to web DAW', action: () => sendChat('Sync my current session to the web DAW') },
     { name: '/cancel', desc: 'Cancel current operation', action: () => sendRaw({ type: 'cancel' }) },
   ];
 

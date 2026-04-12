@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useApp } from '../../context/AppContext';
 import styles from './DAW.module.css';
 
 /**
@@ -18,6 +19,10 @@ const TimelineGrid = React.memo(({
   trackHeight = 64,
   onSeek = null
 }) => {
+  const { state } = useApp();
+  const beatsPerBar = state.beatsPerBar || 4;
+  const meterDenominator = state.meterDenominator || 4;
+  const beatUnitFactor = meterDenominator === 8 ? 0.5 : 1;
   // Calculate pixels per second
   const pixelsPerSecond = useMemo(() => {
     const width = containerWidth * zoomLevel;
@@ -62,12 +67,12 @@ const TimelineGrid = React.memo(({
         const sceneBPM = sceneTempos[sceneIdx];
         const sceneStart = sceneChanges[sceneIdx];
         const sceneEnd = sceneChanges[sceneIdx + 1] || totalDuration;
-        const secondsPerBeat = 60 / sceneBPM;
-        const secondsPerBar = secondsPerBeat * 4; // 4/4 time signature
+        const secondsPerBeat = (60 / sceneBPM) * beatUnitFactor;
+        const secondsPerBar = secondsPerBeat * beatsPerBar;
 
         // Calculate where the next bar should start based on accumulated beats
-        const beatsIntoFirstBar = accumulatedBeats % 4;
-        const beatsUntilNextBar = beatsIntoFirstBar === 0 ? 0 : (4 - beatsIntoFirstBar);
+        const beatsIntoFirstBar = accumulatedBeats % beatsPerBar;
+        const beatsUntilNextBar = beatsIntoFirstBar === 0 ? 0 : (beatsPerBar - beatsIntoFirstBar);
         const firstBarTime = sceneStart + (beatsUntilNextBar * secondsPerBeat);
 
         // Render bars starting from first bar boundary in this scene
@@ -87,7 +92,7 @@ const TimelineGrid = React.memo(({
             });
 
             // Add beat and sub-beat subdivisions
-            const totalSubdivisions = 4 * subdivisionLevel;
+            const totalSubdivisions = beatsPerBar * subdivisionLevel;
             for (let sub = 1; sub < totalSubdivisions; sub++) {
               const subTime = barTime + (sub * secondsPerBeat / subdivisionLevel);
               if (subTime >= sceneEnd || subTime > totalDuration) break;
@@ -116,13 +121,43 @@ const TimelineGrid = React.memo(({
         accumulatedBeats += sceneDuration / secondsPerBeat;
       }
 
+    } else if (
+      state.beatMap && state.beatMap.length >= beatsPerBar &&
+      meterDenominator === 4 &&
+      state.beatMap.reduce((m, b) => Math.max(m, b.pos), 0) === beatsPerBar
+    ) {
+      const bm = state.beatMap;
+      let barNumber = 1;
+      for (let i = 0; i < bm.length; i++) {
+        if (bm[i].pos !== 1) continue;
+        const time = bm[i].t;
+        if (time > totalDuration) break;
+        tickArray.push({
+          id: `bar-${barNumber}`,
+          time,
+          position: (time / totalDuration) * width,
+          isMajor: true, isBar: true, subdivision: 1,
+        });
+        for (let j = 1; j < beatsPerBar && (i + j) < bm.length; j++) {
+          const subTime = bm[i + j].t;
+          if (subTime > totalDuration) break;
+          tickArray.push({
+            id: `bar-${barNumber}-sub-${j}`,
+            time: subTime,
+            position: (subTime / totalDuration) * width,
+            isMajor: false, isBeat: true, isSubBeat: false, subdivision: 1,
+          });
+        }
+        barNumber++;
+      }
     } else {
       // Render with constant BPM
-      const secondsPerBeat = 60 / bpm;
-      const secondsPerBar = secondsPerBeat * 4; // 4/4 time signature
+      const secondsPerBeat = (60 / bpm) * beatUnitFactor;
+      const secondsPerBar = secondsPerBeat * beatsPerBar;
+      const tlOffset = state.timelineOffset || 0;
       let barNumber = 1;
 
-      for (let time = 0; time <= totalDuration; time += secondsPerBar) {
+      for (let time = tlOffset; time <= totalDuration; time += secondsPerBar) {
         const barPosition = (time / totalDuration) * width;
 
         // Add bar marker
@@ -136,7 +171,7 @@ const TimelineGrid = React.memo(({
         });
 
         // Add beat and sub-beat subdivisions
-        const totalSubdivisions = 4 * subdivisionLevel;
+        const totalSubdivisions = beatsPerBar * subdivisionLevel;
         for (let sub = 1; sub < totalSubdivisions; sub++) {
           const subTime = time + (sub * secondsPerBeat / subdivisionLevel);
           if (subTime > totalDuration) break;
@@ -160,7 +195,7 @@ const TimelineGrid = React.memo(({
     }
 
     return tickArray;
-  }, [isBPMMode, bpm, sceneTempos, sceneChanges, totalDuration, containerWidth, zoomLevel, subdivisionLevel]);
+  }, [isBPMMode, bpm, beatsPerBar, beatUnitFactor, sceneTempos, sceneChanges, totalDuration, containerWidth, zoomLevel, subdivisionLevel, state.timelineOffset, state.beatMap]);
 
   // Generate time tick marks (seconds)
   const timeTicks = useMemo(() => {

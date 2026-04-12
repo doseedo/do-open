@@ -161,8 +161,13 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     uniqueUrls.forEach(async (url) => {
       if (!audioBufferCache.has(url)) {
         try {
-          const response = await fetch(url);
-          const arrayBuffer = await response.arrayBuffer();
+          // Reuse the shared audioCacheService blob (in-flight Promise
+          // dedupe + IndexedDB cache + memory cache). This avoids the
+          // dual-fetch where useAudioPlayback and useWaveform each
+          // hit the network for the same stem URL.
+          const { fetchAudioWithCache } = await import('../services/audioCacheService');
+          const { blob } = await fetchAudioWithCache(url);
+          const arrayBuffer = await blob.arrayBuffer();
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
           audioBufferCache.set(url, audioBuffer);
           console.log(`✅ Pre-loaded audio: ${url}, duration: ${audioBuffer.duration.toFixed(2)}s`);

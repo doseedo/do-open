@@ -16,6 +16,7 @@ const ChordTrack = ({ totalDuration, zoomLevel, onBeatSelect }) => {
   const chordTrackRef = useRef(null);
 
   const bpm = state.bpm || 120;
+  const beatsPerBar = state.beatsPerBar || 4;
   const sceneTempos = state.video?.sceneTempos || [];
   const sceneChanges = state.video?.sceneChanges || [];
 
@@ -81,12 +82,30 @@ const ChordTrack = ({ totalDuration, zoomLevel, onBeatSelect }) => {
         const sceneDuration = sceneEnd - sceneStart;
         accumulatedBeats += sceneDuration / secondsPerBeat;
       }
+    } else if (state.beatMap && state.beatMap.length > 0) {
+      const bm = state.beatMap;
+      for (let i = 0; i < bm.length; i++) {
+        const time = bm[i].t;
+        if (time > totalDuration) break;
+        const nextTime = (i + 1 < bm.length) ? bm[i + 1].t : (time + 60 / bpm);
+        const beatPosition = (time / totalDuration) * width;
+        const nextBeatPosition = Math.min((nextTime / totalDuration) * width, width);
+        cellArray.push({
+          id: `beat-${i + 1}`,
+          beatNumber: i + 1,
+          time,
+          position: beatPosition,
+          width: nextBeatPosition - beatPosition,
+          chord: state.chordTrack?.chords?.[i] || null,
+        });
+      }
     } else {
       // Render with constant BPM - 4 beats per bar
       const secondsPerBeat = 60 / bpm;
+      const tlOffset = state.timelineOffset || 0;
       let beatNumber = 1;
 
-      for (let time = 0; time <= totalDuration; time += secondsPerBeat) {
+      for (let time = tlOffset; time <= totalDuration; time += secondsPerBeat) {
         const beatPosition = (time / totalDuration) * width;
         const nextBeatTime = time + secondsPerBeat;
         const nextBeatPosition = Math.min((nextBeatTime / totalDuration) * width, width);
@@ -105,7 +124,7 @@ const ChordTrack = ({ totalDuration, zoomLevel, onBeatSelect }) => {
     }
 
     return cellArray;
-  }, [containerWidth, zoomLevel, totalDuration, bpm, sceneTempos, sceneChanges, state.chordTrack]);
+  }, [containerWidth, zoomLevel, totalDuration, bpm, beatsPerBar, sceneTempos, sceneChanges, state.chordTrack, state.timelineOffset, state.beatMap]);
 
   // Mouse move handler
   const handleMouseMove = useCallback((e) => {
@@ -169,8 +188,8 @@ const ChordTrack = ({ totalDuration, zoomLevel, onBeatSelect }) => {
     >
       {/* Render beat cells - 4 beats per bar */}
       {beatCells.map((cell) => {
-        // Beat 1 of each bar (every 4th beat in 4/4 time)
-        const isBarStart = (cell.beatNumber - 1) % 4 === 0;
+        // Beat 1 of each bar (every Nth beat per current meter)
+        const isBarStart = (cell.beatNumber - 1) % beatsPerBar === 0;
 
         return (
           <div

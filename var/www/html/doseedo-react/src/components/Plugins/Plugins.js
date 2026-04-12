@@ -106,8 +106,6 @@ const Plugins = () => {
   const [mainTab, setMainTab] = useState('store'); // 'store' | 'creations' | 'community'
   const [myCreations, setMyCreations] = useState([]);
   const [loadingCreations, setLoadingCreations] = useState(false);
-  const [dawPlugins, setDawPlugins] = useState([]);
-  const [loadingDaw, setLoadingDaw] = useState(false);
   const [communityProjects, setCommunityProjects] = useState([]);
   const [communityTotal, setCommunityTotal] = useState(0);
   const [loadingCommunity, setLoadingCommunity] = useState(false);
@@ -273,20 +271,6 @@ const Plugins = () => {
     listMyProjects().then(data => {
       setMyCreations(Array.isArray(data) ? data : []);
     }).catch(() => setMyCreations([])).finally(() => setLoadingCreations(false));
-  }, [mainTab]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Fetch DAW-cloned plugins from auth service
-  useEffect(() => {
-    if (mainTab !== 'daw') return;
-    const key = localStorage.getItem('doo_api_key') || '';
-    if (!key) { setDawPlugins([]); return; }
-    setLoadingDaw(true);
-    fetch('https://doseedo-auth-wd7h2yezlq-uc.a.run.app/api/plugins', {
-      headers: { 'X-API-Key': key },
-    }).then(r => r.json()).then(data => {
-      setDawPlugins(Array.isArray(data) ? data : []);
-      setLoadingDaw(false);
-    }).catch(() => setLoadingDaw(false));
   }, [mainTab]);
 
   // Fetch community when tab opens or search/sort changes (DB-backed)
@@ -486,12 +470,6 @@ const Plugins = () => {
         >
           <i className="fa-solid fa-bookmark"></i> Saved
         </button>
-        <button
-          className={`${styles.mainTab} ${mainTab === 'daw' ? styles.mainTabActive : ''}`}
-          onClick={() => { setMainTab('daw'); setViewingProject(null); }}
-        >
-          <i className="fa-solid fa-desktop"></i> From DAW
-        </button>
       </div>
 
       {/* ══════════ STORE TAB ══════════ */}
@@ -679,69 +657,6 @@ const Plugins = () => {
                   </div>
                 </div>
               ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ══════════ FROM DAW TAB ══════════ */}
-      {mainTab === 'daw' && (
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <p style={{ margin: 0, fontSize: 14, color: 'rgba(255,255,255,0.5)' }}>
-              Plugins cloned from your DAW via Dø Desktop.
-            </p>
-          </div>
-          {loadingDaw ? (
-            <div className={styles.loadingState}>
-              <i className="fa-solid fa-spinner fa-spin"></i>
-              Loading DAW plugins...
-            </div>
-          ) : dawPlugins.length === 0 ? (
-            <div className={styles.noResults}>
-              <i className="fa-solid fa-desktop"></i>
-              <p>No DAW plugins yet — open Dø Desktop, scan your plugins, and hit "clone to doseedo".</p>
-            </div>
-          ) : (
-            <div className={styles.productGrid}>
-              {[...dawPlugins].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(p => {
-                let cfg = null;
-                try { cfg = p.content ? JSON.parse(p.content) : null; } catch {}
-                const src = cfg?.source_plugin || {};
-                const dspType = src.dsp_type || '';
-                const paramCount = cfg?.components?.length || 0;
-                const apiKey = localStorage.getItem('doo_api_key') || '';
-                return (
-                  <div
-                    key={p.id}
-                    className={styles.productCard}
-                    onClick={() => navigate(`/plugins/create?dsk_plugin=${p.id}&dsk_key=${encodeURIComponent(apiKey)}`)}
-                  >
-                    <div className={styles.productIcon} style={{ background: 'rgba(102,126,234,0.12)' }}>
-                      <i className="fa-solid fa-plug" style={{ color: '#667eea', fontSize: 28 }}></i>
-                    </div>
-                    <h2 className={styles.productName}>{p.name}</h2>
-                    <p className={styles.productDesc}>
-                      {[src.vendor, src.format, dspType].filter(Boolean).join(' · ')}
-                    </p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 'auto', flexWrap: 'wrap' }}>
-                      {dspType && (
-                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(102,126,234,0.15)', color: '#667eea' }}>
-                          {dspType}
-                        </span>
-                      )}
-                      {paramCount > 0 && (
-                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)' }}>
-                          {paramCount} params
-                        </span>
-                      )}
-                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginLeft: 'auto' }}>
-                        {new Date(p.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
             </div>
           )}
         </>

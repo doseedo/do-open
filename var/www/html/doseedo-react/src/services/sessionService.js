@@ -75,6 +75,14 @@ export function loadSession(projectName) {
     }
 
     const parsed = JSON.parse(sessionData);
+    // Migration: strip the legacy hardcoded chord progression so the
+    // chord row always loads empty. Users re-detect via the sidebar.
+    if (parsed?.state?.chordTrack) {
+      parsed.state.chordTrack = { ...parsed.state.chordTrack, chords: {} };
+    }
+    if (parsed?.state?.chords) {
+      parsed.state.chords = {};
+    }
     console.log(`✅ Session loaded: ${projectName}`);
     return parsed;
   } catch (error) {

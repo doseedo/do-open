@@ -10,6 +10,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useApp } from '../../context/AppContext';
 
 // ── Determine WebSocket URL ──
 function getWsUrl() {
@@ -26,6 +27,7 @@ function nextId() { return `msg_${++_msgId}_${Date.now()}`; }
  * @param {Object} dawState - current DAW state from AppContext
  */
 export function useAgentWebSocket(dawState) {
+  const { dispatch } = useApp();
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
   const [wsState, setWsState] = useState('connecting'); // 'connecting' | 'open' | 'closed'
@@ -108,11 +110,12 @@ export function useAgentWebSocket(dawState) {
     setMessages(prev => {
       const last = prev[prev.length - 1];
       if (last && last.role === 'assistant' && last.streaming) return prev;
-      // Create new streaming message
       const msg = {
         id: nextId(),
         role: 'assistant',
         text: '',
+        textBefore: '',
+        textAfter: '',
         streaming: true,
         tools: [],
         thinkingStatus: null,
@@ -121,6 +124,112 @@ export function useAgentWebSocket(dawState) {
       return [...prev, msg];
     });
   }, []);
+
+  // Public helper to push a system message into the chat
+  const pushSystemMessage = useCallback((text) => {
+    setMessages(prev => [...prev, { id: nextId(), role: 'system', text }]);
+  }, []);
+
+  // ── Client-side tool dispatcher (Phase 3) ──
+  // The agent backend can emit `client_action` messages that the UI must
+  // execute against the studio's redux store. This keeps the agent in
+  // control while the actual state mutation lives client-side.
+  const handleClientAction = useCallback((action) => {
+    if (!action || typeof action !== 'object') return;
+    try {
+      switch (action.kind) {
+        case 'set_bpm':
+          dispatch({ type: 'UPDATE_BPM', payload: parseInt(action.bpm, 10) });
+          break;
+        case 'set_chord':
+          dispatch({ type: 'SET_CHORD_FOR_BEAT', payload: { beatIndex: parseInt(action.beat, 10), chord: action.chord } });
+          break;
+        case 'set_chords':
+          // bulk replace
+          {
+            const m = {};
+            (action.chords || []).forEach(c => { m[parseInt(c.beat, 10)] = c.chord; });
+            dispatch({ type: 'SET_CHORDS', payload: m });
+          }
+          break;
+        case 'clear_chords':
+          dispatch({ type: 'CLEAR_CHORDS' });
+          break;
+        case 'set_beats_per_bar':
+          dispatch({ type: 'SET_BEATS_PER_BAR', payload: parseInt(action.beats_per_bar, 10) });
+          break;
+        case 'select_track':
+          dispatch({ type: 'SELECT_TRACK', payload: { trackId: action.track_id } });
+          break;
+        case 'add_track': {
+          // action.track is a partial track object; agent provides busId or we pick the first Music bus
+          const busId = action.bus_id || dawState?.buses?.find(b => b.type === 'Music')?.id;
+          if (busId) {
+            dispatch({
+              type: 'ADD_TRACK',
+              payload: {
+                busId,
+                track: {
+                  id: action.track?.id || `agent-${Date.now()}`,
+                  name: action.track?.name || 'Agent track',
+                  audioUrl: action.track?.audio_url || null,
+                  duration: action.track?.duration || 16,
+                  startPosition: action.track?.start || 0,
+                  gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
+                  metadata: { type: 'generated', source: 'agent', ...(action.track?.metadata || {}) },
+                },
+              },
+            });
+          }
+          break;
+        }
+        case 'remove_track':
+          dispatch({ type: 'DELETE_TRACK', payload: { trackId: action.track_id } });
+          break;
+        case 'generate_score_from_video': {
+          // Use the video's scene boundaries (already in state) to call the score endpoint
+          const sceneChanges = dawState?.video?.sceneChanges || [];
+          const sceneTempos = dawState?.video?.sceneTempos || [];
+          if (sceneChanges.length < 2) {
+            console.warn('[agent] no scene changes available — can\'t generate score');
+            break;
+          }
+          const sceneDurations = [];
+          for (let i = 0; i < sceneChanges.length - 1; i++) {
+            sceneDurations.push(sceneChanges[i + 1] - sceneChanges[i]);
+          }
+          const padded = [...sceneTempos];
+          while (padded.length < sceneDurations.length) padded.push(sceneTempos[sceneTempos.length - 1] || 120);
+          fetch('/api/generate-score-from-video', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              scene_durations: sceneDurations,
+              scene_tempos: padded,
+              key: action.key || 'C',
+              scale_type: action.scale_type || 'minor',
+              genre: action.genre || 'cinematic',
+              render_audio: !!action.render_audio,
+            }),
+          }).then(r => r.json()).then(score => {
+            if (score.error) throw new Error(score.error);
+            const chordsNum = {};
+            Object.entries(score.chord_map || {}).forEach(([k, v]) => { chordsNum[parseInt(k, 10)] = v; });
+            dispatch({ type: 'SET_CHORDS', payload: chordsNum });
+            console.log('[agent] score generated, chords applied');
+          }).catch(e => console.error('[agent] score gen failed:', e));
+          break;
+        }
+        case 'toggle_chat':
+          // no-op — agent can't close itself for safety
+          break;
+        default:
+          console.warn('[agent] unknown client_action kind:', action.kind);
+      }
+    } catch (e) {
+      console.error('[agent] client_action failed:', e);
+    }
+  }, [dispatch, dawState]);
 
   // ── WebSocket message handler ──
   const handleMessage = useCallback((event) => {
@@ -160,7 +269,19 @@ export function useAgentWebSocket(dawState) {
 
       case 'text_delta':
         ensureStreamingMsg();
-        updateCurrentMsg(msg => ({ text: (msg.text || '') + data.text }));
+        updateCurrentMsg(msg => {
+          const hasTools = (msg.tools || []).length > 0;
+          return {
+            text: (msg.text || '') + data.text,
+            textBefore: hasTools ? (msg.textBefore || '') : ((msg.textBefore || '') + data.text),
+            textAfter:  hasTools ? ((msg.textAfter  || '') + data.text) : (msg.textAfter || ''),
+          };
+        });
+        break;
+
+      case 'client_action':
+        // Agent has decided to mutate the studio state. Execute via redux.
+        handleClientAction(data.action);
         break;
 
       case 'tool_start':
@@ -244,7 +365,7 @@ export function useAgentWebSocket(dawState) {
         // Unknown message type — ignore
         break;
     }
-  }, [ensureStreamingMsg, updateCurrentMsg]);
+  }, [ensureStreamingMsg, updateCurrentMsg, handleClientAction]);
 
   // ── WebSocket connection management ──
   useEffect(() => {
@@ -321,5 +442,6 @@ export function useAgentWebSocket(dawState) {
     respondQuestion,
     setMode,
     setModel,
+    pushSystemMessage,
   };
 }

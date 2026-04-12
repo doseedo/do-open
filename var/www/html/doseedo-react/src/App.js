@@ -65,7 +65,7 @@ import ChordWindowDemo from './components-demo/ChordWindow/ChordWindow';
 import LiquidGlassFiltersDemo from './components-demo/LiquidGlassFilters/LiquidGlassFilters';
 import CinemaModeDemo from './components-demo/CinemaMode/CinemaMode';
 
-const PROTECTED_PASSWORD = '***REDACTED***';
+const PROTECTED_PASSWORD = process.env.REACT_APP_PROTECTED_PASSWORD || '***REDACTED***';
 
 function PasswordGate({ children, routeName }) {
   const [unlocked, setUnlocked] = useState(() => {
@@ -265,7 +265,7 @@ function AppContent() {
   const [hasCheckedAutoLoad, setHasCheckedAutoLoad] = useState(false);
 
   useEffect(() => {
-    if (!hasCheckedAutoLoad && location.pathname === '/') {
+    if (!hasCheckedAutoLoad && location.pathname === '/' && authService.isAuthenticated()) {
       const activeProject = sessionService.getActiveProject();
       if (activeProject) {
         const sessionData = sessionService.loadSession(activeProject);
