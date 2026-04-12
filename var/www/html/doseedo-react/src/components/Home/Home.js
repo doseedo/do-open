@@ -3,6 +3,7 @@ import { Slide } from 'react-slideshow-image';
 import { motion, AnimatePresence } from 'framer-motion';
 import 'react-slideshow-image/dist/styles.css';
 import * as authService from '../../services/authService';
+import * as dashboard from '../../services/dashboardService';
 import styles from './Home.module.css';
 
 // Animated slide components (framer-motion, ported from /home/arlo/do2/slides).
@@ -68,64 +69,74 @@ const SLIDE_LABELS = [
   },
 ];
 
-// ── Mock data for dashboard sections ────────────────────────────
-// These placeholders will be replaced with real API calls once the
-// backend endpoints are wired up. Structure mirrors the expected
-// response shape so the swap is mechanical.
-
-const MOCK_SESSIONS = [
-  { id: 'sess-1', name: 'Sunrise', daw: 'Logic', time: '2h ago', collabs: ['Maya', 'Alex'] },
-  { id: 'sess-2', name: 'Project Nebula', daw: 'Ableton', time: '5h ago', collabs: ['Perro'] },
-  { id: 'sess-3', name: 'Bass V2 Rework', daw: 'Pro Tools', time: 'Yesterday', collabs: [] },
-  { id: 'sess-4', name: 'Score — Ep. 3', daw: 'Logic', time: '2 days ago', collabs: ['Sam', 'Jules', 'Ari'] },
-  { id: 'sess-5', name: 'Ambient Sketch', daw: 'Ableton', time: '3 days ago', collabs: [] },
-  { id: 'sess-6', name: 'Funk Stems', daw: 'Pro Tools', time: '4 days ago', collabs: ['Maya'] },
-];
-
-const MOCK_ACTIVITY = [
-  { who: 'Maya', action: "forked your stem 'Bass V2'", time: '12m ago' },
-  { who: 'Perro', action: 'left 3 comments on Session 17', time: '1h ago' },
-  { who: 'Alex', action: 'pushed new takes to Project Nebula', time: '2h ago' },
-  { who: 'Doseedo', action: "Your session 'Sunrise' hit 200 plays", time: '4h ago' },
-  { who: 'Sam', action: "forked 'Score — Ep. 3' and added strings", time: '6h ago' },
-  { who: 'Jules', action: 'started following you', time: '8h ago' },
-];
-
-const MOCK_LIVE = [
-  { who: 'Maya', session: 'Bass V2 Rework', sessionId: 'sess-3', joinable: true },
-  { who: 'Perro', session: 'Funk Stems', sessionId: 'sess-6', joinable: true },
-  { who: 'Alex', session: 'Private session', sessionId: null, joinable: false },
-];
-
-const MOCK_TRENDING = [
-  { id: 'tr-1', name: 'Lo-fi Rainfall', creator: 'waveform.koi', tags: ['Lo-fi', 'Ambient'], plays: '12.4k', forks: 342, stems: 8, daw: 'Ableton' },
-  { id: 'tr-2', name: 'Brass Section Redo', creator: 'horns.daily', tags: ['Jazz', 'Orchestral'], plays: '8.1k', forks: 189, stems: 12, daw: 'Logic' },
-  { id: 'tr-3', name: 'Trap Kitchen', creator: 'beatmode', tags: ['Trap', 'Hip-Hop'], plays: '23.7k', forks: 891, stems: 6, daw: 'Pro Tools' },
-  { id: 'tr-4', name: 'Synth Waves 80s', creator: 'retrosound', tags: ['Synthwave', 'Electronic'], plays: '6.3k', forks: 154, stems: 10, daw: 'Ableton' },
-  { id: 'tr-5', name: 'Acoustic Fireside', creator: 'stringtheory', tags: ['Acoustic', 'Folk'], plays: '4.9k', forks: 97, stems: 5, daw: 'Logic' },
-  { id: 'tr-6', name: 'Drill Edit Pack', creator: 'ukbassweight', tags: ['Drill', 'UK Bass'], plays: '15.2k', forks: 623, stems: 9, daw: 'Ableton' },
-];
-
-const MOCK_MADE_FOR_YOU = [
-  { id: 'mfy-1', name: 'Velvet Pads', reason: 'Similar timbre to your recent work' },
-  { id: 'mfy-2', name: 'Orchestral Layers', reason: 'Matches your Score sessions' },
-  { id: 'mfy-3', name: 'Granular Textures', reason: 'Popular with producers you follow' },
-  { id: 'mfy-4', name: 'Keys & Rhodes', reason: 'Stems that fit Project Nebula' },
-];
-
-const MOCK_WEEK_STATS = [
-  { value: '7', label: 'Sessions edited' },
-  { value: '23', label: 'Stems generated' },
-  { value: '4', label: 'Collaborators active' },
-  { value: '3h 42m', label: 'Time in studio' },
+// Trending tab labels and their corresponding filter keys passed
+// to dashboardService.getTrending().
+const TRENDING_TABS = [
+  { label: 'Trending', key: 'trending' },
+  { label: 'New', key: 'new' },
+  { label: 'Most Forked', key: 'most_forked' },
+  { label: 'Your Genre', key: 'your_genre' },
 ];
 
 /**
  * Home Component
- * Dashboard with feature slideshow + workspace sections
+ * Dashboard with feature slideshow + workspace sections.
+ * All data below the slideshow is fetched from real APIs / localStorage
+ * via dashboardService, with graceful fallbacks.
  */
 const Home = () => {
   const user = authService.getCurrentUser();
+  const username = user?.username; // stable string for effect deps
+
+  // ── Dashboard section state ──
+  const [recentSessions, setRecentSessions] = useState([]);
+  const [activityItems, setActivityItems] = useState([]);
+  const [liveUsers, setLiveUsers] = useState([]);
+  const [trendingItems, setTrendingItems] = useState([]);
+  const [trendingFilter, setTrendingFilter] = useState('trending');
+  const [madeForYouItems, setMadeForYouItems] = useState([]);
+  const [weekStats, setWeekStats] = useState([]);
+  const [loading, setLoading] = useState({
+    sessions: true, activity: true, trending: true, mfy: true,
+  });
+
+  // Fetch user-specific dashboard data once on mount (or when user changes).
+  useEffect(() => {
+    if (!username) {
+      setLoading({ sessions: false, activity: false, trending: false, mfy: false });
+      return;
+    }
+
+    dashboard.getRecentSessions().then(s => {
+      setRecentSessions(s);
+      setLoading(prev => ({ ...prev, sessions: false }));
+    });
+
+    dashboard.getActivityFeed().then(items => {
+      setActivityItems(items);
+      setLoading(prev => ({ ...prev, activity: false }));
+    });
+
+    dashboard.getLiveUsers().then(setLiveUsers);
+
+    dashboard.getMadeForYou().then(items => {
+      setMadeForYouItems(items);
+      setLoading(prev => ({ ...prev, mfy: false }));
+    });
+
+    setWeekStats(dashboard.getWeekStats());
+  }, [username]);
+
+  // Trending: refetch when filter tab changes (also runs on mount).
+  useEffect(() => {
+    setLoading(prev => ({ ...prev, trending: true }));
+    dashboard.getTrending(trendingFilter).then(items => {
+      setTrendingItems(items);
+      setLoading(prev => ({ ...prev, trending: false }));
+    });
+  }, [trendingFilter]);
+
+  // ── Slideshow state ──
   const [activeSlide, setActiveSlide] = useState(0);
   // One restart counter per slide. Bumped each time a slide becomes
   // active so its key changes and React remounts the SlideComponent,
@@ -225,12 +236,7 @@ const Home = () => {
         </div>
       </div>
 
-      {/* ── 2. Jump Back In ─────────────────────────────────────────
-          Horizontal scroll of recent sessions. Utility anchor — the
-          user's own work sits directly below the slideshow so the
-          dashboard feels like a workspace, not a marketing page.
-          Each card: waveform thumbnail, DAW badge, timestamp,
-          collaborator avatars, one-click resume. */}
+      {/* ── 2. Jump Back In ───────────────────────────────────────── */}
       {user && (
         <section className={styles.jumpBackInSection}>
           <div className={styles.sectionHeaderRow}>
@@ -239,139 +245,178 @@ const Home = () => {
               See all <i className="fa-solid fa-arrow-right"></i>
             </a>
           </div>
-          <div className={styles.sessionScroll}>
-            {MOCK_SESSIONS.map((s, i) => (
-              <a key={i} href={`/studio/${s.id}`} className={styles.sessionCard}>
-                <div className={styles.sessionThumb}>
-                  <div className={styles.sessionWaveform} />
-                  <div className={styles.dawBadge} data-daw={s.daw}>
-                    {s.daw}
+
+          {loading.sessions ? (
+            <div className={styles.sessionScroll}>
+              {[0,1,2,3].map(i => (
+                <div key={i} className={`${styles.sessionCard} ${styles.skeleton}`} />
+              ))}
+            </div>
+          ) : recentSessions.length === 0 ? (
+            <div className={styles.emptyState}>
+              <i className="fa-solid fa-plus-circle"></i>
+              <span>No sessions yet. Open the <a href="/studio">Studio</a> to create your first one.</span>
+            </div>
+          ) : (
+            <div className={styles.sessionScroll}>
+              {recentSessions.map((s) => (
+                <a key={s.id} href={`/studio?project=${encodeURIComponent(s.name)}`} className={styles.sessionCard}>
+                  <div className={styles.sessionThumb}>
+                    <div className={styles.sessionWaveform} />
+                    <div className={styles.dawBadge} data-daw={s.daw}>
+                      {s.daw}
+                    </div>
                   </div>
-                </div>
-                <div className={styles.sessionInfo}>
-                  <span className={styles.sessionName}>{s.name}</span>
-                  <span className={styles.sessionTime}>{s.time}</span>
-                </div>
-                {s.collabs.length > 0 && (
-                  <div className={styles.sessionCollabs}>
-                    {s.collabs.map((c, j) => (
-                      <span key={j} className={styles.collab} title={c}>
-                        {c[0]}
-                      </span>
-                    ))}
+                  <div className={styles.sessionInfo}>
+                    <span className={styles.sessionName}>{s.name}</span>
+                    <span className={styles.sessionTime}>{s.time}</span>
                   </div>
-                )}
-                <span className={styles.resumeBtn}>Resume</span>
-              </a>
-            ))}
-          </div>
+                  {s.collabs.length > 0 && (
+                    <div className={styles.sessionCollabs}>
+                      {s.collabs.map((c, j) => (
+                        <span key={j} className={styles.collab} title={c}>
+                          {c[0]}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <span className={styles.resumeBtn}>
+                    Resume{s.trackCount ? ` · ${s.trackCount} tracks` : ''}
+                  </span>
+                </a>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
-      {/* ── 3. Activity + Presence (two-column split) ───────────────
-          Left 2/3: Activity Feed — social network layer. GitHub-style
-          event stream for sessions/stems/forks/comments.
-          Right 1/3: Live Now — Figma-style presence, who's online,
-          what session, Join button. */}
+      {/* ── 3. Activity + Presence (two-column split) ───────────── */}
       {user && (
         <section className={styles.activityPresenceSection}>
           <div className={styles.activityFeed}>
             <h3 className={styles.dashSubTitle}>Activity</h3>
-            <div className={styles.feedList}>
-              {MOCK_ACTIVITY.map((ev, i) => (
-                <div key={i} className={styles.feedItem}>
-                  <div className={styles.feedAvatar}>{ev.who[0]}</div>
-                  <div className={styles.feedBody}>
-                    <span className={styles.feedText}>
-                      <strong>{ev.who}</strong> {ev.action}
-                    </span>
-                    <span className={styles.feedTime}>{ev.time}</span>
+            {loading.activity ? (
+              <div className={styles.feedList}>
+                {[0,1,2,3].map(i => (
+                  <div key={i} className={`${styles.feedItem} ${styles.skeleton}`} style={{height: 48}} />
+                ))}
+              </div>
+            ) : activityItems.length === 0 ? (
+              <div className={styles.emptyState}>
+                <span>No community activity yet. <a href="/community">Publish a creation</a> to get started.</span>
+              </div>
+            ) : (
+              <div className={styles.feedList}>
+                {activityItems.map((ev, i) => (
+                  <div key={ev.id || i} className={styles.feedItem}>
+                    <div className={styles.feedAvatar}>{ev.who[0]}</div>
+                    <div className={styles.feedBody}>
+                      <span className={styles.feedText}>
+                        <strong>{ev.who}</strong> {ev.action}
+                      </span>
+                      <span className={styles.feedTime}>{ev.time}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className={styles.liveNow}>
             <h3 className={styles.dashSubTitle}>
               <span className={styles.liveIndicator} /> Live Now
             </h3>
-            <div className={styles.liveList}>
-              {MOCK_LIVE.map((p, i) => (
-                <div key={i} className={styles.liveItem}>
-                  <div className={styles.liveAvatar}>{p.who[0]}</div>
-                  <div className={styles.liveInfo}>
-                    <span className={styles.liveName}>{p.who}</span>
-                    <span className={styles.liveSession}>{p.session}</span>
+            {liveUsers.length === 0 ? (
+              <div className={styles.emptyStateSmall}>
+                <span>No collaborators online right now.</span>
+              </div>
+            ) : (
+              <div className={styles.liveList}>
+                {liveUsers.map((p, i) => (
+                  <div key={i} className={styles.liveItem}>
+                    <div className={styles.liveAvatar}>{p.who[0]}</div>
+                    <div className={styles.liveInfo}>
+                      <span className={styles.liveName}>{p.who}</span>
+                      <span className={styles.liveSession}>{p.session}</span>
+                    </div>
+                    {p.joinable && (
+                      <a href={`/studio/${p.sessionId}`} className={styles.joinBtn}>
+                        Join
+                      </a>
+                    )}
                   </div>
-                  {p.joinable && (
-                    <a href={`/studio/${p.sessionId}`} className={styles.joinBtn}>
-                      Join
-                    </a>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}
 
-      {/* ── 4. Trending in Doseedo ──────────────────────────────────
-          Grid of public sessions gaining traction. Waveform preview,
-          creator, genre tags, stats. Filter tabs: Trending / New /
-          Most Forked / Your Genre. The SoundCloud-for-editable-
-          sessions moment — forks are the social currency. */}
+      {/* ── 4. Trending in Doseedo ────────────────────────────────── */}
       <section className={styles.trendingSection}>
         <div className={styles.sectionHeaderRow}>
           <h2 className={styles.dashSectionTitle}>Trending in Doseedo</h2>
         </div>
         <div className={styles.trendingTabs}>
-          {['Trending', 'New', 'Most Forked', 'Your Genre'].map((tab, i) => (
+          {TRENDING_TABS.map((tab) => (
             <button
-              key={tab}
-              className={`${styles.trendingTab} ${i === 0 ? styles.trendingTabActive : ''}`}
+              key={tab.key}
+              className={`${styles.trendingTab} ${trendingFilter === tab.key ? styles.trendingTabActive : ''}`}
+              onClick={() => setTrendingFilter(tab.key)}
             >
-              {tab}
+              {tab.label}
             </button>
           ))}
         </div>
-        <div className={styles.trendingGrid}>
-          {MOCK_TRENDING.map((t, i) => (
-            <a key={i} href={`/session/${t.id}`} className={styles.trendingCard}>
-              <div className={styles.trendingThumb}>
-                <div className={styles.trendingWaveform} />
-              </div>
-              <div className={styles.trendingMeta}>
-                <span className={styles.trendingName}>{t.name}</span>
-                <span className={styles.trendingCreator}>{t.creator}</span>
-                <div className={styles.trendingTags}>
-                  {t.tags.map((tag) => (
-                    <span key={tag} className={styles.genreTag}>{tag}</span>
-                  ))}
+
+        {loading.trending ? (
+          <div className={styles.trendingGrid}>
+            {[0,1,2].map(i => (
+              <div key={i} className={`${styles.trendingCard} ${styles.skeleton}`} style={{height: 180}} />
+            ))}
+          </div>
+        ) : trendingItems.length === 0 ? (
+          <div className={styles.emptyState}>
+            <span>No published sessions yet. Be the first to <a href="/studio">create</a> and share one.</span>
+          </div>
+        ) : (
+          <div className={styles.trendingGrid}>
+            {trendingItems.map((t) => (
+              <a key={t.id} href={`/session/${t.id}`} className={styles.trendingCard}>
+                <div className={styles.trendingThumb}>
+                  <div className={styles.trendingWaveform} />
                 </div>
-                <div className={styles.trendingStats}>
-                  <span><i className="fa-solid fa-play"></i> {t.plays}</span>
-                  <span><i className="fa-solid fa-code-fork"></i> {t.forks}</span>
-                  <span><i className="fa-solid fa-layer-group"></i> {t.stems}</span>
+                <div className={styles.trendingMeta}>
+                  <span className={styles.trendingName}>{t.name}</span>
+                  <span className={styles.trendingCreator}>{t.creator}</span>
+                  {t.tags.length > 0 && (
+                    <div className={styles.trendingTags}>
+                      {t.tags.map((tag) => (
+                        <span key={tag} className={styles.genreTag}>{tag}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div className={styles.trendingStats}>
+                    <span><i className="fa-solid fa-play"></i> {t.plays}</span>
+                    <span><i className="fa-solid fa-code-fork"></i> {t.forks}</span>
+                    <span><i className="fa-solid fa-layer-group"></i> {t.stems}</span>
+                  </div>
                 </div>
-              </div>
-              <div className={styles.trendingDaw} data-daw={t.daw}>{t.daw}</div>
-            </a>
-          ))}
-        </div>
+                <div className={styles.trendingDaw} data-daw={t.daw}>{t.daw}</div>
+              </a>
+            ))}
+          </div>
+        )}
       </section>
 
-      {/* ── 5. Made for You ─────────────────────────────────────────
-          Personalized discovery: sessions similar to your timbre
-          profile, creators to follow, stems that match your current
-          projects. Leverages SAMI/timbre space silently. */}
-      {user && (
+      {/* ── 5. Made for You ───────────────────────────────────────── */}
+      {user && madeForYouItems.length > 0 && (
         <section className={styles.madeForYouSection}>
           <div className={styles.sectionHeaderRow}>
             <h2 className={styles.dashSectionTitle}>Made for You</h2>
           </div>
           <div className={styles.mfyGrid}>
-            {MOCK_MADE_FOR_YOU.map((m, i) => (
-              <a key={i} href={`/session/${m.id}`} className={styles.mfyCard}>
+            {madeForYouItems.map((m) => (
+              <a key={m.id} href={`/session/${m.id}`} className={styles.mfyCard}>
                 <div className={styles.mfyThumb}>
                   <div className={styles.mfyWaveform} />
                 </div>
@@ -383,15 +428,12 @@ const Home = () => {
         </section>
       )}
 
-      {/* ── 6. Your Week (footer stats strip) ───────────────────────
-          Lightweight stats: sessions edited, stems generated,
-          collaborators active, minutes in studio. Makes the space
-          feel alive and gives a reason to come back. */}
-      {user && (
+      {/* ── 6. Your Week (footer stats strip) ─────────────────────── */}
+      {user && weekStats.length > 0 && (
         <section className={styles.yourWeekSection}>
           <h3 className={styles.yourWeekTitle}>Your Week</h3>
           <div className={styles.weekStats}>
-            {MOCK_WEEK_STATS.map((stat, i) => (
+            {weekStats.map((stat, i) => (
               <div key={i} className={styles.weekStat}>
                 <span className={styles.weekStatValue}>{stat.value}</span>
                 <span className={styles.weekStatLabel}>{stat.label}</span>
