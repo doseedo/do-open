@@ -62,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     --skip-build)      SKIP_BUILD=1 ;;
     --skip-cloud-run)  SKIP_CLOUD_RUN=1 ;;
     --skip-cloudflare) SKIP_CLOUDFLARE=1 ;;
+    --skip-git)        SKIP_GIT=1 ;;
     --dry-run)         DRY_RUN=1 ;;
     -h|--help)
       sed -n '2,40p' "$0"
@@ -84,6 +85,40 @@ run() {
 }
 
 cd "$REPO"
+
+# ── pre-flight: git pull + dirty-tree guard ───────────────────────────
+# Root cause of the 2026-04-12 deploy collision: someone synced a stale
+# local build/ to the bucket because they hadn't pulled the latest
+# commits. Two guards:
+#
+#   1. Pull from origin so the build always reflects the latest pushed
+#      source. Fails-fast if there's a merge conflict — fix locally
+#      before retrying.
+#
+#   2. Warn (but don't block) if there are uncommitted changes. Those
+#      changes won't be in git and the NEXT person who deploys without
+#      them will overwrite the bucket. The right fix is to commit first,
+#      but we don't hard-block because a quick CSS iteration might
+#      legitimately run deploy before committing. --skip-git bypasses
+#      both checks.
+if [[ "${SKIP_GIT:-0}" -eq 0 ]]; then
+  echo "── pre-flight: git pull + dirty-tree check ──"
+  if ! run git pull --ff-only origin main 2>&1; then
+    echo "  ERROR: git pull failed (merge conflict or non-fast-forward)." >&2
+    echo "  Resolve locally, commit, then retry deploy." >&2
+    exit 1
+  fi
+  DIRTY=$(git status --porcelain --untracked-files=no 2>/dev/null | wc -l)
+  if [[ "$DIRTY" -gt 0 ]]; then
+    echo "  ⚠  WARNING: $DIRTY uncommitted change(s) in the working tree."
+    echo "  These changes WILL be built and deployed, but won't survive"
+    echo "  the next deploy by someone else (since they're not in git)."
+    echo "  Consider committing before deploying."
+    echo "  (set SKIP_GIT=1 to suppress this check)"
+  fi
+else
+  echo "── pre-flight: git pull + dirty-tree check  [SKIPPED via SKIP_GIT=1] ──"
+fi
 
 # ── 0. build ──────────────────────────────────────────────────────────
 if [[ $SKIP_BUILD -eq 0 ]]; then
