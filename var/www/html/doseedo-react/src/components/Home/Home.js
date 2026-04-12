@@ -381,7 +381,7 @@ const Home = () => {
         ) : (
           <div className={styles.trendingGrid}>
             {trendingItems.map((t) => (
-              <a key={t.id} href={`/session/${t.id}`} className={styles.trendingCard}>
+              <a key={t.id} href={`/creation/${t.id}`} className={styles.trendingCard}>
                 <div className={styles.trendingThumb}>
                   <div className={styles.trendingWaveform} />
                 </div>
@@ -416,7 +416,7 @@ const Home = () => {
           </div>
           <div className={styles.mfyGrid}>
             {madeForYouItems.map((m) => (
-              <a key={m.id} href={`/session/${m.id}`} className={styles.mfyCard}>
+              <a key={m.id} href={`/creation/${m.id}`} className={styles.mfyCard}>
                 <div className={styles.mfyThumb}>
                   <div className={styles.mfyWaveform} />
                 </div>

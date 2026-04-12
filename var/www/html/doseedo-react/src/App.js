@@ -41,6 +41,7 @@ import AudioLabeler from './components/AudioLabeler/AudioLabeler';
 import DataMonitor from './components/DataMonitor/DataMonitor';
 import AdminUsers from './components/AdminUsers/AdminUsers';
 import DO1 from './components/DO1/DO1';
+import CreationView from './components/CreationView/CreationView';
 // ThemeEditor removed
 import LiquidGlassFilters from './components/LiquidGlassFilters/LiquidGlassFilters';
 
@@ -208,6 +209,7 @@ function AppContent() {
                       location.pathname === '/feedback' ? 'feedback' :
                       location.pathname === '/plans' ? 'plans' :
                       location.pathname.startsWith('/research') ? 'research' :
+                      location.pathname.startsWith('/creation/') ? 'creation' :
                       location.pathname.startsWith('/plugins') ? 'plugins' :
                       location.pathname === '/studio' ? 'daw' :
                       location.pathname === '/demo' ? 'daw' :
@@ -675,6 +677,34 @@ function AppContent() {
           isPluginsView={true}
         />
         <Plugins />
+      </div>
+    );
+  }
+
+  // Show creation detail view with sidebar
+  if (currentView === 'creation') {
+    const cid = location.pathname.split('/')[2];
+    return (
+      <div className="App">
+        <LiquidGlassFilters />
+        <LeftSidebar
+          onBackToDashboard={handleBackToDashboard}
+          onGoToHome={handleGoToHome}
+          onGoToSearch={handleGoToSearch}
+          onGoToUserInfo={handleGoToUserInfo}
+          onGoToTools={handleGoToTools}
+          onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
+          onToggleSearch={handleToggleSearch}
+          onShowGenerationPanel={handleShowGenerationPanel}
+          onShowMidiBrowser={handleShowMidiBrowser}
+          showMidiBrowser={showMidiBrowser}
+          onToggleChat={handleToggleChat}
+          showChatWindow={showChatWindow}
+        />
+        <CreationView creationId={cid} />
       </div>
     );
   }
