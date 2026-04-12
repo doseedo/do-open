@@ -173,31 +173,157 @@ const Home = () => {
         </div>
       </div>
 
-      <div className={styles.ctaSection}>
-        <h2 className={styles.ctaTitle}>Ready to Create?</h2>
-        <p className={styles.ctaDescription}>
-          Start making professional music with powerful tools
-        </p>
-        <div className={styles.ctaButtons}>
-          {user ? (
-            <a href="/plugins" className={styles.primaryBtn}>
-              <i className="fa-solid fa-flask"></i>
-              Sign Up for Open Beta
-            </a>
-          ) : (
-            /* /login hosts both signin AND registration — the toggle is inside
-               login.html. There is no standalone /register SPA route. */
-            <a href="/login" className={styles.primaryBtn}>
-              <i className="fa-solid fa-user-plus"></i>
-              Create an Account
-            </a>
-          )}
-          <a href="/plans" className={styles.secondaryBtn}>
-            <i className="fa-solid fa-arrow-up-right-dots"></i>
-            View Plans
-          </a>
+      {/* ── Feature grid ────────────────────────────────────────────
+          Below the slideshow: a six-card preview of what the studio
+          actually does. The cards intentionally echo the slide
+          headlines so a guest can see the slideshow, then look down
+          and see the same features broken out for them — slideshow
+          is the demo, feature grid is the receipts. */}
+      <section className={styles.featureSection}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>
+            A studio that listens.
+          </h2>
+          <p className={styles.sectionLead}>
+            Doseedo is a browser-based music studio designed to feel
+            like a collaborator, not a generator. Built by composers
+            and producers. Trained on rights-cleared recordings.
+            Editable end-to-end.
+          </p>
         </div>
-      </div>
+
+        <div className={styles.featureGrid}>
+          <div className={styles.featureCard}>
+            <div className={styles.featureIcon}>
+              <i className="fa-solid fa-layer-group"></i>
+            </div>
+            <h3 className={styles.featureTitle}>Songs back into sessions</h3>
+            <p className={styles.featureCopy}>
+              State-of-the-art source separation and reverse-FX models
+              recover dry stems from a single master recording.
+            </p>
+          </div>
+
+          <div className={styles.featureCard}>
+            <div className={styles.featureIcon}>
+              <i className="fa-solid fa-wave-square"></i>
+            </div>
+            <h3 className={styles.featureTitle}>Track-aware generation</h3>
+            <p className={styles.featureCopy}>
+              New stems that listen to what's already in the session.
+              Generated parts sit in the mix instead of fighting it.
+            </p>
+          </div>
+
+          <div className={styles.featureCard}>
+            <div className={styles.featureIcon}>
+              <i className="fa-solid fa-sliders"></i>
+            </div>
+            <h3 className={styles.featureTitle}>Sculpt any sound</h3>
+            <p className={styles.featureCopy}>
+              Timbre-shaping models give you knob-level control over
+              generated audio. Tune the result, don't reroll the prompt.
+            </p>
+          </div>
+
+          <div className={styles.featureCard}>
+            <div className={styles.featureIcon}>
+              <i className="fa-solid fa-film"></i>
+            </div>
+            <h3 className={styles.featureTitle}>Score to picture</h3>
+            <p className={styles.featureCopy}>
+              Adapt existing music to a scene or generate a new score
+              from scratch, with track-level keyframing for the polish
+              pass.
+            </p>
+          </div>
+
+          <div className={styles.featureCard}>
+            <div className={styles.featureIcon}>
+              <i className="fa-solid fa-pen-ruler"></i>
+            </div>
+            <h3 className={styles.featureTitle}>Nothing is ever frozen</h3>
+            <p className={styles.featureCopy}>
+              Every generation stays editable. Come back tomorrow,
+              next week, or next year and reshape it.
+            </p>
+          </div>
+
+          <div className={styles.featureCard}>
+            <div className={styles.featureIcon}>
+              <i className="fa-solid fa-globe"></i>
+            </div>
+            <h3 className={styles.featureTitle}>Lives in your browser</h3>
+            <p className={styles.featureCopy}>
+              No installs. Sessions save locally and sync when you're
+              ready. Share a link with a collaborator and they're in.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA card ────────────────────────────────────────────────
+          Two paths: guests get a prominent "Create an account" pitch
+          (they're previewing the dashboard right now and we want them
+          to convert). Logged-in users get a quieter "you're already
+          in" surface that points back to their work. */}
+      <section className={styles.ctaSection}>
+        <div className={styles.ctaCard}>
+          {user ? (
+            <>
+              <h2 className={styles.ctaTitle}>
+                Welcome back, {user.username || 'friend'}.
+              </h2>
+              <p className={styles.ctaLead}>
+                Pick up where you left off, or start something new.
+              </p>
+              <div className={styles.ctaButtons}>
+                <a href="/projects" className={styles.ctaPrimary}>
+                  <i className="fa-solid fa-folder-open"></i>
+                  Open Projects
+                </a>
+                <a href="/plugins" className={styles.ctaSecondary}>
+                  <i className="fa-solid fa-puzzle-piece"></i>
+                  Browse Plugins
+                </a>
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 className={styles.ctaTitle}>Create your account.</h2>
+              <p className={styles.ctaLead}>
+                Free forever. No credit card. Save your sessions,
+                sync across devices, and get the full plugin library.
+              </p>
+              <div className={styles.ctaButtons}>
+                <a href="/login" className={styles.ctaPrimary}>
+                  <i className="fa-solid fa-user-plus"></i>
+                  Create an Account
+                </a>
+                <a href="/plans" className={styles.ctaSecondary}>
+                  <i className="fa-solid fa-arrow-up-right-dots"></i>
+                  View Plans
+                </a>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* ── Mission footer ──────────────────────────────────────────
+          Closes the page with the same voice the Framer marketing
+          site uses. Same words, same posture: musicians making tools
+          for musicians, AI as collaborator. */}
+      <section className={styles.missionSection}>
+        <p className={styles.missionQuote}>
+          "AI is the next chapter of our story."
+        </p>
+        <p className={styles.missionCopy}>
+          Built by composers and producers. Trained on rights-cleared
+          recordings. Designed to feel like a fellow musician in the
+          room — not a replacement for one.
+        </p>
+      </section>
     </div>
   );
 };
