@@ -302,7 +302,7 @@ const InstrumentSelection = React.memo(({ params, updateParam, selectedGenre }) 
                     width: '40px',
                     height: '40px',
                     objectFit: 'contain',
-                    filter: 'invert(1)'
+                    filter: 'brightness(0) invert(1)'
                   }}
                   aria-hidden="true"
                 />
@@ -329,7 +329,7 @@ const InstrumentSelection = React.memo(({ params, updateParam, selectedGenre }) 
                     width: '40px',
                     height: '40px',
                     objectFit: 'contain',
-                    filter: 'invert(1)'
+                    filter: 'brightness(0) invert(1)'
                   }}
                   aria-hidden="true"
                 />
@@ -364,8 +364,7 @@ const InstrumentSelection = React.memo(({ params, updateParam, selectedGenre }) 
                           style={{
                             width: '40px',
                             height: '40px',
-                            objectFit: 'contain',
-                            filter: 'invert(1)'
+                            objectFit: 'contain'
                           }}
                           aria-hidden="true"
                         />

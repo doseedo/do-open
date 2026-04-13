@@ -300,7 +300,7 @@ const InstrumentSelection = React.memo(({ params, updateParam, activeTab = 'inst
               <img
                 src={group.iconImg}
                 alt={group.label}
-                style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.9 }}
+                style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.9, filter: 'brightness(0) invert(1)' }}
                 aria-hidden="true"
               />
               <span>{group.label}</span>
@@ -337,7 +337,7 @@ const InstrumentSelection = React.memo(({ params, updateParam, activeTab = 'inst
             <img
               src={group.iconImg}
               alt={group.label}
-              style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.9 }}
+              style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.9, filter: 'brightness(0) invert(1)' }}
               aria-hidden="true"
             />
             <span>{group.label}</span>
@@ -370,7 +370,7 @@ const InstrumentSelection = React.memo(({ params, updateParam, activeTab = 'inst
                     <img
                       src={subgroupIcons[subgroup]}
                       alt={subgroup}
-                      style={{ width: 36, height: 36, objectFit: 'contain', opacity: 0.9 }}
+                      style={{ width: 36, height: 36, objectFit: 'contain', opacity: 0.9, filter: 'brightness(0) invert(1)' }}
                       aria-hidden="true"
                     />
                   )}

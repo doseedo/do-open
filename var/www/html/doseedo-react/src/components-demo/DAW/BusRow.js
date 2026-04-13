@@ -579,7 +579,6 @@ const BusRow = React.memo(({
               src={instrumentIcon}
               alt="Instrument"
               className={styles.busIconImage}
-              style={{ filter: 'invert(1)' }}
             />
           ) : (
             <i className={`fa-solid ${instrumentIcon || icon} ${styles.busIcon}`}></i>
@@ -844,7 +843,6 @@ const BusRow = React.memo(({
                           src={trackIconSrc}
                           alt="Instrument"
                           className={styles.trackIconImage}
-                          style={{ filter: 'invert(1)' }}
                         />
                       ) : (
                         <i className={`fa-solid fa-${trackIconSrc} ${styles.trackIcon}`}></i>

@@ -4,6 +4,8 @@
 *.ckpt
 *.safetensors
 *.bin
+*.onnx
+*.onnx.data
 
 # Audio/Video files
 *.wav

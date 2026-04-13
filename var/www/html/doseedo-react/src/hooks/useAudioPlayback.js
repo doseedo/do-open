@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import midiPlayer from '../utils/midiPlayer';
 import tunaFX from '../services/tunaFX';
+import { isMaskPlaybackReady, setGains as setMaskGains, setActiveStem, seek as maskSeek, play as maskPlay, stop as maskStop } from '../services/maskPlayback';
 
 // Global audio buffer cache (shared across all instances)
 const audioBufferCache = new Map();
@@ -29,6 +30,8 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     tunaFX.destroy();
 
     audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    // Expose globally so mask playback can use the same context
+    window.__doseedo_audioCtx = audioContextRef.current;
 
     // Initialize Tuna FX chain with new context
     tunaFX.initialize(audioContextRef.current);
@@ -117,6 +120,30 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       // Update gain node in real-time (smooth ramp to avoid clicks)
       gainNode.gain.setTargetAtTime(finalGain, audioContextRef.current.currentTime, 0.01);
     });
+
+    // Also update mask playback gains for stem tracks
+    if (isMaskPlaybackReady()) {
+      const stemGains = {};
+      let activeSolo = null;
+      const stemTracks = allTracks.filter(t => t.metadata?.type === 'stem');
+      const hasStemSolo = stemTracks.some(t => t.isSolo);
+      for (const t of stemTracks) {
+        const stemName = t.metadata?.stemType || t.metadata?.instrument;
+        if (!stemName) continue;
+        const busMuted = t._busMuted || false;
+        const busGain = t._busGain || 1.0;
+        if (busMuted || t.isMuted) {
+          stemGains[stemName] = 0;
+        } else if (hasStemSolo && !t.isSolo) {
+          stemGains[stemName] = 0;
+        } else {
+          stemGains[stemName] = (t.gain || 1.0) * busGain;
+          if (t.isSolo) activeSolo = stemName;
+        }
+      }
+      setMaskGains(stemGains);
+      setActiveStem(activeSolo);
+    }
   }, [tracks, isPlaying]);
 
   // Sync internal pause time with external playhead position
@@ -326,8 +353,51 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         }
       }
 
-      // Load and schedule all tracks
-      for (const track of allTracks) {
+      // ── Mask-based playback for stem tracks ──────────────────────
+      // If mask playback is ready, stem tracks play through the worklet
+      // (master audio + spectral masks) instead of individual decoded buffers.
+      // This gives master-quality audio with no decoder overhead.
+      const useMaskPlayback = isMaskPlaybackReady();
+      if (useMaskPlayback) {
+        // Collect stem track gains and solo/mute state
+        const stemGains = {};
+        const stemTracks = allTracks.filter(t => t.metadata?.type === 'stem');
+        const nonStemTracks = allTracks.filter(t => t.metadata?.type !== 'stem');
+        const hasStemSolo = stemTracks.some(t => t.isSolo);
+
+        let activeSolo = null;
+        for (const t of stemTracks) {
+          const stemName = t.metadata?.stemType || t.metadata?.instrument;
+          if (!stemName) continue;
+          const busGain = t._busGain || 1.0;
+          const busMuted = t._busMuted || false;
+
+          if (busMuted || t.isMuted) {
+            stemGains[stemName] = 0;
+          } else if (hasStemSolo && !t.isSolo) {
+            stemGains[stemName] = 0;
+          } else {
+            stemGains[stemName] = (t.gain || 1.0) * busGain;
+            if (t.isSolo) activeSolo = stemName;
+          }
+        }
+
+        // Send gains to worklet — instant, no re-render
+        setMaskGains(stemGains);
+        setActiveStem(activeSolo);
+        maskSeek(currentPlayheadTime);
+        maskPlay();
+        console.log(`🎭 Mask playback: ${Object.keys(stemGains).length} stems, solo=${activeSolo || 'none'}`);
+
+        // Only schedule non-stem tracks normally below
+        // (parent track is muted when stems exist, so it won't double-play)
+        var tracksToSchedule = nonStemTracks;
+      } else {
+        var tracksToSchedule = allTracks;
+      }
+
+      // Load and schedule tracks (non-stem when mask playback active, all otherwise)
+      for (const track of tracksToSchedule) {
         // Apply bus-level mute/solo first
         const busMuted = track._busMuted || false;
         const busSolo = track._busSolo || false;
@@ -527,6 +597,11 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       }
     });
     sourceNodesRef.current = [];
+
+    // Stop mask playback worklet
+    if (isMaskPlaybackReady()) {
+      maskStop();
+    }
 
     // Stop all MIDI playback immediately
     midiPlayer.stopAll();

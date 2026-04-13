@@ -1,8 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { fetchAudioWithCache } from '../services/audioCacheService';
 
-// Global in-memory cache for decoded audio buffers (faster than re-decoding)
-const audioBufferCache = new Map();
+// Global in-memory cache for decoded audio buffers (faster than re-decoding).
+// EXPORTED so other services (e.g. latent-based waveform previews) can
+// pre-populate it before a track's real audio is ready.
+export const audioBufferCache = new Map();
 const MAX_CACHE_SIZE = 50; // Limit in-memory cache size
 
 /**
@@ -16,12 +18,44 @@ const MAX_CACHE_SIZE = 50; // Limit in-memory cache size
  * @param {number} cropEnd - Crop end time in seconds
  * @returns {Object} - Canvas ref and loading state
  */
-export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5', cropStart = 0, cropEnd = 0) {
+/**
+ * @param {string} audioUrl - URL of the audio file (or placeholder blob)
+ * @param {number} width
+ * @param {number} height
+ * @param {string} color
+ * @param {number} cropStart
+ * @param {number} cropEnd
+ * @param {Float32Array|null} envelopeData - optional pre-computed [2*T] envelope
+ *   from latent_visual. First T values are min, next T are max. If provided,
+ *   the waveform renders immediately from this without waiting for audio decode.
+ * @param {number} envelopeFps - envelope frame rate (default 25)
+ */
+export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5', cropStart = 0, cropEnd = 0, envelopeData = null, envelopeFps = 25) {
   const canvasRef = useRef(null);
   const audioBufferRef = useRef(null);
   const loadedUrlRef = useRef(null);
+  const envelopePaintedRef = useRef(false);
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [duration, setDuration] = React.useState(null);
+
+  // Instant envelope rendering — draws the waveform from latent_visual
+  // peaks WITHOUT waiting for audio decode. Fires whenever envelopeData
+  // changes (typically once, right after latent separation).
+  useEffect(() => {
+    if (!envelopeData || !canvasRef.current) return;
+    const T = envelopeData.length / 2;
+    const dur = T / envelopeFps;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    canvas.width = width;
+    canvas.height = height;
+    renderEnvelope(ctx, envelopeData, T, width, height, color);
+    envelopePaintedRef.current = true;
+    if (!isLoaded) {
+      setDuration(dur);
+      setIsLoaded(true);
+    }
+  }, [envelopeData, width, height, color, envelopeFps, isLoaded]);
 
   // Load audio only when URL changes
   useEffect(() => {
@@ -34,7 +68,6 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
       try {
         // Check in-memory cache first (fastest)
         if (audioBufferCache.has(audioUrl)) {
-          console.log(`🔄 Using in-memory cached audio buffer for: ${audioUrl.substring(0, 50)}...`);
           const cachedBuffer = audioBufferCache.get(audioUrl);
 
           if (cancelled) return;
@@ -44,13 +77,22 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
           setDuration(cachedBuffer.duration);
           setIsLoaded(true);
 
-          // Render immediately from cache
+          // If envelope was already painted by the envelope effect, don't
+          // repaint from cache — the envelope is the correct visual until
+          // the final full-length decode arrives via the fetch path.
+          if (envelopePaintedRef.current) return;
           if (canvasRef.current) {
             const canvas = canvasRef.current;
             const ctx = canvas.getContext('2d');
             canvas.width = width;
             canvas.height = height;
-            renderWaveform(ctx, cachedBuffer, width, height, color, cropStart, cropEnd);
+            if (envelopeData) {
+              const envT = envelopeData.length / 2;
+              renderEnvelope(ctx, envelopeData, envT, width, height, color);
+              envelopePaintedRef.current = true;
+            } else {
+              renderWaveform(ctx, cachedBuffer, width, height, color, cropStart, cropEnd);
+            }
           }
           return;
         }
@@ -87,16 +129,35 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
         setDuration(audioBuffer.duration);
         setIsLoaded(true);
 
-        // Render immediately after loading
+        // Only repaint if this is the final full-length decode or no
+        // envelope was painted. Intermediate chunks and tiny placeholders
+        // must NOT overwrite the latent visual envelope.
         if (canvasRef.current) {
           const canvas = canvasRef.current;
           const ctx = canvas.getContext('2d');
-
-          // Set canvas dimensions BEFORE rendering
-          canvas.width = width;
-          canvas.height = height;
-
-          renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd);
+          if (envelopeData && envelopePaintedRef.current) {
+            const envT = envelopeData.length / 2;
+            const expectedDur = envT / envelopeFps;
+            const isFinalDecode = audioBuffer.duration >= expectedDur * 0.9;
+            if (isFinalDecode) {
+              // Final decode ready — switch from envelope to real waveform
+              canvas.width = width;
+              canvas.height = height;
+              renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd);
+              envelopePaintedRef.current = false;
+            }
+            // else: envelope stays, don't touch canvas
+          } else {
+            canvas.width = width;
+            canvas.height = height;
+            if (envelopeData) {
+              const envT = envelopeData.length / 2;
+              renderEnvelope(ctx, envelopeData, envT, width, height, color);
+              envelopePaintedRef.current = true;
+            } else {
+              renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd);
+            }
+          }
         }
       } catch (error) {
         console.error('Error loading audio:', error);
@@ -127,14 +188,18 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-
-    // Set canvas dimensions
     canvas.width = width;
     canvas.height = height;
 
-    // Redraw with existing buffer
-    renderWaveform(ctx, audioBufferRef.current, width, height, color, cropStart, cropEnd);
-  }, [width, height, color, cropStart, cropEnd]);
+    const envT = envelopeData ? envelopeData.length / 2 : 0;
+    const expectedDur = envT / envelopeFps;
+    const isPartial = envelopeData && audioBufferRef.current.duration < expectedDur * 0.9;
+    if (isPartial) {
+      renderEnvelope(ctx, envelopeData, envT, width, height, color);
+    } else {
+      renderWaveform(ctx, audioBufferRef.current, width, height, color, cropStart, cropEnd);
+    }
+  }, [width, height, color, cropStart, cropEnd, envelopeData]);
 
   return {
     canvasRef,
@@ -234,6 +299,65 @@ function renderWaveform(ctx, audioBuffer, width, height, color, cropStart = 0, c
     ctx.stroke();
   }
 
+  ctx.globalAlpha = 1.0;
+}
+
+/**
+ * Render waveform bars from a pre-computed [2*T] envelope (min/max per frame).
+ * Called INSTANTLY from latent_visual output — no audio decoding needed.
+ */
+function renderEnvelope(ctx, envFlat, T, width, height, color) {
+  const mins = envFlat.subarray(0, T);
+  const maxs = envFlat.subarray(T, 2 * T);
+
+  ctx.clearRect(0, 0, width, height);
+
+  const barSpacing = 2;
+  const barWidth = 2;
+  const numBars = Math.floor(width / (barWidth + barSpacing));
+  const midY = height / 2;
+  const maxBarHeight = height * 0.45;
+
+  // Compute per-bar peak-to-peak from envelope
+  const ptpValues = [];
+  let maxPtp = 0;
+  for (let i = 0; i < numBars; i++) {
+    const start = Math.floor((i * T) / numBars);
+    const end = Math.max(start + 1, Math.floor(((i + 1) * T) / numBars));
+    let mx = -Infinity, mn = Infinity;
+    for (let j = start; j < end && j < T; j++) {
+      if (maxs[j] > mx) mx = maxs[j];
+      if (mins[j] < mn) mn = mins[j];
+    }
+    const ptp = mx - mn;
+    ptpValues.push(ptp);
+    if (ptp > maxPtp) maxPtp = ptp;
+  }
+
+  const normFactor = maxPtp > 0.001 ? maxBarHeight / (maxPtp * 1.2) : 1.0;
+  const noiseFloor = maxPtp * 0.02;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = barWidth;
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = 0.7;
+
+  for (let i = 0; i < numBars; i++) {
+    const x = i * (barWidth + barSpacing);
+    const ptp = ptpValues[i];
+    if (ptp < noiseFloor) {
+      ctx.beginPath();
+      ctx.moveTo(x + barWidth / 2, midY - 0.5);
+      ctx.lineTo(x + barWidth / 2, midY + 0.5);
+      ctx.stroke();
+      continue;
+    }
+    const barH = Math.min(ptp * normFactor, maxBarHeight);
+    ctx.beginPath();
+    ctx.moveTo(x + barWidth / 2, midY - barH);
+    ctx.lineTo(x + barWidth / 2, midY + barH);
+    ctx.stroke();
+  }
   ctx.globalAlpha = 1.0;
 }
 

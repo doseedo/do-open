@@ -2320,8 +2320,7 @@ const TrackInfoSidebar = React.memo(({ embedded = false }) => {
                                 width: '100%',
                                 height: 'auto',
                                 maxHeight: '280px',
-                                objectFit: 'contain',
-                                filter: 'invert(1)'
+                                objectFit: 'contain'
                               }}
                             />
                           </div>
@@ -2363,8 +2362,7 @@ const TrackInfoSidebar = React.memo(({ embedded = false }) => {
                               width: '100%',
                               height: 'auto',
                               maxHeight: '280px',
-                              objectFit: 'contain',
-                              filter: 'invert(1)'
+                              objectFit: 'contain'
                             }}
                           />
                         </div>

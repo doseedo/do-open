@@ -383,7 +383,7 @@
   width: 38px;
   height: 38px;
   object-fit: contain;
-  filter: invert(1) brightness(100);
+  filter: brightness(0) invert(1);
   opacity: 0.95;
 }
 
@@ -671,7 +671,7 @@
 .trackIconImage {
   width: 28.8px;
   height: 28.8px;
-  filter: invert(1) brightness(100);
+  filter: brightness(0) invert(1);
   opacity: 0.95;
   object-fit: contain;
 }

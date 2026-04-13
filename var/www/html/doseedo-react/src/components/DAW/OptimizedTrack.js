@@ -166,7 +166,9 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
     trackHeight,
     waveformColor,
     0, // No crop on rendering
-    0  // No crop on rendering
+    0, // No crop on rendering
+    track.metadata?.envelopeData || null,  // latent_visual instant envelope
+    25, // envelope fps
   );
 
   // Update track duration when audio loads — only when the delta is
