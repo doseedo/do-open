@@ -45,7 +45,7 @@ export async function initLatentDemucsV4(onProgress = null) {
     const ort = await import('onnxruntime-web');
     _ort = ort;
     if (ort.env?.wasm) {
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
+      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/';
       ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
       ort.env.wasm.simd = true;
     }

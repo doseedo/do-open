@@ -60,7 +60,7 @@ async function init() {
   ort = await import('onnxruntime-web');
 
   if (ort.env?.wasm) {
-    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
+    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/';
     ort.env.wasm.numThreads = 1; // workers are already off-main-thread
     ort.env.wasm.simd = true;
   }
