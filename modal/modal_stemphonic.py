@@ -70,7 +70,10 @@ Known limitations for launch version:
     same pattern. Do it after this one is green.
 """
 
+import os
 import modal
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------------------
 # Volumes
@@ -165,7 +168,7 @@ image = (
     # basic-pitch and demucs in favour of the latent student models
     # (latent_demucs / latent_drumsep / latent_pitch / latent_visual).
     .pip_install_from_requirements(
-        "/home/arlo/do2/stemphonic_requirements_modal.txt",
+        os.path.join(_HERE, "requirements.txt"),
         extra_options="--no-deps",
     )
     # Explicit torch install — wins any version conflict with transitive deps.
@@ -297,7 +300,7 @@ app = modal.App("doseedo-stemphonic")
         #     AUTH_SERVICE_URL=https://doseedo-auth-wd7h2yezlq-uc.a.run.app \
         #     INTERNAL_SECRET=<same value as auth-service INTERNAL_SECRET secret> \
         #     DISABLE_ALL_GENERATION=false
-        modal.Secret.from_name("doseedo-gate", required=False),
+        modal.Secret.from_name("doseedo-gate"),
     ],
     timeout=60 * 30,           # 30 min per request (long ACE-Step gens)
     scaledown_window=60 * 15,  # 15 min warm window
