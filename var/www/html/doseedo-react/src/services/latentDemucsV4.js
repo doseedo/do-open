@@ -27,7 +27,9 @@ const FRAME_SAMPLES = 1920;      // Oobleck encoder ratio
 const LATENT_CHANNELS = 64;
 const N_STEMS = 6;
 
-export const STEM_NAMES_V4COND_6 = ['drums', 'bass', 'vocals', 'other', 'guitar', 'piano'];
+// Order matches DistillDataset6.STEMS_6 in the training code (vocals/other
+// were swapped in an earlier version — see semDemucsV4.STEM_NAMES_6).
+export const STEM_NAMES_V4COND_6 = ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano'];
 
 let _ort = null;
 let _session = null;

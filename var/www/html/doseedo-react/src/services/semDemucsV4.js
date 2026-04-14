@@ -32,8 +32,12 @@ const MODEL_URL = '/static/models/sem_demucs_v4_6s_packed.onnx';
 const MODEL_DATA_URL = '/static/models/sem_demucs_v4_6s_packed.onnx.data';
 const TARGET_SR = 48000;
 // STEMS_6 order must match DistillDataset6.STEMS_6 in the training code:
-//   0 drums  1 bass  2 vocals  3 other  4 guitar  5 piano
-export const STEM_NAMES_6 = ['drums', 'bass', 'vocals', 'other', 'guitar', 'piano'];
+//   0 drums  1 bass  2 other  3 vocals  4 guitar  5 piano
+// (Earlier this file had vocals/other swapped, so the row labeled "vocals"
+//  was painting the "other" stem and vice-versa. All 8 training files
+//  in latent_demucs_student/ — distill_dataset_6.py, train_*, eval_*,
+//  build_stem6_targets.py, prep_moisesdb.py — agree on this order.)
+export const STEM_NAMES_6 = ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano'];
 const N_STEMS = 6;
 const RMS_FPS = 48000 / 1536;   // ≈ 31.25 Hz (matches rms time axis)
 
@@ -217,16 +221,30 @@ async function _analyze(sess, ort, flat, numFrames) {
   // silently on some WebGPU configs).
   console.log(`[semDemucsV4] tensor sizes — rms=${rms.length} masks=${masks.length} emb=${embedding.length}`);
 
-  // Classifier: prefer rms (always ~12 KB, transfers reliably).
-  // Fall back to masks if rms came back empty too.
+  // Prefer masks for both classification and envelopes — the model's
+  // RMS head is miscalibrated (verified offline on white noise: 52% of
+  // rms² lands in guitar, drums/other/bass round to ~0). Masks are the
+  // softmax over stems at each (f, t) bin and sum to 1.0 exactly, so
+  // integrating per stem gives an honest energy fraction. RMS is kept
+  // as a fallback only for the rare WebGPU configs where the 17M-float
+  // mask buffer fails to copy GPU→CPU and arrives empty.
   let perStemEnergy;
-  if (rms.length === N_STEMS * rmsT * 2) {
-    perStemEnergy = computePerStemEnergyFromRms(rms, N_STEMS, rmsT);
-  } else if (masks.length === N_STEMS * maskF * maskT) {
+  let stemEnvelopes;
+  let envelopeSource;
+  if (masks.length === N_STEMS * maskF * maskT) {
     perStemEnergy = computePerStemEnergyFromMasks(masks, N_STEMS, maskF, maskT);
+    stemEnvelopes = buildStemEnvelopesFromMasks(masks, N_STEMS, maskF, maskT, rmsT || ENV_FALLBACK_T);
+    envelopeSource = 'masks';
+  } else if (rms.length === N_STEMS * rmsT * 2) {
+    perStemEnergy = computePerStemEnergyFromRms(rms, N_STEMS, rmsT);
+    stemEnvelopes = buildStemEnvelopesFromRms(rms, N_STEMS, rmsT);
+    envelopeSource = 'rms';
+    console.warn('[semDemucsV4] mask tensor empty — falling back to (miscalibrated) RMS head');
   } else {
-    console.warn(`[semDemucsV4] both rms and masks empty — cannot classify (rms=${rms.length} masks=${masks.length})`);
+    console.warn(`[semDemucsV4] both masks and rms empty — cannot classify (rms=${rms.length} masks=${masks.length})`);
     perStemEnergy = new Float32Array(N_STEMS);
+    stemEnvelopes = Array.from({ length: N_STEMS }, () => new Float32Array(0));
+    envelopeSource = 'empty';
   }
   const classification = classifyMixVsSolo(perStemEnergy);
 
@@ -236,10 +254,14 @@ async function _analyze(sess, ort, flat, numFrames) {
     embedding,
     perStemEnergy,
     classification,
-    // derived: per-stem envelope (ch0+ch1 avg) for direct canvas use
-    stemEnvelopes: buildStemEnvelopes(rms, N_STEMS, rmsT),
+    stemEnvelopes,
+    envelopeSource,
   };
 }
+
+// Used by the empty-input branch of _analyze when neither masks nor rms
+// arrived — pick a reasonable display length (~30s at RMS_FPS).
+const ENV_FALLBACK_T = 938;
 
 /**
  * Integrate each stem's mask energy across all (f, t) bins, then
@@ -358,13 +380,55 @@ function classifyMixVsSolo(energy) {
 }
 
 /**
- * Convert the rms [6, T, 2] output into a per-stem envelope
- * Float32Array[T*2] matching the (min, max) layout useWaveform expects:
- * first T values are the min envelope (negative), next T are max.
- * For rms (always ≥ 0) we mirror around 0 to synthesize a symmetric
- * envelope that draws like a normal stereo waveform.
+ * Build per-stem envelopes from stft_masks [6, F, T_stft] by integrating
+ * mask probability over frequency at each time step. Output is mirrored
+ * (-a, +a) to match the (min, max) layout useWaveform expects.
+ *
+ * Masks are softmax'd across stems at each (f, t) bin and sum to 1.0,
+ * so `sum_f masks[s, f, t]` is the spectral energy fraction this stem
+ * holds at time t. Multiplying by a fixed display amplitude keeps the
+ * waveform readable. We downsample T_stft → Tout by box-averaging so
+ * the placeholder waveform aligns with the same per-frame timeline the
+ * RMS path used (≈31.25 fps).
  */
-function buildStemEnvelopes(rms, nStems, T) {
+function buildStemEnvelopesFromMasks(masks, nStems, F, T_stft, Tout) {
+  const out = [];
+  if (!F || !T_stft || !Tout) {
+    for (let s = 0; s < nStems; s++) out.push(new Float32Array(0));
+    return out;
+  }
+  const stemStride = F * T_stft;
+  const DISPLAY_AMP = 0.9;  // 0..1 mask fraction → ±0.9 envelope range
+  for (let s = 0; s < nStems; s++) {
+    const env = new Float32Array(2 * Tout);
+    const base = s * stemStride;
+    // For each output frame, average mask across F over the corresponding
+    // T_stft window, then scale to display range.
+    for (let to = 0; to < Tout; to++) {
+      const tStart = Math.floor(to * T_stft / Tout);
+      const tEnd   = Math.max(tStart + 1, Math.floor((to + 1) * T_stft / Tout));
+      let sum = 0;
+      let count = 0;
+      for (let ti = tStart; ti < tEnd; ti++) {
+        for (let f = 0; f < F; f++) sum += masks[base + f * T_stft + ti];
+        count += F;
+      }
+      const v = (sum / count) * DISPLAY_AMP;
+      env[to]        = -v;
+      env[Tout + to] =  v;
+    }
+    out.push(env);
+  }
+  return out;
+}
+
+/**
+ * Convert the rms [6, T, 2] output into a per-stem envelope
+ * Float32Array[T*2] matching the (min, max) layout useWaveform expects.
+ * Kept as a last-resort fallback only — see _analyze for why masks are
+ * the primary source.
+ */
+function buildStemEnvelopesFromRms(rms, nStems, T) {
   const out = [];
   if (!T) { for (let s = 0; s < nStems; s++) out.push(new Float32Array(0)); return out; }
   for (let s = 0; s < nStems; s++) {

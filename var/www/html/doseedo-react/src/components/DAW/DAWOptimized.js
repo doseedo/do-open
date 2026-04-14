@@ -28,6 +28,7 @@ import {
   separate6Stems,
   STEM_NAMES_V4COND_6,
 } from '../../services/latentDemucsV4';
+import { STEM_NAMES_6 } from '../../services/semDemucsV4';
 import { initLatentVisual, envelopeFromLatent, buildFakeBufferFromEnvelope } from '../../services/latentVisual';
 import { audioBufferCache } from '../../hooks/useWaveform';
 import ImportAudioModal from './ImportAudioModal';
@@ -1083,7 +1084,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
           // for the 325 MB demucs model.
           let v4PaintedStems = false;
           if (v4Result && v4Result.classification.isMix && v4Result.stemEnvelopes?.length === 6) {
-            const v4StemNames = ['drums', 'bass', 'vocals', 'other', 'guitar', 'piano'];
+            // Use the canonical order from semDemucsV4 — keeps in sync if the
+            // exporter's STEMS_6 ever changes again.
+            const v4StemNames = STEM_NAMES_6;
             v4PaintedStems = true;
             const instantStems = v4StemNames.map((stemName, idx) => ({
               id: `stem-${trackId}-${stemName}`,
@@ -1106,7 +1109,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
               },
             }));
             dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: instantStems } });
-            console.log(`[semDemucsV4] painted 6 instant stem waveforms (fps=${v4Result.rmsFps.toFixed(1)})`);
+            console.log(`[semDemucsV4] painted 6 instant stem waveforms (fps=${v4Result.rmsFps.toFixed(1)} src=${v4Result.envelopeSource})`);
           }
 
           // Try the browser-local latent_demucs path first.
