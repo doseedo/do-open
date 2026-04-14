@@ -4237,46 +4237,8 @@ def encode_audio_to_latent(audio_path):
 
 @app.route("/api/encode-audio-latent", methods=["POST"])
 def encode_audio_latent_endpoint():
-    """POST audio file → VAE encode → save .pt latent → return URL.
-
-    Used by the studio's auto-analyze pipeline so every uploaded track
-    has a cached latent that can be downloaded, fed back into stemphonic
-    as cover_src_latents, or spliced for meter changes.
-    """
-    f = request.files.get("audioFile") or request.files.get("file")
-    if f is None:
-        return jsonify({"error": "No audioFile in request"}), 400
-    tmp = os.path.join("/scratch/cache/latent_tmp",
-                       f"in_{uuid.uuid4().hex[:8]}_{f.filename or 'audio.wav'}")
-    os.makedirs(os.path.dirname(tmp), exist_ok=True)
-    f.save(tmp)
-    try:
-        # Find a handler. The trainer module instance is in the global
-        # `handler` after load_model() runs.
-        h = globals().get('handler')
-        if h is None:
-            return jsonify({"error": "model not loaded"}), 503
-        _, raw_latents, _ = audio_to_fsq_tokens(tmp, h)
-        latent_id = uuid.uuid4().hex[:12]
-        latent_path = os.path.join(LATENT_DIR, f"{latent_id}.pt")
-        torch.save({
-            "latents": raw_latents.cpu().float(),
-            "shape": list(raw_latents.shape),
-            "fps": 25,
-            "source": f.filename or "uploaded.wav",
-        }, latent_path)
-        return jsonify({
-            "latent_id": latent_id,
-            "latent_url": f"/api/latents/download/{latent_id}.pt",
-            "n_frames": int(raw_latents.shape[0]),
-            "duration": float(raw_latents.shape[0]) / 25.0,
-        })
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        try: os.remove(tmp)
-        except OSError: pass
+    """Removed — encoding is now done client-side via latentEncoder.js (WebGPU/WASM)."""
+    return jsonify({"error": "Endpoint removed. Use client-side latentEncoder.js."}), 410
 
 
 @app.route("/api/latents/download/<latent_id>.pt", methods=["GET"])
@@ -4474,65 +4436,8 @@ def latent_remap_meter(latents, fps, bpm, src_n, src_den, tgt_n, tgt_den, stem_t
 
 @app.route("/api/encode-latents-bulk", methods=["POST"])
 def encode_latents_bulk():
-    """Lazy stem-latent encode: takes a list of audio URLs (relative
-    paths under the doseedo CDN), fetches each, encodes via VAE in
-    parallel, returns latent_id per URL.
-
-    Used by the frontend's repaint flow when a user changes meter on
-    a freshly-separated track whose stems haven't been encoded yet.
-    Avoids the ~12s upfront cost of eager-encoding 6 stems on every
-    audio drop — we only pay it when the user actually needs it.
-    """
-    data = request.get_json(force=True) or {}
-    urls = data.get("urls") or []
-    if not urls:
-        return jsonify({"error": "no urls"}), 400
-
-    h = globals().get('handler')
-    if h is None:
-        return jsonify({"error": "model not loaded"}), 503
-
-    results = []
-    for url in urls:
-        try:
-            # URL is a relative path like /separate-stems/download/<id>/<name>.wav
-            # Strip leading slash and resolve under DEMUCS_OUTPUT_DIR
-            if url.startswith("/separate-stems/download/"):
-                rel = url[len("/separate-stems/download/"):]
-                local = os.path.join(DEMUCS_OUTPUT_DIR, rel)
-            else:
-                # Generic: try fetching it via the local stemphonic server
-                import urllib.request
-                tmpf = os.path.join("/scratch/cache/latent_tmp", f"bulk_{uuid.uuid4().hex[:8]}.wav")
-                os.makedirs(os.path.dirname(tmpf), exist_ok=True)
-                urllib.request.urlretrieve(f"http://127.0.0.1:8765{url}", tmpf)
-                local = tmpf
-
-            if not os.path.exists(local):
-                results.append({"url": url, "error": "audio file not found"})
-                continue
-
-            _, raw_latents, _ = audio_to_fsq_tokens(local, h)
-            latent_id = uuid.uuid4().hex[:12]
-            latent_path = os.path.join(LATENT_DIR, f"{latent_id}.pt")
-            torch.save({
-                "latents": raw_latents.cpu().float(),
-                "shape": list(raw_latents.shape),
-                "fps": 25,
-                "source": Path(local).name,
-                "source_path": os.path.abspath(local),
-            }, latent_path)
-            results.append({
-                "url": url,
-                "latent_id": latent_id,
-                "latent_url": f"/api/latents/download/{latent_id}.pt",
-                "n_frames": int(raw_latents.shape[0]),
-            })
-        except Exception as e:
-            traceback.print_exc()
-            results.append({"url": url, "error": str(e)})
-
-    return jsonify({"results": results})
+    """Removed — bulk encoding is now done client-side via latentEncoder.js (WebGPU/WASM)."""
+    return jsonify({"error": "Endpoint removed. Use client-side latentEncoder.js."}), 410
 
 
 _BAR_STARTS_CACHE = {}  # source audio path → (bar_starts_samples, sr)

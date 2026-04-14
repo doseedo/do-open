@@ -1,4 +1,6 @@
 import { compressAudioForUpload } from '../utils/audioCompress';
+import { initLatentEncoder, encodeToLatent, audioFileToStereo48k } from './latentEncoder';
+import { uploadLatent } from './latentDemucs';
 
 /**
  * trackAnalysisAPI — per-upload analysis pipeline
@@ -34,14 +36,19 @@ export async function classifyInstrument(audioFile) {
 }
 
 export async function encodeAudioLatent(audioFile) {
-  const compressed = await compressAudioForUpload(audioFile);
-  const fd = new FormData();
-  fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
-  const r = await fetch('/api/encode-audio-latent', { method: 'POST', body: fd });
-  if (!r.ok) throw new Error(`encode-audio-latent HTTP ${r.status}`);
-  const data = await r.json();
-  if (data.error) throw new Error(data.error);
-  return data; // { latent_id, latent_url, n_frames, duration }
+  // Client-side only — raw audio never leaves the browser for latent extraction.
+  // Throws (fail-closed) if WebGPU/WASM encoder is unavailable.
+  await initLatentEncoder();
+  const { flat, numFrames } = await audioFileToStereo48k(audioFile);
+  const flatTD = await encodeToLatent(flat, numFrames);
+  const T = flatTD.length / 64;
+  const { latent_id } = await uploadLatent(flatTD, T);
+  return {
+    latent_id,
+    latent_url: `/api/latents/download/${latent_id}.pt`,
+    n_frames: T,
+    duration: T / 25,
+  };
 }
 
 export async function detectChordsAndTempo(audioFile) {
@@ -58,13 +65,25 @@ export async function detectChordsAndTempo(audioFile) {
 }
 
 export async function encodeLatentsBulk(urls) {
-  const r = await fetch('/api/encode-latents-bulk', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ urls }),
-  });
-  if (!r.ok) throw new Error(`encode-latents-bulk HTTP ${r.status}`);
-  return r.json(); // { results: [{url, latent_id, latent_url, n_frames}] }
+  // Client-side only — fetches each stem WAV, encodes in-browser, uploads latent.
+  // Throws (fail-closed) if encoder is unavailable. Per-URL errors are logged and skipped.
+  await initLatentEncoder();
+  const results = [];
+  for (const audioUrl of urls) {
+    try {
+      const resp = await fetch(audioUrl);
+      if (!resp.ok) { console.error(`encodeLatentsBulk: fetch ${audioUrl} → ${resp.status}`); continue; }
+      const blob = await resp.blob();
+      const { flat, numFrames } = await audioFileToStereo48k(blob);
+      const flatTD = await encodeToLatent(flat, numFrames);
+      const T = flatTD.length / 64;
+      const { latent_id } = await uploadLatent(flatTD, T);
+      results.push({ url: audioUrl, latent_id, latent_url: `/api/latents/download/${latent_id}.pt`, n_frames: T });
+    } catch (err) {
+      console.error(`encodeLatentsBulk: ${audioUrl} failed:`, err);
+    }
+  }
+  return { results };
 }
 
 export async function repaintMeter({ stems, srcMeter, tgtMeter, srcBpm, tgtBpm, coverNoise = 0.55, prompt, downbeatOffset = 0 }) {
