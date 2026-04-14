@@ -290,6 +290,15 @@ app = modal.App("doseedo-stemphonic")
         "/models": models_vol,
         "/user_data": user_data_vol,
     },
+    secrets=[
+        # Provides AUTH_SERVICE_URL, INTERNAL_SECRET, DISABLE_ALL_GENERATION.
+        # Create with:
+        #   modal secret create doseedo-gate \
+        #     AUTH_SERVICE_URL=https://doseedo-auth-wd7h2yezlq-uc.a.run.app \
+        #     INTERNAL_SECRET=<same value as auth-service INTERNAL_SECRET secret> \
+        #     DISABLE_ALL_GENERATION=false
+        modal.Secret.from_name("doseedo-gate", required=False),
+    ],
     timeout=60 * 30,           # 30 min per request (long ACE-Step gens)
     scaledown_window=60 * 15,  # 15 min warm window
     min_containers=1,          # keep 1 warm so users never hit ~80s cold start
@@ -439,12 +448,12 @@ class Stemphonic:
         """Post-snapshot init. Runs on the GPU machine on every cold start.
 
         Eagerly loads the default checkpoint to GPU so the first real
-        request doesn't pay the ~20s model-load cost. Also installs a
-        Flask before_request hook that logs when a second request
-        arrives while the first is still running — the canary for
-        max_containers=1 becoming a serialization bottleneck.
+        request doesn't pay the ~20s model-load cost. Also installs Flask
+        before_request hooks for:
+          - generation gate (quota enforcement via auth-service)
+          - queue-depth canary (max_containers=1 serialization warning)
         """
-        import logging, threading
+        import logging, os, threading, urllib.error, urllib.request, json as _json
 
         stemphonic_server = self._server_module
 
@@ -474,10 +483,113 @@ class Stemphonic:
             # request trigger lazy load and surface the real error there.
             logging.exception("stemphonic: eager load_model() failed: %s", e)
 
+        # ---------------------------------------------------------------------------
+        # Generation gate — quota enforcement
+        # ---------------------------------------------------------------------------
+        # Routes that consume one generation credit per call. Utility routes
+        # (classify, extract-midi, detect-chords, encode, download, health) are
+        # excluded — they don't burn GPU for inference at generation scale.
+        _GATED_ROUTES = frozenset({
+            "/api/generate-stemphonic",
+            "/api/separate-stemphonic",
+            "/api/repaint-meter",
+            "/api/regen-stem-for-chord",
+            "/api/generate-score-from-video",
+            "/api/transcribe-vocals",
+            "/separate-stems",
+        })
+
+        _AUTH_SERVICE_URL = os.environ.get("AUTH_SERVICE_URL", "").rstrip("/")
+        _INTERNAL_SECRET  = os.environ.get("INTERNAL_SECRET", "")
+        _DISABLE_ALL      = os.environ.get("DISABLE_ALL_GENERATION", "false").lower() == "true"
+        _gate_log         = logging.getLogger("stemphonic.gate")
+
+        @stemphonic_server.app.before_request
+        def _generation_gate():
+            from flask import request, jsonify
+
+            if request.method != "POST":
+                return
+            if request.path not in _GATED_ROUTES:
+                return
+
+            # Kill switch — no auth-service call needed
+            if _DISABLE_ALL:
+                return jsonify({"error": "Generation is temporarily disabled"}), 503
+
+            if not _AUTH_SERVICE_URL or not _INTERNAL_SECRET:
+                _gate_log.warning(
+                    "Generation gate not configured (AUTH_SERVICE_URL or "
+                    "INTERNAL_SECRET missing) — failing open"
+                )
+                return
+
+            # Forward user's JWT cookie or Authorization header
+            auth_header    = request.headers.get("Authorization", "")
+            cookie_header  = request.headers.get("Cookie", "")
+            access_token   = request.cookies.get("access_token", "")
+
+            if not auth_header and not access_token:
+                return jsonify({"error": "Authentication required for generation"}), 401
+
+            gate_headers = {
+                "Content-Type": "application/json",
+                "X-Internal-Secret": _INTERNAL_SECRET,
+            }
+            if auth_header:
+                gate_headers["Authorization"] = auth_header
+            if cookie_header:
+                gate_headers["Cookie"] = cookie_header
+            elif access_token:
+                gate_headers["Cookie"] = f"access_token={access_token}"
+
+            body = _json.dumps({"endpoint": request.path}).encode()
+
+            try:
+                req = urllib.request.Request(
+                    f"{_AUTH_SERVICE_URL}/internal/generation/consume",
+                    data=body,
+                    headers=gate_headers,
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    _json.loads(resp.read())
+                    # 200 → allowed, continue normally
+                    return
+
+            except urllib.error.HTTPError as e:
+                err_body = {}
+                try:
+                    err_body = _json.loads(e.read())
+                except Exception:
+                    pass
+                if e.code == 429:
+                    remaining = err_body.get("remaining", 0)
+                    resets_at = err_body.get("resets_at", "tomorrow")
+                    _gate_log.info("gate: blocked user — daily cap reached")
+                    return jsonify({
+                        "error": err_body.get("detail", "Daily generation limit reached"),
+                        "remaining": remaining,
+                        "resets_at": resets_at,
+                    }), 429
+                elif e.code == 401:
+                    return jsonify({"error": "Authentication required for generation"}), 401
+                elif e.code == 503:
+                    return jsonify({"error": "Generation is temporarily disabled"}), 503
+                else:
+                    _gate_log.error("gate: unexpected HTTP %d from auth-service — failing open", e.code)
+                    return
+
+            except Exception as exc:
+                _gate_log.error("gate: auth-service call failed (%s) — failing open", exc)
+                return
+
+        # ---------------------------------------------------------------------------
         # Queue-depth canary. With max_containers=1, if a second request
         # arrives while the first is running, it queues at Modal's front
         # door. Log a WARN so we notice in `modal app logs` before a user
         # complains.
+        # ---------------------------------------------------------------------------
         _inflight = [0]
         _lock = threading.Lock()
         _log = logging.getLogger("stemphonic.queue")
