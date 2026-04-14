@@ -88,7 +88,11 @@ export async function initSemDemucsV4(onProgress = null) {
     for (const c of chunks) { dataBytes.set(c, off); off += c.byteLength; }
 
     const externalData = [
-      { path: 'sem_demucs_v4_6s_packed.onnx.data', data: dataBytes.buffer },
+      // Path must match the external_data location string baked into the ONNX
+      // graph (set at export time from the output filename). v3 was exported as
+      // sem_demucs_v4_6s_packed_v3.onnx so the internal reference is the _v3
+      // version. Bumping the file URL above also requires updating this key.
+      { path: 'sem_demucs_v4_6s_packed_v3.onnx.data', data: dataBytes.buffer },
     ];
 
     // WebGPU first, WASM fallback. The earlier WASM-only restriction was
