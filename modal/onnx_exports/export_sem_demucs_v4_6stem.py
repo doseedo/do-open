@@ -104,16 +104,31 @@ def _patch_stft(model):
 
 
 class V4SmallExport(torch.nn.Module):
-    """Returns the subset the browser needs: stft_masks, rms, embedding."""
+    """Returns the subset the browser needs: stft_masks, masks_envelope, rms, embedding.
+
+    `masks_envelope = stft_masks.sum(dim=2)` is a per-(stem, time-frame) integration
+    of the softmax mask across the freq axis. It's the signal the DAW actually
+    needs for both classification (sum over T → per-stem energy fraction) and the
+    instant 6-stem placeholder waveforms (per-stem envelope vs time). Tiny output
+    (~17K floats for a 30 s clip vs. 17 M for the full 4D mask), so it survives
+    ORT-Web's GPU→CPU copy of large buffers (which silently zeroes the full mask).
+
+    `stft_masks` is kept because latentDemucsV4 takes it as conditioning input.
+    The 17M-float buffer still gets computed inside the graph (intermediate of
+    softmax) — that compute path is fine; only the output readback breaks, and
+    the envelope provides an independent small readback that does work.
+    """
     def __init__(self, model):
         super().__init__()
         self.model = model
 
     def forward(self, waveform):
         out = self.model(waveform)
+        masks = out["stft_masks"]                # [B, S, F, T_stft]
+        masks_envelope = masks.sum(dim=2)        # [B, S, T_stft]   per-stem energy/time
         # Drop mask_logits (raw; browser uses softmax-ed stft_masks).
         # Drop pitch_logits, vocal (not needed for mix detection / viz).
-        return out["stft_masks"], out["rms"], out["embedding"]
+        return masks, masks_envelope, out["rms"], out["embedding"]
 
 
 def export(ckpt_path, out_path, n_stems=6, channels=64, opset=17):
@@ -143,11 +158,12 @@ def export(ckpt_path, out_path, n_stems=6, channels=64, opset=17):
     torch.onnx.export(
         wrapper, dummy, out_path,
         input_names=["waveform"],
-        output_names=["stft_masks", "rms", "embedding"],
+        output_names=["stft_masks", "masks_envelope", "rms", "embedding"],
         dynamic_axes={
-            "waveform":    {2: "n_samples"},
-            "stft_masks":  {3: "t_stft"},
-            "rms":         {2: "t_latent"},
+            "waveform":       {2: "n_samples"},
+            "stft_masks":     {3: "t_stft"},
+            "masks_envelope": {2: "t_stft"},
+            "rms":            {2: "t_latent"},
             # embedding is per-stem global (shape [1, S, 128]) — no dynamic axis
         },
         opset_version=opset,

@@ -28,11 +28,13 @@
  *              the single stem's latent
  */
 
-// _v2 suffix busts the `cache: 'force-cache'` reads below — the v1 ONNX shipped
-// with the broken native STFT op (NaN masks on ORT-Web). v2 is the same model
-// re-exported with Conv1d-based |STFT|. Bump to _v3 etc. on future re-exports.
-const MODEL_URL = '/static/models/sem_demucs_v4_6s_packed_v2.onnx';
-const MODEL_DATA_URL = '/static/models/sem_demucs_v4_6s_packed_v2.onnx.data';
+// _v3 adds a `masks_envelope` output (stft_masks integrated over freq, ~17K floats
+// per 30 s clip) so the browser doesn't need to read back the broken 17M-float
+// stft_masks tensor for display/classification. v2 was Conv1d-STFT (same as v3
+// internally). v1 was native STFT op. Bump suffix on every re-export to bust
+// the `cache: 'force-cache'` reads below.
+const MODEL_URL = '/static/models/sem_demucs_v4_6s_packed_v3.onnx';
+const MODEL_DATA_URL = '/static/models/sem_demucs_v4_6s_packed_v3.onnx.data';
 const TARGET_SR = 48000;
 // STEMS_6 order must match DistillDataset6.STEMS_6 in the training code:
 //   0 drums  1 bass  2 other  3 vocals  4 guitar  5 piano
@@ -213,14 +215,17 @@ async function _analyze(sess, ort, flat, numFrames) {
   const maskF = maskDims[2] | 0;
   const maskT = maskDims[3] | 0;
 
+  // Tiny mask envelope — sum of softmax masks over the freq axis, computed
+  // inside the ONNX. ~17K floats per 30s clip vs 17M for the full 4D mask,
+  // so the GPU→CPU readback is reliable on every backend. This is what the
+  // display + classifier read; the full stft_masks is kept only for
+  // latentDemucsV4 conditioning.
+  const envelope = await pullTensor(res.masks_envelope);
+  const envDims = res.masks_envelope?.dims || [1, N_STEMS, 0];
+  const envT = envDims[2] | 0;
+
   const embedding = await pullTensor(res.embedding);
 
-  // Sniff the actual mask values — length-correct doesn't mean
-  // value-correct on WebGPU. The 69 MB stft_masks buffer has been
-  // observed to arrive at the right length but full of zeros on certain
-  // WebGPU configs (the GPU→CPU copy completes but the destination
-  // buffer was never written). Sample 4 indices across the buffer and
-  // check for non-zero/non-NaN content; if dead, fall back.
   const sniff = (buf) => {
     const N = buf.length;
     if (!N) return { ok: false, reason: 'empty', sample: [] };
@@ -233,22 +238,26 @@ async function _analyze(sess, ort, flat, numFrames) {
     }
     return { ok: nonZero > 0 && nan === 0, reason: nan ? 'nan' : (nonZero ? 'ok' : 'all-zero'), sample };
   };
+  const envSniff  = sniff(envelope);
   const maskSniff = sniff(masks);
   const rmsSniff  = sniff(rms);
   console.log(
-    `[semDemucsV4] tensor sizes — rms=${rms.length} (${rmsSniff.reason}, sample=[${Array.from(rmsSniff.sample).map(v => v.toExponential(2)).join(',')}])`
-    + ` masks=${masks.length} (${maskSniff.reason}, sample=[${Array.from(maskSniff.sample).map(v => v.toExponential(2)).join(',')}])`
-    + ` emb=${embedding.length}`
+    `[semDemucsV4] tensor sizes — rms=${rms.length} (${rmsSniff.reason})`
+    + ` envelope=${envelope.length} (${envSniff.reason}, sample=[${Array.from(envSniff.sample).map(v => v.toExponential(2)).join(',')}])`
+    + ` masks=${masks.length} (${maskSniff.reason}) emb=${embedding.length}`
   );
 
-  // Prefer masks (model softmax sums to 1.0 across stems — accurate
-  // per-stem energy). Fall back to RMS only when masks fail to transfer
-  // (length OK but values dead) — RMS head is known miscalibrated but
-  // it's better than all-zero classification.
+  // Envelope is the primary signal — small enough to always survive readback.
+  // Masks-from-full-tensor and RMS are kept as fallbacks for backwards-compat
+  // with old ONNX builds and for browsers where envelope readback also fails.
   let perStemEnergy;
   let stemEnvelopes;
   let envelopeSource;
-  if (masks.length === N_STEMS * maskF * maskT && maskSniff.ok) {
+  if (envelope.length === N_STEMS * envT && envSniff.ok) {
+    perStemEnergy = computePerStemEnergyFromEnvelope(envelope, N_STEMS, envT);
+    stemEnvelopes = buildStemEnvelopesFromEnvelope(envelope, N_STEMS, envT, rmsT || ENV_FALLBACK_T);
+    envelopeSource = 'envelope';
+  } else if (masks.length === N_STEMS * maskF * maskT && maskSniff.ok) {
     perStemEnergy = computePerStemEnergyFromMasks(masks, N_STEMS, maskF, maskT);
     stemEnvelopes = buildStemEnvelopesFromMasks(masks, N_STEMS, maskF, maskT, rmsT || ENV_FALLBACK_T);
     envelopeSource = 'masks';
@@ -256,9 +265,9 @@ async function _analyze(sess, ort, flat, numFrames) {
     perStemEnergy = computePerStemEnergyFromRms(rms, N_STEMS, rmsT);
     stemEnvelopes = buildStemEnvelopesFromRms(rms, N_STEMS, rmsT);
     envelopeSource = 'rms';
-    console.warn(`[semDemucsV4] masks dead (${maskSniff.reason}) — fallback to RMS head (known miscalibrated)`);
+    console.warn(`[semDemucsV4] envelope+masks dead (env=${envSniff.reason} masks=${maskSniff.reason}) — fallback to RMS head (known miscalibrated)`);
   } else {
-    console.warn(`[semDemucsV4] both masks and rms dead — cannot classify (mask=${maskSniff.reason} rms=${rmsSniff.reason})`);
+    console.warn(`[semDemucsV4] all signals dead — cannot classify (env=${envSniff.reason} mask=${maskSniff.reason} rms=${rmsSniff.reason})`);
     perStemEnergy = new Float32Array(N_STEMS);
     stemEnvelopes = Array.from({ length: N_STEMS }, () => new Float32Array(0));
     envelopeSource = 'empty';
@@ -268,6 +277,7 @@ async function _analyze(sess, ort, flat, numFrames) {
   return {
     rms, rmsFrames: rmsT, rmsFps: RMS_FPS,
     masks, maskF, maskT,
+    envelope, envT,
     embedding,
     perStemEnergy,
     classification,
@@ -397,6 +407,59 @@ function classifyMixVsSolo(energy) {
 }
 
 /**
+ * Per-stem envelope from the tiny `masks_envelope` output (shape [6, T_stft],
+ * already integrated over freq inside the ONNX). Each value is `sum_f
+ * mask[s,f,t]` ∈ [0, F] — divide by F to get a 0..1 fraction. Then mirror
+ * around 0 and downsample T_stft → Tout for the (min, max) layout
+ * useWaveform expects.
+ */
+function buildStemEnvelopesFromEnvelope(envelope, nStems, T_stft, Tout) {
+  const out = [];
+  if (!T_stft || !Tout) {
+    for (let s = 0; s < nStems; s++) out.push(new Float32Array(0));
+    return out;
+  }
+  const F_NORM = 1025;            // matches mask freq-axis size — amounts to /F
+  const DISPLAY_AMP = 0.9;
+  for (let s = 0; s < nStems; s++) {
+    const env = new Float32Array(2 * Tout);
+    const base = s * T_stft;
+    for (let to = 0; to < Tout; to++) {
+      const tStart = Math.floor(to * T_stft / Tout);
+      const tEnd   = Math.max(tStart + 1, Math.floor((to + 1) * T_stft / Tout));
+      let sum = 0;
+      for (let ti = tStart; ti < tEnd; ti++) sum += envelope[base + ti];
+      const v = (sum / ((tEnd - tStart) * F_NORM)) * DISPLAY_AMP;
+      env[to]        = -v;
+      env[Tout + to] =  v;
+    }
+    out.push(env);
+  }
+  return out;
+}
+
+/**
+ * Per-stem energy fraction from the envelope output: integrate over T,
+ * normalize so the 6 fractions sum to 1. Equivalent to integrating the
+ * full mask over both F and T but cheaper because the F sum already
+ * happened inside the ONNX.
+ */
+function computePerStemEnergyFromEnvelope(envelope, nStems, T_stft) {
+  const out = new Float32Array(nStems);
+  if (!T_stft || !envelope.length) return out;
+  for (let s = 0; s < nStems; s++) {
+    let e = 0;
+    const base = s * T_stft;
+    for (let t = 0; t < T_stft; t++) e += envelope[base + t];
+    out[s] = e;
+  }
+  let total = 0;
+  for (let s = 0; s < nStems; s++) total += out[s];
+  if (total > 0) for (let s = 0; s < nStems; s++) out[s] /= total;
+  return out;
+}
+
+/**
  * Build per-stem envelopes from stft_masks [6, F, T_stft] by integrating
  * mask probability over frequency at each time step. Output is mirrored
  * (-a, +a) to match the (min, max) layout useWaveform expects.
@@ -407,6 +470,9 @@ function classifyMixVsSolo(energy) {
  * waveform readable. We downsample T_stft → Tout by box-averaging so
  * the placeholder waveform aligns with the same per-frame timeline the
  * RMS path used (≈31.25 fps).
+ *
+ * Used only when the new `masks_envelope` output is unavailable (older
+ * ONNX builds). v3 ONNX has the integration done inside the model.
  */
 function buildStemEnvelopesFromMasks(masks, nStems, F, T_stft, Tout) {
   const out = [];
