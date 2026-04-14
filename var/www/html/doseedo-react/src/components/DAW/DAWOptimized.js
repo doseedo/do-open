@@ -1145,6 +1145,32 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
               };
               console.log(`[latentDemucsV4] uploaded ${name}: ${meta.latent_id} (${s.T} frames)`);
             }
+
+            // ─── Refiner pass: clean latent + v4-small noisy mask →
+            //     refined per-stem STFT mask. +25.2% SI-SDR per the
+            //     training run. Stash in the module-level map so the
+            //     (follow-up) maskPlayback integration can pull them
+            //     in. We DON'T UPDATE_TRACK with them here because the
+            //     stem tracks already carry envelopeData in metadata,
+            //     and the reducer replaces metadata wholesale.
+            if (v4Result && stems) {
+              try {
+                const { refine6StemMasks, initMaskRefiner } = await import('../../services/maskRefiner');
+                await initMaskRefiner();
+                const _rfT0 = performance.now();
+                const refined = await refine6StemMasks(stems, v4Result);
+                const rfMs = (performance.now() - _rfT0).toFixed(0);
+                console.log(`[maskRefiner] refined ${Object.keys(refined).length} masks in ${rfMs}ms (F=${v4Result.maskF} T=${v4Result.maskT})`);
+                // Expose on window for the next commit's maskPlayback
+                // wire-up; cheap inspection hook in the meantime.
+                window.__doseedo_refinedMasks = window.__doseedo_refinedMasks || {};
+                window.__doseedo_refinedMasks[busId] = {
+                  masks: refined, F: v4Result.maskF, T: v4Result.maskT,
+                };
+              } catch (rfErr) {
+                console.warn('[maskRefiner] skipped (non-fatal):', rfErr?.message || rfErr);
+              }
+            }
           } catch (localErr) {
             const emsg = localErr?.message || localErr?.toString?.() || JSON.stringify(localErr) || 'unknown';
             console.warn('[latentDemucsV4] browser path failed, falling back to backend /separate-stems:', emsg);
