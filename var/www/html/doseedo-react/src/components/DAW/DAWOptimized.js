@@ -1069,6 +1069,42 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
             console.warn('[semDemucsV4] failed (non-fatal, continuing with demucs):', v4Err?.message || v4Err);
           }
 
+          // ── INSTANT 6-STEM VISUALIZER (mix branch) ───────────────────
+          // If v4 classified as a mix, paint 6 stem placeholder tracks
+          // right now using its per-stem RMS envelopes. demucs will
+          // later UPDATE_TRACK 4 of these with real latent_ids +
+          // refined envelopes (guitar/piano stay v4-only since the
+          // current demucs is 4-stem). This makes the DAW show 6 stem
+          // waveforms within ~200ms of upload instead of waiting ~30s
+          // for the 325 MB demucs model.
+          let v4PaintedStems = false;
+          if (v4Result && v4Result.classification.isMix && v4Result.stemEnvelopes?.length === 6) {
+            const v4StemNames = ['drums', 'bass', 'vocals', 'other', 'guitar', 'piano'];
+            v4PaintedStems = true;
+            const instantStems = v4StemNames.map((stemName, idx) => ({
+              id: `stem-${trackId}-${stemName}`,
+              name: `${file.name.replace(/\.[^.]+$/, '')} — ${stemName}`,
+              audioUrl: null,  // envelope-only render until demucs/decoder populates audio
+              duration,
+              startPosition: 0,
+              gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
+              fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
+              metadata: {
+                type: 'stem',
+                stemType: stemName,
+                parentTrackId: trackId,
+                instrument: stemName,
+                icon: iconForType(stemName),
+                envelopeData: v4Result.stemEnvelopes[idx],
+                envelopeFps: v4Result.rmsFps,
+                fromV4Small: true,   // will be set false once latent-demucs completes
+                playbackReady: false,
+              },
+            }));
+            dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: instantStems } });
+            console.log(`[semDemucsV4] painted 6 instant stem waveforms (fps=${v4Result.rmsFps.toFixed(1)})`);
+          }
+
           // Try the browser-local latent_demucs path first.
           let stemLatentIds = null;
           let localFlatTDs = null;  // keep the raw stem latents around for latent_visual
@@ -1238,12 +1274,35 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
             console.warn('auto-separation: no previews built');
             return;
           }
-          dispatch({
-            type: 'ADD_TRACKS_BULK',
-            payload: { busId, tracks: placeholderTracks },
-          });
+          if (v4PaintedStems) {
+            // v4 already added these 6 stems (4 of which match demucs).
+            // UPDATE_TRACK each one with the real latent_id, refined
+            // envelope from latent_visual, and placeholder audio URL
+            // that points at the cached fakeBuf. Non-matching v4 stems
+            // (guitar, piano) remain v4-only previews.
+            for (const t of placeholderTracks) {
+              dispatch({
+                type: 'UPDATE_TRACK',
+                payload: {
+                  busId,
+                  trackId: t.id,
+                  updates: {
+                    audioUrl: t.audioUrl,
+                    duration: t.duration,
+                    metadata: { ...t.metadata, fromV4Small: false },
+                  },
+                },
+              });
+            }
+            console.log(`🎚️ latent-demucs refined ${placeholderTracks.length} v4 stems (${file.name})`);
+          } else {
+            dispatch({
+              type: 'ADD_TRACKS_BULK',
+              payload: { busId, tracks: placeholderTracks },
+            });
+            console.log(`🎚️ Auto-separated ${file.name} → ${placeholderTracks.length} stems (instant previews, decoding audio…)`);
+          }
           dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: false } });
-          console.log(`🎚️ Auto-separated ${file.name} → ${placeholderTracks.length} stems (instant previews, decoding audio…)`);
 
           // ── STEP 1b: Set up mask-based playback (instant, no decode) ──
           // Compute spectral masks from stem latents and set up the

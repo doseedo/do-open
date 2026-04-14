@@ -176,8 +176,8 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
     waveformColor,
     0, // No crop on rendering
     0, // No crop on rendering
-    track.metadata?.envelopeData || null,  // latent_visual instant envelope
-    25, // envelope fps
+    track.metadata?.envelopeData || null,  // latent_visual or v4-small instant envelope
+    track.metadata?.envelopeFps || 25,     // v4 outputs ≈31.25 Hz, latent_visual is 25
     visualGain,
   );
 
