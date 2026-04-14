@@ -850,7 +850,13 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
       audio.addEventListener('loadedmetadata', () => {
         const duration = audio.duration;
 
-        // Create a new SFX bus for this track
+        // Create a new SFX bus for this track.
+        // Start COLLAPSED: the bus row renders the uploaded track as
+        // its master waveform immediately, and stays locked in that
+        // state until stem separation completes (see BusRow.js guard
+        // on handleBusClick/handleExpandToggle/etc — it checks for an
+        // uploaded master with no stem siblings). Once stems land the
+        // user can expand to see the composite-above-stems layout.
         const busId = `sfx-${Date.now()}`;
         dispatch({
           type: 'CREATE_BUS',
@@ -858,7 +864,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
             id: busId,
             type: 'SFX',
             name: `SFX ${state.buses.filter(b => b.type === 'SFX').length + 1}`,
-            expanded: true
+            expanded: false
           }
         });
 

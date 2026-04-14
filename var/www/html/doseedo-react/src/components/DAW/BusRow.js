@@ -87,8 +87,13 @@ const BusRow = React.memo(({
   // Removed debug logging for performance
 
   const handleExpandToggle = useCallback(() => {
+    // Lock expansion while stems are still separating — the bus is
+    // effectively a single track until then, and expanding would
+    // reveal only the uploaded master (which will be hidden anyway
+    // once stems arrive), creating a visual flicker.
+    if (hasPendingUpload) return;
     dispatch({ type: 'TOGGLE_BUS_EXPANDED', payload: { busId: bus.id } });
-  }, [dispatch, bus.id]);
+  }, [dispatch, bus.id, hasPendingUpload]);
 
   const handleGainChange = useCallback((e) => {
     const value = parseFloat(e.target.value);
@@ -167,6 +172,15 @@ const BusRow = React.memo(({
   const visibleTracks = useMemo(() => {
     if (!hasStems) return bus.tracks;
     return bus.tracks.filter(t => t.metadata?.type !== 'uploaded');
+  }, [bus.tracks, hasStems]);
+
+  // While the bus holds an uploaded master that hasn't been stem-
+  // separated yet, block expansion: expanding would just show the
+  // same single master waveform twice (once on the bus row, once in
+  // the track list) and break the "acts like a single track until
+  // stems arrive" UX. Once stems land, the bus unlocks.
+  const hasPendingUpload = useMemo(() => {
+    return bus.tracks.some(t => t.metadata?.type === 'uploaded') && !hasStems;
   }, [bus.tracks, hasStems]);
 
   const handleBusClick = useCallback(() => {
