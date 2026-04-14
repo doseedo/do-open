@@ -153,6 +153,22 @@ const BusRow = React.memo(({
     return bus.tracks.length > 1;
   }, [bus.tracks]);
 
+  // Has this bus been stem-separated? Once it has, the original
+  // uploaded audio is hidden from the track list (its job — preserving
+  // analysis metadata + feeding mask playback — is done behind the
+  // scenes) and the bus row always shows the summed composite waveform.
+  const hasStems = useMemo(() => {
+    return bus.tracks.some(t => t.metadata?.type === 'stem');
+  }, [bus.tracks]);
+
+  // Tracks visible in the expanded list: stems when we have them,
+  // otherwise everything. The uploaded master stays in bus.tracks (for
+  // analysis + mask playback) but is filtered out of the UI.
+  const visibleTracks = useMemo(() => {
+    if (!hasStems) return bus.tracks;
+    return bus.tracks.filter(t => t.metadata?.type !== 'uploaded');
+  }, [bus.tracks, hasStems]);
+
   const handleBusClick = useCallback(() => {
     console.log(`🖱️ Bus clicked: ${bus.name}, hasMultitrackMIDI: ${hasMultitrackMIDI}, hasMultipleTracks: ${hasMultipleTracks}`);
 
@@ -499,10 +515,12 @@ const BusRow = React.memo(({
     console.log(`✅ Empty MIDI track created for ${bus.name}`);
   }, [bus.id, bus.name, bus.tracks.length, bus.expanded, dispatch]);
 
-  // Calculate heights for smooth transitions
+  // Calculate heights for smooth transitions. Use visibleTracks
+  // (which excludes the hidden uploaded master) so the expanded bus
+  // doesn't reserve an empty row where the master used to be.
   const tracksHeight = useMemo(() => {
-    return bus.expanded ? bus.tracks.length * trackHeight : 0;
-  }, [bus.expanded, bus.tracks.length, trackHeight]);
+    return bus.expanded ? visibleTracks.length * trackHeight : 0;
+  }, [bus.expanded, visibleTracks.length, trackHeight]);
 
   const instrumentIcon = getInstrumentIcon();
 
@@ -622,11 +640,23 @@ const BusRow = React.memo(({
         onDrop={handleFileDrop}
         onDoubleClick={handleDoubleClick}
       >
-        {/* Show master track view when collapsed */}
-        {!bus.expanded ? (
+        {/* The bus-row master waveform lives in the TOP strip (always
+            at y=0, height=trackHeight) regardless of expanded state.
+            When collapsed it's the only thing in this container. When
+            expanded, child stem tracks sit below it (pushed down by the
+            paddingTop: trackHeight on the parent). Clicking it toggles
+            the bus expansion so the interaction stays identical. */}
+        {hasStems || hasMultipleTracks || hasMultitrackMIDI ? (
           <div
             onClick={handleBusClick}
-            style={{ cursor: 'pointer', width: '100%', height: '100%' }}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: `${trackHeight}px`,
+              cursor: 'pointer',
+            }}
             className={`${styles.masterTrackView} ${
               (state.selectedBus?.id === bus.id ||
                (state.selectedTrack?.isComposite && state.selectedTrack?.compositeBusId === bus.id))
@@ -634,43 +664,28 @@ const BusRow = React.memo(({
             }`}
           >
             {hasMultitrackMIDI ? (
-              /* Show composite MIDI view for multitrack MIDI */
               <CompositeMIDIView tracks={bus.tracks} busId={bus.id} trackHeight={trackHeight} />
-            ) : hasMultipleTracks ? (
-              /* Single master waveform = Σ per-stem envelopes × stem.gain,
-                 multiplied by bus.gain. Repaints in real time on any
-                 slider move. Replaces the old opacity:0.5 overlay stack. */
-              <div style={{ position: 'relative', width: '100%', height: `${trackHeight}px` }}>
-                <CompositeBusWaveform
-                  bus={bus}
-                  height={trackHeight}
-                  color={state.selectedBus?.id === bus.id ? '#8b5cf6' : '#667eea'}
-                />
-              </div>
-            ) : bus.tracks.length > 0 ? (
-              /* Show single track as master representation */
-              <OptimizedTrack
-                key={bus.tracks[0].id}
-                track={bus.tracks[0]}
-                busId={bus.id}
-                index={0}
-                isExpanded={false}
-                isSelected={state.selectedTrack?.id === bus.tracks[0].id}
-                isMasterView={true}
-                trackHeight={trackHeight}
-              />
             ) : (
-              /* Show empty state hint */
-              <div className={styles.emptyBusHint}>
-                Double-click to create MIDI track
-              </div>
+              /* Composite waveform = Σ per-stem envelopes × stem.gain
+                 × bus.gain. Repaints in real time on any slider move. */
+              <CompositeBusWaveform
+                bus={bus}
+                height={trackHeight}
+                color={state.selectedBus?.id === bus.id ? '#8b5cf6' : '#667eea'}
+              />
             )}
           </div>
-        ) : (
-          /* Show individual tracks when expanded */
-          bus.tracks.length > 0 ? (
-            bus.tracks
-              .filter(track => track.expanded !== false) // Only show expanded tracks in plugin mode
+        ) : null}
+
+        {/* Expanded: render the visible child tracks (stems only once
+            separation is done; master is hidden but still in bus.tracks
+            for analysis + mask playback). Collapsed with a single
+            pre-separation track: render that one track here so the
+            user still sees a waveform before stems arrive. */}
+        {bus.expanded ? (
+          visibleTracks.length > 0 ? (
+            visibleTracks
+              .filter(track => track.expanded !== false)
               .map((track, index) => (
                 <OptimizedTrack
                   key={track.id}
@@ -683,18 +698,38 @@ const BusRow = React.memo(({
                 />
               ))
           ) : (
-            /* Show empty state hint for expanded empty bus */
             <div className={styles.emptyBusHint}>
               Double-click to create MIDI track
             </div>
           )
+        ) : (
+          /* Collapsed + no stems + single track → the single-track
+             preview replaces the composite (that branch returned null
+             above). */
+          !hasStems && !hasMultipleTracks && !hasMultitrackMIDI && bus.tracks.length > 0 ? (
+            <OptimizedTrack
+              key={bus.tracks[0].id}
+              track={bus.tracks[0]}
+              busId={bus.id}
+              index={0}
+              isExpanded={false}
+              isSelected={state.selectedTrack?.id === bus.tracks[0].id}
+              isMasterView={true}
+              trackHeight={trackHeight}
+            />
+          ) : bus.tracks.length === 0 ? (
+            <div className={styles.emptyBusHint}>
+              Double-click to create MIDI track
+            </div>
+          ) : null
         )}
       </div>
 
-      {/* Track Labels (only render when expanded) */}
+      {/* Track Labels (only render when expanded). Uses visibleTracks
+          so the hidden uploaded master doesn't get a label row. */}
       {bus.expanded && (
         <div className={styles.trackLabelsColumn}>
-          {bus.tracks.map((track, index) => {
+          {visibleTracks.map((track, index) => {
             // Resolve a white-PNG icon path for the track from any
             // metadata source (PANNs classification, generation params,
             // stem type, instrument group).

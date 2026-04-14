@@ -49,23 +49,31 @@ const CompositeBusWaveform = React.memo(({
 
   // Derive the reactive inputs (per-stem gain/mute/solo + peak source).
   // This runs on every dispatch, which is exactly when we want a repaint.
+  // We explicitly take ONLY stems here — the original uploaded audio
+  // (metadata.type === 'uploaded') is kept in bus.tracks to preserve
+  // analysis data + mask-playback audio but MUST NOT contribute to the
+  // composite, or it would double-count on top of the stem sum.
+  // If no stems exist yet we fall back to any non-MIDI, non-placeholder
+  // track (the single-file case BEFORE separation completes).
   const stemInputs = useMemo(() => {
+    const hasStems = bus.tracks.some(t => t.metadata?.type === 'stem');
     const anySolo = bus.tracks.some(t => t.isSolo);
-    return bus.tracks
-      .filter(t => t.type !== 'midi' && !t.isPlaceholder)
-      .map(t => {
-        let eff = 1.0;
-        if (t.isMuted) eff = 0;
-        else if (anySolo && !t.isSolo) eff = 0;
-        else eff = t.gain ?? 1.0;
-        return {
-          id: t.id,
-          gain: eff,
-          envelope: t.metadata?.envelopeData || null,
-          audioBuffer: t.audioUrl ? audioBufferCache.get(t.audioUrl) || null : null,
-          audioUrl: t.audioUrl || null,
-        };
-      });
+    const pool = hasStems
+      ? bus.tracks.filter(t => t.metadata?.type === 'stem' && !t.isPlaceholder)
+      : bus.tracks.filter(t => t.type !== 'midi' && !t.isPlaceholder);
+    return pool.map(t => {
+      let eff = 1.0;
+      if (t.isMuted) eff = 0;
+      else if (anySolo && !t.isSolo) eff = 0;
+      else eff = t.gain ?? 1.0;
+      return {
+        id: t.id,
+        gain: eff,
+        envelope: t.metadata?.envelopeData || null,
+        audioBuffer: t.audioUrl ? audioBufferCache.get(t.audioUrl) || null : null,
+        audioUrl: t.audioUrl || null,
+      };
+    });
   }, [bus.tracks]);
 
   const busGain = bus.mute ? 0 : (bus.gain ?? 1.0);
