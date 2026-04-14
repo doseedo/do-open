@@ -89,26 +89,35 @@ export async function initSemDemucsV4(onProgress = null) {
       { path: 'sem_demucs_v4_6s_packed.onnx.data', data: dataBytes.buffer },
     ];
 
-    // WASM only: the WebGPU JSEP backend silently delivers a zeroed
-    // 69 MB stft_masks buffer (length-correct but unwritten dest) on
-    // some configs — small outputs (rms 12 KB, embedding 3 KB) survive,
-    // the big mask tensor doesn't. WASM is < 500 ms for this 9 MB
-    // model with SIMD + 4 threads, fine for one-shot pre-upload
-    // analysis. The bigger latentDemucsV4 model keeps WebGPU since
-    // its outputs are smaller per-stem and survive the copy.
-    try {
-      const sess = await ort.InferenceSession.create(graphBytes, {
-        executionProviders: ['wasm'],
-        graphOptimizationLevel: 'all',
-        externalData,
-      });
-      _session = sess;
-      console.log('[semDemucsV4] ready on wasm');
-      return sess;
-    } catch (err) {
-      console.warn('[semDemucsV4] wasm init failed:', err?.message || String(err));
-      throw err;
+    // WebGPU first, WASM fallback. The earlier WASM-only restriction was
+    // for the v1 ONNX (native STFT op zeroed masks on WebGPU). The v2
+    // ONNX uses Conv1d-based |STFT| — plain ops that WebGPU handles, and
+    // WASM happens to NaN-poison this model's spec head regardless of
+    // ORT-Web version (1.22 + 1.24 both broken). So WebGPU is now the
+    // primary path. WASM is kept as fallback for browsers without
+    // WebGPU; sniff-and-fallback in _analyze still flips to RMS if the
+    // mask buffer comes back dead.
+    const backends = [];
+    if (ort.env?.webgpu) backends.push('webgpu');
+    backends.push('wasm');
+    let lastErr = null;
+    for (const ep of backends) {
+      try {
+        const sess = await ort.InferenceSession.create(graphBytes, {
+          executionProviders: [ep],
+          graphOptimizationLevel: 'all',
+          externalData,
+        });
+        _session = sess;
+        console.log(`[semDemucsV4] ready on ${ep}`);
+        return sess;
+      } catch (err) {
+        const msg = err?.message || String(err);
+        console.warn(`[semDemucsV4] ${ep} init failed:`, msg);
+        lastErr = err;
+      }
     }
+    throw lastErr || new Error('no ORT backend available');
   })();
 
   return _sessionPromise;
