@@ -231,77 +231,73 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
 }
 
 /**
- * Render waveform on canvas from audio buffer
- * Uses simplified vertical bar visualization (RMS-based)
- * @param {number} gain - visual gain multiplier (0..N). Bar heights are
- *   scaled by this value so volume changes are reflected in the waveform.
+ * Render waveform on canvas from audio buffer.
+ * Uses peak-to-peak per bar (max − min of samples) so the visual
+ * matches renderEnvelope and CompositeBusWaveform exactly: when a
+ * single uploaded track stem-separates, the master waveform swaps
+ * from this path to the composite without changing size or shape.
+ * @param {number} gain - visual gain multiplier (0..N).
  */
 function renderWaveform(ctx, audioBuffer, width, height, color, cropStart = 0, cropEnd = 0, gain = 1.0) {
-  const data = audioBuffer.getChannelData(0); // Get first channel
+  const data = audioBuffer.getChannelData(0);
   const duration = audioBuffer.duration;
   const sampleRate = audioBuffer.sampleRate;
 
-  // Calculate which portion of the audio to display
   const startSample = Math.floor(cropStart * sampleRate);
   const endSample = cropEnd > 0 ? Math.floor((duration - cropEnd) * sampleRate) : data.length;
   const visibleLength = endSample - startSample;
 
   ctx.clearRect(0, 0, width, height);
 
-  // Calculate number of bars based on width
-  const barSpacing = 2; // Space between bars
-  const barWidth = 2; // Width of each bar
+  // Same bar geometry as renderEnvelope — 2px bars, 2px spacing, rounded caps.
+  const barSpacing = 2;
+  const barWidth = 2;
   const numBars = Math.floor(width / (barWidth + barSpacing));
   const samplesPerBar = Math.floor(visibleLength / numBars);
 
   const midY = height / 2;
-  const maxBarHeight = height * 0.45; // Max bar extends 45% of height from center
+  const maxBarHeight = height * 0.45;
 
   ctx.fillStyle = color;
   ctx.strokeStyle = color;
   ctx.lineWidth = barWidth;
-  ctx.lineCap = 'round'; // Rounded caps
+  ctx.lineCap = 'round';
   ctx.globalAlpha = 0.7;
 
-  // First pass: calculate all RMS values and find max for normalization
-  const rmsValues = [];
-  let maxRms = 0;
+  // Peak-to-peak per bar — identical metric to what latent_visual's
+  // envelope produces for stems (max − min over the bar's sample/frame
+  // window). The composite bus waveform sums this same quantity across
+  // stems, so single-track and composite views are visually aligned.
+  const ptpValues = [];
+  let maxPtp = 0;
 
   for (let i = 0; i < numBars; i++) {
     const barStartSample = startSample + (i * samplesPerBar);
     const barEndSample = Math.min(barStartSample + samplesPerBar, endSample);
 
-    // Calculate RMS (Root Mean Square) for this bar's samples
-    let sumSquares = 0;
-    let count = 0;
+    let mx = -Infinity, mn = Infinity;
     for (let j = barStartSample; j < barEndSample; j++) {
       if (j >= data.length) break;
-      sumSquares += data[j] * data[j];
-      count++;
+      const v = data[j];
+      if (v > mx) mx = v;
+      if (v < mn) mn = v;
     }
-
-    const rms = count > 0 ? Math.sqrt(sumSquares / count) : 0;
-    rmsValues.push(rms);
-    maxRms = Math.max(maxRms, rms);
+    const ptp = mx === -Infinity ? 0 : (mx - mn);
+    ptpValues.push(ptp);
+    if (ptp > maxPtp) maxPtp = ptp;
   }
 
-  // Calculate normalization factor to ensure waveform at gain=1 fits the
-  // container. Gain>1 can overshoot and will be clamped below — that's
-  // intended: the bars visually saturate at the top/bottom like a meter.
-  const normalizationFactor = maxRms > 0.001 ? maxBarHeight / (maxRms * 2.5) : 1.0;
-
-  // Noise floor threshold - values below this are considered silent
-  const noiseFloor = maxRms * 0.02; // 2% of max is considered noise/silence
-
+  // Same normalization as renderEnvelope: peaks fill the container at
+  // gain=1, no headroom divisor. Overshoot is clamped below.
+  const normalizationFactor = maxPtp > 0.001 ? maxBarHeight / maxPtp : 1.0;
+  const noiseFloor = maxPtp * 0.02;
   const g = Math.max(0, gain);
 
-  // Second pass: draw normalized, gain-scaled bars
   for (let i = 0; i < numBars; i++) {
-    const rms = rmsValues[i];
+    const ptp = ptpValues[i];
     const x = i * (barWidth + barSpacing);
 
-    // For silent/near-silent sections, draw a flat center line
-    if (rms < noiseFloor || g === 0) {
+    if (ptp < noiseFloor || g === 0) {
       ctx.beginPath();
       ctx.moveTo(x + barWidth / 2, midY - 0.5);
       ctx.lineTo(x + barWidth / 2, midY + 0.5);
@@ -309,19 +305,10 @@ function renderWaveform(ctx, audioBuffer, width, height, color, cropStart = 0, c
       continue;
     }
 
-    // Normalize, then apply visual gain.
-    const barHeight = rms * normalizationFactor * 2.5 * g;
-
-    // Clamp to maxBarHeight to ensure it never exceeds container
-    const clampedHeight = Math.min(barHeight, maxBarHeight);
-
-    // Draw vertical bar with rounded caps
-    const barTop = midY - clampedHeight;
-    const barBottom = midY + clampedHeight;
-
+    const barHeight = Math.min(ptp * normalizationFactor * g, maxBarHeight);
     ctx.beginPath();
-    ctx.moveTo(x + barWidth / 2, barTop);
-    ctx.lineTo(x + barWidth / 2, barBottom);
+    ctx.moveTo(x + barWidth / 2, midY - barHeight);
+    ctx.lineTo(x + barWidth / 2, midY + barHeight);
     ctx.stroke();
   }
 
