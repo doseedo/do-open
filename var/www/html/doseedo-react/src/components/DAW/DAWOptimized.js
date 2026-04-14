@@ -8,7 +8,7 @@ import { parseMIDIFile } from '../../utils/midiParser';
 import { analyzeAudio, iconForType, separateStemsAuto, repaintMeter, encodeLatentsBulk, detectChordsAndTempo } from '../../services/trackAnalysisAPI';
 import { meterChangeAllStems, initLatentEditor } from '../../services/latentMeterChange';
 import { initDrumSep, splitDrumLatent } from '../../services/latentDrumSep';
-import { initMaskPlayback, createMaskPlaybackNode, setMaster, computeAndSetMasks, precomputeStemAudio } from '../../services/maskPlayback';
+import { initMaskPlayback, createMaskPlaybackNode, setMaster, computeAndSetMasks, setRefinedMasks, precomputeStemAudio } from '../../services/maskPlayback';
 import {
   latentIdToBlobUrl,
   initLatentDecoder,
@@ -1161,12 +1161,12 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
                 const refined = await refine6StemMasks(stems, v4Result);
                 const rfMs = (performance.now() - _rfT0).toFixed(0);
                 console.log(`[maskRefiner] refined ${Object.keys(refined).length} masks in ${rfMs}ms (F=${v4Result.maskF} T=${v4Result.maskT})`);
-                // Expose on window for the next commit's maskPlayback
-                // wire-up; cheap inspection hook in the meantime.
-                window.__doseedo_refinedMasks = window.__doseedo_refinedMasks || {};
-                window.__doseedo_refinedMasks[busId] = {
-                  masks: refined, F: v4Result.maskF, T: v4Result.maskT,
-                };
+                // Stash where the mask-playback block below can pick
+                // them up (same-scope async ordering is fragile across
+                // try/catch boundaries; a local variable is cleaner).
+                var _v4RefinedMasks = refined;
+                var _v4RefinedF = v4Result.maskF;
+                var _v4RefinedT = v4Result.maskT;
               } catch (rfErr) {
                 console.warn('[maskRefiner] skipped (non-fatal):', rfErr?.message || rfErr);
               }
@@ -1355,15 +1355,22 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
                 const masterAudioBuf = await maskCtx.decodeAudioData(masterArrayBuf);
                 setMaster(masterAudioBuf);
 
-                // Compute masks from stem latents
+                // Compute masks. Prefer refined masks from the
+                // latent_mask_refiner (post-v4cond-pred) if they were
+                // produced successfully; otherwise fall back to the
+                // old latent_mask_e2e path via computeAndSetMasks.
                 const T = localFlatTDs[Object.keys(localFlatTDs)[0]].T;
-                await computeAndSetMasks(
-                  Object.fromEntries(
-                    Object.entries(localFlatTDs).map(([name, { flatTD }]) => [name, flatTD])
-                  ), T
-                );
-
-                console.log('🎭 Mask playback ready — worklet connected to main AudioContext');
+                if (typeof _v4RefinedMasks !== 'undefined' && _v4RefinedMasks) {
+                  setRefinedMasks(_v4RefinedMasks, _v4RefinedF, _v4RefinedT, T);
+                  console.log('🎭 Mask playback ready — using refined masks (+25.2% SI-SDR over noisy)');
+                } else {
+                  await computeAndSetMasks(
+                    Object.fromEntries(
+                      Object.entries(localFlatTDs).map(([name, { flatTD }]) => [name, flatTD])
+                    ), T
+                  );
+                  console.log('🎭 Mask playback ready — worklet connected to main AudioContext');
+                }
               }
             } catch (maskErr) {
               console.warn('🎭 Mask playback setup failed, falling back to decode:', maskErr?.message || maskErr);
