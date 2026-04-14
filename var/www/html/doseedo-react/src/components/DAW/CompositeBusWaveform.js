@@ -52,7 +52,7 @@ const CompositeBusWaveform = React.memo(({
   // We explicitly take ONLY stems here — the original uploaded audio
   // (metadata.type === 'uploaded') is kept in bus.tracks to preserve
   // analysis data + mask-playback audio but MUST NOT contribute to the
-  // composite, or it would double-count on top of the stem sum.
+  // composite as a stem, or it would double-count on top of the stem sum.
   // If no stems exist yet we fall back to any non-MIDI, non-placeholder
   // track (the single-file case BEFORE separation completes).
   const stemInputs = useMemo(() => {
@@ -74,6 +74,20 @@ const CompositeBusWaveform = React.memo(({
         audioUrl: t.audioUrl || null,
       };
     });
+  }, [bus.tracks]);
+
+  // The uploaded master track stays in bus.tracks (hidden from the UI)
+  // as the source of analysis metadata + mask-playback audio. We also
+  // use its decoded AudioBuffer here as the VISUAL REFERENCE shape:
+  // when all stems are at gain=1 the composite should look exactly
+  // like the pre-separation single-track view. Summing stem envelopes
+  // isn't a valid substitute because stems can cancel in the mix but
+  // add in the sum, so the shapes diverge.
+  const masterInput = useMemo(() => {
+    const m = bus.tracks.find(t => t.metadata?.type === 'uploaded');
+    if (!m?.audioUrl) return null;
+    const buf = audioBufferCache.get(m.audioUrl);
+    return buf ? { audioBuffer: buf } : null;
   }, [bus.tracks]);
 
   const busGain = bus.mute ? 0 : (bus.gain ?? 1.0);
@@ -102,32 +116,17 @@ const CompositeBusWaveform = React.memo(({
     // preferred; decoded RMS fallback; zero if neither.
     const perStemBars = stemInputs.map(s => peakPerBar(s, numBars, envelopeFps));
 
-    // CONSTANT baseline: Σ peak[i] if every stem were at gain=1.0. We
-    // normalize to THIS max, not to the current live sum. That's the
-    // only way gain-down-the-loudest-stem correctly shrinks the master:
-    // otherwise the renormalization pumps the remaining (quieter) stems
-    // UP to fill the container, and the master looks bigger when you
-    // turn the dominant stem down. Ask me how I know.
+    // Baseline at all stems gain=1 — used both for master-based
+    // rendering (as the "full activity" reference at each bar) and
+    // as a fallback normalizer when no master buffer is available.
     const baselineSummed = new Float32Array(numBars);
     for (let s = 0; s < perStemBars.length; s++) {
       const peaks = perStemBars[s];
       if (!peaks) continue;
       for (let i = 0; i < numBars; i++) baselineSummed[i] += peaks[i];
     }
-    let baselineMax = 0;
-    for (let i = 0; i < numBars; i++) {
-      if (baselineSummed[i] > baselineMax) baselineMax = baselineSummed[i];
-    }
-    // Peak bars fill the full track height at the busGain=1 baseline.
-    // Matches the single-track view (renderWaveform RMS) so the
-    // composite doesn't visibly shrink when stem separation lands.
-    const norm = baselineMax > 0.001 ? maxBarHeight / baselineMax : 1.0;
-    const noiseFloor = baselineMax * 0.02;
 
-    // Live sum = Σ peak[i] × stem.gain (respecting mute/solo). This is
-    // what we actually draw. The constant `norm` means reducing a stem's
-    // gain linearly shrinks its contribution to the displayed bar height
-    // without pumping the others.
+    // Current-gain sum — the live mix amplitude at each bar.
     const summed = new Float32Array(numBars);
     for (let s = 0; s < perStemBars.length; s++) {
       const peaks = perStemBars[s];
@@ -136,29 +135,86 @@ const CompositeBusWaveform = React.memo(({
       for (let i = 0; i < numBars; i++) summed[i] += peaks[i] * g;
     }
 
+    // Primary rendering path: use the uploaded master's decoded audio
+    // as the VISUAL REFERENCE shape. When all stems are at gain=1 this
+    // draws exactly the same ptp-per-bar plot that renderWaveform does
+    // for the pre-separation single-track view — i.e. the master
+    // waveform doesn't shift or resize when stems arrive.
+    //
+    // Stem gains modulate each bar by the per-bar ratio
+    //   ratio[i] = Σ (stem.peak[i] × stem.gain)   /   Σ stem.peak[i]
+    // so turning a stem down shrinks the master shape only at
+    // time-points where that stem had energy, leaving bars without its
+    // contribution unchanged. ratio = 1 when all gains are 1; ratio = 0
+    // when all gains are 0.
+    let masterPtp = null;
+    let maxMasterPtp = 0;
+    if (masterInput?.audioBuffer) {
+      masterPtp = ptpPerBarFromBuffer(masterInput.audioBuffer, numBars);
+      for (let i = 0; i < numBars; i++) {
+        if (masterPtp[i] > maxMasterPtp) maxMasterPtp = masterPtp[i];
+      }
+    }
+
     ctx.strokeStyle = color;
     ctx.lineWidth = barWidth;
     ctx.lineCap = 'round';
     ctx.globalAlpha = 0.7;
 
-    for (let i = 0; i < numBars; i++) {
-      const x = i * (barWidth + barSpacing);
-      const v = summed[i];
-      if (v < noiseFloor || busGain === 0) {
+    if (masterPtp && maxMasterPtp > 0.001) {
+      const norm = maxBarHeight / maxMasterPtp;
+      const noiseFloor = maxMasterPtp * 0.02;
+
+      for (let i = 0; i < numBars; i++) {
+        const x = i * (barWidth + barSpacing);
+        const mv = masterPtp[i];
+        const bs = baselineSummed[i];
+        const ratio = bs > 1e-6 ? summed[i] / bs : 0;
+        const v = mv * ratio;
+        if (mv < noiseFloor || busGain === 0 || ratio === 0) {
+          ctx.beginPath();
+          ctx.moveTo(x + barWidth / 2, midY - 0.5);
+          ctx.lineTo(x + barWidth / 2, midY + 0.5);
+          ctx.stroke();
+          continue;
+        }
+        const h = Math.min(v * norm * busGain, maxBarHeight);
         ctx.beginPath();
-        ctx.moveTo(x + barWidth / 2, midY - 0.5);
-        ctx.lineTo(x + barWidth / 2, midY + 0.5);
+        ctx.moveTo(x + barWidth / 2, midY - h);
+        ctx.lineTo(x + barWidth / 2, midY + h);
         ctx.stroke();
-        continue;
       }
-      const h = Math.min(v * norm * busGain, maxBarHeight);
-      ctx.beginPath();
-      ctx.moveTo(x + barWidth / 2, midY - h);
-      ctx.lineTo(x + barWidth / 2, midY + h);
-      ctx.stroke();
+    } else {
+      // Fallback: master buffer not cached yet (stems arrived first).
+      // Normalize the stem sum to its baseline max. Visual shape may
+      // differ slightly from the master until the master decodes and
+      // the primary path kicks in, but this is a short window.
+      let baselineMax = 0;
+      for (let i = 0; i < numBars; i++) {
+        if (baselineSummed[i] > baselineMax) baselineMax = baselineSummed[i];
+      }
+      const norm = baselineMax > 0.001 ? maxBarHeight / baselineMax : 1.0;
+      const noiseFloor = baselineMax * 0.02;
+
+      for (let i = 0; i < numBars; i++) {
+        const x = i * (barWidth + barSpacing);
+        const v = summed[i];
+        if (v < noiseFloor || busGain === 0) {
+          ctx.beginPath();
+          ctx.moveTo(x + barWidth / 2, midY - 0.5);
+          ctx.lineTo(x + barWidth / 2, midY + 0.5);
+          ctx.stroke();
+          continue;
+        }
+        const h = Math.min(v * norm * busGain, maxBarHeight);
+        ctx.beginPath();
+        ctx.moveTo(x + barWidth / 2, midY - h);
+        ctx.lineTo(x + barWidth / 2, midY + h);
+        ctx.stroke();
+      }
     }
     ctx.globalAlpha = 1.0;
-  }, [stemInputs, busGain, width, height, envelopeFps, color]);
+  }, [stemInputs, masterInput, busGain, width, height, envelopeFps, color]);
 
   // Render the canvas at EXACT pixel size (no CSS stretching) so the
   // bar resolution matches individual stem waveforms 1:1. The width
@@ -213,6 +269,32 @@ function peakPerBar(stem, numBars, envelopeFps) {
       out[i] = n > 0 ? Math.sqrt(sumSq / n) * 2 : 0; // ×2 to approximate ptp
     }
     return out;
+  }
+  return out;
+}
+
+/**
+ * Compute peak-to-peak per bar directly from a decoded AudioBuffer.
+ * Identical math to useWaveform.renderWaveform so the composite's
+ * master-referenced output matches the pre-separation single-track
+ * view bar-for-bar when all stems are at gain=1.
+ */
+function ptpPerBarFromBuffer(buffer, numBars) {
+  const out = new Float32Array(numBars);
+  const data = buffer.getChannelData(0);
+  if (!data.length || numBars <= 0) return out;
+  const samplesPerBar = Math.floor(data.length / numBars);
+  if (samplesPerBar <= 0) return out;
+  for (let i = 0; i < numBars; i++) {
+    const s0 = i * samplesPerBar;
+    const s1 = Math.min(s0 + samplesPerBar, data.length);
+    let mx = -Infinity, mn = Infinity;
+    for (let j = s0; j < s1; j++) {
+      const v = data[j];
+      if (v > mx) mx = v;
+      if (v < mn) mn = v;
+    }
+    out[i] = mx === -Infinity ? 0 : (mx - mn);
   }
   return out;
 }
