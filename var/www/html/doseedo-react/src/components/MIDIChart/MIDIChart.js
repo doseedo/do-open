@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import midiPlayer from '../../utils/midiPlayer';
 import { parseMIDI } from '../../utils/midiParser';
+import ScoreView from './ScoreView';
 import styles from './MIDIChart.module.css';
 
 // Drum-roll mode: maps GM percussion note numbers to the 16 drum classes
@@ -1903,8 +1904,7 @@ const MIDIChart = () => {
             <button
               className={`${styles.chartModeButton} ${chartMode === 'score' ? styles.active : ''}`}
               onClick={() => setChartMode('score')}
-              title="Score View (Coming Soon)"
-              disabled
+              title="Score View — click the clef to cycle treble/bass/alto/tenor"
             >
               <i className="fa-solid fa-music"></i>
             </button>
@@ -2207,10 +2207,22 @@ const MIDIChart = () => {
       )}
 
       <div ref={canvasWrapperRef} className={styles.canvasWrapper} onWheel={handleWheel}>
-        {/* Inner positioning context that matches the canvas's box
+        {/* Score (sheet-music) mode bypasses the piano-roll canvas entirely
+            and delegates to VexFlow. Click the clef symbol in the first
+            bar of any line to cycle treble → bass → alto → tenor. Notes
+            are read-only here — editing still happens in piano-roll mode. */}
+        {chartMode === 'score' ? (
+          <ScoreView
+            notes={notes}
+            tempo={midiTempo}
+            width={canvasWidth}
+            height={canvasHeight}
+          />
+        ) : (
+        /* Inner positioning context that matches the canvas's box
             exactly (no padding offset, sized to the canvas). The lyric
             overlay layer below positions against this, so its
-            coordinates match the in-canvas drawNotes math 1:1. */}
+            coordinates match the in-canvas drawNotes math 1:1. */
         <div style={{ position: 'relative', display: 'inline-block' }}>
           <canvas
             ref={canvasRef}
@@ -2343,6 +2355,7 @@ const MIDIChart = () => {
           );
         })}
         </div>
+        )}
       </div>
     </div>
   );

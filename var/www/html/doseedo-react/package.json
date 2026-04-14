@@ -27,6 +27,7 @@
     "soundfont-player": "^0.12.0",
     "tunajs": "^1.0.15",
     "typescript": "^4.9.5",
+    "vexflow": "^5.0.0",
     "video-ambient-glow": "^1.2.6",
     "wavesurfer.js": "^7.4.0"
   },
