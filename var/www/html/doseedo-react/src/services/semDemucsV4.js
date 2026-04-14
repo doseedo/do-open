@@ -28,8 +28,11 @@
  *              the single stem's latent
  */
 
-const MODEL_URL = '/static/models/sem_demucs_v4_6s_packed.onnx';
-const MODEL_DATA_URL = '/static/models/sem_demucs_v4_6s_packed.onnx.data';
+// _v2 suffix busts the `cache: 'force-cache'` reads below — the v1 ONNX shipped
+// with the broken native STFT op (NaN masks on ORT-Web). v2 is the same model
+// re-exported with Conv1d-based |STFT|. Bump to _v3 etc. on future re-exports.
+const MODEL_URL = '/static/models/sem_demucs_v4_6s_packed_v2.onnx';
+const MODEL_DATA_URL = '/static/models/sem_demucs_v4_6s_packed_v2.onnx.data';
 const TARGET_SR = 48000;
 // STEMS_6 order must match DistillDataset6.STEMS_6 in the training code:
 //   0 drums  1 bass  2 other  3 vocals  4 guitar  5 piano
