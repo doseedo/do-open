@@ -86,6 +86,17 @@ const BusRow = React.memo(({
 
   // Removed debug logging for performance
 
+  // hasStems / hasPendingUpload need to be declared BEFORE
+  // handleExpandToggle so the useCallback's dependency array can read
+  // the latter without hitting a TDZ ReferenceError at init time.
+  const hasStems = useMemo(() => {
+    return bus.tracks.some(t => t.metadata?.type === 'stem');
+  }, [bus.tracks]);
+
+  const hasPendingUpload = useMemo(() => {
+    return bus.tracks.some(t => t.metadata?.type === 'uploaded') && !hasStems;
+  }, [bus.tracks, hasStems]);
+
   const handleExpandToggle = useCallback(() => {
     // Lock expansion while stems are still separating — the bus is
     // effectively a single track until then, and expanding would
@@ -158,29 +169,14 @@ const BusRow = React.memo(({
     return bus.tracks.length > 1;
   }, [bus.tracks]);
 
-  // Has this bus been stem-separated? Once it has, the original
-  // uploaded audio is hidden from the track list (its job — preserving
-  // analysis metadata + feeding mask playback — is done behind the
-  // scenes) and the bus row always shows the summed composite waveform.
-  const hasStems = useMemo(() => {
-    return bus.tracks.some(t => t.metadata?.type === 'stem');
-  }, [bus.tracks]);
-
   // Tracks visible in the expanded list: stems when we have them,
   // otherwise everything. The uploaded master stays in bus.tracks (for
   // analysis + mask playback) but is filtered out of the UI.
+  // (hasStems and hasPendingUpload are defined higher up so the
+  // expand-toggle callback can reference them without TDZ errors.)
   const visibleTracks = useMemo(() => {
     if (!hasStems) return bus.tracks;
     return bus.tracks.filter(t => t.metadata?.type !== 'uploaded');
-  }, [bus.tracks, hasStems]);
-
-  // While the bus holds an uploaded master that hasn't been stem-
-  // separated yet, block expansion: expanding would just show the
-  // same single master waveform twice (once on the bus row, once in
-  // the track list) and break the "acts like a single track until
-  // stems arrive" UX. Once stems land, the bus unlocks.
-  const hasPendingUpload = useMemo(() => {
-    return bus.tracks.some(t => t.metadata?.type === 'uploaded') && !hasStems;
   }, [bus.tracks, hasStems]);
 
   const handleBusClick = useCallback(() => {
