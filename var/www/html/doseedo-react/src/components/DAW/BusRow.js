@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import OptimizedTrack from './OptimizedTrack';
+import CompositeBusWaveform from './CompositeBusWaveform';
 import CompositeMIDIView from './CompositeMIDIView';
 import LevelMeter from './LevelMeter';
 import PanKnob from './PanKnob';
@@ -636,32 +637,15 @@ const BusRow = React.memo(({
               /* Show composite MIDI view for multitrack MIDI */
               <CompositeMIDIView tracks={bus.tracks} busId={bus.id} trackHeight={trackHeight} />
             ) : hasMultipleTracks ? (
-              /* Show composite waveform for multi-track audio */
-              <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                {bus.tracks.map((track, index) => (
-                  <div
-                    key={track.id}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      height: '100%',
-                      opacity: 0.5, // Make tracks semi-transparent so they layer
-                      pointerEvents: index === 0 ? 'auto' : 'none' // Only first track handles mouse events
-                    }}
-                  >
-                    <OptimizedTrack
-                      track={track}
-                      busId={bus.id}
-                      index={index}
-                      isExpanded={false}
-                      isSelected={state.selectedTrack?.id === track.id}
-                      isMasterView={index === 0} // Only first track moves all tracks
-                      trackHeight={trackHeight}
-                    />
-                  </div>
-                ))}
+              /* Single master waveform = Σ per-stem envelopes × stem.gain,
+                 multiplied by bus.gain. Repaints in real time on any
+                 slider move. Replaces the old opacity:0.5 overlay stack. */
+              <div style={{ position: 'relative', width: '100%', height: `${trackHeight}px` }}>
+                <CompositeBusWaveform
+                  bus={bus}
+                  height={trackHeight}
+                  color={state.selectedBus?.id === bus.id ? '#8b5cf6' : '#667eea'}
+                />
               </div>
             ) : bus.tracks.length > 0 ? (
               /* Show single track as master representation */

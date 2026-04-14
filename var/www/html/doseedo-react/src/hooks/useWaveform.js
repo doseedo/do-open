@@ -29,8 +29,11 @@ const MAX_CACHE_SIZE = 50; // Limit in-memory cache size
  *   from latent_visual. First T values are min, next T are max. If provided,
  *   the waveform renders immediately from this without waiting for audio decode.
  * @param {number} envelopeFps - envelope frame rate (default 25)
+ * @param {number} gain - visual gain multiplier (0..N, default 1.0). Scales
+ *   bar heights so volume changes are reflected in the waveform in real time.
+ *   Pass 0 for muted tracks / soloed-out stems.
  */
-export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5', cropStart = 0, cropEnd = 0, envelopeData = null, envelopeFps = 25) {
+export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5', cropStart = 0, cropEnd = 0, envelopeData = null, envelopeFps = 25, gain = 1.0) {
   const canvasRef = useRef(null);
   const audioBufferRef = useRef(null);
   const loadedUrlRef = useRef(null);
@@ -49,13 +52,13 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     const ctx = canvas.getContext('2d');
     canvas.width = width;
     canvas.height = height;
-    renderEnvelope(ctx, envelopeData, T, width, height, color);
+    renderEnvelope(ctx, envelopeData, T, width, height, color, gain);
     envelopePaintedRef.current = true;
     if (!isLoaded) {
       setDuration(dur);
       setIsLoaded(true);
     }
-  }, [envelopeData, width, height, color, envelopeFps, isLoaded]);
+  }, [envelopeData, width, height, color, envelopeFps, isLoaded, gain]);
 
   // Load audio only when URL changes
   useEffect(() => {
@@ -88,10 +91,10 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
             canvas.height = height;
             if (envelopeData) {
               const envT = envelopeData.length / 2;
-              renderEnvelope(ctx, envelopeData, envT, width, height, color);
+              renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
               envelopePaintedRef.current = true;
             } else {
-              renderWaveform(ctx, cachedBuffer, width, height, color, cropStart, cropEnd);
+              renderWaveform(ctx, cachedBuffer, width, height, color, cropStart, cropEnd, gain);
             }
           }
           return;
@@ -143,7 +146,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
               // Final decode ready — switch from envelope to real waveform
               canvas.width = width;
               canvas.height = height;
-              renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd);
+              renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain);
               envelopePaintedRef.current = false;
             }
             // else: envelope stays, don't touch canvas
@@ -152,10 +155,10 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
             canvas.height = height;
             if (envelopeData) {
               const envT = envelopeData.length / 2;
-              renderEnvelope(ctx, envelopeData, envT, width, height, color);
+              renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
               envelopePaintedRef.current = true;
             } else {
-              renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd);
+              renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain);
             }
           }
         }
@@ -182,24 +185,42 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     };
   }, [audioUrl, width, height, color, cropStart, cropEnd]);
 
-  // Re-render waveform when dimensions or crop values change (without reloading audio)
+  // Re-render waveform when dimensions, crop, envelope, OR gain change
+  // (without reloading audio). Gain repaints are how real-time volume ↔
+  // waveform size tracking works — slider moves → state → this effect.
   useEffect(() => {
-    if (!canvasRef.current || !audioBufferRef.current) return;
+    if (!canvasRef.current) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     canvas.width = width;
     canvas.height = height;
 
+    // Prefer envelope paint for repaints while envelope is the live view.
+    if (envelopeData && envelopePaintedRef.current) {
+      const envT = envelopeData.length / 2;
+      renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
+      return;
+    }
+    if (!audioBufferRef.current) {
+      // No audio decoded yet, but we may still have envelope — paint it.
+      if (envelopeData) {
+        const envT = envelopeData.length / 2;
+        renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
+        envelopePaintedRef.current = true;
+      }
+      return;
+    }
+
     const envT = envelopeData ? envelopeData.length / 2 : 0;
     const expectedDur = envT / envelopeFps;
     const isPartial = envelopeData && audioBufferRef.current.duration < expectedDur * 0.9;
     if (isPartial) {
-      renderEnvelope(ctx, envelopeData, envT, width, height, color);
+      renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
     } else {
-      renderWaveform(ctx, audioBufferRef.current, width, height, color, cropStart, cropEnd);
+      renderWaveform(ctx, audioBufferRef.current, width, height, color, cropStart, cropEnd, gain);
     }
-  }, [width, height, color, cropStart, cropEnd, envelopeData]);
+  }, [width, height, color, cropStart, cropEnd, envelopeData, gain, envelopeFps]);
 
   return {
     canvasRef,
@@ -212,8 +233,10 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
 /**
  * Render waveform on canvas from audio buffer
  * Uses simplified vertical bar visualization (RMS-based)
+ * @param {number} gain - visual gain multiplier (0..N). Bar heights are
+ *   scaled by this value so volume changes are reflected in the waveform.
  */
-function renderWaveform(ctx, audioBuffer, width, height, color, cropStart = 0, cropEnd = 0) {
+function renderWaveform(ctx, audioBuffer, width, height, color, cropStart = 0, cropEnd = 0, gain = 1.0) {
   const data = audioBuffer.getChannelData(0); // Get first channel
   const duration = audioBuffer.duration;
   const sampleRate = audioBuffer.sampleRate;
@@ -262,20 +285,23 @@ function renderWaveform(ctx, audioBuffer, width, height, color, cropStart = 0, c
     maxRms = Math.max(maxRms, rms);
   }
 
-  // Calculate normalization factor to ensure waveform fits in container
-  // If maxRms is very small, use a minimum amplification
+  // Calculate normalization factor to ensure waveform at gain=1 fits the
+  // container. Gain>1 can overshoot and will be clamped below — that's
+  // intended: the bars visually saturate at the top/bottom like a meter.
   const normalizationFactor = maxRms > 0.001 ? maxBarHeight / (maxRms * 2.5) : 1.0;
 
   // Noise floor threshold - values below this are considered silent
   const noiseFloor = maxRms * 0.02; // 2% of max is considered noise/silence
 
-  // Second pass: draw normalized bars
+  const g = Math.max(0, gain);
+
+  // Second pass: draw normalized, gain-scaled bars
   for (let i = 0; i < numBars; i++) {
     const rms = rmsValues[i];
     const x = i * (barWidth + barSpacing);
 
     // For silent/near-silent sections, draw a flat center line
-    if (rms < noiseFloor) {
+    if (rms < noiseFloor || g === 0) {
       ctx.beginPath();
       ctx.moveTo(x + barWidth / 2, midY - 0.5);
       ctx.lineTo(x + barWidth / 2, midY + 0.5);
@@ -283,8 +309,8 @@ function renderWaveform(ctx, audioBuffer, width, height, color, cropStart = 0, c
       continue;
     }
 
-    // Normalize - no minimum height enforcement to avoid dots
-    const barHeight = rms * normalizationFactor * 2.5;
+    // Normalize, then apply visual gain.
+    const barHeight = rms * normalizationFactor * 2.5 * g;
 
     // Clamp to maxBarHeight to ensure it never exceeds container
     const clampedHeight = Math.min(barHeight, maxBarHeight);
@@ -305,8 +331,10 @@ function renderWaveform(ctx, audioBuffer, width, height, color, cropStart = 0, c
 /**
  * Render waveform bars from a pre-computed [2*T] envelope (min/max per frame).
  * Called INSTANTLY from latent_visual output — no audio decoding needed.
+ * @param {number} gain - visual gain multiplier (0..N). Bar heights scale
+ *   linearly with gain so volume slider tracks waveform size in real time.
  */
-function renderEnvelope(ctx, envFlat, T, width, height, color) {
+function renderEnvelope(ctx, envFlat, T, width, height, color, gain = 1.0) {
   const mins = envFlat.subarray(0, T);
   const maxs = envFlat.subarray(T, 2 * T);
 
@@ -336,6 +364,7 @@ function renderEnvelope(ctx, envFlat, T, width, height, color) {
 
   const normFactor = maxPtp > 0.001 ? maxBarHeight / (maxPtp * 1.2) : 1.0;
   const noiseFloor = maxPtp * 0.02;
+  const g = Math.max(0, gain);
 
   ctx.strokeStyle = color;
   ctx.lineWidth = barWidth;
@@ -345,14 +374,14 @@ function renderEnvelope(ctx, envFlat, T, width, height, color) {
   for (let i = 0; i < numBars; i++) {
     const x = i * (barWidth + barSpacing);
     const ptp = ptpValues[i];
-    if (ptp < noiseFloor) {
+    if (ptp < noiseFloor || g === 0) {
       ctx.beginPath();
       ctx.moveTo(x + barWidth / 2, midY - 0.5);
       ctx.lineTo(x + barWidth / 2, midY + 0.5);
       ctx.stroke();
       continue;
     }
-    const barH = Math.min(ptp * normFactor, maxBarHeight);
+    const barH = Math.min(ptp * normFactor * g, maxBarHeight);
     ctx.beginPath();
     ctx.moveTo(x + barWidth / 2, midY - barH);
     ctx.lineTo(x + barWidth / 2, midY + barH);

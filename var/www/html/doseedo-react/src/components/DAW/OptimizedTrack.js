@@ -160,6 +160,15 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
     }
   }, [isSelected, isHovering]);
 
+  // Visual gain: the waveform bar heights are scaled by this so volume
+  // slider moves are reflected in the waveform in real time. Muted tracks
+  // collapse to a flat center line (gain=0). When this track is inside a
+  // collapsed bus we don't scale here — the composite waveform handles
+  // aggregation; individual collapsed-overlay instances use gain=1 so
+  // they still render meaningfully (though they're no longer used once
+  // CompositeBusWaveform is wired in).
+  const visualGain = track.isMuted ? 0 : (track.gain ?? 1.0);
+
   const { canvasRef, isLoaded, duration: actualDuration } = useWaveform(
     track.type === 'midi' ? null : track.audioUrl, // Skip waveform for MIDI tracks
     fullAudioWidth,
@@ -169,6 +178,7 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
     0, // No crop on rendering
     track.metadata?.envelopeData || null,  // latent_visual instant envelope
     25, // envelope fps
+    visualGain,
   );
 
   // Update track duration when audio loads — only when the delta is

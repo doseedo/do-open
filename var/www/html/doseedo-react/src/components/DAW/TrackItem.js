@@ -20,6 +20,8 @@ const TrackItem = React.memo(({ track, mode, index, isSelected }) => {
   // Use custom waveform hook (only renders when audioUrl changes)
   // Pass envelopeData from latent_visual so the envelope is preserved
   // until the full decoded audio is ready.
+  const visualGain = track.isMuted ? 0 : (track.gain ?? 1.0);
+
   const { canvasRef } = useWaveform(
     track.audioUrl,
     track.width || 800,
@@ -28,7 +30,8 @@ const TrackItem = React.memo(({ track, mode, index, isSelected }) => {
     0,  // cropStart
     0,  // cropEnd
     track.metadata?.envelopeData || null,
-    25  // envelopeFps
+    25, // envelopeFps
+    visualGain
   );
 
   // Memoize track style to prevent recalculation on every render
