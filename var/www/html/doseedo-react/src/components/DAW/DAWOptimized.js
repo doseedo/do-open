@@ -180,10 +180,22 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
         console.log('[prewarm] loading Oobleck VAE decoder (63 MB)…');
         await initLatentDecoder();
         console.log('[prewarm] decoder ready, now loading latentDemucs (325 MB)…');
-        initLatentDemucs().catch(() => {});
+        await initLatentDemucs();
+        // After demucs is ready, preload the Oobleck VAE encoder (~337 MB).
+        // This is the WebGPU replacement for /api/encode-audio-latent; it's
+        // NOT wired into any encode call yet — just warming it in the
+        // background so the first real use (next commit) isn't cold.
+        console.log('[prewarm] demucs ready, now loading latentEncoder (337 MB)…');
+        const { initLatentEncoder } = await import('../../services/latentEncoder');
+        initLatentEncoder().catch((e) => {
+          console.warn('[prewarm] latentEncoder preload failed (non-fatal):', e?.message || e);
+        });
       } catch (e) {
-        // If decoder fails, still try demucs
+        // If decoder or demucs fails, still try to start demucs + encoder.
         initLatentDemucs().catch(() => {});
+        import('../../services/latentEncoder').then(({ initLatentEncoder }) =>
+          initLatentEncoder().catch(() => {})
+        ).catch(() => {});
       }
     })();
 
