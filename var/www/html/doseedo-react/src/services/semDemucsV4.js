@@ -210,14 +210,24 @@ async function _analyze(sess, ort, flat, numFrames) {
 
   const embedding = await pullTensor(res.embedding);
 
-  if (!masks.length) {
-    // Guard: if the mask data still comes back empty, log loudly so
-    // we catch future ORT-Web API changes before they silently
-    // classify everything as solo-drums again.
-    console.warn('[semDemucsV4] empty mask data from GPU — classification will be meaningless');
-  }
+  // Diagnostic dump so future ORT-Web backend-behavior shifts surface
+  // instead of silently returning zeros. Printing the byteLength lets
+  // us see whether the GPU→CPU copy dropped the large stft_masks
+  // tensor (17M floats / 69 MB for 30 s clips — enough to fail
+  // silently on some WebGPU configs).
+  console.log(`[semDemucsV4] tensor sizes — rms=${rms.length} masks=${masks.length} emb=${embedding.length}`);
 
-  const perStemEnergy = computePerStemEnergy(masks, N_STEMS, maskF, maskT);
+  // Classifier: prefer rms (always ~12 KB, transfers reliably).
+  // Fall back to masks if rms came back empty too.
+  let perStemEnergy;
+  if (rms.length === N_STEMS * rmsT * 2) {
+    perStemEnergy = computePerStemEnergyFromRms(rms, N_STEMS, rmsT);
+  } else if (masks.length === N_STEMS * maskF * maskT) {
+    perStemEnergy = computePerStemEnergyFromMasks(masks, N_STEMS, maskF, maskT);
+  } else {
+    console.warn(`[semDemucsV4] both rms and masks empty — cannot classify (rms=${rms.length} masks=${masks.length})`);
+    perStemEnergy = new Float32Array(N_STEMS);
+  }
   const classification = classifyMixVsSolo(perStemEnergy);
 
   return {
@@ -237,7 +247,7 @@ async function _analyze(sess, ort, flat, numFrames) {
  * across stems at each bin, this is the fraction of total spectral
  * energy attributed to each stem by the model.
  */
-function computePerStemEnergy(masks, nStems, F, T) {
+function computePerStemEnergyFromMasks(masks, nStems, F, T) {
   if (!masks.length || !F || !T) return new Float32Array(nStems);
   const out = new Float32Array(nStems);
   const stemStride = F * T;
@@ -247,7 +257,37 @@ function computePerStemEnergy(masks, nStems, F, T) {
     for (let i = 0; i < stemStride; i++) sum += masks[base + i];
     out[s] = sum;
   }
-  // Normalize
+  let total = 0;
+  for (let s = 0; s < nStems; s++) total += out[s];
+  if (total > 0) for (let s = 0; s < nStems; s++) out[s] /= total;
+  return out;
+}
+
+/**
+ * RMS-based energy — primary classifier input.
+ *
+ * rms shape: [1, nStems, T, 2] (stereo RMS per latent frame). Summing
+ * rms² across time + channels gives each stem's total energy in the
+ * input mix; normalizing across stems yields the same "fraction of
+ * audible energy per stem" signal as the mask-based version but with
+ * a 1000× smaller tensor (12 KB vs 69 MB for 30 s clips). That tiny
+ * size is key — the large mask buffer occasionally fails to transfer
+ * from GPU to CPU on WebGPU configs, silently returning zeros.
+ * rms is robust.
+ */
+function computePerStemEnergyFromRms(rms, nStems, T) {
+  const out = new Float32Array(nStems);
+  if (!rms.length || !T) return out;
+  // rms layout is [1, nStems, T, 2] flattened; stride per stem = T*2.
+  for (let s = 0; s < nStems; s++) {
+    let e = 0;
+    const base = s * T * 2;
+    for (let i = 0; i < T * 2; i++) {
+      const v = rms[base + i];
+      e += v * v;
+    }
+    out[s] = e;
+  }
   let total = 0;
   for (let s = 0; s < nStems; s++) total += out[s];
   if (total > 0) for (let s = 0; s < nStems; s++) out[s] /= total;

@@ -1012,10 +1012,15 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
             v4Result = await semAnalyze(preFlat, preN);
             const c = v4Result.classification;
             console.log(`[semDemucsV4] ${c.rationale} (confidence=${c.confidence.toFixed(2)})`);
+            // perStemEnergy is a Float32Array; its .map returns another
+            // typed array (numbers, not entries), so Object.fromEntries
+            // throws "Iterator value NaN is not an entry object".
+            // Array.from() gives a plain Array whose .map can return
+            // arbitrary [k, v] pairs.
             console.log('[semDemucsV4] per-stem energy:',
-              Object.fromEntries(v4Result.perStemEnergy.map((e, i) => [
+              Object.fromEntries(Array.from(v4Result.perStemEnergy).map((e, i) => [
                 ['drums','bass','vocals','other','guitar','piano'][i],
-                +(e * 100).toFixed(1) + '%',
+                (e * 100).toFixed(1) + '%',
               ])));
 
             if (!c.isMix) {
