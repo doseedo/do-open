@@ -177,6 +177,13 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
     // contention on slower connections.
     (async () => {
       try {
+        // semDemucsV4 (9 MB) first — it runs on EVERY upload before demucs
+        // to classify mix-vs-solo + populate instant stem envelopes.
+        // Tiny and fast, loads in parallel with the decoder below.
+        import('../../services/semDemucsV4').then(({ initSemDemucsV4 }) =>
+          initSemDemucsV4().catch(() => {})
+        ).catch(() => {});
+
         console.log('[prewarm] loading Oobleck VAE decoder (63 MB)…');
         await initLatentDecoder();
         console.log('[prewarm] decoder ready, now loading latentDemucs (325 MB)…');
@@ -195,6 +202,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
         initLatentDemucs().catch(() => {});
         import('../../services/latentEncoder').then(({ initLatentEncoder }) =>
           initLatentEncoder().catch(() => {})
+        ).catch(() => {});
+        import('../../services/semDemucsV4').then(({ initSemDemucsV4 }) =>
+          initSemDemucsV4().catch(() => {})
         ).catch(() => {});
       }
     })();
@@ -988,6 +998,113 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
             console.warn('[latentDecoder] init failed (non-fatal):', emsg);
           });
 
+          // ── PRE-DEMUCS: v4-small-6 classifier (9 MB, WebGPU) ─────────
+          // Runs on every upload BEFORE latent demucs. Produces:
+          //   - 6 stem RMS envelopes → instant stem waveforms (no wait
+          //     for the 325 MB demucs)
+          //   - mix-vs-solo classification via per-stem mask energy
+          // If the file is a solo stem (e.g., drum loop, isolated vocal),
+          // we skip demucs entirely and run the oobleck encoder in the
+          // background to cache the single latent instead.
+          let v4Result = null;
+          try {
+            const { analyze: semAnalyze } = await import('../../services/semDemucsV4');
+            const { flat: preFlat, numFrames: preN } = await audioFileToStereo48k(file);
+            v4Result = await semAnalyze(preFlat, preN);
+            const c = v4Result.classification;
+            console.log(`[semDemucsV4] ${c.rationale} (confidence=${c.confidence.toFixed(2)})`);
+            console.log('[semDemucsV4] per-stem energy:',
+              Object.fromEntries(v4Result.perStemEnergy.map((e, i) => [
+                ['drums','bass','vocals','other','guitar','piano'][i],
+                +(e * 100).toFixed(1) + '%',
+              ])));
+
+            if (!c.isMix) {
+              console.log(`[flow] detected solo stem (${c.soloStemName}) — skipping demucs, caching encoder latent in background`);
+              // Attach solo-stem metadata to the uploaded track so later
+              // UI can key off it (icon, name, etc.).
+              dispatch({
+                type: 'UPDATE_TRACK',
+                payload: {
+                  busId, trackId,
+                  updates: {
+                    metadata: {
+                      ...track.metadata,
+                      soloStemClassification: {
+                        stemName: c.soloStemName,
+                        stemIndex: c.soloStemIndex,
+                        confidence: c.confidence,
+                        perStemEnergy: Array.from(v4Result.perStemEnergy),
+                      },
+                    },
+                  },
+                },
+              });
+              // Background oobleck-encoder latent caching (fire-and-forget).
+              (async () => {
+                try {
+                  const { initLatentEncoder, encodeToLatent } = await import('../../services/latentEncoder');
+                  await initLatentEncoder();
+                  const latent = await encodeToLatent(preFlat, preN);
+                  const T = latent.length / 64;
+                  const { uploadLatent } = await import('../../services/latentDemucs');
+                  const meta = await uploadLatent(latent, T, 64, 25);
+                  console.log(`[flow] solo stem encoder cached latent ${meta.latent_id} (${T} frames)`);
+                  dispatch({
+                    type: 'UPDATE_TRACK',
+                    payload: { busId, trackId,
+                      updates: { metadata: {
+                        ...track.metadata,
+                        soloStemLatentId: meta.latent_id,
+                        soloStemNFrames: T,
+                      } } },
+                  });
+                } catch (err) {
+                  console.warn('[flow] solo-stem encoder caching failed (non-fatal):', err?.message || err);
+                }
+              })();
+              return; // bail out of the demucs pipeline — keep the single uploaded track
+            }
+          } catch (v4Err) {
+            console.warn('[semDemucsV4] failed (non-fatal, continuing with demucs):', v4Err?.message || v4Err);
+          }
+
+          // ── INSTANT 6-STEM VISUALIZER (mix branch) ───────────────────
+          // If v4 classified as a mix, paint 6 stem placeholder tracks
+          // right now using its per-stem RMS envelopes. demucs will
+          // later UPDATE_TRACK 4 of these with real latent_ids +
+          // refined envelopes (guitar/piano stay v4-only since the
+          // current demucs is 4-stem). This makes the DAW show 6 stem
+          // waveforms within ~200ms of upload instead of waiting ~30s
+          // for the 325 MB demucs model.
+          let v4PaintedStems = false;
+          if (v4Result && v4Result.classification.isMix && v4Result.stemEnvelopes?.length === 6) {
+            const v4StemNames = ['drums', 'bass', 'vocals', 'other', 'guitar', 'piano'];
+            v4PaintedStems = true;
+            const instantStems = v4StemNames.map((stemName, idx) => ({
+              id: `stem-${trackId}-${stemName}`,
+              name: `${file.name.replace(/\.[^.]+$/, '')} — ${stemName}`,
+              audioUrl: null,  // envelope-only render until demucs/decoder populates audio
+              duration,
+              startPosition: 0,
+              gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
+              fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
+              metadata: {
+                type: 'stem',
+                stemType: stemName,
+                parentTrackId: trackId,
+                instrument: stemName,
+                icon: iconForType(stemName),
+                envelopeData: v4Result.stemEnvelopes[idx],
+                envelopeFps: v4Result.rmsFps,
+                fromV4Small: true,   // will be set false once latent-demucs completes
+                playbackReady: false,
+              },
+            }));
+            dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: instantStems } });
+            console.log(`[semDemucsV4] painted 6 instant stem waveforms (fps=${v4Result.rmsFps.toFixed(1)})`);
+          }
+
           // Try the browser-local latent_demucs path first.
           let stemLatentIds = null;
           let localFlatTDs = null;  // keep the raw stem latents around for latent_visual
@@ -1157,12 +1274,35 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
             console.warn('auto-separation: no previews built');
             return;
           }
-          dispatch({
-            type: 'ADD_TRACKS_BULK',
-            payload: { busId, tracks: placeholderTracks },
-          });
+          if (v4PaintedStems) {
+            // v4 already added these 6 stems (4 of which match demucs).
+            // UPDATE_TRACK each one with the real latent_id, refined
+            // envelope from latent_visual, and placeholder audio URL
+            // that points at the cached fakeBuf. Non-matching v4 stems
+            // (guitar, piano) remain v4-only previews.
+            for (const t of placeholderTracks) {
+              dispatch({
+                type: 'UPDATE_TRACK',
+                payload: {
+                  busId,
+                  trackId: t.id,
+                  updates: {
+                    audioUrl: t.audioUrl,
+                    duration: t.duration,
+                    metadata: { ...t.metadata, fromV4Small: false },
+                  },
+                },
+              });
+            }
+            console.log(`🎚️ latent-demucs refined ${placeholderTracks.length} v4 stems (${file.name})`);
+          } else {
+            dispatch({
+              type: 'ADD_TRACKS_BULK',
+              payload: { busId, tracks: placeholderTracks },
+            });
+            console.log(`🎚️ Auto-separated ${file.name} → ${placeholderTracks.length} stems (instant previews, decoding audio…)`);
+          }
           dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: false } });
-          console.log(`🎚️ Auto-separated ${file.name} → ${placeholderTracks.length} stems (instant previews, decoding audio…)`);
 
           // ── STEP 1b: Set up mask-based playback (instant, no decode) ──
           // Compute spectral masks from stem latents and set up the
