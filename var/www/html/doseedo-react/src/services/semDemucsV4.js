@@ -214,34 +214,50 @@ async function _analyze(sess, ort, flat, numFrames) {
 
   const embedding = await pullTensor(res.embedding);
 
-  // Diagnostic dump so future ORT-Web backend-behavior shifts surface
-  // instead of silently returning zeros. Printing the byteLength lets
-  // us see whether the GPU→CPU copy dropped the large stft_masks
-  // tensor (17M floats / 69 MB for 30 s clips — enough to fail
-  // silently on some WebGPU configs).
-  console.log(`[semDemucsV4] tensor sizes — rms=${rms.length} masks=${masks.length} emb=${embedding.length}`);
+  // Sniff the actual mask values — length-correct doesn't mean
+  // value-correct on WebGPU. The 69 MB stft_masks buffer has been
+  // observed to arrive at the right length but full of zeros on certain
+  // WebGPU configs (the GPU→CPU copy completes but the destination
+  // buffer was never written). Sample 4 indices across the buffer and
+  // check for non-zero/non-NaN content; if dead, fall back.
+  const sniff = (buf) => {
+    const N = buf.length;
+    if (!N) return { ok: false, reason: 'empty', sample: [] };
+    const ix = [0, (N >> 2), (N >> 1), N - 1];
+    const sample = ix.map(i => buf[i]);
+    let nonZero = 0, nan = 0;
+    for (const v of sample) {
+      if (Number.isNaN(v)) nan++;
+      else if (v !== 0) nonZero++;
+    }
+    return { ok: nonZero > 0 && nan === 0, reason: nan ? 'nan' : (nonZero ? 'ok' : 'all-zero'), sample };
+  };
+  const maskSniff = sniff(masks);
+  const rmsSniff  = sniff(rms);
+  console.log(
+    `[semDemucsV4] tensor sizes — rms=${rms.length} (${rmsSniff.reason}, sample=[${Array.from(rmsSniff.sample).map(v => v.toExponential(2)).join(',')}])`
+    + ` masks=${masks.length} (${maskSniff.reason}, sample=[${Array.from(maskSniff.sample).map(v => v.toExponential(2)).join(',')}])`
+    + ` emb=${embedding.length}`
+  );
 
-  // Prefer masks for both classification and envelopes — the model's
-  // RMS head is miscalibrated (verified offline on white noise: 52% of
-  // rms² lands in guitar, drums/other/bass round to ~0). Masks are the
-  // softmax over stems at each (f, t) bin and sum to 1.0 exactly, so
-  // integrating per stem gives an honest energy fraction. RMS is kept
-  // as a fallback only for the rare WebGPU configs where the 17M-float
-  // mask buffer fails to copy GPU→CPU and arrives empty.
+  // Prefer masks (model softmax sums to 1.0 across stems — accurate
+  // per-stem energy). Fall back to RMS only when masks fail to transfer
+  // (length OK but values dead) — RMS head is known miscalibrated but
+  // it's better than all-zero classification.
   let perStemEnergy;
   let stemEnvelopes;
   let envelopeSource;
-  if (masks.length === N_STEMS * maskF * maskT) {
+  if (masks.length === N_STEMS * maskF * maskT && maskSniff.ok) {
     perStemEnergy = computePerStemEnergyFromMasks(masks, N_STEMS, maskF, maskT);
     stemEnvelopes = buildStemEnvelopesFromMasks(masks, N_STEMS, maskF, maskT, rmsT || ENV_FALLBACK_T);
     envelopeSource = 'masks';
-  } else if (rms.length === N_STEMS * rmsT * 2) {
+  } else if (rms.length === N_STEMS * rmsT * 2 && rmsSniff.ok) {
     perStemEnergy = computePerStemEnergyFromRms(rms, N_STEMS, rmsT);
     stemEnvelopes = buildStemEnvelopesFromRms(rms, N_STEMS, rmsT);
     envelopeSource = 'rms';
-    console.warn('[semDemucsV4] mask tensor empty — falling back to (miscalibrated) RMS head');
+    console.warn(`[semDemucsV4] masks dead (${maskSniff.reason}) — fallback to RMS head (known miscalibrated)`);
   } else {
-    console.warn(`[semDemucsV4] both masks and rms empty — cannot classify (rms=${rms.length} masks=${masks.length})`);
+    console.warn(`[semDemucsV4] both masks and rms dead — cannot classify (mask=${maskSniff.reason} rms=${rmsSniff.reason})`);
     perStemEnergy = new Float32Array(N_STEMS);
     stemEnvelopes = Array.from({ length: N_STEMS }, () => new Float32Array(0));
     envelopeSource = 'empty';

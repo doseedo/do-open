@@ -1018,9 +1018,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
             // throws "Iterator value NaN is not an entry object".
             // Array.from() gives a plain Array whose .map can return
             // arbitrary [k, v] pairs.
-            console.log('[semDemucsV4] per-stem energy:',
+            console.log(`[semDemucsV4] per-stem energy (src=${v4Result.envelopeSource}):`,
               Object.fromEntries(Array.from(v4Result.perStemEnergy).map((e, i) => [
-                ['drums','bass','vocals','other','guitar','piano'][i],
+                STEM_NAMES_6[i],
                 (e * 100).toFixed(1) + '%',
               ])));
 
