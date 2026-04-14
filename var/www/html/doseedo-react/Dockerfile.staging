@@ -1,0 +1,22 @@
+FROM node:18-alpine AS build
+WORKDIR /app
+COPY package.json ./
+RUN npm install
+COPY . .
+ENV CI=false
+# Build with staging env so REACT_APP_* vars pick up the staging values.
+# REACT_APP_ENV=staging lets frontend code show a banner or branch
+# behavior (e.g. point Sentry to the dev project) when wired later.
+ENV REACT_APP_ENV=staging
+RUN npm run build
+
+FROM nginx:alpine
+
+COPY --from=build /app/build /usr/share/nginx/html
+COPY login.html /usr/share/nginx/html/login.html
+# Staging nginx: proxies /api/* directly to the staging Modal app.
+COPY nginx.staging.conf /etc/nginx/conf.d/default.conf
+COPY staging_modal_proxy.inc /etc/nginx/conf.d/staging_modal_proxy.inc
+
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]
