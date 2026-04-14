@@ -184,16 +184,38 @@ async function _analyze(sess, ort, flat, numFrames) {
     }
   }
 
-  const rms = res.rms?.data || new Float32Array(0);
+  // ORT-Web WebGPU (JSEP) keeps output tensors on GPU by default —
+  // `.data` is a zero-length view until the buffer is copied to CPU.
+  // That's what was producing the "drums 0.0% argmax" classification
+  // on real mixes: every stem summed to zero because the masks
+  // Float32Array was empty, so argmax defaulted to index 0. Use
+  // await getData() which triggers the GPU→CPU copy on both backends
+  // (no-op on WASM since the data is already CPU-resident).
+  const pullTensor = async (t) => {
+    if (!t) return new Float32Array(0);
+    try {
+      if (typeof t.getData === 'function') return await t.getData();
+    } catch (_) { /* fall through */ }
+    return t.data || new Float32Array(0);
+  };
+
+  const rms = await pullTensor(res.rms);
   const rmsDims = res.rms?.dims || [1, N_STEMS, 0, 2];
   const rmsT = rmsDims[2] | 0;
 
-  const masks = res.stft_masks?.data || new Float32Array(0);
+  const masks = await pullTensor(res.stft_masks);
   const maskDims = res.stft_masks?.dims || [1, N_STEMS, 0, 0];
   const maskF = maskDims[2] | 0;
   const maskT = maskDims[3] | 0;
 
-  const embedding = res.embedding?.data || new Float32Array(0);
+  const embedding = await pullTensor(res.embedding);
+
+  if (!masks.length) {
+    // Guard: if the mask data still comes back empty, log loudly so
+    // we catch future ORT-Web API changes before they silently
+    // classify everything as solo-drums again.
+    console.warn('[semDemucsV4] empty mask data from GPU — classification will be meaningless');
+  }
 
   const perStemEnergy = computePerStemEnergy(masks, N_STEMS, maskF, maskT);
   const classification = classifyMixVsSolo(perStemEnergy);

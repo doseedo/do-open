@@ -20,12 +20,14 @@ import {
   buildDoae,
 } from '../../services/latentDecoder';
 import {
-  initLatentDemucs,
   audioFileToStereo48k,
-  separateToLatentStems,
   uploadLatent,
-  LATENT_DEMUCS_STEM_NAMES,
 } from '../../services/latentDemucs';
+import {
+  initLatentDemucsV4,
+  separate6Stems,
+  STEM_NAMES_V4COND_6,
+} from '../../services/latentDemucsV4';
 import { initLatentVisual, envelopeFromLatent, buildFakeBufferFromEnvelope } from '../../services/latentVisual';
 import { audioBufferCache } from '../../hooks/useWaveform';
 import ImportAudioModal from './ImportAudioModal';
@@ -186,20 +188,17 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
 
         console.log('[prewarm] loading Oobleck VAE decoder (63 MB)…');
         await initLatentDecoder();
-        console.log('[prewarm] decoder ready, now loading latentDemucs (325 MB)…');
-        await initLatentDemucs();
+        console.log('[prewarm] decoder ready, now loading latentDemucsV4 (98 MB fp16)…');
+        await initLatentDemucsV4();
         // After demucs is ready, preload the Oobleck VAE encoder (~337 MB).
-        // This is the WebGPU replacement for /api/encode-audio-latent; it's
-        // NOT wired into any encode call yet — just warming it in the
-        // background so the first real use (next commit) isn't cold.
         console.log('[prewarm] demucs ready, now loading latentEncoder (337 MB)…');
         const { initLatentEncoder } = await import('../../services/latentEncoder');
         initLatentEncoder().catch((e) => {
           console.warn('[prewarm] latentEncoder preload failed (non-fatal):', e?.message || e);
         });
       } catch (e) {
-        // If decoder or demucs fails, still try to start demucs + encoder.
-        initLatentDemucs().catch(() => {});
+        // If decoder or demucs fails, still try to start them + encoder.
+        initLatentDemucsV4().catch(() => {});
         import('../../services/latentEncoder').then(({ initLatentEncoder }) =>
           initLatentEncoder().catch(() => {})
         ).catch(() => {});
@@ -1109,31 +1108,34 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
           let stemLatentIds = null;
           let localFlatTDs = null;  // keep the raw stem latents around for latent_visual
           try {
-            console.log('[latentDemucs] trying browser-local separation...');
+            console.log('[latentDemucsV4] trying browser-local 6-stem separation (conditioned on v4-small)...');
             let demucsLastPct = -20;
             const _demucsT0 = performance.now();
-            await initLatentDemucs((p) => {
+            await initLatentDemucsV4((p) => {
               if (!p?.bytesTotal) return;
               const pct = Math.floor((p.bytesLoaded / p.bytesTotal) * 100);
               if (pct >= demucsLastPct + 20) {
                 demucsLastPct = pct;
                 const elap = ((performance.now() - _demucsT0) / 1000).toFixed(1);
                 const mb = (p.bytesLoaded / 1e6).toFixed(0);
-                console.log(`[latentDemucs] loading ${pct}% (${mb} MB, ${elap}s)`);
+                console.log(`[latentDemucsV4] loading ${pct}% (${mb} MB, ${elap}s)`);
               }
             });
             const { flat, numFrames } = await audioFileToStereo48k(file);
-            console.log(`[latentDemucs] decoded audio in browser: ${numFrames} samples @ 48kHz`);
-            const stems = await separateToLatentStems(flat, numFrames);
-            console.log(`[latentDemucs] separated into ${Object.keys(stems).length} stem latents`);
+            console.log(`[latentDemucsV4] decoded audio in browser: ${numFrames} samples @ 48kHz`);
+            // v4Result was computed earlier (the same run that gated
+            // mix-vs-solo). We reuse its masks + embedding as
+            // conditioning here — no re-inference needed.
+            if (!v4Result) throw new Error('v4Result unavailable — semDemucsV4 must run before latentDemucsV4');
+            const stems = await separate6Stems(flat, numFrames, v4Result);
+            console.log(`[latentDemucsV4] separated into ${Object.keys(stems).length} stem latents`);
             // Stash flatTD so we can run latent_visual without re-fetching.
             localFlatTDs = {};
             for (const name of Object.keys(stems)) {
               localFlatTDs[name] = { flatTD: stems[name].flatTD, T: stems[name].T };
             }
-            // Upload each stem to backend — backend gets ONLY latent bytes
             stemLatentIds = {};
-            for (const name of LATENT_DEMUCS_STEM_NAMES) {
+            for (const name of STEM_NAMES_V4COND_6) {
               const s = stems[name];
               if (!s) continue;
               const meta = await uploadLatent(s.flatTD, s.T, s.D, 25);
@@ -1141,11 +1143,11 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
                 latent_id: meta.latent_id,
                 n_frames: s.T,
               };
-              console.log(`[latentDemucs] uploaded ${name}: ${meta.latent_id} (${s.T} frames)`);
+              console.log(`[latentDemucsV4] uploaded ${name}: ${meta.latent_id} (${s.T} frames)`);
             }
           } catch (localErr) {
             const emsg = localErr?.message || localErr?.toString?.() || JSON.stringify(localErr) || 'unknown';
-            console.warn('[latentDemucs] browser path failed, falling back to backend /separate-stems:', emsg);
+            console.warn('[latentDemucsV4] browser path failed, falling back to backend /separate-stems:', emsg);
             stemLatentIds = null;
             localFlatTDs = null;
           }
