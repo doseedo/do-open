@@ -177,6 +177,13 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
     // contention on slower connections.
     (async () => {
       try {
+        // semDemucsV4 (9 MB) first — it runs on EVERY upload before demucs
+        // to classify mix-vs-solo + populate instant stem envelopes.
+        // Tiny and fast, loads in parallel with the decoder below.
+        import('../../services/semDemucsV4').then(({ initSemDemucsV4 }) =>
+          initSemDemucsV4().catch(() => {})
+        ).catch(() => {});
+
         console.log('[prewarm] loading Oobleck VAE decoder (63 MB)…');
         await initLatentDecoder();
         console.log('[prewarm] decoder ready, now loading latentDemucs (325 MB)…');
@@ -195,6 +202,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
         initLatentDemucs().catch(() => {});
         import('../../services/latentEncoder').then(({ initLatentEncoder }) =>
           initLatentEncoder().catch(() => {})
+        ).catch(() => {});
+        import('../../services/semDemucsV4').then(({ initSemDemucsV4 }) =>
+          initSemDemucsV4().catch(() => {})
         ).catch(() => {});
       }
     })();
@@ -987,6 +997,77 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
             const emsg = err?.message || err?.toString?.() || JSON.stringify(err) || 'unknown';
             console.warn('[latentDecoder] init failed (non-fatal):', emsg);
           });
+
+          // ── PRE-DEMUCS: v4-small-6 classifier (9 MB, WebGPU) ─────────
+          // Runs on every upload BEFORE latent demucs. Produces:
+          //   - 6 stem RMS envelopes → instant stem waveforms (no wait
+          //     for the 325 MB demucs)
+          //   - mix-vs-solo classification via per-stem mask energy
+          // If the file is a solo stem (e.g., drum loop, isolated vocal),
+          // we skip demucs entirely and run the oobleck encoder in the
+          // background to cache the single latent instead.
+          let v4Result = null;
+          try {
+            const { analyze: semAnalyze } = await import('../../services/semDemucsV4');
+            const { flat: preFlat, numFrames: preN } = await audioFileToStereo48k(file);
+            v4Result = await semAnalyze(preFlat, preN);
+            const c = v4Result.classification;
+            console.log(`[semDemucsV4] ${c.rationale} (confidence=${c.confidence.toFixed(2)})`);
+            console.log('[semDemucsV4] per-stem energy:',
+              Object.fromEntries(v4Result.perStemEnergy.map((e, i) => [
+                ['drums','bass','vocals','other','guitar','piano'][i],
+                +(e * 100).toFixed(1) + '%',
+              ])));
+
+            if (!c.isMix) {
+              console.log(`[flow] detected solo stem (${c.soloStemName}) — skipping demucs, caching encoder latent in background`);
+              // Attach solo-stem metadata to the uploaded track so later
+              // UI can key off it (icon, name, etc.).
+              dispatch({
+                type: 'UPDATE_TRACK',
+                payload: {
+                  busId, trackId,
+                  updates: {
+                    metadata: {
+                      ...track.metadata,
+                      soloStemClassification: {
+                        stemName: c.soloStemName,
+                        stemIndex: c.soloStemIndex,
+                        confidence: c.confidence,
+                        perStemEnergy: Array.from(v4Result.perStemEnergy),
+                      },
+                    },
+                  },
+                },
+              });
+              // Background oobleck-encoder latent caching (fire-and-forget).
+              (async () => {
+                try {
+                  const { initLatentEncoder, encodeToLatent } = await import('../../services/latentEncoder');
+                  await initLatentEncoder();
+                  const latent = await encodeToLatent(preFlat, preN);
+                  const T = latent.length / 64;
+                  const { uploadLatent } = await import('../../services/latentDemucs');
+                  const meta = await uploadLatent(latent, T, 64, 25);
+                  console.log(`[flow] solo stem encoder cached latent ${meta.latent_id} (${T} frames)`);
+                  dispatch({
+                    type: 'UPDATE_TRACK',
+                    payload: { busId, trackId,
+                      updates: { metadata: {
+                        ...track.metadata,
+                        soloStemLatentId: meta.latent_id,
+                        soloStemNFrames: T,
+                      } } },
+                  });
+                } catch (err) {
+                  console.warn('[flow] solo-stem encoder caching failed (non-fatal):', err?.message || err);
+                }
+              })();
+              return; // bail out of the demucs pipeline — keep the single uploaded track
+            }
+          } catch (v4Err) {
+            console.warn('[semDemucsV4] failed (non-fatal, continuing with demucs):', v4Err?.message || v4Err);
+          }
 
           // Try the browser-local latent_demucs path first.
           let stemLatentIds = null;
