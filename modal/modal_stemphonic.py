@@ -577,12 +577,22 @@ class Stemphonic:
                 elif e.code == 503:
                     return jsonify({"error": "Generation is temporarily disabled"}), 503
                 else:
-                    _gate_log.error("gate: unexpected HTTP %d from auth-service — failing open", e.code)
-                    return
+                    # Unexpected HTTP error from auth-service — fail-CLOSED for
+                    # generation bucket. Auth-service should not return unexpected
+                    # codes; if it does something is wrong, don't let generation through.
+                    _gate_log.error(
+                        "gate: unexpected HTTP %d from auth-service — failing closed", e.code
+                    )
+                    return jsonify({"error": "Generation service unavailable, please try again"}), 503
 
             except Exception as exc:
-                _gate_log.error("gate: auth-service call failed (%s) — failing open", exc)
-                return
+                # Network error (timeout, DNS, connection refused) — fail-CLOSED.
+                # Analysis routes are not gated and always pass; only generation
+                # routes reach here, so closing is correct.
+                _gate_log.error(
+                    "gate: auth-service unreachable (%s) — failing closed", exc
+                )
+                return jsonify({"error": "Generation service unavailable, please try again"}), 503
 
         # ---------------------------------------------------------------------------
         # Queue-depth canary. With max_containers=1, if a second request
