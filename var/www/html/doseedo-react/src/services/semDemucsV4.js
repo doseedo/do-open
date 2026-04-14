@@ -162,7 +162,27 @@ async function _analyze(sess, ort, flat, numFrames) {
   chunkFlat.set(flat.subarray(numFrames, numFrames + useN), useN);
 
   const input = new ort.Tensor('float32', chunkFlat, [1, 2, useN]);
-  const res = await sess.run({ waveform: input });
+  // ORT-Web's JSEP (WebGPU) backend occasionally rejects concurrent
+  // sessions sharing the device queue with "Session already started"
+  // or similar transient state errors. All of our big ONNX sessions
+  // (decoder, demucs, encoder, semDemucsV4) eventually resolve to the
+  // same GPU adapter; the prewarm chain creates them in order but the
+  // first .run() can still race with a background init that just
+  // finished. Retry once after a short backoff — reliably clears in
+  // practice. If it fails twice, the caller catches and falls through
+  // to the demucs path (the v4 mix-detect is non-critical).
+  let res;
+  try {
+    res = await sess.run({ waveform: input });
+  } catch (err) {
+    const msg = err?.message || String(err);
+    if (/already started|backend is still in use|webgpu/i.test(msg)) {
+      await new Promise(r => setTimeout(r, 120));
+      res = await sess.run({ waveform: input });
+    } else {
+      throw err;
+    }
+  }
 
   const rms = res.rms?.data || new Float32Array(0);
   const rmsDims = res.rms?.dims || [1, N_STEMS, 0, 2];

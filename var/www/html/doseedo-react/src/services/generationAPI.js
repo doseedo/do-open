@@ -259,9 +259,16 @@ export async function generateRisers(params) {
  * @returns {Promise<Object>} - Response with separated stem URLs
  */
 export async function separateStems(audioUrl) {
+  // /separate-stems runs through the Modal gate, which needs the user
+  // JWT to identify the caller. Forward the localStorage token or the
+  // call 401s (same bug the trackAnalysisAPI.js version had).
+  const token = localStorage.getItem('token');
   const response = await fetch('/separate-stems', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ audioUrl })
   });
 
