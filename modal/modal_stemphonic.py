@@ -70,7 +70,10 @@ Known limitations for launch version:
     same pattern. Do it after this one is green.
 """
 
+import os
 import modal
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------------------
 # Volumes
@@ -165,7 +168,10 @@ image = (
     # basic-pitch and demucs in favour of the latent student models
     # (latent_demucs / latent_drumsep / latent_pitch / latent_visual).
     .pip_install_from_requirements(
-        "/home/arlo/do2/stemphonic_requirements_modal.txt",
+        # Relative to this file so `modal deploy modal_stemphonic.py`
+        # works from any clone of the repo (was hardcoded to the VM
+        # path /home/arlo/do2/stemphonic_requirements_modal.txt).
+        os.path.join(_HERE, "requirements.txt"),
         extra_options="--no-deps",
     )
     # Explicit torch install — wins any version conflict with transitive deps.
