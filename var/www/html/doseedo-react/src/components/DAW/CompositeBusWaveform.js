@@ -118,7 +118,10 @@ const CompositeBusWaveform = React.memo(({
     for (let i = 0; i < numBars; i++) {
       if (baselineSummed[i] > baselineMax) baselineMax = baselineSummed[i];
     }
-    const norm = baselineMax > 0.001 ? maxBarHeight / (baselineMax * 1.2) : 1.0;
+    // Peak bars fill the full track height at the busGain=1 baseline.
+    // Matches the single-track view (renderWaveform RMS) so the
+    // composite doesn't visibly shrink when stem separation lands.
+    const norm = baselineMax > 0.001 ? maxBarHeight / baselineMax : 1.0;
     const noiseFloor = baselineMax * 0.02;
 
     // Live sum = Σ peak[i] × stem.gain (respecting mute/solo). This is

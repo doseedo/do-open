@@ -362,7 +362,11 @@ function renderEnvelope(ctx, envFlat, T, width, height, color, gain = 1.0) {
     if (ptp > maxPtp) maxPtp = ptp;
   }
 
-  const normFactor = maxPtp > 0.001 ? maxBarHeight / (maxPtp * 1.2) : 1.0;
+  // Normalize so peak bars fill the full track height — matches
+  // renderWaveform (RMS, 100% fill at max) which is used by the
+  // pre-separation single-track view. No `× 1.2` headroom; we clamp
+  // below anyway if anything overshoots.
+  const normFactor = maxPtp > 0.001 ? maxBarHeight / maxPtp : 1.0;
   const noiseFloor = maxPtp * 0.02;
   const g = Math.max(0, gain);
 
