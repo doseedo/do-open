@@ -163,45 +163,53 @@ export async function analyze(flat, numFrames) {
 }
 
 async function _analyze(sess, ort, flat, numFrames) {
-  // Model was traced at 4s. Inference supports dynamic length but we cap
-  // it to the first ~30s — enough to classify + draw a visualizer — and
-  // the user's full-length latent demucs does the real per-sample work.
-  const maxAnalysisSamples = 48000 * 30;
-  const useN = Math.min(numFrames, maxAnalysisSamples);
-  const chunkFlat = new Float32Array(2 * useN);
-  chunkFlat.set(flat.subarray(0, useN), 0);
-  chunkFlat.set(flat.subarray(numFrames, numFrames + useN), useN);
+  // Run the model in 4-second chunks and concatenate outputs along time.
+  //
+  // The model was traced at 4 s. At full 30 s input the stft_masks output
+  // is 17 M floats (~69 MB), which ORT-Web mishandles on every backend
+  // we've tested — WebGPU silently zeros it, WASM NaN-poisons it, both
+  // 1.22 and 1.24, both ONNX STFT op (v1) and Conv1d STFT (v2/v3). The
+  // hypothesis is that the failure is size-related (intermediate buffer
+  // / GPU→CPU copy of the mask), so chunking back to the trace size
+  // keeps each call's mask at ~9 MB and should survive. We then stitch
+  // the per-chunk outputs into the same shape the rest of the pipeline
+  // expects (full-length rms, full-length masks, full-length envelope).
+  // embedding is per-stem global with no time axis — average across
+  // chunks. Cap total analysis at 30 s for compute budget.
+  const CHUNK_SAMPLES = 48000 * 4;
+  const MAX_TOTAL = 48000 * 30;
+  const totalN = Math.min(numFrames, MAX_TOTAL);
+  const numChunks = Math.ceil(totalN / CHUNK_SAMPLES);
 
-  const input = new ort.Tensor('float32', chunkFlat, [1, 2, useN]);
-  // ORT-Web's JSEP (WebGPU) backend occasionally rejects concurrent
-  // sessions sharing the device queue with "Session already started"
-  // or similar transient state errors. All of our big ONNX sessions
-  // (decoder, demucs, encoder, semDemucsV4) eventually resolve to the
-  // same GPU adapter; the prewarm chain creates them in order but the
-  // first .run() can still race with a background init that just
-  // finished. Retry once after a short backoff — reliably clears in
-  // practice. If it fails twice, the caller catches and falls through
-  // to the demucs path (the v4 mix-detect is non-critical).
-  let res;
-  try {
-    res = await sess.run({ waveform: input });
-  } catch (err) {
-    const msg = err?.message || String(err);
-    if (/already started|backend is still in use|webgpu/i.test(msg)) {
-      await new Promise(r => setTimeout(r, 120));
+  // Run each 4 s chunk through the model.
+  const chunks = [];
+  for (let i = 0; i < numChunks; i++) {
+    const start = i * CHUNK_SAMPLES;
+    const end = Math.min(start + CHUNK_SAMPLES, totalN);
+    const chunkLen = end - start;
+
+    const chunkFlat = new Float32Array(2 * chunkLen);
+    chunkFlat.set(flat.subarray(start, end), 0);
+    chunkFlat.set(flat.subarray(numFrames + start, numFrames + end), chunkLen);
+
+    const input = new ort.Tensor('float32', chunkFlat, [1, 2, chunkLen]);
+    let res;
+    try {
       res = await sess.run({ waveform: input });
-    } else {
-      throw err;
+    } catch (err) {
+      const msg = err?.message || String(err);
+      if (/already started|backend is still in use|webgpu/i.test(msg)) {
+        await new Promise(r => setTimeout(r, 120));
+        res = await sess.run({ waveform: input });
+      } else {
+        throw err;
+      }
     }
+    chunks.push(res);
   }
 
   // ORT-Web WebGPU (JSEP) keeps output tensors on GPU by default —
   // `.data` is a zero-length view until the buffer is copied to CPU.
-  // That's what was producing the "drums 0.0% argmax" classification
-  // on real mixes: every stem summed to zero because the masks
-  // Float32Array was empty, so argmax defaulted to index 0. Use
-  // await getData() which triggers the GPU→CPU copy on both backends
-  // (no-op on WASM since the data is already CPU-resident).
   const pullTensor = async (t) => {
     if (!t) return new Float32Array(0);
     try {
@@ -210,25 +218,33 @@ async function _analyze(sess, ort, flat, numFrames) {
     return t.data || new Float32Array(0);
   };
 
-  const rms = await pullTensor(res.rms);
-  const rmsDims = res.rms?.dims || [1, N_STEMS, 0, 2];
-  const rmsT = rmsDims[2] | 0;
+  // Pull per-chunk tensors + dims.
+  const perChunk = [];
+  for (const res of chunks) {
+    perChunk.push({
+      rms:      await pullTensor(res.rms),
+      rmsT:     (res.rms?.dims || [1, N_STEMS, 0, 2])[2] | 0,
+      masks:    await pullTensor(res.stft_masks),
+      maskF:    (res.stft_masks?.dims || [1, N_STEMS, 0, 0])[2] | 0,
+      maskT:    (res.stft_masks?.dims || [1, N_STEMS, 0, 0])[3] | 0,
+      envelope: await pullTensor(res.masks_envelope),
+      envT:     (res.masks_envelope?.dims || [1, N_STEMS, 0])[2] | 0,
+      embedding:await pullTensor(res.embedding),
+    });
+  }
 
-  const masks = await pullTensor(res.stft_masks);
-  const maskDims = res.stft_masks?.dims || [1, N_STEMS, 0, 0];
-  const maskF = maskDims[2] | 0;
-  const maskT = maskDims[3] | 0;
+  // Concatenate across chunks. The model's output dims for a given input
+  // length are deterministic, so summing per-chunk T values gives the
+  // total T we'd have gotten from a single full-length call.
+  const rmsT  = perChunk.reduce((a, c) => a + c.rmsT, 0);
+  const maskF = perChunk[0]?.maskF | 0;
+  const maskT = perChunk.reduce((a, c) => a + c.maskT, 0);
+  const envT  = perChunk.reduce((a, c) => a + c.envT, 0);
 
-  // Tiny mask envelope — sum of softmax masks over the freq axis, computed
-  // inside the ONNX. ~17K floats per 30s clip vs 17M for the full 4D mask,
-  // so the GPU→CPU readback is reliable on every backend. This is what the
-  // display + classifier read; the full stft_masks is kept only for
-  // latentDemucsV4 conditioning.
-  const envelope = await pullTensor(res.masks_envelope);
-  const envDims = res.masks_envelope?.dims || [1, N_STEMS, 0];
-  const envT = envDims[2] | 0;
-
-  const embedding = await pullTensor(res.embedding);
+  const rms      = concatStemsTime(perChunk.map(c => c.rms),      N_STEMS, perChunk.map(c => c.rmsT),  /*perFrame=*/2);
+  const envelope = concatStemsTime(perChunk.map(c => c.envelope), N_STEMS, perChunk.map(c => c.envT),  /*perFrame=*/1);
+  const masks    = concatStemsFreqTime(perChunk.map(c => c.masks), N_STEMS, maskF, perChunk.map(c => c.maskT));
+  const embedding = averageEmbeddings(perChunk.map(c => c.embedding), N_STEMS, /*embDim=*/128);
 
   const sniff = (buf) => {
     const N = buf.length;
@@ -246,7 +262,7 @@ async function _analyze(sess, ort, flat, numFrames) {
   const maskSniff = sniff(masks);
   const rmsSniff  = sniff(rms);
   console.log(
-    `[semDemucsV4] tensor sizes — rms=${rms.length} (${rmsSniff.reason})`
+    `[semDemucsV4] ${numChunks}×4s chunks — rms=${rms.length} (${rmsSniff.reason})`
     + ` envelope=${envelope.length} (${envSniff.reason}, sample=[${Array.from(envSniff.sample).map(v => v.toExponential(2)).join(',')}])`
     + ` masks=${masks.length} (${maskSniff.reason}) emb=${embedding.length}`
   );
@@ -293,6 +309,79 @@ async function _analyze(sess, ort, flat, numFrames) {
 // Used by the empty-input branch of _analyze when neither masks nor rms
 // arrived — pick a reasonable display length (~30s at RMS_FPS).
 const ENV_FALLBACK_T = 938;
+
+/**
+ * Concatenate per-stem buffers across chunks along the time axis.
+ *
+ * Layout assumption: each chunk's buffer is `[stem, t, perFrame]` row-major,
+ * i.e. for a given stem the time axis is contiguous. Output preserves the
+ * same row-major layout with summed T.
+ *
+ * Used for `rms` (perFrame=2) and `envelope` (perFrame=1).
+ */
+function concatStemsTime(chunkBufs, nStems, chunkTs, perFrame) {
+  const totalT = chunkTs.reduce((a, t) => a + t, 0);
+  if (!totalT) return new Float32Array(0);
+  const out = new Float32Array(nStems * totalT * perFrame);
+  for (let s = 0; s < nStems; s++) {
+    let dstT = 0;
+    for (let i = 0; i < chunkBufs.length; i++) {
+      const buf = chunkBufs[i];
+      const T = chunkTs[i];
+      if (!T || !buf || buf.length < (s + 1) * T * perFrame) continue;
+      const src = buf.subarray(s * T * perFrame, (s + 1) * T * perFrame);
+      out.set(src, s * totalT * perFrame + dstT * perFrame);
+      dstT += T;
+    }
+  }
+  return out;
+}
+
+/**
+ * Concatenate per-stem masks across chunks along the time axis.
+ * Each chunk's mask layout is `[stem, freq, t]` row-major; output preserves
+ * the same shape with summed T. Inner loop is per (stem, freq) which means
+ * S*F = 6*1025 = 6150 small `set()` calls per call — negligible vs the
+ * 17M-float total move.
+ */
+function concatStemsFreqTime(chunkBufs, nStems, F, chunkTs) {
+  const totalT = chunkTs.reduce((a, t) => a + t, 0);
+  if (!totalT || !F) return new Float32Array(0);
+  const out = new Float32Array(nStems * F * totalT);
+  for (let s = 0; s < nStems; s++) {
+    for (let f = 0; f < F; f++) {
+      let dstT = 0;
+      for (let i = 0; i < chunkBufs.length; i++) {
+        const buf = chunkBufs[i];
+        const T = chunkTs[i];
+        if (!T || !buf || buf.length < nStems * F * T) continue;
+        const srcOff = s * F * T + f * T;
+        const src = buf.subarray(srcOff, srcOff + T);
+        out.set(src, s * F * totalT + f * totalT + dstT);
+        dstT += T;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Average per-stem embeddings across chunks. Each chunk's embedding is a
+ * full [B=1, S, embDim] tensor (the model returns one global embedding per
+ * stem per call), so we mean-pool across chunks. If a chunk's embedding is
+ * empty/short, skip it.
+ */
+function averageEmbeddings(chunkBufs, nStems, embDim) {
+  const out = new Float32Array(nStems * embDim);
+  let count = 0;
+  for (const buf of chunkBufs) {
+    if (!buf || buf.length < nStems * embDim) continue;
+    for (let i = 0; i < nStems * embDim; i++) out[i] += buf[i];
+    count++;
+  }
+  if (count > 1) for (let i = 0; i < nStems * embDim; i++) out[i] /= count;
+  return out;
+}
 
 /**
  * Integrate each stem's mask energy across all (f, t) bins, then
