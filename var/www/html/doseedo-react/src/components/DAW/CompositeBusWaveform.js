@@ -89,6 +89,8 @@ const CompositeBusWaveform = React.memo(({
 
     if (stemInputs.length === 0) return;
 
+    // Match the stem waveform style exactly (useWaveform.renderEnvelope):
+    // 2px bars, 2px spacing, rounded caps, alpha 0.7.
     const barSpacing = 2;
     const barWidth = 2;
     const numBars = Math.floor(width / (barWidth + barSpacing));
@@ -96,12 +98,33 @@ const CompositeBusWaveform = React.memo(({
     const midY = height / 2;
     const maxBarHeight = height * 0.45;
 
-    // Compute per-bar peak-to-peak magnitude for each stem, time-aligned
-    // to the bar grid. We prefer envelope (cheap, already in ram) but fall
-    // back to decoded audio RMS when no envelope is present.
+    // Per-stem peaks at native resolution (no gain applied). Envelope
+    // preferred; decoded RMS fallback; zero if neither.
     const perStemBars = stemInputs.map(s => peakPerBar(s, numBars, envelopeFps));
 
-    // Weighted sum across stems: master_peak[i] = Σ eff * stem_peak[i]
+    // CONSTANT baseline: Σ peak[i] if every stem were at gain=1.0. We
+    // normalize to THIS max, not to the current live sum. That's the
+    // only way gain-down-the-loudest-stem correctly shrinks the master:
+    // otherwise the renormalization pumps the remaining (quieter) stems
+    // UP to fill the container, and the master looks bigger when you
+    // turn the dominant stem down. Ask me how I know.
+    const baselineSummed = new Float32Array(numBars);
+    for (let s = 0; s < perStemBars.length; s++) {
+      const peaks = perStemBars[s];
+      if (!peaks) continue;
+      for (let i = 0; i < numBars; i++) baselineSummed[i] += peaks[i];
+    }
+    let baselineMax = 0;
+    for (let i = 0; i < numBars; i++) {
+      if (baselineSummed[i] > baselineMax) baselineMax = baselineSummed[i];
+    }
+    const norm = baselineMax > 0.001 ? maxBarHeight / (baselineMax * 1.2) : 1.0;
+    const noiseFloor = baselineMax * 0.02;
+
+    // Live sum = Σ peak[i] × stem.gain (respecting mute/solo). This is
+    // what we actually draw. The constant `norm` means reducing a stem's
+    // gain linearly shrinks its contribution to the displayed bar height
+    // without pumping the others.
     const summed = new Float32Array(numBars);
     for (let s = 0; s < perStemBars.length; s++) {
       const peaks = perStemBars[s];
@@ -109,14 +132,6 @@ const CompositeBusWaveform = React.memo(({
       if (!peaks || g === 0) continue;
       for (let i = 0; i < numBars; i++) summed[i] += peaks[i] * g;
     }
-
-    // Normalize at busGain=1 so the composite fills the container the same
-    // way an individual track does. Then apply busGain multiplicatively
-    // (clamp to the container — visual saturation at hot bus levels).
-    let maxSum = 0;
-    for (let i = 0; i < numBars; i++) if (summed[i] > maxSum) maxSum = summed[i];
-    const norm = maxSum > 0.001 ? maxBarHeight / (maxSum * 1.2) : 1.0;
-    const noiseFloor = maxSum * 0.02;
 
     ctx.strokeStyle = color;
     ctx.lineWidth = barWidth;
@@ -142,12 +157,18 @@ const CompositeBusWaveform = React.memo(({
     ctx.globalAlpha = 1.0;
   }, [stemInputs, busGain, width, height, envelopeFps, color]);
 
+  // Render the canvas at EXACT pixel size (no CSS stretching) so the
+  // bar resolution matches individual stem waveforms 1:1. The width
+  // in pixels equals busDuration × pixelsPerSecond, same math that
+  // OptimizedTrack uses for stem tracks.
   return (
     <canvas
       ref={canvasRef}
-      width={width}
-      height={height}
-      style={{ width: '100%', height: '100%', display: 'block' }}
+      style={{
+        width: `${width}px`,
+        height: `${height}px`,
+        display: 'block',
+      }}
     />
   );
 });

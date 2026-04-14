@@ -653,9 +653,13 @@ const BusRow = React.memo(({
               position: 'absolute',
               top: 0,
               left: 0,
-              right: 0,
               height: `${trackHeight}px`,
               cursor: 'pointer',
+              // No width / no right:0 — the wrapper sizes to its child
+              // canvas (which has pixel width = busDuration×pixelsPerSecond),
+              // matching the horizontal footprint of a stem track exactly.
+              // The canvas protrudes beyond the grid column the same way
+              // stem tracks do (busTracks has overflow: visible).
             }}
             className={`${styles.masterTrackView} ${
               (state.selectedBus?.id === bus.id ||
@@ -667,7 +671,8 @@ const BusRow = React.memo(({
               <CompositeMIDIView tracks={bus.tracks} busId={bus.id} trackHeight={trackHeight} />
             ) : (
               /* Composite waveform = Σ per-stem envelopes × stem.gain
-                 × bus.gain. Repaints in real time on any slider move. */
+                 × bus.gain, normalized to a CONSTANT baseline (Σ at
+                 gain=1) so turning a stem down shrinks the master. */
               <CompositeBusWaveform
                 bus={bus}
                 height={trackHeight}
