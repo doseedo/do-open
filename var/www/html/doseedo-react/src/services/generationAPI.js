@@ -684,15 +684,66 @@ export async function listStemphonicTimbres() {
 }
 
 export async function generateStemphonic(params, midiFile = null, refAudioFile = null) {
+  const { trackEvent, PRODUCT_EVENTS } = await import('../lib/telemetry');
+  const t0 = performance.now();
+  trackEvent(PRODUCT_EVENTS.GENERATION_STARTED, {
+    route: '/api/generate-stemphonic',
+    // Params are enum-y + small — safe to log. coerceProps drops any
+    // binary or oversized fields defensively.
+    params,
+  });
   const fd = new FormData();
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== '') fd.append(k, String(v));
   }
   if (midiFile) fd.append('midiFile', midiFile);
   if (refAudioFile) fd.append('refAudio', refAudioFile);
-  const r = await fetch('/api/generate-stemphonic', { method: 'POST', body: fd });
-  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
-  return r.json();
+  try {
+    const r = await fetch('/api/generate-stemphonic', { method: 'POST', body: fd });
+    if (!r.ok) {
+      const body = await r.text();
+      // Gate surfaces 429 on quota + 503 on kill-switch — both are
+      // intentional gates, not crashes. Record as `generation.failed`
+      // with structured reasons so dashboards can split them.
+      let reason = `http_${r.status}`;
+      if (r.status === 429) reason = 'quota_exhausted';
+      else if (r.status === 503) reason = 'service_unavailable';
+      else if (r.status === 415) {
+        // MIME allowlist bounce — record the specialized event too.
+        try {
+          const parsed = JSON.parse(body);
+          trackEvent(PRODUCT_EVENTS.UPLOAD_REJECTED_NON_LATENT, {
+            mime_type: parsed?.got_content_type || 'unknown',
+            route: '/api/generate-stemphonic',
+          });
+        } catch (_) { /* fall through */ }
+        reason = 'mime_allowlist_415';
+      }
+      trackEvent(PRODUCT_EVENTS.GENERATION_FAILED, {
+        route: '/api/generate-stemphonic',
+        reason,
+        duration_ms: Math.round(performance.now() - t0),
+      });
+      throw new Error(`HTTP ${r.status}: ${body}`);
+    }
+    const out = await r.json();
+    trackEvent(PRODUCT_EVENTS.GENERATION_SUCCEEDED, {
+      route: '/api/generate-stemphonic',
+      duration_ms: Math.round(performance.now() - t0),
+    });
+    return out;
+  } catch (err) {
+    // Only record network/throw failures here — structured HTTP
+    // failures above are already recorded with their own reason.
+    if (!/^HTTP \d/.test(err?.message || '')) {
+      trackEvent(PRODUCT_EVENTS.GENERATION_FAILED, {
+        route: '/api/generate-stemphonic',
+        reason: 'network_error',
+        duration_ms: Math.round(performance.now() - t0),
+      });
+    }
+    throw err;
+  }
 }
 
 export async function pollStemphonicUntilComplete(

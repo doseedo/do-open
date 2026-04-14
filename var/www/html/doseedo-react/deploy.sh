@@ -132,6 +132,44 @@ else
   fi
 fi
 
+# ── 0b. upload source maps to Sentry + strip them from build/ ────────
+# Source maps are ESSENTIAL for debugging prod errors — Sentry line
+# numbers through the minified bundle are otherwise useless. But we
+# DON'T want to publish .map files alongside the JS in the GCS bucket:
+# that would leak un-minified source and defeats the point of minifying.
+#
+# Steps:
+#   1. sentry-cli releases new $SENTRY_RELEASE
+#   2. sentry-cli sourcemaps upload build/static/js  (inject + upload)
+#   3. rm build/static/js/*.map so the next rsync doesn't push them
+#
+# NO-OPs if SENTRY_AUTH_TOKEN + SENTRY_ORG + SENTRY_PROJECT aren't set.
+# That lets you run deploy.sh locally without Sentry creds while still
+# failing loudly in the CI / prod-deploy path (set those three and the
+# upload runs automatically).
+if [[ -n "${SENTRY_AUTH_TOKEN:-}" && -n "${SENTRY_ORG:-}" && -n "${SENTRY_PROJECT:-}" ]]; then
+  echo "── 0b. sentry source-map upload ──"
+  if ! command -v sentry-cli >/dev/null 2>&1; then
+    echo "  ERROR: sentry-cli not installed. Install via: npm i -g @sentry/cli" >&2
+    exit 1
+  fi
+  SENTRY_RELEASE="${SENTRY_RELEASE:-$(git rev-parse --short HEAD 2>/dev/null || date +%s)}"
+  echo "  release=$SENTRY_RELEASE"
+  run sentry-cli releases --org "$SENTRY_ORG" --project "$SENTRY_PROJECT" new "$SENTRY_RELEASE"
+  run sentry-cli sourcemaps --org "$SENTRY_ORG" --project "$SENTRY_PROJECT" \
+      inject --release "$SENTRY_RELEASE" build/static/js
+  run sentry-cli sourcemaps --org "$SENTRY_ORG" --project "$SENTRY_PROJECT" \
+      upload --release "$SENTRY_RELEASE" build/static/js
+  run sentry-cli releases --org "$SENTRY_ORG" --project "$SENTRY_PROJECT" finalize "$SENTRY_RELEASE"
+  # Strip map files so they DON'T get rsynced to the public bucket.
+  run rm -f build/static/js/*.map
+else
+  echo "── 0b. sentry source-map upload  [SKIPPED — set SENTRY_AUTH_TOKEN + SENTRY_ORG + SENTRY_PROJECT] ──"
+  # Still strip .map files so we never accidentally publish them even
+  # without a Sentry setup — privacy > debuggability.
+  run rm -f build/static/js/*.map
+fi
+
 # ── 1. sync build/ → bucket ───────────────────────────────────────────
 echo "── 1. rsync build/ → $BUCKET ──"
 run gsutil -m rsync -r -c -d build/ "$BUCKET/"

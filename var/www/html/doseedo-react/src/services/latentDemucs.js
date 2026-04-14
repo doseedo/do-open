@@ -90,6 +90,18 @@ export async function initLatentDemucs(onProgress = null) {
       } catch (err) {
         const msg = err?.message || err?.toString?.() || JSON.stringify(err) || 'unknown';
         console.warn(`[latentDemucs] ${ep} init failed:`, msg);
+        // Record a typed product event for WebGPU-specific failures so
+        // we can separate "user has no WebGPU" from "ONNX graph broke".
+        if (ep === 'webgpu') {
+          try {
+            const { trackEvent, PRODUCT_EVENTS, platformString } = await import('../lib/telemetry');
+            trackEvent(PRODUCT_EVENTS.WEBGPU_INIT_FAILED, {
+              model: 'latentDemucs',
+              reason: msg.slice(0, 300),
+              platform: platformString(),
+            });
+          } catch (_) { /* telemetry is best-effort */ }
+        }
         lastErr = err;
       }
     }

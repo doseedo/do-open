@@ -67,6 +67,78 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
+# ─── Sentry ──────────────────────────────────────────────────────────
+# NO-OPs if SENTRY_DSN isn't in the environment. DSN is injected from
+# Modal secret `doseedo-sentry` at deploy time. Scrubber strips auth
+# headers + secret-ish body fields, drops bodies entirely for the two
+# legacy 410'd encode routes (tagged legacy_route_hit=true so we still
+# see stale-client traffic without logging the payload).
+try:
+    _SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
+    if _SENTRY_DSN:
+        import re as _re_sentry
+        import sentry_sdk  # type: ignore
+        from sentry_sdk.integrations.flask import FlaskIntegration  # type: ignore
+
+        _SCRUB_HEADERS = {
+            "Authorization", "Cookie", "X-Internal-Secret",
+            "X-CSRF-Token", "X-API-Key", "Proxy-Authorization", "Set-Cookie",
+        }
+        _SCRUB_HEADERS_LC = {h.lower() for h in _SCRUB_HEADERS}
+        _SCRUB_KEY_RE = _re_sentry.compile(r"token|jwt|secret|password|api[_-]?key", _re_sentry.I)
+        _LEGACY_RE = _re_sentry.compile(r"/api/encode-(audio-latent|latents-bulk)\b")
+
+        def _scrub_obj(o, depth=0):
+            if depth > 6 or o is None: return o
+            if isinstance(o, dict):
+                return {k: ("[scrubbed]" if _SCRUB_KEY_RE.search(k) else _scrub_obj(v, depth + 1))
+                        for k, v in o.items()}
+            if isinstance(o, list):
+                return [_scrub_obj(v, depth + 1) for v in o]
+            return o
+
+        def _before_send(event, hint):
+            try:
+                req = event.get("request") or {}
+                hdrs = req.get("headers") or {}
+                for k in list(hdrs.keys()):
+                    if k.lower() in _SCRUB_HEADERS_LC:
+                        hdrs[k] = "[scrubbed]"
+                if "data" in req:
+                    req["data"] = _scrub_obj(req["data"])
+                if "cookies" in req:
+                    req["cookies"] = "[scrubbed]"
+                url = req.get("url") or ""
+                if _LEGACY_RE.search(url):
+                    event.setdefault("tags", {})["legacy_route_hit"] = "true"
+                    req.pop("data", None)
+                extra = event.get("extra") or {}
+                event["extra"] = _scrub_obj(extra)
+                for crumb in event.get("breadcrumbs", {}).get("values", []) or []:
+                    if crumb.get("data"):
+                        crumb["data"] = _scrub_obj(crumb["data"])
+            except Exception:
+                return {"message": "[sentry scrubber error — event redacted]",
+                        "level": "error",
+                        "tags": {"scrubber_failure": "true"}}
+            return event
+
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.environ.get("SENTRY_ENV", "production"),
+            release=os.environ.get("SENTRY_RELEASE") or None,
+            traces_sample_rate=0.1,
+            profiles_sample_rate=0.1,
+            send_default_pii=False,
+            integrations=[FlaskIntegration()],
+            before_send=_before_send,
+        )
+        logger.info("[sentry] initialized (env=%s)", os.environ.get("SENTRY_ENV", "production"))
+    else:
+        logger.info("[sentry] SENTRY_DSN not set — skipping init (errors will NOT be captured)")
+except Exception as _e:
+    logger.warning("[sentry] init failed (non-fatal): %s", _e)
+
 CKPT_DIR = "/scratch/stemphonic/checkpoints"
 CKPT_PATH = "/scratch/stage2d_step130000.pt"  # legacy default symlink
 OUTPUT_DIR = "/scratch/stemphonic_outputs"

@@ -97,7 +97,18 @@ export async function initSemDemucsV4(onProgress = null) {
         console.log(`[semDemucsV4] ready on ${ep}`);
         return sess;
       } catch (err) {
-        console.warn(`[semDemucsV4] ${ep} init failed:`, err?.message || err);
+        const msg = err?.message || String(err);
+        console.warn(`[semDemucsV4] ${ep} init failed:`, msg);
+        if (ep === 'webgpu') {
+          try {
+            const { trackEvent, PRODUCT_EVENTS, platformString } = await import('../lib/telemetry');
+            trackEvent(PRODUCT_EVENTS.WEBGPU_INIT_FAILED, {
+              model: 'semDemucsV4',
+              reason: msg.slice(0, 300),
+              platform: platformString(),
+            });
+          } catch (_) { /* best-effort */ }
+        }
         lastErr = err;
       }
     }

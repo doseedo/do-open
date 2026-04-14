@@ -95,9 +95,27 @@ export async function initLatentEncoder(onProgress = null) {
       } catch (err) {
         const msg = err?.message || err?.toString?.() || JSON.stringify(err) || 'unknown';
         console.warn(`[latentEncoder] ${ep} init failed:`, msg);
+        if (ep === 'webgpu') {
+          try {
+            const { trackEvent, PRODUCT_EVENTS, platformString } = await import('../lib/telemetry');
+            trackEvent(PRODUCT_EVENTS.WEBGPU_INIT_FAILED, {
+              model: 'latentEncoder',
+              reason: msg.slice(0, 300),
+              platform: platformString(),
+            });
+          } catch (_) { /* best-effort */ }
+        }
         lastErr = err;
       }
     }
+    // If we get here, BOTH backends failed — encoder is unusable for this session.
+    try {
+      const { trackEvent, PRODUCT_EVENTS, platformString } = await import('../lib/telemetry');
+      trackEvent(PRODUCT_EVENTS.ENCODER_UNAVAILABLE, {
+        reason: lastErr?.message?.slice(0, 300) || 'unknown',
+        platform: platformString(),
+      });
+    } catch (_) { /* best-effort */ }
     throw lastErr || new Error('no ORT backend available');
   })();
 

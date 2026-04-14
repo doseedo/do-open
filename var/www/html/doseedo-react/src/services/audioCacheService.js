@@ -145,8 +145,28 @@ export async function cacheAudio(url, blob) {
         resolve(true);
       };
 
-      request.onerror = () => {
-        console.error('Error caching audio:', request.error);
+      request.onerror = async () => {
+        const err = request.error;
+        console.error('Error caching audio:', err);
+        // Storage quota is the common non-transient failure here.
+        // Record it as a named product event so we see it in Sentry
+        // without relying on a generic console-error hook.
+        if (err && (err.name === 'QuotaExceededError' || /quota/i.test(String(err)))) {
+          try {
+            const { trackEvent, PRODUCT_EVENTS } = await import('../lib/telemetry');
+            let quota_bytes = null;
+            try {
+              if (navigator?.storage?.estimate) {
+                const est = await navigator.storage.estimate();
+                quota_bytes = est?.quota ?? null;
+              }
+            } catch (_) {}
+            trackEvent(PRODUCT_EVENTS.OPFS_QUOTA_EXCEEDED, {
+              requested_bytes: blob?.size ?? null,
+              quota_bytes,
+            });
+          } catch (_) { /* best-effort */ }
+        }
         resolve(false);
       };
     });
