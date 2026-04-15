@@ -527,12 +527,18 @@ class Stemphonic:
                 )
                 return
 
-            # Forward user's JWT cookie or Authorization header
+            # Forward whichever identity the caller sent:
+            #   - Browser: Authorization: Bearer <jwt> or access_token cookie
+            #   - Desktop: X-API-Key: dsk_… (or Authorization: Bearer dsk_…)
+            # The auth-service gate (generation_gate.py) accepts all three
+            # shapes. We accept the request here if ANY of them is present
+            # and let auth-service decide validity.
             auth_header    = request.headers.get("Authorization", "")
             cookie_header  = request.headers.get("Cookie", "")
             access_token   = request.cookies.get("access_token", "")
+            api_key_header = request.headers.get("X-API-Key", "")
 
-            if not auth_header and not access_token:
+            if not auth_header and not access_token and not api_key_header:
                 return jsonify({"error": "Authentication required for generation"}), 401
 
             gate_headers = {
@@ -545,6 +551,8 @@ class Stemphonic:
                 gate_headers["Cookie"] = cookie_header
             elif access_token:
                 gate_headers["Cookie"] = f"access_token={access_token}"
+            if api_key_header:
+                gate_headers["X-API-Key"] = api_key_header
 
             body = _json.dumps({"endpoint": request.path}).encode()
 
