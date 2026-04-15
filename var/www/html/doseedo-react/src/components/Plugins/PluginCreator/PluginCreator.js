@@ -320,6 +320,46 @@ const PluginCreator = () => {
     }
   }, [unlocked, projectParam, resetProject]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Desktop plugin clone integration ──────────────────────────────────────
+  const dskPlugin = searchParams.get('dsk_plugin');
+  const dskKey    = searchParams.get('dsk_key');
+
+  useEffect(() => {
+    if (!dskPlugin || !dskKey || !unlocked) return;
+    fetch(`/api/plugins/${dskPlugin}`, { headers: { 'X-API-Key': dskKey } })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(plugin => {
+        const content = typeof plugin.content === 'string'
+          ? JSON.parse(plugin.content) : (plugin.content || {});
+        const params = (content.components || []).slice(0, 16);
+        const COLS = 4, KW = 80, KH = 90, PAD_X = 140, PAD_Y = 130, START_X = 30, START_Y = 80;
+        const PALETTE = ['#4a9eff','#e06c9f','#ffd700','#00c8ff','#b464ff','#00e5a0','#ff6b6b','#94b8de'];
+        const canvasComponents = params.map((p, i) => ({
+          id: `dsk_${p.id || i}`,
+          type: 'knob',
+          label: p.label || p.id || `Param ${i + 1}`,
+          x: START_X + (i % COLS) * PAD_X,
+          y: START_Y + Math.floor(i / COLS) * PAD_Y,
+          width: KW, height: KH,
+          color: PALETTE[Math.floor(i / COLS) % PALETTE.length],
+          min: p.min ?? 0, max: p.max ?? 1,
+          default: p.default ?? 0, value: p.default ?? 0,
+          unit: p.unit || '',
+        }));
+        setPluginConfig({
+          name: content.name || plugin.name || 'My Plugin',
+          width: 600,
+          height: Math.max(400, START_Y + Math.ceil(params.length / COLS) * PAD_Y + 20),
+          bgColor: '#1a1a2e', titleBarColor: '#2d2d4e', bgImage: '',
+        });
+        if (canvasComponents.length > 0) pushComponents(canvasComponents);
+        if (content.dsp_config) setDspConfig(content.dsp_config);
+        setShowWelcome(false);
+        showToast(`Loaded from desktop: ${content.name || plugin.name}`, null, 'success');
+      })
+      .catch(err => showToast('Failed to load desktop plugin: ' + (err.message || 'Unknown'), null, 'error'));
+  }, [unlocked, dskPlugin, dskKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Collect images from UI state ─────────────────────────────────────────
   const collectImages = useCallback(() => {
     const images = {};
