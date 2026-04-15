@@ -38,34 +38,131 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
   const audioBufferRef = useRef(null);
   const loadedUrlRef = useRef(null);
   const envelopePaintedRef = useRef(false);
+  const lastEnvelopeRef = useRef(null);
+  const transitionFrameRef = useRef(null);
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [duration, setDuration] = React.useState(null);
 
+  // paintWithTransition — every time the canvas needs a new image, pass the
+  // draw through this helper instead of calling `canvas.width = width` +
+  // `renderXxx(...)` directly. It snapshots the current pixels, renders the
+  // new content, then runs a short RAF loop that crossfades old→new with a
+  // purple noise overlay (same palette as PlaceholderWaveform). Net effect:
+  // the waveform never "disappears" during latent_visual handoff or final-
+  // decode swap — it morphs through noise, matching the studio's visual
+  // language. First paint (no prior content OR dimensions changed) skips
+  // the animation since there's nothing sensible to fade FROM.
+  const paintWithTransition = React.useCallback((drawFn, { animate = true, duration = 320 } = {}) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dimsMatch = canvas.width === width && canvas.height === height;
+    const hadContent = dimsMatch && (envelopePaintedRef.current || audioBufferRef.current);
+
+    if (!animate || !hadContent) {
+      canvas.width = width;
+      canvas.height = height;
+      drawFn(ctx);
+      return;
+    }
+
+    // Snapshot the current pixels before destroying them.
+    const old = document.createElement('canvas');
+    old.width = width;
+    old.height = height;
+    old.getContext('2d').drawImage(canvas, 0, 0);
+
+    // Draw the new content freshly so we can blend it over.
+    canvas.width = width;
+    canvas.height = height;
+    drawFn(ctx);
+    const fresh = document.createElement('canvas');
+    fresh.width = width;
+    fresh.height = height;
+    fresh.getContext('2d').drawImage(canvas, 0, 0);
+
+    if (transitionFrameRef.current) cancelAnimationFrame(transitionFrameRef.current);
+    const start = performance.now();
+    const centerY = height / 2;
+    // Noise bars use the same purple the placeholder animation uses
+    // (components/DAW/PlaceholderWaveform.js) so the whole generation
+    // pipeline shares a single "stems in flight" visual motif.
+    const NOISE_COLOR = 'rgba(139, 92, 246, 0.7)';
+    const tick = (now) => {
+      const t = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - t, 3);            // ease-out cubic
+      const noiseAlpha = Math.sin(Math.PI * t) * 0.45; // peaks at t=0.5
+
+      ctx.clearRect(0, 0, width, height);
+      ctx.globalAlpha = ease;
+      ctx.drawImage(fresh, 0, 0);
+      ctx.globalAlpha = 1 - ease;
+      ctx.drawImage(old, 0, 0);
+
+      if (noiseAlpha > 0.02) {
+        ctx.globalAlpha = noiseAlpha;
+        ctx.strokeStyle = NOISE_COLOR;
+        ctx.lineWidth = 1;
+        for (let x = 0; x < width; x += 3) {
+          const n = (Math.random() - 0.5) * height * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(x + 0.5, centerY - n);
+          ctx.lineTo(x + 0.5, centerY + n);
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      if (t < 1) {
+        transitionFrameRef.current = requestAnimationFrame(tick);
+      } else {
+        transitionFrameRef.current = null;
+      }
+    };
+    transitionFrameRef.current = requestAnimationFrame(tick);
+  }, [width, height]);
+
+  // Cleanup: cancel any in-flight transition on unmount / dep change.
+  useEffect(() => () => {
+    if (transitionFrameRef.current) cancelAnimationFrame(transitionFrameRef.current);
+  }, []);
+
   // Instant envelope rendering — draws the waveform from latent_visual
   // peaks WITHOUT waiting for audio decode. Fires whenever envelopeData
-  // changes (typically once, right after latent separation).
+  // changes (v4 → latent_visual refinement handoff, for example).
   useEffect(() => {
     if (!envelopeData || !canvasRef.current) return;
     const T = envelopeData.length / 2;
     const dur = T / envelopeFps;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    canvas.width = width;
-    canvas.height = height;
-    renderEnvelope(ctx, envelopeData, T, width, height, color, gain);
+    // Animate only when we're swapping in a NEW envelope (identity change),
+    // not on every re-render that happens to carry the same array ref.
+    const isNewEnvelope = envelopeData !== lastEnvelopeRef.current;
+    paintWithTransition(
+      (ctx) => renderEnvelope(ctx, envelopeData, T, width, height, color, gain),
+      { animate: isNewEnvelope }
+    );
+    lastEnvelopeRef.current = envelopeData;
     envelopePaintedRef.current = true;
     if (!isLoaded) {
       setDuration(dur);
       setIsLoaded(true);
     }
-  }, [envelopeData, width, height, color, envelopeFps, isLoaded, gain]);
+  }, [envelopeData, width, height, color, envelopeFps, isLoaded, gain, paintWithTransition]);
 
   // Load audio only when URL changes
   useEffect(() => {
     if (!audioUrl || loadedUrlRef.current === audioUrl) return;
 
     let cancelled = false;
-    setIsLoaded(false);
+    // Only flip isLoaded=false (which triggers the grey `.trackLoading`
+    // shimmer in OptimizedTrack) when we genuinely have nothing to show.
+    // If an envelope is already painted, the canvas is NOT blank during
+    // the async fetch/decode — keeping isLoaded=true prevents the shimmer
+    // overlay from momentarily replacing the waveform during transient
+    // URL swaps (e.g. v4 placeholder → latent_demucs placeholder blob).
+    if (!envelopePaintedRef.current && !audioBufferRef.current) {
+      setIsLoaded(false);
+    }
 
     const loadAudio = async () => {
       try {
@@ -85,16 +182,16 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
           // the final full-length decode arrives via the fetch path.
           if (envelopePaintedRef.current) return;
           if (canvasRef.current) {
-            const canvas = canvasRef.current;
-            const ctx = canvas.getContext('2d');
-            canvas.width = width;
-            canvas.height = height;
             if (envelopeData) {
               const envT = envelopeData.length / 2;
-              renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
+              paintWithTransition(
+                (ctx) => renderEnvelope(ctx, envelopeData, envT, width, height, color, gain)
+              );
               envelopePaintedRef.current = true;
             } else {
-              renderWaveform(ctx, cachedBuffer, width, height, color, cropStart, cropEnd, gain);
+              paintWithTransition(
+                (ctx) => renderWaveform(ctx, cachedBuffer, width, height, color, cropStart, cropEnd, gain)
+              );
             }
           }
           return;
@@ -136,44 +233,47 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
         // envelope was painted. Intermediate chunks and tiny placeholders
         // must NOT overwrite the latent visual envelope.
         if (canvasRef.current) {
-          const canvas = canvasRef.current;
-          const ctx = canvas.getContext('2d');
           if (envelopeData && envelopePaintedRef.current) {
             const envT = envelopeData.length / 2;
             const expectedDur = envT / envelopeFps;
             const isFinalDecode = audioBuffer.duration >= expectedDur * 0.9;
             if (isFinalDecode) {
-              // Final decode ready — switch from envelope to real waveform
-              canvas.width = width;
-              canvas.height = height;
-              renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain);
+              // Final decode ready — swap from envelope to real waveform
+              // with the noise transition so the swap isn't a hard cut.
+              paintWithTransition(
+                (ctx) => renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain)
+              );
               envelopePaintedRef.current = false;
             }
             // else: envelope stays, don't touch canvas
           } else {
-            canvas.width = width;
-            canvas.height = height;
             if (envelopeData) {
               const envT = envelopeData.length / 2;
-              renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
+              paintWithTransition(
+                (ctx) => renderEnvelope(ctx, envelopeData, envT, width, height, color, gain)
+              );
               envelopePaintedRef.current = true;
             } else {
-              renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain);
+              paintWithTransition(
+                (ctx) => renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain)
+              );
             }
           }
         }
       } catch (error) {
         console.error('Error loading audio:', error);
-        setIsLoaded(false);
-        if (canvasRef.current) {
-          const canvas = canvasRef.current;
-          const ctx = canvas.getContext('2d');
-
-          // Set canvas dimensions for error state too
-          canvas.width = width;
-          canvas.height = height;
-
-          drawPlaceholder(ctx, width, height);
+        // Only reset the loaded flag on real failure when nothing is
+        // paintable — otherwise leaving the last-good canvas on screen
+        // is better than a shimmer strobe while the caller retries.
+        if (!envelopePaintedRef.current && !audioBufferRef.current) {
+          setIsLoaded(false);
+          if (canvasRef.current) {
+            const canvas = canvasRef.current;
+            const ctx = canvas.getContext('2d');
+            canvas.width = width;
+            canvas.height = height;
+            drawPlaceholder(ctx, width, height);
+          }
         }
       }
     };
@@ -183,13 +283,23 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     return () => {
       cancelled = true;
     };
-  }, [audioUrl, width, height, color, cropStart, cropEnd]);
+  }, [audioUrl, width, height, color, cropStart, cropEnd, paintWithTransition]);
 
   // Re-render waveform when dimensions, crop, envelope, OR gain change
   // (without reloading audio). Gain repaints are how real-time volume ↔
   // waveform size tracking works — slider moves → state → this effect.
+  //
+  // This effect runs on every render where deps changed. Most of those
+  // runs (gain tweaks, crop drags, width resizes) should be INSTANT — no
+  // noise transition, just a fresh paint. The noise transition lives in
+  // the envelope-change and final-decode paths above, where the content
+  // genuinely differs.
   useEffect(() => {
     if (!canvasRef.current) return;
+
+    // Skip instant repaints when an envelope-swap transition is running —
+    // otherwise this effect would clobber the animation mid-frame.
+    if (transitionFrameRef.current) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
