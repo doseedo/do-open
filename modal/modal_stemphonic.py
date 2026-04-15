@@ -243,11 +243,17 @@ image = (
         remote_path="/opt/latent_ckpts/latent_pitch/pitch_final.pt",
         copy=True,
     )
-    .add_local_file(
-        "/scratch/latent_drumsep_ckpts/drumsep_018000.pt",
-        remote_path="/opt/latent_ckpts/latent_drumsep/drumsep_final.pt",
-        copy=True,
-    )
+    # TODO(post-2026-04-11 wipe): drumsep_018000.pt was lost when /scratch
+    # was wiped and is not in any GCS backup or Modal volume we can find.
+    # Skipping the bake means the latent_drumsep drum-substem path fails
+    # gracefully at runtime (separate-stems still returns the 4 main stems,
+    # just without drum_substem_latents). Re-add once the ckpt is recovered
+    # or re-trained from /home/arlo/do2/latent_drumsep/train.py.
+    # .add_local_file(
+    #     "/scratch/latent_drumsep_ckpts/drumsep_018000.pt",
+    #     remote_path="/opt/latent_ckpts/latent_drumsep/drumsep_final.pt",
+    #     copy=True,
+    # )
     .add_local_file(
         "/scratch/latent_visual_ckpts/latent_visual_final.pt",
         remote_path="/opt/latent_ckpts/latent_visual/latent_visual_final.pt",
@@ -260,24 +266,29 @@ image = (
         remote_path="/opt/latent_ckpts/latent_demucs/distill_final.pt",
         copy=True,
     )
-    # latent PANNs student (20 MB) — instrument classification
-    .add_local_file(
-        "/scratch/latent_panns_student/ckpts/panns_final.pt",
-        remote_path="/opt/latent_ckpts/latent_panns/panns_final.pt",
-        copy=True,
-    )
+    # TODO(post-2026-04-11 wipe): panns_final.pt same story as drumsep.
+    # Instrument classification endpoint (/api/classify) will 500 until
+    # re-trained from /home/arlo/do2/latent_panns_student/. Generation
+    # path doesn't use this model.
+    # .add_local_file(
+    #     "/scratch/latent_panns_student/ckpts/panns_final.pt",
+    #     remote_path="/opt/latent_ckpts/latent_panns/panns_final.pt",
+    #     copy=True,
+    # )
     # panns_inference package expects /root/panns_data/class_labels_indices.csv
     .add_local_file(
         "/scratch/cache/panns_data/class_labels_indices.csv",
         remote_path="/root/panns_data/class_labels_indices.csv",
         copy=True,
     )
-    # latent whisper/lyric student vocal (190 MB) — vocal transcription
-    .add_local_file(
-        "/scratch/latent_whisper_student/ckpts_vocal/student_final.pt",
-        remote_path="/opt/latent_ckpts/latent_whisper/student_final.pt",
-        copy=True,
-    )
+    # TODO(post-2026-04-11 wipe): latent whisper/lyric student vocal (190 MB)
+    # — same recovery status as drumsep/panns above. /api/transcribe-vocals
+    # will 500 until re-baked. Generation path doesn't use it.
+    # .add_local_file(
+    #     "/scratch/latent_whisper_student/ckpts_vocal/student_final.pt",
+    #     remote_path="/opt/latent_ckpts/latent_whisper/student_final.pt",
+    #     copy=True,
+    # )
 )
 
 app = modal.App("doseedo-stemphonic")
