@@ -132,34 +132,25 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
         setDuration(audioBuffer.duration);
         setIsLoaded(true);
 
-        // Only repaint if this is the final full-length decode or no
-        // envelope was painted. Intermediate chunks and tiny placeholders
-        // must NOT overwrite the latent visual envelope.
+        // When envelopeData is present, the canvas is owned by the envelope —
+        // NEVER repaint from audio. Audio loads silently for playback only.
+        // Without envelopeData, render the waveform from the decoded buffer.
         if (canvasRef.current) {
           const canvas = canvasRef.current;
           const ctx = canvas.getContext('2d');
-          if (envelopeData && envelopePaintedRef.current) {
-            const envT = envelopeData.length / 2;
-            const expectedDur = envT / envelopeFps;
-            const isFinalDecode = audioBuffer.duration >= expectedDur * 0.9;
-            if (isFinalDecode) {
-              // Final decode ready — switch from envelope to real waveform
+          if (envelopeData) {
+            // Envelope is the permanent visual — don't touch canvas from audio
+            if (!envelopePaintedRef.current) {
               canvas.width = width;
               canvas.height = height;
-              renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain);
-              envelopePaintedRef.current = false;
-            }
-            // else: envelope stays, don't touch canvas
-          } else {
-            canvas.width = width;
-            canvas.height = height;
-            if (envelopeData) {
               const envT = envelopeData.length / 2;
               renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
               envelopePaintedRef.current = true;
-            } else {
-              renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain);
             }
+          } else {
+            canvas.width = width;
+            canvas.height = height;
+            renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain);
           }
         }
       } catch (error) {
@@ -212,10 +203,9 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
       return;
     }
 
-    const envT = envelopeData ? envelopeData.length / 2 : 0;
-    const expectedDur = envT / envelopeFps;
-    const isPartial = envelopeData && audioBufferRef.current.duration < expectedDur * 0.9;
-    if (isPartial) {
+    // If envelopeData exists it is the permanent visual — always render it.
+    if (envelopeData) {
+      const envT = envelopeData.length / 2;
       renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
     } else {
       renderWaveform(ctx, audioBufferRef.current, width, height, color, cropStart, cropEnd, gain);
