@@ -3,7 +3,7 @@
  * Handles file uploads to Google Cloud Storage via backend
  */
 
-const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
+const API_BASE = process.env.REACT_APP_API_BASE_URL || '';
 
 /**
  * Upload a file to GCS bucket

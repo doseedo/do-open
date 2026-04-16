@@ -28,6 +28,41 @@ let isInitialized = false;
 let masterSent = false;
 let masksSent = false;
 
+// Band/bin lookup constants — must match maskWorklet.js exactly so the
+// worklet's bilinear interpolation reads the values we send at the
+// intended frequencies.
+const N_FFT = 2048;
+const HOP = 512;
+const SR = 48000;
+const F_BINS = N_FFT / 2 + 1; // 1025
+const LATENT_HOP = 1920;
+const STFT_PER_LATENT = LATENT_HOP / HOP; // 3.75 STFT frames per latent frame
+
+// Precompute band-edges and per-bin band membership once. Same log-
+// spacing formula as maskWorklet (20 Hz → SR/2).
+const bandEdges = new Float32Array(N_BANDS + 1);
+for (let i = 0; i <= N_BANDS; i++) {
+  bandEdges[i] = 20 * Math.pow((SR / 2) / 20, i / N_BANDS);
+}
+// binToBand[f] = the band index that FFT bin f falls into, or -1 if
+// it's below 20 Hz / above Nyquist. Each bin contributes to exactly
+// one band (unlike the worklet's two-band bilinear blend — that's
+// only needed for smooth per-sample playback, not for the mask values
+// themselves, which are already band-rate).
+const binToBand = new Int16Array(F_BINS);
+for (let f = 0; f < F_BINS; f++) {
+  const freq = f * (SR / 2) / (F_BINS - 1);
+  binToBand[f] = -1;
+  for (let b = 0; b < N_BANDS; b++) {
+    if (freq >= bandEdges[b] && freq < bandEdges[b + 1]) {
+      binToBand[f] = b;
+      break;
+    }
+  }
+  // Edge cases: freq at Nyquist → last band.
+  if (binToBand[f] < 0 && freq >= bandEdges[N_BANDS - 1]) binToBand[f] = N_BANDS - 1;
+}
+
 /**
  * Initialize the mask playback system.
  * MUST receive the existing AudioContext from useAudioPlayback.
@@ -340,4 +375,91 @@ export function isMaskPlaybackReady() {
 
 export function getMaskStemNames() {
   return [...STEMS];
+}
+
+/**
+ * Feed refined STFT masks from the latent_mask_refiner pipeline
+ * straight into the worklet, bypassing computeAndSetMasks (which runs
+ * a small ONNX on the latents). Input is in STFT space (1025 freq
+ * bins × T_stft frames); we reduce to the worklet's [32 bands × T_lat]
+ * grid before posting.
+ *
+ * The refiner's per-stem sigmoids don't sum to 1 across stems.
+ * Normalize per (band, frame) so the worklet sees probabilities.
+ *
+ * @param {Object} refinedByStem  { drums: Float32Array(F*T_stft), ... }
+ * @param {number} F              1025
+ * @param {number} T_stft         time frames at STFT resolution
+ * @param {number} T_lat          time frames at latent resolution
+ */
+export function setRefinedMasks(refinedByStem, F, T_stft, T_lat) {
+  if (!workletNode) throw new Error('maskPlayback worklet not initialized');
+  if (F !== F_BINS) throw new Error(`setRefinedMasks: expected F=${F_BINS} got ${F}`);
+
+  const stemNames = Object.keys(refinedByStem).filter(n => refinedByStem[n]);
+  if (stemNames.length === 0) return;
+
+  // Count how many FFT bins fall into each band (for averaging).
+  const binsPerBand = new Int32Array(N_BANDS);
+  for (let f = 0; f < F; f++) {
+    const b = binToBand[f];
+    if (b >= 0) binsPerBand[b] += 1;
+  }
+
+  // Intermediate: [N_BANDS × T_stft] per stem (space-reduced only).
+  const bandStft = {};
+  for (const name of stemNames) {
+    const src = refinedByStem[name];
+    const dst = new Float32Array(N_BANDS * T_stft);
+    for (let f = 0; f < F; f++) {
+      const b = binToBand[f];
+      if (b < 0) continue;
+      for (let t = 0; t < T_stft; t++) {
+        dst[b * T_stft + t] += src[f * T_stft + t];
+      }
+    }
+    // Normalize by bin count per band so each band's value is the mean
+    // mask magnitude across its covered bins.
+    for (let b = 0; b < N_BANDS; b++) {
+      const n = binsPerBand[b] || 1;
+      for (let t = 0; t < T_stft; t++) dst[b * T_stft + t] /= n;
+    }
+    bandStft[name] = dst;
+  }
+
+  // Time-reduce T_stft → T_lat. Each latent frame covers ~3.75 STFT
+  // frames; average the STFT slice that belongs to each latent frame.
+  const bandLat = {};
+  for (const name of stemNames) {
+    const src = bandStft[name];
+    const dst = new Float32Array(N_BANDS * T_lat);
+    for (let t = 0; t < T_lat; t++) {
+      const s0 = Math.round(t * STFT_PER_LATENT);
+      const s1 = Math.min(Math.round((t + 1) * STFT_PER_LATENT), T_stft);
+      const span = Math.max(1, s1 - s0);
+      for (let b = 0; b < N_BANDS; b++) {
+        let sum = 0;
+        for (let s = s0; s < s1; s++) sum += src[b * T_stft + s];
+        dst[b * T_lat + t] = sum / span;
+      }
+    }
+    bandLat[name] = dst;
+  }
+
+  // Cross-stem normalization so masks sum to 1 per (band, latent-frame).
+  // Protects the AudioWorklet's STFT reconstruction from double-counting
+  // when two stems both claim the same frequency cell.
+  for (let t = 0; t < T_lat; t++) {
+    for (let b = 0; b < N_BANDS; b++) {
+      let sum = 0;
+      for (const name of stemNames) sum += bandLat[name][b * T_lat + t];
+      if (sum > 1e-6) {
+        for (const name of stemNames) bandLat[name][b * T_lat + t] /= sum;
+      }
+    }
+  }
+
+  workletNode.port.postMessage({ type: 'setMasks', masks: bandLat });
+  masksSent = true;
+  console.log(`[maskPlayback] refined masks posted — ${stemNames.length} stems, ${N_BANDS} bands × ${T_lat} frames`);
 }

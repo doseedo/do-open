@@ -20,7 +20,12 @@
 /* eslint-disable no-restricted-globals */
 
 const ENC_MODEL_URL = '/static/models/sem_encoder_packed.onnx';
-const DEC_MODEL_URL = '/static/models/sem_decoder_packed.onnx';
+// Temp-warmstart decoder — same input shape as the old sem_decoder for
+// (latent, sem_emb), plus a third stft_mask input. Warmstart design
+// zero-initializes the mask path, so passing zeros reduces the model
+// to sem_v1 behavior exactly. Real per-stem masks from v4-small will
+// get piped through in a follow-up commit.
+const DEC_MODEL_URL = '/static/models/sem_mask_temp_decoder_fp16.onnx';
 const VIS_MODEL_URL = '/static/models/latent_visual.onnx';
 const VIS_MODEL_DATA_URL = '/static/models/latent_visual.onnx.data';
 
@@ -55,7 +60,7 @@ async function init() {
   ort = await import('onnxruntime-web');
 
   if (ort.env?.wasm) {
-    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
+    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/';
     ort.env.wasm.numThreads = 1; // workers are already off-main-thread
     ort.env.wasm.simd = true;
   }
@@ -70,7 +75,10 @@ async function init() {
   self.postMessage({ type: 'progress', pct: 35, mb: mb1, elapsed: el1 });
 
   const dec = await fetchPacked(DEC_MODEL_URL, 'sem_decoder');
-  const totalLoaded = enc.loaded + dec.loaded;
+  // New decoder ships with external .onnx.data (fp16 weights).
+  const decDataResp = await fetch(DEC_MODEL_URL + '.data', { cache: 'force-cache' });
+  const decDataBytes = new Uint8Array(await decDataResp.arrayBuffer());
+  const totalLoaded = enc.loaded + dec.loaded + decDataBytes.byteLength;
   const mb2 = (totalLoaded / 1e6).toFixed(0);
   const el2 = ((performance.now() - t0) / 1000).toFixed(1);
   self.postMessage({ type: 'progress', pct: 100, mb: mb2, elapsed: el2 });
@@ -89,6 +97,7 @@ async function init() {
       decSession = await ort.InferenceSession.create(dec.bytes, {
         executionProviders: [ep],
         graphOptimizationLevel: 'all',
+        externalData: [{ path: 'sem_mask_temp_decoder_fp16.onnx.data', data: decDataBytes.buffer }],
       });
 
       // Also load the tiny latent_visual model (244 KB)
@@ -137,11 +146,28 @@ async function decode(input, shape) {
     embeddings.set(embT.data, b * SEM_DIM);
   }
 
-  // Step 2: Run decoder batched [B, 64, T] + [B, 128] → [B, 2, T*1920]
+  // Step 2: Run decoder batched [B, 64, T] + [B, 128] + [B, 1025, T_m]
+  //         → [B, 2, T*1920]. New input stft_mask defaults to zeros
+  // here — the warmstart-trained model reduces to sem_v1 behavior when
+  // the mask path is all zeros, so this is a safe no-op until the
+  // caller wires real per-stem masks from v4-small. Use T_m=1 to
+  // minimize the zero-tensor size; the compressor interpolates
+  // internally to whatever time resolution it needs.
   const latInput = new ort.Tensor('float32', latent, shape);
   const embInput = new ort.Tensor('float32', embeddings, [B, SEM_DIM]);
-  const decOut = await decSession.run({ latent: latInput, sem_emb: embInput });
+  const N_FREQ = 1025;
+  const zeroMask = new Float32Array(B * N_FREQ * 1);
+  const maskInput = new ort.Tensor('float32', zeroMask, [B, N_FREQ, 1]);
+  const decOut = await decSession.run({
+    latent: latInput,
+    sem_emb: embInput,
+    stft_mask: maskInput,
+  });
   const audioT = decOut.audio || decOut[Object.keys(decOut)[0]];
+  // ORT-Web WebGPU: outputs stay on GPU unless explicitly copied.
+  if (typeof audioT.getData === 'function') {
+    return await audioT.getData();
+  }
   return audioT.data;
 }
 

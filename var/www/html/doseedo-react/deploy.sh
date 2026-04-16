@@ -171,8 +171,17 @@ else
 fi
 
 # ── 1. sync build/ → bucket ───────────────────────────────────────────
-echo "── 1. rsync build/ → $BUCKET ──"
-run gsutil -m rsync -r -c -d build/ "$BUCKET/"
+# `-d` deletes bucket objects that aren't in build/. ONNX models and the
+# `assets/icons/*.png` lot are gitignored (`*.onnx` in repo root) and
+# never present in build/, so without an exclude they would get wiped on
+# every deploy from a fresh clone — that incident on 2026-04-14 cost
+# ~470 MB of recovered objects (oobleck_encoder, sem_demucs_v4, latent_*,
+# all 16 instrument icons). Exclude regex matches the *destination* path
+# inside the bucket — keep this list in sync with anything live in the
+# bucket but absent from build/.
+RSYNC_EXCLUDE='^models/|^static/models/|^assets/icons/'
+echo "── 1. rsync build/ → $BUCKET (exclude: $RSYNC_EXCLUDE) ──"
+run gsutil -m rsync -r -c -d -x "$RSYNC_EXCLUDE" build/ "$BUCKET/"
 
 # ── 2. force-upload cache-bypass HTML/manifest ────────────────────────
 echo "── 2. force-upload index.html + asset-manifest.json with no-store ──"

@@ -5,7 +5,7 @@ import axios from 'axios';
  * Based on the API calls from doseedo2.html
  */
 
-const API_BASE_URL = 'http://localhost:8070'; // Update with your actual API URL
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
 
 /**
  * Generate audio from the given parameters

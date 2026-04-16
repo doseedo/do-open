@@ -8,7 +8,7 @@ import { parseMIDIFile } from '../../utils/midiParser';
 import { analyzeAudio, iconForType, separateStemsAuto, repaintMeter, encodeLatentsBulk, detectChordsAndTempo } from '../../services/trackAnalysisAPI';
 import { meterChangeAllStems, initLatentEditor } from '../../services/latentMeterChange';
 import { initDrumSep, splitDrumLatent } from '../../services/latentDrumSep';
-import { initMaskPlayback, createMaskPlaybackNode, setMaster, computeAndSetMasks, precomputeStemAudio } from '../../services/maskPlayback';
+import { initMaskPlayback, createMaskPlaybackNode, setMaster, computeAndSetMasks, setRefinedMasks, precomputeStemAudio } from '../../services/maskPlayback';
 import {
   latentIdToBlobUrl,
   initLatentDecoder,
@@ -20,12 +20,15 @@ import {
   buildDoae,
 } from '../../services/latentDecoder';
 import {
-  initLatentDemucs,
   audioFileToStereo48k,
-  separateToLatentStems,
   uploadLatent,
-  LATENT_DEMUCS_STEM_NAMES,
 } from '../../services/latentDemucs';
+import {
+  initLatentDemucsV4,
+  separate6Stems,
+  STEM_NAMES_V4COND_6,
+} from '../../services/latentDemucsV4';
+import { STEM_NAMES_6 } from '../../services/semDemucsV4';
 import { initLatentVisual, envelopeFromLatent, buildFakeBufferFromEnvelope } from '../../services/latentVisual';
 import { audioBufferCache } from '../../hooks/useWaveform';
 import ImportAudioModal from './ImportAudioModal';
@@ -186,20 +189,17 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
 
         console.log('[prewarm] loading Oobleck VAE decoder (63 MB)…');
         await initLatentDecoder();
-        console.log('[prewarm] decoder ready, now loading latentDemucs (325 MB)…');
-        await initLatentDemucs();
+        console.log('[prewarm] decoder ready, now loading latentDemucsV4 (98 MB fp16)…');
+        await initLatentDemucsV4();
         // After demucs is ready, preload the Oobleck VAE encoder (~337 MB).
-        // This is the WebGPU replacement for /api/encode-audio-latent; it's
-        // NOT wired into any encode call yet — just warming it in the
-        // background so the first real use (next commit) isn't cold.
         console.log('[prewarm] demucs ready, now loading latentEncoder (337 MB)…');
         const { initLatentEncoder } = await import('../../services/latentEncoder');
         initLatentEncoder().catch((e) => {
           console.warn('[prewarm] latentEncoder preload failed (non-fatal):', e?.message || e);
         });
       } catch (e) {
-        // If decoder or demucs fails, still try to start demucs + encoder.
-        initLatentDemucs().catch(() => {});
+        // If decoder or demucs fails, still try to start them + encoder.
+        initLatentDemucsV4().catch(() => {});
         import('../../services/latentEncoder').then(({ initLatentEncoder }) =>
           initLatentEncoder().catch(() => {})
         ).catch(() => {});
@@ -1013,10 +1013,15 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
             v4Result = await semAnalyze(preFlat, preN);
             const c = v4Result.classification;
             console.log(`[semDemucsV4] ${c.rationale} (confidence=${c.confidence.toFixed(2)})`);
-            console.log('[semDemucsV4] per-stem energy:',
-              Object.fromEntries(v4Result.perStemEnergy.map((e, i) => [
-                ['drums','bass','vocals','other','guitar','piano'][i],
-                +(e * 100).toFixed(1) + '%',
+            // perStemEnergy is a Float32Array; its .map returns another
+            // typed array (numbers, not entries), so Object.fromEntries
+            // throws "Iterator value NaN is not an entry object".
+            // Array.from() gives a plain Array whose .map can return
+            // arbitrary [k, v] pairs.
+            console.log(`[semDemucsV4] per-stem energy (src=${v4Result.envelopeSource}):`,
+              Object.fromEntries(Array.from(v4Result.perStemEnergy).map((e, i) => [
+                STEM_NAMES_6[i],
+                (e * 100).toFixed(1) + '%',
               ])));
 
             if (!c.isMix) {
@@ -1079,7 +1084,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
           // for the 325 MB demucs model.
           let v4PaintedStems = false;
           if (v4Result && v4Result.classification.isMix && v4Result.stemEnvelopes?.length === 6) {
-            const v4StemNames = ['drums', 'bass', 'vocals', 'other', 'guitar', 'piano'];
+            // Use the canonical order from semDemucsV4 — keeps in sync if the
+            // exporter's STEMS_6 ever changes again.
+            const v4StemNames = STEM_NAMES_6;
             v4PaintedStems = true;
             const instantStems = v4StemNames.map((stemName, idx) => ({
               id: `stem-${trackId}-${stemName}`,
@@ -1102,38 +1109,41 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
               },
             }));
             dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: instantStems } });
-            console.log(`[semDemucsV4] painted 6 instant stem waveforms (fps=${v4Result.rmsFps.toFixed(1)})`);
+            console.log(`[semDemucsV4] painted 6 instant stem waveforms (fps=${v4Result.rmsFps.toFixed(1)} src=${v4Result.envelopeSource})`);
           }
 
           // Try the browser-local latent_demucs path first.
           let stemLatentIds = null;
           let localFlatTDs = null;  // keep the raw stem latents around for latent_visual
           try {
-            console.log('[latentDemucs] trying browser-local separation...');
+            console.log('[latentDemucsV4] trying browser-local 6-stem separation (conditioned on v4-small)...');
             let demucsLastPct = -20;
             const _demucsT0 = performance.now();
-            await initLatentDemucs((p) => {
+            await initLatentDemucsV4((p) => {
               if (!p?.bytesTotal) return;
               const pct = Math.floor((p.bytesLoaded / p.bytesTotal) * 100);
               if (pct >= demucsLastPct + 20) {
                 demucsLastPct = pct;
                 const elap = ((performance.now() - _demucsT0) / 1000).toFixed(1);
                 const mb = (p.bytesLoaded / 1e6).toFixed(0);
-                console.log(`[latentDemucs] loading ${pct}% (${mb} MB, ${elap}s)`);
+                console.log(`[latentDemucsV4] loading ${pct}% (${mb} MB, ${elap}s)`);
               }
             });
             const { flat, numFrames } = await audioFileToStereo48k(file);
-            console.log(`[latentDemucs] decoded audio in browser: ${numFrames} samples @ 48kHz`);
-            const stems = await separateToLatentStems(flat, numFrames);
-            console.log(`[latentDemucs] separated into ${Object.keys(stems).length} stem latents`);
+            console.log(`[latentDemucsV4] decoded audio in browser: ${numFrames} samples @ 48kHz`);
+            // v4Result was computed earlier (the same run that gated
+            // mix-vs-solo). We reuse its masks + embedding as
+            // conditioning here — no re-inference needed.
+            if (!v4Result) throw new Error('v4Result unavailable — semDemucsV4 must run before latentDemucsV4');
+            const stems = await separate6Stems(flat, numFrames, v4Result);
+            console.log(`[latentDemucsV4] separated into ${Object.keys(stems).length} stem latents`);
             // Stash flatTD so we can run latent_visual without re-fetching.
             localFlatTDs = {};
             for (const name of Object.keys(stems)) {
               localFlatTDs[name] = { flatTD: stems[name].flatTD, T: stems[name].T };
             }
-            // Upload each stem to backend — backend gets ONLY latent bytes
             stemLatentIds = {};
-            for (const name of LATENT_DEMUCS_STEM_NAMES) {
+            for (const name of STEM_NAMES_V4COND_6) {
               const s = stems[name];
               if (!s) continue;
               const meta = await uploadLatent(s.flatTD, s.T, s.D, 25);
@@ -1141,11 +1151,37 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
                 latent_id: meta.latent_id,
                 n_frames: s.T,
               };
-              console.log(`[latentDemucs] uploaded ${name}: ${meta.latent_id} (${s.T} frames)`);
+              console.log(`[latentDemucsV4] uploaded ${name}: ${meta.latent_id} (${s.T} frames)`);
+            }
+
+            // ─── Refiner pass: clean latent + v4-small noisy mask →
+            //     refined per-stem STFT mask. +25.2% SI-SDR per the
+            //     training run. Stash in the module-level map so the
+            //     (follow-up) maskPlayback integration can pull them
+            //     in. We DON'T UPDATE_TRACK with them here because the
+            //     stem tracks already carry envelopeData in metadata,
+            //     and the reducer replaces metadata wholesale.
+            if (v4Result && stems) {
+              try {
+                const { refine6StemMasks, initMaskRefiner } = await import('../../services/maskRefiner');
+                await initMaskRefiner();
+                const _rfT0 = performance.now();
+                const refined = await refine6StemMasks(stems, v4Result);
+                const rfMs = (performance.now() - _rfT0).toFixed(0);
+                console.log(`[maskRefiner] refined ${Object.keys(refined).length} masks in ${rfMs}ms (F=${v4Result.maskF} T=${v4Result.maskT})`);
+                // Stash where the mask-playback block below can pick
+                // them up (same-scope async ordering is fragile across
+                // try/catch boundaries; a local variable is cleaner).
+                var _v4RefinedMasks = refined;
+                var _v4RefinedF = v4Result.maskF;
+                var _v4RefinedT = v4Result.maskT;
+              } catch (rfErr) {
+                console.warn('[maskRefiner] skipped (non-fatal):', rfErr?.message || rfErr);
+              }
             }
           } catch (localErr) {
             const emsg = localErr?.message || localErr?.toString?.() || JSON.stringify(localErr) || 'unknown';
-            console.warn('[latentDemucs] browser path failed, falling back to backend /separate-stems:', emsg);
+            console.warn('[latentDemucsV4] browser path failed, falling back to backend /separate-stems:', emsg);
             stemLatentIds = null;
             localFlatTDs = null;
           }
@@ -1327,15 +1363,22 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
                 const masterAudioBuf = await maskCtx.decodeAudioData(masterArrayBuf);
                 setMaster(masterAudioBuf);
 
-                // Compute masks from stem latents
+                // Compute masks. Prefer refined masks from the
+                // latent_mask_refiner (post-v4cond-pred) if they were
+                // produced successfully; otherwise fall back to the
+                // old latent_mask_e2e path via computeAndSetMasks.
                 const T = localFlatTDs[Object.keys(localFlatTDs)[0]].T;
-                await computeAndSetMasks(
-                  Object.fromEntries(
-                    Object.entries(localFlatTDs).map(([name, { flatTD }]) => [name, flatTD])
-                  ), T
-                );
-
-                console.log('🎭 Mask playback ready — worklet connected to main AudioContext');
+                if (typeof _v4RefinedMasks !== 'undefined' && _v4RefinedMasks) {
+                  setRefinedMasks(_v4RefinedMasks, _v4RefinedF, _v4RefinedT, T);
+                  console.log('🎭 Mask playback ready — using refined masks (+25.2% SI-SDR over noisy)');
+                } else {
+                  await computeAndSetMasks(
+                    Object.fromEntries(
+                      Object.entries(localFlatTDs).map(([name, { flatTD }]) => [name, flatTD])
+                    ), T
+                  );
+                  console.log('🎭 Mask playback ready — worklet connected to main AudioContext');
+                }
               }
             } catch (maskErr) {
               console.warn('🎭 Mask playback setup failed, falling back to decode:', maskErr?.message || maskErr);

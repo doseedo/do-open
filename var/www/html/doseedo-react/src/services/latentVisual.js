@@ -27,7 +27,7 @@ export async function initLatentVisual() {
     const ort = await import('onnxruntime-web');
     _ort = ort;
     if (ort.env?.wasm) {
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
+      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/';
       ort.env.wasm.numThreads = Math.min(2, navigator.hardwareConcurrency || 1);
       ort.env.wasm.simd = true;
     }

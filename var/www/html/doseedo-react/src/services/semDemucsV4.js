@@ -28,12 +28,21 @@
  *              the single stem's latent
  */
 
-const MODEL_URL = '/static/models/sem_demucs_v4_6s_packed.onnx';
-const MODEL_DATA_URL = '/static/models/sem_demucs_v4_6s_packed.onnx.data';
+// _v3 adds a `masks_envelope` output (stft_masks integrated over freq, ~17K floats
+// per 30 s clip) so the browser doesn't need to read back the broken 17M-float
+// stft_masks tensor for display/classification. v2 was Conv1d-STFT (same as v3
+// internally). v1 was native STFT op. Bump suffix on every re-export to bust
+// the `cache: 'force-cache'` reads below.
+const MODEL_URL = '/static/models/sem_demucs_v4_6s_packed_v3.onnx';
+const MODEL_DATA_URL = '/static/models/sem_demucs_v4_6s_packed_v3.onnx.data';
 const TARGET_SR = 48000;
 // STEMS_6 order must match DistillDataset6.STEMS_6 in the training code:
-//   0 drums  1 bass  2 vocals  3 other  4 guitar  5 piano
-export const STEM_NAMES_6 = ['drums', 'bass', 'vocals', 'other', 'guitar', 'piano'];
+//   0 drums  1 bass  2 other  3 vocals  4 guitar  5 piano
+// (Earlier this file had vocals/other swapped, so the row labeled "vocals"
+//  was painting the "other" stem and vice-versa. All 8 training files
+//  in latent_demucs_student/ — distill_dataset_6.py, train_*, eval_*,
+//  build_stem6_targets.py, prep_moisesdb.py — agree on this order.)
+export const STEM_NAMES_6 = ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano'];
 const N_STEMS = 6;
 const RMS_FPS = 48000 / 1536;   // ≈ 31.25 Hz (matches rms time axis)
 
@@ -51,7 +60,7 @@ export async function initSemDemucsV4(onProgress = null) {
     const ort = await import('onnxruntime-web');
     _ort = ort;
     if (ort.env?.wasm) {
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
+      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/';
       ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
       ort.env.wasm.simd = true;
     }
@@ -79,9 +88,21 @@ export async function initSemDemucsV4(onProgress = null) {
     for (const c of chunks) { dataBytes.set(c, off); off += c.byteLength; }
 
     const externalData = [
-      { path: 'sem_demucs_v4_6s_packed.onnx.data', data: dataBytes.buffer },
+      // Path must match the external_data location string baked into the ONNX
+      // graph (set at export time from the output filename). v3 was exported as
+      // sem_demucs_v4_6s_packed_v3.onnx so the internal reference is the _v3
+      // version. Bumping the file URL above also requires updating this key.
+      { path: 'sem_demucs_v4_6s_packed_v3.onnx.data', data: dataBytes.buffer },
     ];
 
+    // WebGPU first, WASM fallback. The earlier WASM-only restriction was
+    // for the v1 ONNX (native STFT op zeroed masks on WebGPU). The v2
+    // ONNX uses Conv1d-based |STFT| — plain ops that WebGPU handles, and
+    // WASM happens to NaN-poison this model's spec head regardless of
+    // ORT-Web version (1.22 + 1.24 both broken). So WebGPU is now the
+    // primary path. WASM is kept as fallback for browsers without
+    // WebGPU; sniff-and-fallback in _analyze still flips to RMS if the
+    // mask buffer comes back dead.
     const backends = [];
     if (ort.env?.webgpu) backends.push('webgpu');
     backends.push('wasm');
@@ -99,16 +120,6 @@ export async function initSemDemucsV4(onProgress = null) {
       } catch (err) {
         const msg = err?.message || String(err);
         console.warn(`[semDemucsV4] ${ep} init failed:`, msg);
-        if (ep === 'webgpu') {
-          try {
-            const { trackEvent, PRODUCT_EVENTS, platformString } = await import('../lib/telemetry');
-            trackEvent(PRODUCT_EVENTS.WEBGPU_INIT_FAILED, {
-              model: 'semDemucsV4',
-              reason: msg.slice(0, 300),
-              platform: platformString(),
-            });
-          } catch (_) { /* best-effort */ }
-        }
         lastErr = err;
       }
     }
@@ -152,41 +163,224 @@ export async function analyze(flat, numFrames) {
 }
 
 async function _analyze(sess, ort, flat, numFrames) {
-  // Model was traced at 4s. Inference supports dynamic length but we cap
-  // it to the first ~30s — enough to classify + draw a visualizer — and
-  // the user's full-length latent demucs does the real per-sample work.
-  const maxAnalysisSamples = 48000 * 30;
-  const useN = Math.min(numFrames, maxAnalysisSamples);
-  const chunkFlat = new Float32Array(2 * useN);
-  chunkFlat.set(flat.subarray(0, useN), 0);
-  chunkFlat.set(flat.subarray(numFrames, numFrames + useN), useN);
+  // Run the model in 4-second chunks and concatenate outputs along time.
+  //
+  // The model was traced at 4 s. At full 30 s input the stft_masks output
+  // is 17 M floats (~69 MB), which ORT-Web mishandles on every backend
+  // we've tested — WebGPU silently zeros it, WASM NaN-poisons it, both
+  // 1.22 and 1.24, both ONNX STFT op (v1) and Conv1d STFT (v2/v3). The
+  // hypothesis is that the failure is size-related (intermediate buffer
+  // / GPU→CPU copy of the mask), so chunking back to the trace size
+  // keeps each call's mask at ~9 MB and should survive. We then stitch
+  // the per-chunk outputs into the same shape the rest of the pipeline
+  // expects (full-length rms, full-length masks, full-length envelope).
+  // embedding is per-stem global with no time axis — average across
+  // chunks. Cap total analysis at 30 s for compute budget.
+  const CHUNK_SAMPLES = 48000 * 4;
+  const MAX_TOTAL = 48000 * 30;
+  const totalN = Math.min(numFrames, MAX_TOTAL);
+  const numChunks = Math.ceil(totalN / CHUNK_SAMPLES);
 
-  const input = new ort.Tensor('float32', chunkFlat, [1, 2, useN]);
-  const res = await sess.run({ waveform: input });
+  // Run each 4 s chunk through the model.
+  const chunks = [];
+  for (let i = 0; i < numChunks; i++) {
+    const start = i * CHUNK_SAMPLES;
+    const end = Math.min(start + CHUNK_SAMPLES, totalN);
+    const chunkLen = end - start;
 
-  const rms = res.rms?.data || new Float32Array(0);
-  const rmsDims = res.rms?.dims || [1, N_STEMS, 0, 2];
-  const rmsT = rmsDims[2] | 0;
+    const chunkFlat = new Float32Array(2 * chunkLen);
+    chunkFlat.set(flat.subarray(start, end), 0);
+    chunkFlat.set(flat.subarray(numFrames + start, numFrames + end), chunkLen);
 
-  const masks = res.stft_masks?.data || new Float32Array(0);
-  const maskDims = res.stft_masks?.dims || [1, N_STEMS, 0, 0];
-  const maskF = maskDims[2] | 0;
-  const maskT = maskDims[3] | 0;
+    const input = new ort.Tensor('float32', chunkFlat, [1, 2, chunkLen]);
+    let res;
+    try {
+      res = await sess.run({ waveform: input });
+    } catch (err) {
+      const msg = err?.message || String(err);
+      if (/already started|backend is still in use|webgpu/i.test(msg)) {
+        await new Promise(r => setTimeout(r, 120));
+        res = await sess.run({ waveform: input });
+      } else {
+        throw err;
+      }
+    }
+    chunks.push(res);
+  }
 
-  const embedding = res.embedding?.data || new Float32Array(0);
+  // ORT-Web WebGPU (JSEP) keeps output tensors on GPU by default —
+  // `.data` is a zero-length view until the buffer is copied to CPU.
+  const pullTensor = async (t) => {
+    if (!t) return new Float32Array(0);
+    try {
+      if (typeof t.getData === 'function') return await t.getData();
+    } catch (_) { /* fall through */ }
+    return t.data || new Float32Array(0);
+  };
 
-  const perStemEnergy = computePerStemEnergy(masks, N_STEMS, maskF, maskT);
+  // Pull per-chunk tensors + dims.
+  const perChunk = [];
+  for (const res of chunks) {
+    perChunk.push({
+      rms:      await pullTensor(res.rms),
+      rmsT:     (res.rms?.dims || [1, N_STEMS, 0, 2])[2] | 0,
+      masks:    await pullTensor(res.stft_masks),
+      maskF:    (res.stft_masks?.dims || [1, N_STEMS, 0, 0])[2] | 0,
+      maskT:    (res.stft_masks?.dims || [1, N_STEMS, 0, 0])[3] | 0,
+      envelope: await pullTensor(res.masks_envelope),
+      envT:     (res.masks_envelope?.dims || [1, N_STEMS, 0])[2] | 0,
+      embedding:await pullTensor(res.embedding),
+    });
+  }
+
+  // Concatenate across chunks. The model's output dims for a given input
+  // length are deterministic, so summing per-chunk T values gives the
+  // total T we'd have gotten from a single full-length call.
+  const rmsT  = perChunk.reduce((a, c) => a + c.rmsT, 0);
+  const maskF = perChunk[0]?.maskF | 0;
+  const maskT = perChunk.reduce((a, c) => a + c.maskT, 0);
+  const envT  = perChunk.reduce((a, c) => a + c.envT, 0);
+
+  const rms      = concatStemsTime(perChunk.map(c => c.rms),      N_STEMS, perChunk.map(c => c.rmsT),  /*perFrame=*/2);
+  const envelope = concatStemsTime(perChunk.map(c => c.envelope), N_STEMS, perChunk.map(c => c.envT),  /*perFrame=*/1);
+  const masks    = concatStemsFreqTime(perChunk.map(c => c.masks), N_STEMS, maskF, perChunk.map(c => c.maskT));
+  const embedding = averageEmbeddings(perChunk.map(c => c.embedding), N_STEMS, /*embDim=*/128);
+
+  const sniff = (buf) => {
+    const N = buf.length;
+    if (!N) return { ok: false, reason: 'empty', sample: [] };
+    const ix = [0, (N >> 2), (N >> 1), N - 1];
+    const sample = ix.map(i => buf[i]);
+    let nonZero = 0, nan = 0;
+    for (const v of sample) {
+      if (Number.isNaN(v)) nan++;
+      else if (v !== 0) nonZero++;
+    }
+    return { ok: nonZero > 0 && nan === 0, reason: nan ? 'nan' : (nonZero ? 'ok' : 'all-zero'), sample };
+  };
+  const envSniff  = sniff(envelope);
+  const maskSniff = sniff(masks);
+  const rmsSniff  = sniff(rms);
+  console.log(
+    `[semDemucsV4] ${numChunks}×4s chunks — rms=${rms.length} (${rmsSniff.reason})`
+    + ` envelope=${envelope.length} (${envSniff.reason}, sample=[${Array.from(envSniff.sample).map(v => v.toExponential(2)).join(',')}])`
+    + ` masks=${masks.length} (${maskSniff.reason}) emb=${embedding.length}`
+  );
+
+  // Envelope is the primary signal — small enough to always survive readback.
+  // Masks-from-full-tensor and RMS are kept as fallbacks for backwards-compat
+  // with old ONNX builds and for browsers where envelope readback also fails.
+  let perStemEnergy;
+  let stemEnvelopes;
+  let envelopeSource;
+  if (envelope.length === N_STEMS * envT && envSniff.ok) {
+    perStemEnergy = computePerStemEnergyFromEnvelope(envelope, N_STEMS, envT);
+    stemEnvelopes = buildStemEnvelopesFromEnvelope(envelope, N_STEMS, envT, rmsT || ENV_FALLBACK_T);
+    envelopeSource = 'envelope';
+  } else if (masks.length === N_STEMS * maskF * maskT && maskSniff.ok) {
+    perStemEnergy = computePerStemEnergyFromMasks(masks, N_STEMS, maskF, maskT);
+    stemEnvelopes = buildStemEnvelopesFromMasks(masks, N_STEMS, maskF, maskT, rmsT || ENV_FALLBACK_T);
+    envelopeSource = 'masks';
+  } else if (rms.length === N_STEMS * rmsT * 2 && rmsSniff.ok) {
+    perStemEnergy = computePerStemEnergyFromRms(rms, N_STEMS, rmsT);
+    stemEnvelopes = buildStemEnvelopesFromRms(rms, N_STEMS, rmsT);
+    envelopeSource = 'rms';
+    console.warn(`[semDemucsV4] envelope+masks dead (env=${envSniff.reason} masks=${maskSniff.reason}) — fallback to RMS head (known miscalibrated)`);
+  } else {
+    console.warn(`[semDemucsV4] all signals dead — cannot classify (env=${envSniff.reason} mask=${maskSniff.reason} rms=${rmsSniff.reason})`);
+    perStemEnergy = new Float32Array(N_STEMS);
+    stemEnvelopes = Array.from({ length: N_STEMS }, () => new Float32Array(0));
+    envelopeSource = 'empty';
+  }
   const classification = classifyMixVsSolo(perStemEnergy);
 
   return {
     rms, rmsFrames: rmsT, rmsFps: RMS_FPS,
     masks, maskF, maskT,
+    envelope, envT,
     embedding,
     perStemEnergy,
     classification,
-    // derived: per-stem envelope (ch0+ch1 avg) for direct canvas use
-    stemEnvelopes: buildStemEnvelopes(rms, N_STEMS, rmsT),
+    stemEnvelopes,
+    envelopeSource,
   };
+}
+
+// Used by the empty-input branch of _analyze when neither masks nor rms
+// arrived — pick a reasonable display length (~30s at RMS_FPS).
+const ENV_FALLBACK_T = 938;
+
+/**
+ * Concatenate per-stem buffers across chunks along the time axis.
+ *
+ * Layout assumption: each chunk's buffer is `[stem, t, perFrame]` row-major,
+ * i.e. for a given stem the time axis is contiguous. Output preserves the
+ * same row-major layout with summed T.
+ *
+ * Used for `rms` (perFrame=2) and `envelope` (perFrame=1).
+ */
+function concatStemsTime(chunkBufs, nStems, chunkTs, perFrame) {
+  const totalT = chunkTs.reduce((a, t) => a + t, 0);
+  if (!totalT) return new Float32Array(0);
+  const out = new Float32Array(nStems * totalT * perFrame);
+  for (let s = 0; s < nStems; s++) {
+    let dstT = 0;
+    for (let i = 0; i < chunkBufs.length; i++) {
+      const buf = chunkBufs[i];
+      const T = chunkTs[i];
+      if (!T || !buf || buf.length < (s + 1) * T * perFrame) continue;
+      const src = buf.subarray(s * T * perFrame, (s + 1) * T * perFrame);
+      out.set(src, s * totalT * perFrame + dstT * perFrame);
+      dstT += T;
+    }
+  }
+  return out;
+}
+
+/**
+ * Concatenate per-stem masks across chunks along the time axis.
+ * Each chunk's mask layout is `[stem, freq, t]` row-major; output preserves
+ * the same shape with summed T. Inner loop is per (stem, freq) which means
+ * S*F = 6*1025 = 6150 small `set()` calls per call — negligible vs the
+ * 17M-float total move.
+ */
+function concatStemsFreqTime(chunkBufs, nStems, F, chunkTs) {
+  const totalT = chunkTs.reduce((a, t) => a + t, 0);
+  if (!totalT || !F) return new Float32Array(0);
+  const out = new Float32Array(nStems * F * totalT);
+  for (let s = 0; s < nStems; s++) {
+    for (let f = 0; f < F; f++) {
+      let dstT = 0;
+      for (let i = 0; i < chunkBufs.length; i++) {
+        const buf = chunkBufs[i];
+        const T = chunkTs[i];
+        if (!T || !buf || buf.length < nStems * F * T) continue;
+        const srcOff = s * F * T + f * T;
+        const src = buf.subarray(srcOff, srcOff + T);
+        out.set(src, s * F * totalT + f * totalT + dstT);
+        dstT += T;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Average per-stem embeddings across chunks. Each chunk's embedding is a
+ * full [B=1, S, embDim] tensor (the model returns one global embedding per
+ * stem per call), so we mean-pool across chunks. If a chunk's embedding is
+ * empty/short, skip it.
+ */
+function averageEmbeddings(chunkBufs, nStems, embDim) {
+  const out = new Float32Array(nStems * embDim);
+  let count = 0;
+  for (const buf of chunkBufs) {
+    if (!buf || buf.length < nStems * embDim) continue;
+    for (let i = 0; i < nStems * embDim; i++) out[i] += buf[i];
+    count++;
+  }
+  if (count > 1) for (let i = 0; i < nStems * embDim; i++) out[i] /= count;
+  return out;
 }
 
 /**
@@ -195,7 +389,7 @@ async function _analyze(sess, ort, flat, numFrames) {
  * across stems at each bin, this is the fraction of total spectral
  * energy attributed to each stem by the model.
  */
-function computePerStemEnergy(masks, nStems, F, T) {
+function computePerStemEnergyFromMasks(masks, nStems, F, T) {
   if (!masks.length || !F || !T) return new Float32Array(nStems);
   const out = new Float32Array(nStems);
   const stemStride = F * T;
@@ -205,7 +399,37 @@ function computePerStemEnergy(masks, nStems, F, T) {
     for (let i = 0; i < stemStride; i++) sum += masks[base + i];
     out[s] = sum;
   }
-  // Normalize
+  let total = 0;
+  for (let s = 0; s < nStems; s++) total += out[s];
+  if (total > 0) for (let s = 0; s < nStems; s++) out[s] /= total;
+  return out;
+}
+
+/**
+ * RMS-based energy — primary classifier input.
+ *
+ * rms shape: [1, nStems, T, 2] (stereo RMS per latent frame). Summing
+ * rms² across time + channels gives each stem's total energy in the
+ * input mix; normalizing across stems yields the same "fraction of
+ * audible energy per stem" signal as the mask-based version but with
+ * a 1000× smaller tensor (12 KB vs 69 MB for 30 s clips). That tiny
+ * size is key — the large mask buffer occasionally fails to transfer
+ * from GPU to CPU on WebGPU configs, silently returning zeros.
+ * rms is robust.
+ */
+function computePerStemEnergyFromRms(rms, nStems, T) {
+  const out = new Float32Array(nStems);
+  if (!rms.length || !T) return out;
+  // rms layout is [1, nStems, T, 2] flattened; stride per stem = T*2.
+  for (let s = 0; s < nStems; s++) {
+    let e = 0;
+    const base = s * T * 2;
+    for (let i = 0; i < T * 2; i++) {
+      const v = rms[base + i];
+      e += v * v;
+    }
+    out[s] = e;
+  }
   let total = 0;
   for (let s = 0; s < nStems; s++) total += out[s];
   if (total > 0) for (let s = 0; s < nStems; s++) out[s] /= total;
@@ -276,13 +500,111 @@ function classifyMixVsSolo(energy) {
 }
 
 /**
- * Convert the rms [6, T, 2] output into a per-stem envelope
- * Float32Array[T*2] matching the (min, max) layout useWaveform expects:
- * first T values are the min envelope (negative), next T are max.
- * For rms (always ≥ 0) we mirror around 0 to synthesize a symmetric
- * envelope that draws like a normal stereo waveform.
+ * Per-stem envelope from the tiny `masks_envelope` output (shape [6, T_stft],
+ * already integrated over freq inside the ONNX). Each value is `sum_f
+ * mask[s,f,t]` ∈ [0, F] — divide by F to get a 0..1 fraction. Then mirror
+ * around 0 and downsample T_stft → Tout for the (min, max) layout
+ * useWaveform expects.
  */
-function buildStemEnvelopes(rms, nStems, T) {
+function buildStemEnvelopesFromEnvelope(envelope, nStems, T_stft, Tout) {
+  const out = [];
+  if (!T_stft || !Tout) {
+    for (let s = 0; s < nStems; s++) out.push(new Float32Array(0));
+    return out;
+  }
+  const F_NORM = 1025;            // matches mask freq-axis size — amounts to /F
+  const DISPLAY_AMP = 0.9;
+  for (let s = 0; s < nStems; s++) {
+    const env = new Float32Array(2 * Tout);
+    const base = s * T_stft;
+    for (let to = 0; to < Tout; to++) {
+      const tStart = Math.floor(to * T_stft / Tout);
+      const tEnd   = Math.max(tStart + 1, Math.floor((to + 1) * T_stft / Tout));
+      let sum = 0;
+      for (let ti = tStart; ti < tEnd; ti++) sum += envelope[base + ti];
+      const v = (sum / ((tEnd - tStart) * F_NORM)) * DISPLAY_AMP;
+      env[to]        = -v;
+      env[Tout + to] =  v;
+    }
+    out.push(env);
+  }
+  return out;
+}
+
+/**
+ * Per-stem energy fraction from the envelope output: integrate over T,
+ * normalize so the 6 fractions sum to 1. Equivalent to integrating the
+ * full mask over both F and T but cheaper because the F sum already
+ * happened inside the ONNX.
+ */
+function computePerStemEnergyFromEnvelope(envelope, nStems, T_stft) {
+  const out = new Float32Array(nStems);
+  if (!T_stft || !envelope.length) return out;
+  for (let s = 0; s < nStems; s++) {
+    let e = 0;
+    const base = s * T_stft;
+    for (let t = 0; t < T_stft; t++) e += envelope[base + t];
+    out[s] = e;
+  }
+  let total = 0;
+  for (let s = 0; s < nStems; s++) total += out[s];
+  if (total > 0) for (let s = 0; s < nStems; s++) out[s] /= total;
+  return out;
+}
+
+/**
+ * Build per-stem envelopes from stft_masks [6, F, T_stft] by integrating
+ * mask probability over frequency at each time step. Output is mirrored
+ * (-a, +a) to match the (min, max) layout useWaveform expects.
+ *
+ * Masks are softmax'd across stems at each (f, t) bin and sum to 1.0,
+ * so `sum_f masks[s, f, t]` is the spectral energy fraction this stem
+ * holds at time t. Multiplying by a fixed display amplitude keeps the
+ * waveform readable. We downsample T_stft → Tout by box-averaging so
+ * the placeholder waveform aligns with the same per-frame timeline the
+ * RMS path used (≈31.25 fps).
+ *
+ * Used only when the new `masks_envelope` output is unavailable (older
+ * ONNX builds). v3 ONNX has the integration done inside the model.
+ */
+function buildStemEnvelopesFromMasks(masks, nStems, F, T_stft, Tout) {
+  const out = [];
+  if (!F || !T_stft || !Tout) {
+    for (let s = 0; s < nStems; s++) out.push(new Float32Array(0));
+    return out;
+  }
+  const stemStride = F * T_stft;
+  const DISPLAY_AMP = 0.9;  // 0..1 mask fraction → ±0.9 envelope range
+  for (let s = 0; s < nStems; s++) {
+    const env = new Float32Array(2 * Tout);
+    const base = s * stemStride;
+    // For each output frame, average mask across F over the corresponding
+    // T_stft window, then scale to display range.
+    for (let to = 0; to < Tout; to++) {
+      const tStart = Math.floor(to * T_stft / Tout);
+      const tEnd   = Math.max(tStart + 1, Math.floor((to + 1) * T_stft / Tout));
+      let sum = 0;
+      let count = 0;
+      for (let ti = tStart; ti < tEnd; ti++) {
+        for (let f = 0; f < F; f++) sum += masks[base + f * T_stft + ti];
+        count += F;
+      }
+      const v = (sum / count) * DISPLAY_AMP;
+      env[to]        = -v;
+      env[Tout + to] =  v;
+    }
+    out.push(env);
+  }
+  return out;
+}
+
+/**
+ * Convert the rms [6, T, 2] output into a per-stem envelope
+ * Float32Array[T*2] matching the (min, max) layout useWaveform expects.
+ * Kept as a last-resort fallback only — see _analyze for why masks are
+ * the primary source.
+ */
+function buildStemEnvelopesFromRms(rms, nStems, T) {
   const out = [];
   if (!T) { for (let s = 0; s < nStems; s++) out.push(new Float32Array(0)); return out; }
   for (let s = 0; s < nStems; s++) {

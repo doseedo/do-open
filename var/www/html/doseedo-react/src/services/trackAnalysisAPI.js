@@ -108,10 +108,17 @@ export async function repaintMeter({ stems, srcMeter, tgtMeter, srcBpm, tgtBpm, 
 export async function separateStemsAuto(audioFile) {
   // Calls /separate-stems (background task), polls until done, returns
   // { task_id, stems: { drums, bass, other, vocals, guitar, piano } }
+  // /separate-stems is in the gated-routes list so the Modal
+  // before_request hook calls auth/internal/generation/consume, which
+  // requires the user JWT. Forwarding Authorization here — the prior
+  // version relied on cookies which don't reach Modal, so every call
+  // from the latentDemucs-failed fallback path was 401-ing.
+  const token = localStorage.getItem('token');
+  const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
   const compressed = await compressAudioForUpload(audioFile);
   const fd = new FormData();
   fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
-  const r = await fetch('/separate-stems', { method: 'POST', body: fd });
+  const r = await fetch('/separate-stems', { method: 'POST', body: fd, headers: authHeaders });
   if (!r.ok) throw new Error(`separate-stems HTTP ${r.status}`);
   const start = await r.json();
   // Capture the task_id ONCE — the status endpoint doesn't echo it back,
@@ -126,6 +133,7 @@ export async function separateStemsAuto(audioFile) {
       // "processing" response for the entire poll loop.
       const sr = await fetch(`/separate-stems/status/${taskId}?t=${Date.now()}`, {
         cache: 'no-store',
+        headers: authHeaders,
       });
       if (!sr.ok) continue;
       result = await sr.json();
