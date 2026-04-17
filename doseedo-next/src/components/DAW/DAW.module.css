@@ -80,20 +80,66 @@
   max-width: 100vw; /* Constrain width to force scrolling */
 }
 
-/* ========== Timeline Container ========== */
+/* ========== Timeline Container ==========
+   Simple 2-column layout. Col 1 (bus-label-width) holds the 4-cell .spacerArea
+   that spans both rows. Col 2 is the timeline ruler / chord track / automation
+   area. All the 2×2 alignment work happens inside .spacerArea. */
 .timelineContainer {
   display: grid;
-  grid-template-columns: calc(var(--bus-label-width) / 2) calc(var(--bus-label-width) / 2) max-content;
-  grid-template-rows: auto auto; /* Row 1: ChordTrack/Markers, Row 2: Timeline */
-  gap: 0;
-  column-gap: 0;
-  overflow-x: visible; /* No scroll - parent handles it */
+  grid-template-columns: var(--bus-label-width) max-content;
+  grid-template-rows: auto auto;
+  overflow-x: visible;
   overflow-y: visible;
   position: sticky;
   top: 0;
   min-width: fit-content;
   z-index: 300;
   background: var(--daw-bg);
+}
+
+/* ========== Spacer Area (the 2×2 control grid on the left) ==========
+   Spans both rows of .timelineContainer's col 1. Internally a nested
+   2-row × 3-col grid. Because all 4 cells share this single grid, col 1
+   auto-sizes to the widest of (BPM cluster, Add Track cluster), and col 2
+   auto-sizes to the widest of (Play controls, Zoom controls). That means
+   top and bottom rows are pixel-locked regardless of their content, and
+   the two right-clusters sit immediately next to their left-clusters with
+   a fixed gap — no more big void in the middle. */
+.spacerArea {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 4px 9.6px;
+  background: var(--daw-bg);
+  position: sticky;
+  left: 0;
+  z-index: 301;
+  overflow: hidden;
+}
+.spacerCellTopLeft    { grid-column: 1; grid-row: 1; }
+.spacerCellTopRight   { grid-column: 2; grid-row: 1; }
+.spacerCellBottomLeft { grid-column: 1; grid-row: 2; }
+.spacerCellBottomRight{ grid-column: 2; grid-row: 2; }
+.spacerCellTopLeft,
+.spacerCellTopRight,
+.spacerCellBottomLeft,
+.spacerCellBottomRight {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ========== Timeline Ruler Area ==========
+   Sits in .timelineContainer's col 2 (row 1 = chord/auto/scene,
+   row 2 = timeline ruler). Each child positions itself by row. */
+.timelineHeaderRight {
+  grid-column: 2;
 }
 
 /* ========== Scrollable Content Area ========== */
@@ -138,50 +184,17 @@
   /* Width determined by child's inline width */
 }
 
-/* ========== Timeline Row ========== */
+/* Timeline Row — now just a transparent wrapper around the timeline ruler.
+   .timelineRow used to contain its own spacer + ruler in a 3-col grid, but
+   the spacer moved to the shared .spacerArea (see timelineContainer above)
+   so this only needs to place the ruler in the right column of the parent. */
 .timelineRow {
-  grid-column: 1 / -1; /* Span all columns */
-  display: grid;
-  /* Matches .timelineContainer columns so Row 2 (Add Track / Zoom + timeline
-     ruler) locks alignment with Row 1 (BPM / Transport + chord track) above.
-     Without this, the two .timelineSpacer1 elements in Row 1 vs Row 2 would
-     each compute independent widths and drift apart. */
-  grid-template-columns: calc(var(--bus-label-width) / 2) calc(var(--bus-label-width) / 2) minmax(560px, max-content);
+  grid-column: 2;
+  grid-row: 2;
   position: relative;
   height: 32px;
   min-width: fit-content;
   overflow: visible;
-}
-
-/* Left region of the timeline header — spans both bus-label half-columns
-   and is ITSELF a 2-column sub-grid so the four cells (BPM row left/right +
-   Add-Track row left/right) lock to a single 2×2 alignment. Each cell takes
-   exactly half the bus-label column width, so the top row (BPM / Transport)
-   and the bottom row (Add Track / Zoom) can never drift apart. */
-.timelineSpacer1 {
-  position: sticky;
-  left: 0;
-  grid-column: 1 / 3;
-  background: var(--daw-bg);
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: center;
-  padding: 4px 0;  /* Cells handle their own horizontal padding (see below) */
-  z-index: 301;
-  overflow: hidden;
-  min-width: 0;
-}
-.spacerCellLeft,
-.spacerCellRight {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  overflow: hidden;
-  padding: 0 9.6px;  /* Matches .busLabelRow so alignment is pixel-exact */
-}
-.spacerCellRight {
-  justify-content: flex-end;
 }
 
 .addTrackButton {

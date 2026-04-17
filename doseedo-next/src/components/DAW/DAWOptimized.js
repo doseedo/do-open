@@ -292,6 +292,16 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
     dispatch({ type: 'UPDATE_TRACK_HEIGHT', payload: Math.max(state.trackHeight / 1.2, 30) });
   }, [dispatch, state.trackHeight]);
 
+  // Handler for adding a new SFX bus — moved here from Timeline.js so the
+  // Add Track button can live in the shared 2×2 .spacerArea grid.
+  const handleAddBus = useCallback(() => {
+    const busId = `sfx-${Date.now()}`;
+    dispatch({
+      type: 'CREATE_BUS',
+      payload: { id: busId, type: 'SFX', name: 'SFX Bus', expanded: true }
+    });
+  }, [dispatch]);
+
   // Mouse wheel zoom handler (two-finger scroll for horizontal only)
   const handleWheel = useCallback((e) => {
     // Only handle two-finger scroll (Ctrl key is set on trackpad pinch/scroll)
@@ -1291,13 +1301,14 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
         {/* Timeline Row with ChordTrack/SceneMarkers - Hidden in plugin mode */}
         {!pluginMode && (
           <div className={styles.timelineContainer}>
-          {/* Row 1 of the 2×2 timeline header grid.
-              Top-left cell: Metronome / BPM / Meter.
-              Top-right cell: Automation toggle + Transport controls.
-              Row 2 (Add Track / Zoom) lives in Timeline.js and shares this
-              same column grid — they stay perfectly aligned. */}
-          <div className={styles.timelineSpacer1}>
-            <div className={styles.spacerCellLeft}>
+          {/* Shared 2×2 spacer grid. All four cells live in ONE nested grid
+              so their column widths are pixel-locked (col 1 = max of BPM
+              cluster & Add Track; col 2 = max of Transport & Zoom). The
+              right cluster sits immediately after the left cluster with a
+              fixed 8px gap instead of an open 50/50 void. */}
+          <div className={styles.spacerArea}>
+            {/* Top-left: Metronome / BPM / Meter */}
+            <div className={styles.spacerCellTopLeft}>
               {showMetronome && (
                 <Button
                   id="metronome-btn"
@@ -1332,8 +1343,8 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               )}
             </div>
 
-            {/* Top-right cell: Automation + Transport */}
-            <div className={styles.spacerCellRight}>
+            {/* Top-right: Automation toggle + Transport */}
+            <div className={styles.spacerCellTopRight}>
               {showAutomation && (
                 <Button
                   id="autobtn"
@@ -1353,11 +1364,49 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                 />
               </div>
             </div>
+
+            {/* Bottom-left: Add Track */}
+            <div className={styles.spacerCellBottomLeft}>
+              <button
+                onClick={handleAddBus}
+                className={styles.addTrackButton}
+                title="Add new bus"
+              >
+                <span style={{ fontSize: '16px', marginRight: '4px' }}>+</span>
+                <span style={{ fontSize: '11px', fontWeight: 500 }}>Add Track</span>
+              </button>
+            </div>
+
+            {/* Bottom-right: Zoom controls */}
+            <div className={styles.spacerCellBottomRight}>
+              <button
+                className={styles.zoomModeButton}
+                onClick={() => dispatch({ type: 'SET_ZOOM_MODE', payload: state.zoomMode === 'x' ? 'y' : 'x' })}
+                title={state.zoomMode === 'x' ? 'Switch to Vertical Zoom' : 'Switch to Horizontal Zoom'}
+              >
+                <i className={`fa-solid ${state.zoomMode === 'y' ? 'fa-up-down' : 'fa-left-right'}`}></i>
+              </button>
+              <button
+                className={styles.zoomButton}
+                onClick={() => { if (state.zoomMode === 'x') handleZoomOut(); else handleZoomYOut(); }}
+                title={state.zoomMode === 'x' ? 'Zoom Out' : 'Decrease Track Height'}
+              >
+                <i className="fa-solid fa-minus"></i>
+              </button>
+              <button
+                className={styles.zoomButton}
+                onClick={() => { if (state.zoomMode === 'x') handleZoomIn(); else handleZoomYIn(); }}
+                title={state.zoomMode === 'x' ? 'Zoom In' : 'Increase Track Height'}
+              >
+                <i className="fa-solid fa-plus"></i>
+              </button>
+            </div>
           </div>
 
-          {/* Column 3: ChordTrack/SceneMarkers/AutomationWindow above Timeline */}
+          {/* Col 2 Row 1: ChordTrack / SceneMarkers / AutomationWindow above Timeline */}
           <div style={{
-            gridColumn: 3,
+            gridColumn: 2,
+            gridRow: 1,
             position: 'relative',
             overflow: 'visible',
             height: state.automationWindow.isVisible ? '100px' : '30px',

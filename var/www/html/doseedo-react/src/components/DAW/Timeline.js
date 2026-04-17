@@ -775,57 +775,10 @@ const Timeline = React.memo(({
   // Full timeline with ticks and interaction
   return (
     <div className={styles.timelineRow}>
-      {/* Row 2 of the 2×2 timeline header grid — uses the same
-          .timelineSpacer1 sub-grid as the BPM/Transport row above, so the
-          bottom-left (Add Track) and bottom-right (Zoom) cells are
-          pixel-locked to the corresponding top-row cells. */}
-      <div
-        className={styles.timelineSpacer1}
-        onClick={handleSpacerClick}
-        style={{ cursor: 'pointer' }}
-      >
-        <div className={styles.spacerCellLeft}>
-          <button
-            onClick={handleAddBus}
-            className={styles.addTrackButton}
-            title="Add new bus"
-          >
-            <span style={{ fontSize: '16px', marginRight: '4px' }}>+</span>
-            <span style={{ fontSize: '11px', fontWeight: '500' }}>Add Track</span>
-          </button>
-        </div>
-
-        <div className={styles.spacerCellRight}>
-          <button
-            className={styles.zoomModeButton}
-            onClick={() => {
-              const newMode = state.zoomMode === 'x' ? 'y' : 'x';
-              dispatch({ type: 'SET_ZOOM_MODE', payload: newMode });
-            }}
-            title={state.zoomMode === 'x' ? 'Switch to Vertical Zoom' : 'Switch to Horizontal Zoom'}
-          >
-            <i className={`fa-solid ${state.zoomMode === 'y' ? 'fa-up-down' : 'fa-left-right'}`}></i>
-          </button>
-          <button
-            className={styles.zoomButton}
-            onClick={() => {
-              if (state.zoomMode === 'x') { onZoomOut(); } else { onZoomYOut(); }
-            }}
-            title={state.zoomMode === 'x' ? 'Zoom Out (Horizontal)' : 'Decrease Track Height'}
-          >
-            <i className="fa-solid fa-minus"></i>
-          </button>
-          <button
-            className={styles.zoomButton}
-            onClick={() => {
-              if (state.zoomMode === 'x') { onZoomIn(); } else { onZoomYIn(); }
-            }}
-            title={state.zoomMode === 'x' ? 'Zoom In (Horizontal)' : 'Increase Track Height'}
-          >
-            <i className="fa-solid fa-plus"></i>
-          </button>
-        </div>
-      </div>
+      {/* The Add Track + Zoom controls that used to live here have moved
+          up into DAWOptimized.js's shared .spacerArea grid so all four 2×2
+          cells share one column layout. This wrapper now only renders the
+          ruler (the .timeline div below). */}
 
       <div
         ref={timelineRef}
