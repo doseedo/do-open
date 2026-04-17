@@ -382,29 +382,33 @@ const InstrumentSelection = React.memo(({ params, updateParam, activeTab = 'inst
         </>
       )}
 
-      <div className={styles.paramRow}>
-        <label>
-          <div className={styles.paramLabel}>
-            <span>Key (for no-input generation):</span>
-          </div>
-          <select
-            className={styles.controlSelect}
-            value={params.generationKey || 'C'}
-            onChange={(e) => updateParam('generationKey', e.target.value)}
-          >
-            {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(key => (
-              <option key={key} value={key}>{key}</option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {/* Key dropdown — hidden from UI, code kept for backend use */}
+      {false && (
+        <div className={styles.paramRow}>
+          <label>
+            <div className={styles.paramLabel}>
+              <span>Key (for no-input generation):</span>
+            </div>
+            <select
+              className={styles.controlSelect}
+              value={params.generationKey || 'C'}
+              onChange={(e) => updateParam('generationKey', e.target.value)}
+            >
+              {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(key => (
+                <option key={key} value={key}>{key}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
 
-      {/* Stemphonic checkpoint selector. DoPerformer (default) → original
-          do-v1 path; any other ckpt → stemphonic backend.  */}
-      <CheckpointDropdown
-        value={params.stemphonicCkpt || DOPERFORMER_ID}
-        onChange={(id) => updateParam('stemphonicCkpt', id)}
-      />
+      {/* Checkpoint dropdown — always 130k, hidden from UI */}
+      {false && (
+        <CheckpointDropdown
+          value={params.stemphonicCkpt || DOPERFORMER_ID}
+          onChange={(id) => updateParam('stemphonicCkpt', id)}
+        />
+      )}
 
       {/* Variant cycler — only shown when a stemphonic ckpt is active */}
       {(params.stemphonicCkpt && params.stemphonicCkpt !== DOPERFORMER_ID) && (
@@ -3183,7 +3187,7 @@ const GenerationPanelOptimized = React.memo(() => {
       {/* Stemphonic-specific advanced parameters (replaces DoPerformer block) */}
       {state.generationParams.stemphonicCkpt && state.generationParams.stemphonicCkpt !== DOPERFORMER_ID && (
         <CollapsibleSection
-          title="Advanced Parameters (Stemphonic)"
+          title="Settings"
           number="3"
           isCollapsed={collapsedSections.advanced}
           onToggle={() => toggleSection('advanced')}
@@ -3443,35 +3447,6 @@ const GenerationPanelOptimized = React.memo(() => {
         </div>
       )}
 
-      {/* Master Denoising Strength Slider */}
-      <div className={styles.denoisingMaster} style={{ marginTop: '20px', marginBottom: '15px' }}>
-        <label>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--color-primary-blue)' }}>
-              <i className="fa-solid fa-waveform-lines"></i> Denoising Strength
-            </span>
-            <span style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--color-primary-blue)' }}>
-              {(state.generationParams.t0 ?? 1.0).toFixed(2)}
-            </span>
-          </div>
-          <input
-            type="range"
-            className={styles.denoisingRange}
-            min="0"
-            max="1"
-            step="0.05"
-            value={state.generationParams.t0 ?? 1.0}
-            onChange={(e) => updateParam('t0', parseFloat(e.target.value))}
-            style={{
-              width: '100%',
-              height: '8px'
-            }}
-          />
-          <div style={{ fontSize: '11px', color: '#888', marginTop: '6px', lineHeight: '1.4' }}>
-            Controls T0 and Noise Level. Higher = more creative/noise, Lower = more faithful to input.
-          </div>
-        </label>
-      </div>
 
           {/* Generate and Save Buttons */}
           <div className={styles.buttonGroup}>
