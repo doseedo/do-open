@@ -82,16 +82,37 @@ const nextConfig = {
       { source: '/api/chat',         destination: `${CHATBOT}/api/chat` },
       { source: '/api/chat/:path*',  destination: `${CHATBOT}/api/chat/:path*` },
 
-      // Modal (stemphonic)
+      // Modal (stemphonic + all ML inference — the stemphonic_server WSGI
+      // app exposes ~30 routes, most of which were previously behind the
+      // dead backend10 catch-all; we list them explicitly now so they actually
+      // route through to Modal instead of 404'ing on a nonexistent Cloud Run).
       { source: '/api/generate-stemphonic',         destination: `${MODAL}/api/generate-stemphonic` },
       { source: '/api/generate-stemphonic/:path*',  destination: `${MODAL}/api/generate-stemphonic/:path*` },
       { source: '/download-stemphonic/:path*',      destination: `${MODAL}/download-stemphonic/:path*` },
       { source: '/api/encode-latents-bulk',         destination: `${MODAL}/api/encode-latents-bulk` },
+      { source: '/api/encode-audio-latent',         destination: `${MODAL}/api/encode-audio-latent` },
+      { source: '/api/latents/:path*',              destination: `${MODAL}/api/latents/:path*` },
+      { source: '/api/upload-latent',               destination: `${MODAL}/api/upload-latent` },
+      { source: '/api/extract-midi',                destination: `${MODAL}/api/extract-midi` },
+      { source: '/api/extract-midi/:path*',         destination: `${MODAL}/api/extract-midi/:path*` },
+      { source: '/api/classify-instrument',         destination: `${MODAL}/api/classify-instrument` },
+      { source: '/api/detect-chords',               destination: `${MODAL}/api/detect-chords` },
+      { source: '/api/repaint-meter',               destination: `${MODAL}/api/repaint-meter` },
+      { source: '/api/regen-stem-for-chord',        destination: `${MODAL}/api/regen-stem-for-chord` },
+      { source: '/api/generate-score-from-video',   destination: `${MODAL}/api/generate-score-from-video` },
+      { source: '/api/generate-score-from-video/:path*', destination: `${MODAL}/api/generate-score-from-video/:path*` },
+      { source: '/api/transcribe-vocals',           destination: `${MODAL}/api/transcribe-vocals` },
+      { source: '/api/vae-version',                 destination: `${MODAL}/api/vae-version` },
       { source: '/health',                          destination: `${MODAL}/health` },
       { source: '/_chat/health',                    destination: `${MODAL}/_chat/health` },
 
-      // Generic /api/* catch-all → backend10 (kept last so specifics win)
-      { source: '/api/:path*', destination: `${BACKEND}/api/:path*` },
+      // NOTE: the following /api/* paths the frontend calls are NOT yet on
+      // Modal (and the old A100 VM serving them is terminated): upload-audio,
+      // audio-to-midi, generate-melody, render-chords, apply-fx, download-with-fx,
+      // generate-do, generate-ace-step, drum-sampler/*. Any UI feature that
+      // calls these will 404 until we port the handlers into modal_stemphonic.py.
+      // Leaving them unrouted rather than silently 404ing via backend10 so
+      // failures surface cleanly in the browser devtools.
     ];
   },
 
