@@ -16,3 +16,10 @@ next-env.d.ts
 !**/*.jpeg
 !**/*.gif
 !**/*.webp
+
+# Un-ignore small client-side ONNX models that ship with the frontend
+# bundle (rmsDemucs, mask refiner, etc.). Root .gitignore blocks *.onnx
+# to keep training checkpoints out of the repo; these 100-600KB inference
+# models need to be served to the browser.
+!public/static/models/*.onnx
+!public/static/models/*.onnx.data
