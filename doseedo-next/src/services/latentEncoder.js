@@ -79,8 +79,14 @@ export async function initLatentEncoder(onProgress = null) {
     let off = 0;
     for (const c of chunks) { dataBytes.set(c, off); off += c.byteLength; }
 
+    // Register the weight blob under BOTH possible filenames so ORT resolves
+    // the graph's internal external_data_file reference regardless of whether
+    // we're serving the fp32 or fp16 variant (the fp16 .onnx internally
+    // references `oobleck_encoder_fp16.onnx.data`; fp32 references the plain
+    // `oobleck_encoder.onnx.data`). The URL we fetch is stable either way.
     const externalData = [
       { path: 'oobleck_encoder.onnx.data', data: dataBytes.buffer },
+      { path: 'oobleck_encoder_fp16.onnx.data', data: dataBytes.buffer },
     ];
 
     // Prefer WebGPU; fall back to WASM on systems without GPU support.
