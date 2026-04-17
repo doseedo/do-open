@@ -517,13 +517,12 @@ const BusRow = React.memo(({
       }
     });
 
-    // Expand the bus if it's collapsed
-    if (!bus.expanded) {
-      dispatch({ type: 'TOGGLE_BUS_EXPANDED', payload: { busId: bus.id } });
-    }
+    // Keep the bus collapsed after adding the MIDI region — the user's
+    // interaction model is "double-click an empty track to drop a MIDI
+    // region on it" in place, not "double-click to expand into stems".
 
     console.log(`✅ Empty MIDI track created for ${bus.name}`);
-  }, [bus.id, bus.name, bus.tracks.length, bus.expanded, dispatch]);
+  }, [bus.id, bus.name, bus.tracks.length, dispatch]);
 
   // Calculate heights for smooth transitions. Use visibleTracks
   // (which excludes the hidden uploaded master) so the expanded bus

@@ -294,15 +294,23 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
     dispatch({ type: 'UPDATE_TRACK_HEIGHT', payload: Math.max(state.trackHeight / 1.2, 30) });
   }, [dispatch, state.trackHeight]);
 
-  // Handler for adding a new SFX bus — moved here from Timeline.js so the
-  // Add Track button can live in the shared 2×2 .spacerArea grid.
+  // Handler for adding a new bus. Lives here so the Add Track button in
+  // the shared 2×2 .spacerArea can call it. Named "Track N" counting ALL
+  // existing buses so the label matches the user's mental model of a flat
+  // track list. Bus is created collapsed — double-clicking it later adds
+  // a MIDI region inline (see BusRow.handleDoubleClick).
   const handleAddBus = useCallback(() => {
-    const busId = `sfx-${Date.now()}`;
+    const trackNumber = state.buses.length + 1;
     dispatch({
       type: 'CREATE_BUS',
-      payload: { id: busId, type: 'SFX', name: 'SFX Bus', expanded: true }
+      payload: {
+        id: `track-${Date.now()}`,
+        type: 'SFX',
+        name: `Track ${trackNumber}`,
+        expanded: false,
+      },
     });
-  }, [dispatch]);
+  }, [dispatch, state.buses.length]);
 
   // Mouse wheel zoom handler (two-finger scroll for horizontal only)
   const handleWheel = useCallback((e) => {
