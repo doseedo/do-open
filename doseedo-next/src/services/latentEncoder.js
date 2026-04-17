@@ -47,7 +47,13 @@ export async function initLatentEncoder(onProgress = null) {
     _ort = ort;
     if (ort.env?.wasm) {
       ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/';
-      ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
+      // Multi-threaded WASM needs SharedArrayBuffer, which needs the page to
+      // be cross-origin-isolated (COOP: same-origin + COEP: require-corp).
+      // Without that, requesting numThreads > 1 hard-fails in onnxruntime-web
+      // ("pthread_create failed") instead of gracefully falling back — so we
+      // explicitly clamp to 1 thread when isolation is off.
+      const coi = typeof crossOriginIsolated === 'boolean' ? crossOriginIsolated : false;
+      ort.env.wasm.numThreads = coi ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
       ort.env.wasm.simd = true;
     }
 

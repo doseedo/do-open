@@ -171,7 +171,12 @@ export async function initRmsDemucs() {
 
     if (ort.env?.wasm) {
       ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/';
-      ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
+      // Multi-threaded WASM requires SharedArrayBuffer (crossOriginIsolated).
+      // Without COOP/COEP headers the page is NOT isolated, and asking for >1
+      // thread hard-fails ("pthread_create failed") instead of falling back.
+      // Clamp to 1 until we opt into cross-origin isolation at the edge.
+      const coi = typeof crossOriginIsolated === 'boolean' ? crossOriginIsolated : false;
+      ort.env.wasm.numThreads = coi ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
       ort.env.wasm.simd = true;
     }
 
