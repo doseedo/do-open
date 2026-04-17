@@ -8,6 +8,92 @@ export const audioBufferCache = new Map();
 const MAX_CACHE_SIZE = 50; // Limit in-memory cache size
 
 /**
+ * Animate every bar from a random noise height to its correct envelope height.
+ * Each bar stays in the same horizontal slot — only height changes. Duration ≈550 ms.
+ * Fires on first envelope paint (stem mount) and again when WAV audio decodes
+ * (signalling the track is ready for playback).
+ */
+function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, transitionFrameRef) {
+  if (!canvas) return;
+  if (transitionFrameRef.current) cancelAnimationFrame(transitionFrameRef.current);
+
+  const ctx = canvas.getContext('2d');
+  const barSpacing = 2;
+  const barWidth = 2;
+  const numBars = Math.floor(width / (barWidth + barSpacing));
+  const midY = height / 2;
+  const maxBarHeight = height * 0.45;
+  const g = Math.max(0, gain);
+
+  // Pre-compute target bar heights (same peak-to-peak logic as renderEnvelope)
+  const mins = envelopeData.subarray(0, T);
+  const maxs = envelopeData.subarray(T, 2 * T);
+  const ptpValues = new Float32Array(numBars);
+  let maxPtp = 0;
+  for (let i = 0; i < numBars; i++) {
+    const s = Math.floor((i * T) / numBars);
+    const e = Math.max(s + 1, Math.floor(((i + 1) * T) / numBars));
+    let mx = -Infinity, mn = Infinity;
+    for (let j = s; j < e && j < T; j++) {
+      if (maxs[j] > mx) mx = maxs[j];
+      if (mins[j] < mn) mn = mins[j];
+    }
+    ptpValues[i] = mx - mn;
+    if (ptpValues[i] > maxPtp) maxPtp = ptpValues[i];
+  }
+  const normFactor = maxPtp > 0.001 ? maxBarHeight / maxPtp : 1.0;
+  const noiseFloor = maxPtp * 0.02;
+  const targetHeights = new Float32Array(numBars);
+  for (let i = 0; i < numBars; i++) {
+    targetHeights[i] = (ptpValues[i] < noiseFloor || g === 0)
+      ? 0.5
+      : Math.min(ptpValues[i] * normFactor * g, maxBarHeight);
+  }
+
+  // Start heights — random, spanning the full bar area (the "noise" state)
+  const startHeights = new Float32Array(numBars);
+  for (let i = 0; i < numBars; i++) {
+    startHeights[i] = (0.15 + Math.random() * 0.85) * maxBarHeight;
+  }
+
+  canvas.width = width;
+  canvas.height = height;
+
+  const DURATION = 550;
+  const animStart = performance.now();
+
+  const tick = (now) => {
+    const t = Math.min((now - animStart) / DURATION, 1);
+    const ease = 1 - Math.pow(1 - t, 2.5); // ease-out
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = barWidth;
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = 0.7;
+
+    for (let i = 0; i < numBars; i++) {
+      const barH = startHeights[i] + (targetHeights[i] - startHeights[i]) * ease;
+      const x = i * (barWidth + barSpacing) + barWidth / 2;
+      ctx.beginPath();
+      ctx.moveTo(x, midY - barH);
+      ctx.lineTo(x, midY + barH);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    if (t < 1) {
+      transitionFrameRef.current = requestAnimationFrame(tick);
+    } else {
+      transitionFrameRef.current = null;
+      // Final pixel-perfect render at steady state
+      renderEnvelope(ctx, envelopeData, T, width, height, color, gain);
+    }
+  };
+  transitionFrameRef.current = requestAnimationFrame(tick);
+}
+
+/**
  * Custom hook for rendering audio waveforms on canvas
  * Uses IndexedDB for persistent blob caching + in-memory cache for decoded buffers
  * @param {string} audioUrl - URL of the audio file
@@ -137,20 +223,26 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     if (!envelopeData || !canvasRef.current) return;
     const T = envelopeData.length / 2;
     const dur = T / envelopeFps;
-    // Animate only when we're swapping in a NEW envelope (identity change),
-    // not on every re-render that happens to carry the same array ref.
     const isNewEnvelope = envelopeData !== lastEnvelopeRef.current;
-    paintWithTransition(
-      (ctx) => renderEnvelope(ctx, envelopeData, T, width, height, color, gain),
-      { animate: isNewEnvelope }
-    );
+    if (isNewEnvelope) {
+      // New envelope: bar-height animation (noise → shape).
+      paintBarAnimation(canvasRef.current, envelopeData, T, width, height, color, gain, transitionFrameRef);
+    } else {
+      // Same envelope, just a dimension / gain repaint — instant, no animation.
+      const canvas = canvasRef.current;
+      if (canvas) {
+        canvas.width = width;
+        canvas.height = height;
+        renderEnvelope(canvas.getContext('2d'), envelopeData, T, width, height, color, gain);
+      }
+    }
     lastEnvelopeRef.current = envelopeData;
     envelopePaintedRef.current = true;
     if (!isLoaded) {
       setDuration(dur);
       setIsLoaded(true);
     }
-  }, [envelopeData, width, height, color, envelopeFps, isLoaded, gain, paintWithTransition]);
+  }, [envelopeData, width, height, color, envelopeFps, isLoaded, gain]);
 
   // Load audio only when URL changes
   useEffect(() => {
@@ -181,18 +273,13 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
           setIsLoaded(true);
           setDecodedAudioUrl(audioUrl);
 
-          // If envelope was already painted by the envelope effect, don't
-          // repaint from cache — the envelope is the correct visual until
-          // the final full-length decode arrives via the fetch path.
-          if (envelopePaintedRef.current) return;
           if (canvasRef.current) {
             if (envelopeData) {
+              // Bar animation: noise → envelope (signals audio is ready for playback)
               const envT = envelopeData.length / 2;
-              paintWithTransition(
-                (ctx) => renderEnvelope(ctx, envelopeData, envT, width, height, color, gain)
-              );
+              paintBarAnimation(canvasRef.current, envelopeData, envT, width, height, color, gain, transitionFrameRef);
               envelopePaintedRef.current = true;
-            } else {
+            } else if (!envelopePaintedRef.current) {
               paintWithTransition(
                 (ctx) => renderWaveform(ctx, cachedBuffer, width, height, color, cropStart, cropEnd, gain)
               );
@@ -234,20 +321,12 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
         setIsLoaded(true);
         setDecodedAudioUrl(audioUrl);
 
-        // When envelopeData is present, the canvas is owned by the envelope —
-        // NEVER repaint from audio. Audio loads silently for playback only.
-        // Without envelopeData, render the waveform from the decoded buffer.
         if (canvasRef.current) {
           if (envelopeData) {
-            // Envelope is the permanent visual — NEVER repaint canvas from audio.
-            // Audio loads silently for playback only. Envelope stays forever.
-            if (!envelopePaintedRef.current) {
-              const envT = envelopeData.length / 2;
-              paintWithTransition(
-                (ctx) => renderEnvelope(ctx, envelopeData, envT, width, height, color, gain)
-              );
-              envelopePaintedRef.current = true;
-            }
+            // Bar animation: noise → envelope (signals audio is decoded and ready)
+            const envT = envelopeData.length / 2;
+            paintBarAnimation(canvasRef.current, envelopeData, envT, width, height, color, gain, transitionFrameRef);
+            envelopePaintedRef.current = true;
           } else {
             paintWithTransition(
               (ctx) => renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain)
