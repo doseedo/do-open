@@ -7,6 +7,9 @@ const CHATBOT  = process.env.NEXT_PUBLIC_CHATBOT_ORIGIN  || 'https://doseedo-cha
 const MODAL    = process.env.NEXT_PUBLIC_MODAL_ORIGIN    || 'https://arlo--doseedo-stemphonic-stemphonic-wsgi.modal.run';
 const BACKEND  = process.env.NEXT_PUBLIC_BACKEND_ORIGIN  || 'https://backend10-1028528394180.us-central1.run.app';
 const FRAMER   = process.env.NEXT_PUBLIC_FRAMER_ORIGIN   || 'https://heartwarming-friday-546447.framer.app';
+// R2 public bucket for large static assets (ML models) that can't ship in
+// the Next.js bundle. Overrideable via env var for staging/dev.
+const R2_CDN   = process.env.NEXT_PUBLIC_R2_CDN_ORIGIN   || 'https://pub-93d4c829c1a44ad69ce19eee48cec05e.r2.dev';
 
 const nextConfig = {
   reactStrictMode: true,
@@ -96,6 +99,13 @@ const nextConfig = {
       { source: '/api/generate-stemphonic/:path*',  destination: `${MODAL}/api/generate-stemphonic/:path*` },
       { source: '/download-stemphonic/:path*',      destination: `${MODAL}/download-stemphonic/:path*` },
       { source: '/api/encode-latents-bulk',         destination: `${MODAL}/api/encode-latents-bulk` },
+
+      // Large ML models served from R2. These files (>100MB) can't ship in
+      // the Next.js bundle, so they live in Cloudflare R2 under the same
+      // key prefix. Vercel proxies the request to keep it same-origin, which
+      // saves us from configuring CORS on the R2 bucket.
+      { source: '/static/models/oobleck_encoder.onnx',      destination: `${R2_CDN}/static/models/oobleck_encoder.onnx` },
+      { source: '/static/models/oobleck_encoder.onnx.data', destination: `${R2_CDN}/static/models/oobleck_encoder.onnx.data` },
       { source: '/separate-stems',                  destination: `${MODAL}/separate-stems` },
       { source: '/separate-stems/:path*',           destination: `${MODAL}/separate-stems/:path*` },
       { source: '/api/encode-audio-latent',         destination: `${MODAL}/api/encode-audio-latent` },
