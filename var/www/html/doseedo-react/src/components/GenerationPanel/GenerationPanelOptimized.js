@@ -3224,9 +3224,9 @@ const GenerationPanelOptimized = React.memo(() => {
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.85 }}>
               <span>Noise blend</span>
               <span>
-                {(state.generationParams.coverNoiseStrength ?? 0.2).toFixed(2)}
+                {+((state.generationParams.coverNoiseStrength ?? 0.2).toFixed(2))}
                 <span style={{ opacity: 0.45, marginLeft: '3px' }}>
-                  ({((state.generationParams.coverNoiseStrength ?? 0.2) * 7.5).toFixed(2)})
+                  ({+(((state.generationParams.coverNoiseStrength ?? 0.2) * 7.5).toFixed(2))})
                 </span>
               </span>
             </div>
