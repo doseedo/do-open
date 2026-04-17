@@ -125,7 +125,10 @@
      each cell stretch too (inputs/buttons with flex:1), so the grid is
      always fully filled — no dead space anywhere. */
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* 70/30 column split: left cells (BPM/Meter, Add Track) get more room
+     because they hold wider elements; right cells (Transport, Zoom) are
+     compact button groups. */
+  grid-template-columns: 7fr 3fr;
   grid-template-rows: 1fr 1fr;
   column-gap: 6px;
   row-gap: 2px;
