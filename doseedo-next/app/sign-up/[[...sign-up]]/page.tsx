@@ -17,65 +17,45 @@ export default function SignUpPage() {
     <div
       style={{
         minHeight: '100vh',
+        background: '#0a0a0a',
+        color: '#fff',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '2rem 1rem',
-        background:
-          'radial-gradient(ellipse at top left, rgba(102,126,234,0.18) 0%, transparent 55%),' +
-          'radial-gradient(ellipse at bottom right, rgba(139,92,246,0.18) 0%, transparent 55%),' +
-          '#070711',
+        padding: '24px',
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Inter", sans-serif',
       }}
     >
       <div
         style={{
+          width: '100%',
+          maxWidth: '360px',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: '1.75rem',
-          width: '100%',
-          maxWidth: '420px',
+          gap: '20px',
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '0.35rem',
-          }}
-        >
+        <div style={{ textAlign: 'center' }}>
           <a
             href="/"
             style={{
-              fontFamily: 'Inter, system-ui, sans-serif',
-              fontSize: '1.85rem',
-              fontWeight: 700,
-              letterSpacing: '-0.02em',
-              color: '#ffffff',
+              color: '#fff',
               textDecoration: 'none',
-              background: 'linear-gradient(135deg, #667eea 0%, #8b5cf6 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
+              fontSize: '1.4em',
+              fontWeight: 700,
+              letterSpacing: '-0.5px',
             }}
           >
-            doseedo
+            Doseedo
           </a>
-          <div
-            style={{
-              fontFamily: 'Inter, system-ui, sans-serif',
-              fontSize: '0.875rem',
-              color: 'rgba(255,255,255,0.55)',
-            }}
-          >
+          <div style={{ color: '#666', fontSize: '0.85em', marginTop: 4 }}>
             Create your studio account
           </div>
         </div>
         {isSignedIn ? (
-          <div style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'Inter, sans-serif' }}>
-            Redirecting…
-          </div>
+          <div style={{ color: '#666', fontSize: '0.85em' }}>Redirecting…</div>
         ) : (
           <SignUp
             path="/sign-up"

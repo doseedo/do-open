@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^7.2.2",
+    "@clerk/themes": "^2.4.57",
     "@gradio/client": "^2.0.0-dev.1",
     "@huggingface/inference": "^4.13.0",
     "@sentry/react": "^10.48.0",
