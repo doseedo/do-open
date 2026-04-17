@@ -2328,9 +2328,9 @@ const GenerationPanelOptimized = React.memo(() => {
           steps: state.generationParams.inferenceSteps ?? 50,
           cfg: state.generationParams.guidanceScale ?? 7.0,
           seed: state.generationParams.seed ?? -1,
-          // UI stores 0-1; backend expects 0-7.5. Multiply here so the slider
+          // UI stores 0-1; backend expects 0-0.75. Multiply here so the slider
           // stays in a natural 0-1 range while the model sees the real scale.
-          cover_noise_strength: (state.generationParams.coverNoiseStrength ?? 0.2) * 7.5,
+          cover_noise_strength: (state.generationParams.coverNoiseStrength ?? 0.2) * 0.75,
           audio_cover_strength: state.generationParams.audioCoverStrength ?? 0.5,
           drum_mode: isDrumRoll ? 'true' : 'false',
           vox_mode: isVoxMode ? 'true' : 'false',
@@ -3226,7 +3226,7 @@ const GenerationPanelOptimized = React.memo(() => {
               <span>
                 {+((state.generationParams.coverNoiseStrength ?? 0.2).toFixed(2))}
                 <span style={{ opacity: 0.45, marginLeft: '3px' }}>
-                  ({+(((state.generationParams.coverNoiseStrength ?? 0.2) * 7.5).toFixed(2))})
+                  ({+(((state.generationParams.coverNoiseStrength ?? 0.2) * 0.75).toFixed(2))})
                 </span>
               </span>
             </div>
@@ -3238,7 +3238,7 @@ const GenerationPanelOptimized = React.memo(() => {
               style={{ width: '100%' }}
             />
             <div style={{ fontSize: '10px', opacity: 0.55 }}>
-              UI 0–1 → model 0–7.5. 0 = full denoise from random · 1 = start at soundfont render. Requires MIDI.
+              UI 0–1 → model 0–0.75. 0 = full denoise from random · 1 = start at soundfont render. Requires MIDI.
             </div>
           </div>
 
