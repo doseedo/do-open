@@ -179,10 +179,13 @@ export async function initRmsDemucs() {
       ort.env.wasm.numThreads = coi ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
       ort.env.wasm.simd = true;
     }
+    // Silence CPU-kernel / EP-assignment warnings that ORT prints via
+    // console.error during WebGPU session init. See latentEncoder.js.
+    if (ort.env) ort.env.logLevel = 'error';
 
-    const resp = await fetch(MODEL_URL, { cache: 'default' });
-    if (!resp.ok) throw new Error(`demucs_rms_int8_v2.onnx HTTP ${resp.status}`);
-    const graphBytes = new Uint8Array(await resp.arrayBuffer());
+    const { fetchModelWithCache } = await import('./modelCacheService');
+    const graphBuf = await fetchModelWithCache(MODEL_URL);
+    const graphBytes = new Uint8Array(graphBuf);
 
     const backends = [];
     if (ort.env?.webgpu) backends.push('webgpu');
@@ -194,6 +197,7 @@ export async function initRmsDemucs() {
         const sess = await ort.InferenceSession.create(graphBytes, {
           executionProviders: [ep],
           graphOptimizationLevel: 'all',
+          logSeverityLevel: 3, // quiet the per-op warnings during compile
         });
         _session = sess;
         console.log(`[rmsDemucs] ready on ${ep}`);

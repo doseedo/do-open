@@ -56,28 +56,21 @@ export async function initLatentEncoder(onProgress = null) {
       ort.env.wasm.numThreads = coi ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
       ort.env.wasm.simd = true;
     }
+    // Silence harmless "Could not find a CPU kernel" / "Some nodes were not
+    // assigned to the preferred EP" warnings during WebGPU compilation. These
+    // fire once per ReduceL2 op on every load and spam dozens of errors in
+    // the console. 'error' hides warnings but keeps real errors visible.
+    if (ort.env) ort.env.logLevel = 'error';
 
-    const graphResp = await fetch(MODEL_URL, { cache: 'force-cache' });
-    if (!graphResp.ok) throw new Error(`oobleck_encoder.onnx HTTP ${graphResp.status}`);
-    const graphBytes = new Uint8Array(await graphResp.arrayBuffer());
+    const { fetchModelWithCache } = await import('./modelCacheService');
+    const graphBuf = await fetchModelWithCache(MODEL_URL);
+    const graphBytes = new Uint8Array(graphBuf);
 
-    const dataResp = await fetch(MODEL_DATA_URL, { cache: 'force-cache' });
-    if (!dataResp.ok) throw new Error(`oobleck_encoder.onnx.data HTTP ${dataResp.status}`);
-    const total = parseInt(dataResp.headers.get('content-length') || '0', 10);
-    const reader = dataResp.body.getReader();
-    const chunks = [];
-    let loaded = 0;
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      loaded += value.byteLength;
-      _loadProgress = { bytesLoaded: loaded, bytesTotal: total };
-      if (onProgress) onProgress(_loadProgress);
-    }
-    const dataBytes = new Uint8Array(loaded);
-    let off = 0;
-    for (const c of chunks) { dataBytes.set(c, off); off += c.byteLength; }
+    const dataBuf = await fetchModelWithCache(MODEL_DATA_URL, (p) => {
+      _loadProgress = p;
+      if (onProgress) onProgress(p);
+    });
+    const dataBytes = new Uint8Array(dataBuf);
 
     // Register the weight blob under BOTH possible filenames so ORT resolves
     // the graph's internal external_data_file reference regardless of whether
@@ -100,6 +93,10 @@ export async function initLatentEncoder(onProgress = null) {
           executionProviders: [ep],
           graphOptimizationLevel: 'all',
           externalData,
+          // logSeverityLevel: 0=verbose, 1=info, 2=warning, 3=error, 4=fatal.
+          // We want the session itself quiet (the CPU-kernel / EP-assignment
+          // warnings are expected for WebGPU compilation and just spam).
+          logSeverityLevel: 3,
         });
         _session = sess;
         console.log(`[latentEncoder] ready on ${ep}`);
