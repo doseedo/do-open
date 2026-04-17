@@ -311,7 +311,7 @@ function AppContent() {
       // in the DAW controls (see showTempoLabels/showMetronome/etc.)
       // keeps the header readable at narrow widths, so we can let users
       // shrink the sidebar further than the old 310px floor.
-      const MIN_CONTENT = 170;
+      const MIN_CONTENT = 185;
       setMinWidth(leftEdge + MIN_CONTENT);
       setMaxWidth(Math.max(leftEdge + MIN_CONTENT, leftEdge + Math.floor(window.innerWidth * 0.3)));
     };
