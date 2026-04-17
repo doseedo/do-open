@@ -1353,7 +1353,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               )}
             </div>
 
-            {/* Top-right: Automation toggle + Transport */}
+            {/* Top-right: Automation toggle + Transport (stretches to fill cell) */}
             <div className={styles.spacerCellTopRight}>
               {showAutomation && (
                 <Button
@@ -1364,7 +1364,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                   title="Toggle automation"
                 />
               )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0px', background: 'rgba(30,30,30,0.6)', padding: '4px', borderRadius: '6px', border: '1px solid rgba(102,126,234,0.2)' }}>
+              <div style={{ flex: '1 1 0', minWidth: 0, display: 'flex', alignItems: 'center', gap: '0px', background: 'rgba(30,30,30,0.6)', padding: '4px', borderRadius: '6px', border: '1px solid rgba(102,126,234,0.2)', justifyContent: 'space-around' }}>
                 <TransportControls
                   isPlaying={state.isPlaying}
                   playheadPosition={state.playheadPosition}
