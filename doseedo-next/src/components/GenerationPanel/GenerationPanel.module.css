@@ -917,14 +917,19 @@ textarea.controlSelect {
 
 .instrumentGroupGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  /* Fluid columns — repeat(3, 1fr) without minmax(0,...) resolves each
+     column to min-content which, combined with the button's
+     aspect-ratio + min-height, forced 70px widths and overflowed the
+     sidebar at narrow widths. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(4px, 2%, 8px);
   margin-bottom: 10px;
   background: transparent;
   filter: brightness(1.4);
-  padding: 12px;
+  padding: clamp(4px, 4%, 12px);
   border-radius: 8px;
   border: none;
+  min-width: 0;
 }
 
 .instrumentGroupBtn {
@@ -933,7 +938,10 @@ textarea.controlSelect {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 14px 10px;
+  /* Padding + icon size shrink with the button so 3 buttons + gap + the
+     grid's own padding never exceed the sidebar width. aspect-ratio:1
+     keeps them square at any size. */
+  padding: clamp(4px, 6%, 14px) clamp(2px, 4%, 10px);
   background: var(--button-bg);
   border: 1px solid var(--input-border);
   border-radius: 6.4px;
@@ -943,11 +951,13 @@ textarea.controlSelect {
   font-size: 10.4px;
   font-weight: 600;
   aspect-ratio: 1;
-  min-height: 70px;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .instrumentGroupBtn i {
-  font-size: 22px;
+  font-size: clamp(14px, 30%, 22px);
   transition: transform 0.3s ease;
 }
 
