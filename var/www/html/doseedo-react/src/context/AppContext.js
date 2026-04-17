@@ -52,6 +52,8 @@ const initialState = {
     consistencySamples: 3,
     extractFormats: ['midi'], // Default: extract only MIDI
     stemphonicCkpt: 'stage2d-130k', // Always default to 130k, never DoPerformer
+    coverNoiseStrength: 0.2,         // UI 0-1 → backend ×7.5; 0.2 = 1.5 to model
+    audioCoverStrength: 0.5,         // Fraction of steps using cover-mode encoder
   },
 
   // Automation state

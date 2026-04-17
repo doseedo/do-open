@@ -2328,8 +2328,10 @@ const GenerationPanelOptimized = React.memo(() => {
           steps: state.generationParams.inferenceSteps ?? 50,
           cfg: state.generationParams.guidanceScale ?? 7.0,
           seed: state.generationParams.seed ?? -1,
-          cover_noise_strength: state.generationParams.coverNoiseStrength ?? 0.0,
-          audio_cover_strength: state.generationParams.audioCoverStrength ?? 1.0,
+          // UI stores 0-1; backend expects 0-7.5. Multiply here so the slider
+          // stays in a natural 0-1 range while the model sees the real scale.
+          cover_noise_strength: (state.generationParams.coverNoiseStrength ?? 0.2) * 7.5,
+          audio_cover_strength: state.generationParams.audioCoverStrength ?? 0.5,
           drum_mode: isDrumRoll ? 'true' : 'false',
           vox_mode: isVoxMode ? 'true' : 'false',
         };
@@ -3180,21 +3182,26 @@ const GenerationPanelOptimized = React.memo(() => {
             />
           )}
 
-          {/* Noise (init blend: noise vs source latent) */}
+          {/* Noise blend (init blend: noise vs source latent) — 130k only */}
           <div style={{ padding: '4px 8px 8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.85 }}>
-              <span>Noise (init blend)</span>
-              <span>{(state.generationParams.coverNoiseStrength ?? 0.0).toFixed(2)}</span>
+              <span>Noise blend</span>
+              <span>
+                {(state.generationParams.coverNoiseStrength ?? 0.2).toFixed(2)}
+                <span style={{ opacity: 0.45, marginLeft: '3px' }}>
+                  ({((state.generationParams.coverNoiseStrength ?? 0.2) * 7.5).toFixed(2)})
+                </span>
+              </span>
             </div>
             <input
               type="range" min="0" max="1" step="0.05"
-              value={state.generationParams.coverNoiseStrength ?? 0.0}
+              value={state.generationParams.coverNoiseStrength ?? 0.2}
               onChange={(e) => updateParam('coverNoiseStrength', parseFloat(e.target.value))}
               disabled={isGenerating}
               style={{ width: '100%' }}
             />
             <div style={{ fontSize: '10px', opacity: 0.55 }}>
-              0 = pure noise (full denoise from random) · 1 = start at the soundfont render (almost no denoising). Requires MIDI.
+              UI 0–1 → model 0–7.5. 0 = full denoise from random · 1 = start at soundfont render. Requires MIDI.
             </div>
           </div>
 
@@ -3202,11 +3209,11 @@ const GenerationPanelOptimized = React.memo(() => {
           <div style={{ padding: '4px 8px 8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.85 }}>
               <span>Cover strength</span>
-              <span>{(state.generationParams.audioCoverStrength ?? 1.0).toFixed(2)}</span>
+              <span>{(state.generationParams.audioCoverStrength ?? 0.5).toFixed(2)}</span>
             </div>
             <input
               type="range" min="0" max="1" step="0.05"
-              value={state.generationParams.audioCoverStrength ?? 1.0}
+              value={state.generationParams.audioCoverStrength ?? 0.5}
               onChange={(e) => updateParam('audioCoverStrength', parseFloat(e.target.value))}
               disabled={isGenerating}
               style={{ width: '100%' }}
