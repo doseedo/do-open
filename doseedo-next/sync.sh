@@ -11,8 +11,12 @@ SRC_ROOT="$(cd "$(dirname "$0")/.." && pwd)/var/www/html/doseedo-react"
 DST_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 if [[ ! -d "$SRC_ROOT/src" ]]; then
-  echo "sync.sh: source tree not found at $SRC_ROOT/src" >&2
-  exit 1
+  # Not an error: this happens when Vercel builds from a CLI-upload (no
+  # parent repo on disk) or when doseedo-next is checked out standalone.
+  # The committed src/ snapshot is used as-is. Once the GitHub integration
+  # is enabled, Vercel checks out the full repo and this path will exist.
+  echo "sync.sh: no source tree at $SRC_ROOT/src — using committed src/ snapshot"
+  exit 0
 fi
 
 echo "sync.sh: pulling from $SRC_ROOT"
