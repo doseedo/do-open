@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Delay Effects - Interactive Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      color: #fff;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 2.5em;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .subtitle {
+      text-align: center;
+      margin-bottom: 30px;
+      opacity: 0.8;
+      font-size: 1.1em;
+    }
+
+    .plugin-section {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 15px;
+      padding: 25px;
+      margin-bottom: 25px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+
+    .plugin-section h2 {
+      margin-bottom: 20px;
+      color: #ffd700;
+      border-bottom: 2px solid rgba(255, 215, 0, 0.3);
+      padding-bottom: 10px;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      margin-bottom: 15px;
+    }
+
+    .control-group {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 15px;
+      border-radius: 10px;
+    }
+
+    .control-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      font-size: 0.9em;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .control-group input[type="range"] {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.2);
+      outline: none;
+      margin-bottom: 5px;
+    }
+
+    .control-group input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #ffd700;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .control-group input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #ffd700;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .control-group select {
+      width: 100%;
+      padding: 8px;
+      border-radius: 5px;
+      border: none;
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+      font-size: 0.95em;
+    }
+
+    .value-display {
+      text-align: right;
+      font-size: 0.85em;
+      color: #ffd700;
+      font-weight: bold;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-size: 0.95em;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    button.primary {
+      background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+      color: #1e3c72;
+    }
+
+    button.primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+    }
+
+    button.secondary {
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+    }
+
+    button.secondary:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    button.active {
+      background: #4CAF50;
+      color: white;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+    }
+
+    .tap-controls {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+    }
+
+    .tap-controls h3 {
+      color: #ffd700;
+      margin-bottom: 15px;
+      font-size: 1.1em;
+    }
+
+    .oscillator-controls {
+      background: rgba(255, 255, 255, 0.08);
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+
+    .status {
+      text-align: center;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+
+    .info-box {
+      background: rgba(76, 175, 80, 0.2);
+      border-left: 4px solid #4CAF50;
+      padding: 15px;
+      border-radius: 5px;
+      margin-top: 15px;
+      font-size: 0.9em;
+    }
+
+    @media (max-width: 768px) {
+      .controls-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎛️ Delay Effects Suite</h1>
+    <p class="subtitle">Interactive demonstration of professional time-based audio effects</p>
+
+    <div class="status">
+      <p id="status">Click "Start Audio" to begin</p>
+    </div>
+
+    <div class="button-group">
+      <button class="primary" id="startBtn">Start Audio</button>
+      <button class="secondary" id="stopBtn">Stop Audio</button>
+      <button class="secondary" id="playToneBtn">Play Test Tone</button>
+      <button class="secondary" id="stopToneBtn">Stop Tone</button>
+    </div>
+
+    <div class="oscillator-controls">
+      <h3>Test Oscillator Controls</h3>
+      <div class="controls-grid">
+        <div class="control-group">
+          <label>Oscillator Type</label>
+          <select id="oscType">
+            <option value="sine">Sine</option>
+            <option value="square">Square</option>
+            <option value="sawtooth">Sawtooth</option>
+            <option value="triangle">Triangle</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label>Frequency: <span class="value-display" id="freqValue">440 Hz</span></label>
+          <input type="range" id="oscFreq" min="100" max="1000" value="440" step="10">
+        </div>
+        <div class="control-group">
+          <label>Global BPM: <span class="value-display" id="bpmValue">120</span></label>
+          <input type="range" id="globalBPM" min="60" max="200" value="120" step="1">
+        </div>
+      </div>
+    </div>
+
+    <!-- Simple Delay -->
+    <div class="plugin-section">
+      <h2>1. Simple Delay</h2>
+      <div class="button-group">
+        <button class="secondary" id="enableSimple">Enable</button>
+        <button class="secondary" id="presetDub">Preset: Dub Delay</button>
+        <button class="secondary" id="presetSlapback">Preset: Slapback</button>
+      </div>
+
+      <div class="controls-grid">
+        <div class="control-group">
+          <label>Delay Time: <span class="value-display" id="simpleDelayValue">250 ms</span></label>
+          <input type="range" id="simpleDelay" min="0" max="2000" value="250" step="10">
+        </div>
+        <div class="control-group">
+          <label>Feedback: <span class="value-display" id="simpleFeedbackValue">50%</span></label>
+          <input type="range" id="simpleFeedback" min="0" max="90" value="50" step="1">
+        </div>
+        <div class="control-group">
+          <label>Mix: <span class="value-display" id="simpleMixValue">50%</span></label>
+          <input type="range" id="simpleMix" min="0" max="100" value="50" step="1">
+        </div>
+        <div class="control-group">
+          <label>Filter Type</label>
+          <select id="simpleFilterType">
+            <option value="off">Off</option>
+            <option value="lowpass" selected>Lowpass</option>
+            <option value="highpass">Highpass</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label>Filter Freq: <span class="value-display" id="simpleFilterValue">5000 Hz</span></label>
+          <input type="range" id="simpleFilter" min="100" max="10000" value="5000" step="100">
+        </div>
+        <div class="control-group">
+          <label>Note Division</label>
+          <select id="simpleDivision">
+            <option value="1">1 Bar</option>
+            <option value="1/2">1/2</option>
+            <option value="1/4" selected>1/4</option>
+            <option value="1/8">1/8</option>
+            <option value="1/16">1/16</option>
+            <option value="1/4T">1/4 Triplet</option>
+            <option value="1/8T">1/8 Triplet</option>
+            <option value="1/4D">1/4 Dotted</option>
+            <option value="1/8D">1/8 Dotted</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="checkbox-group">
+        <input type="checkbox" id="simpleSync">
+        <label>Tempo Sync</label>
+      </div>
+      <div class="checkbox-group">
+        <input type="checkbox" id="simplePingPong">
+        <label>Ping Pong Mode</label>
+      </div>
+
+      <div class="info-box">
+        Simple Delay creates classic echo effects. Enable ping-pong for stereo bouncing!
+      </div>
+    </div>
+
+    <!-- Ping Pong Delay -->
+    <div class="plugin-section">
+      <h2>2. Ping Pong Delay</h2>
+      <div class="button-group">
+        <button class="secondary" id="enablePingPong">Enable</button>
+        <button class="secondary" id="presetStereo">Preset: Wide Stereo</button>
+      </div>
+
+      <div class="controls-grid">
+        <div class="control-group">
+          <label>Delay L: <span class="value-display" id="ppDelayLValue">250 ms</span></label>
+          <input type="range" id="ppDelayL" min="0" max="2000" value="250" step="10">
+        </div>
+        <div class="control-group">
+          <label>Delay R: <span class="value-display" id="ppDelayRValue">125 ms</span></label>
+          <input type="range" id="ppDelayR" min="0" max="2000" value="125" step="10">
+        </div>
+        <div class="control-group">
+          <label>Feedback: <span class="value-display" id="ppFeedbackValue">50%</span></label>
+          <input type="range" id="ppFeedback" min="0" max="90" value="50" step="1">
+        </div>
+        <div class="control-group">
+          <label>Spread: <span class="value-display" id="ppSpreadValue">75%</span></label>
+          <input type="range" id="ppSpread" min="0" max="100" value="75" step="1">
+        </div>
+        <div class="control-group">
+          <label>Mix: <span class="value-display" id="ppMixValue">50%</span></label>
+          <input type="range" id="ppMix" min="0" max="100" value="50" step="1">
+        </div>
+        <div class="control-group">
+          <label>Filter Freq: <span class="value-display" id="ppFilterValue">5000 Hz</span></label>
+          <input type="range" id="ppFilter" min="100" max="10000" value="5000" step="100">
+        </div>
+      </div>
+
+      <div class="info-box">
+        Ping Pong Delay bounces between left and right channels for stunning stereo width.
+      </div>
+    </div>
+
+    <!-- Filter Delay -->
+    <div class="plugin-section">
+      <h2>3. Filter Delay (3 Taps)</h2>
+      <div class="button-group">
+        <button class="secondary" id="enableFilter">Enable</button>
+        <button class="secondary" id="presetRhythmic">Preset: Rhythmic</button>
+      </div>
+
+      <div class="controls-grid">
+        <div class="control-group">
+          <label>Mix: <span class="value-display" id="fdMixValue">50%</span></label>
+          <input type="range" id="fdMix" min="0" max="100" value="50" step="1">
+        </div>
+        <div class="control-group">
+          <label>Input Gain: <span class="value-display" id="fdInputValue">0 dB</span></label>
+          <input type="range" id="fdInput" min="-12" max="6" value="0" step="1">
+        </div>
+      </div>
+
+      <!-- Tap 1 -->
+      <div class="tap-controls">
+        <h3>Tap 1 (Left)</h3>
+        <div class="controls-grid">
+          <div class="control-group">
+            <label>Delay: <span class="value-display" id="fd1DelayValue">250 ms</span></label>
+            <input type="range" id="fd1Delay" min="0" max="2000" value="250" step="10">
+          </div>
+          <div class="control-group">
+            <label>Feedback: <span class="value-display" id="fd1FeedbackValue">30%</span></label>
+            <input type="range" id="fd1Feedback" min="0" max="90" value="30" step="1">
+          </div>
+          <div class="control-group">
+            <label>Pan: <span class="value-display" id="fd1PanValue">-50</span></label>
+            <input type="range" id="fd1Pan" min="-100" max="100" value="-50" step="1">
+          </div>
+          <div class="control-group">
+            <label>Volume: <span class="value-display" id="fd1VolumeValue">70%</span></label>
+            <input type="range" id="fd1Volume" min="0" max="100" value="70" step="1">
+          </div>
+          <div class="control-group">
+            <label>Filter Freq: <span class="value-display" id="fd1FilterValue">2000 Hz</span></label>
+            <input type="range" id="fd1Filter" min="100" max="10000" value="2000" step="100">
+          </div>
+          <div class="control-group">
+            <label>Filter Type</label>
+            <select id="fd1FilterType">
+              <option value="lowpass" selected>Lowpass</option>
+              <option value="highpass">Highpass</option>
+              <option value="bandpass">Bandpass</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tap 2 -->
+      <div class="tap-controls">
+        <h3>Tap 2 (Center)</h3>
+        <div class="controls-grid">
+          <div class="control-group">
+            <label>Delay: <span class="value-display" id="fd2DelayValue">500 ms</span></label>
+            <input type="range" id="fd2Delay" min="0" max="2000" value="500" step="10">
+          </div>
+          <div class="control-group">
+            <label>Feedback: <span class="value-display" id="fd2FeedbackValue">30%</span></label>
+            <input type="range" id="fd2Feedback" min="0" max="90" value="30" step="1">
+          </div>
+          <div class="control-group">
+            <label>Pan: <span class="value-display" id="fd2PanValue">0</span></label>
+            <input type="range" id="fd2Pan" min="-100" max="100" value="0" step="1">
+          </div>
+          <div class="control-group">
+            <label>Volume: <span class="value-display" id="fd2VolumeValue">70%</span></label>
+            <input type="range" id="fd2Volume" min="0" max="100" value="70" step="1">
+          </div>
+          <div class="control-group">
+            <label>Filter Freq: <span class="value-display" id="fd2FilterValue">1000 Hz</span></label>
+            <input type="range" id="fd2Filter" min="100" max="10000" value="1000" step="100">
+          </div>
+          <div class="control-group">
+            <label>Filter Type</label>
+            <select id="fd2FilterType">
+              <option value="lowpass">Lowpass</option>
+              <option value="highpass">Highpass</option>
+              <option value="bandpass" selected>Bandpass</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tap 3 -->
+      <div class="tap-controls">
+        <h3>Tap 3 (Right)</h3>
+        <div class="controls-grid">
+          <div class="control-group">
+            <label>Delay: <span class="value-display" id="fd3DelayValue">750 ms</span></label>
+            <input type="range" id="fd3Delay" min="0" max="2000" value="750" step="10">
+          </div>
+          <div class="control-group">
+            <label>Feedback: <span class="value-display" id="fd3FeedbackValue">30%</span></label>
+            <input type="range" id="fd3Feedback" min="0" max="90" value="30" step="1">
+          </div>
+          <div class="control-group">
+            <label>Pan: <span class="value-display" id="fd3PanValue">50</span></label>
+            <input type="range" id="fd3Pan" min="-100" max="100" value="50" step="1">
+          </div>
+          <div class="control-group">
+            <label>Volume: <span class="value-display" id="fd3VolumeValue">70%</span></label>
+            <input type="range" id="fd3Volume" min="0" max="100" value="70" step="1">
+          </div>
+          <div class="control-group">
+            <label>Filter Freq: <span class="value-display" id="fd3FilterValue">500 Hz</span></label>
+            <input type="range" id="fd3Filter" min="100" max="10000" value="500" step="100">
+          </div>
+          <div class="control-group">
+            <label>Filter Type</label>
+            <select id="fd3FilterType">
+              <option value="lowpass">Lowpass</option>
+              <option value="highpass" selected>Highpass</option>
+              <option value="bandpass">Bandpass</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box">
+        Filter Delay creates complex rhythmic patterns with 3 independent delay taps, each with its own filter and pan position.
+      </div>
+    </div>
+  </div>
+
+  <!-- Load delay plugins -->
+  <script src="../delay/SimpleDelay.js"></script>
+  <script src="../delay/PingPongDelay.js"></script>
+  <script src="../delay/FilterDelay.js"></script>
+
+  <script>
+    // Audio context and nodes
+    let audioContext;
+    let oscillator;
+    let oscillatorGain;
+    let simpleDelay, pingPongDelay, filterDelay;
+    let activeDelay = null;
+    let isPlaying = false;
+
+    // Initialize audio
+    document.getElementById('startBtn').addEventListener('click', () => {
+      if (audioContext) return;
+
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Create oscillator and gain
+      oscillatorGain = audioContext.createGain();
+      oscillatorGain.gain.value = 0; // Start silent
+
+      // Create delay effects
+      simpleDelay = new SimpleDelay(audioContext);
+      pingPongDelay = new PingPongDelay(audioContext);
+      filterDelay = new FilterDelay(audioContext);
+
+      // Connect to output (initially none are active)
+      oscillatorGain.connect(audioContext.destination);
+
+      document.getElementById('status').textContent = 'Audio ready! Enable a delay plugin and play a test tone.';
+    });
+
+    // Play test tone
+    document.getElementById('playToneBtn').addEventListener('click', () => {
+      if (!audioContext) {
+        alert('Please start audio first!');
+        return;
+      }
+
+      if (oscillator) {
+        oscillator.stop();
+        oscillator = null;
+      }
+
+      oscillator = audioContext.createOscillator();
+      const type = document.getElementById('oscType').value;
+      const freq = parseFloat(document.getElementById('oscFreq').value);
+
+      oscillator.type = type;
+      oscillator.frequency.value = freq;
+
+      oscillator.connect(oscillatorGain);
+      oscillatorGain.gain.value = 0.3;
+
+      oscillator.start();
+      isPlaying = true;
+      document.getElementById('status').textContent = 'Playing test tone...';
+    });
+
+    // Stop test tone
+    document.getElementById('stopToneBtn').addEventListener('click', () => {
+      if (oscillator) {
+        oscillatorGain.gain.value = 0;
+        oscillator.stop();
+        oscillator = null;
+        isPlaying = false;
+        document.getElementById('status').textContent = 'Test tone stopped.';
+      }
+    });
+
+    // Oscillator controls
+    document.getElementById('oscFreq').addEventListener('input', (e) => {
+      const val = e.target.value;
+      document.getElementById('freqValue').textContent = val + ' Hz';
+      if (oscillator) {
+        oscillator.frequency.value = parseFloat(val);
+      }
+    });
+
+    document.getElementById('globalBPM').addEventListener('input', (e) => {
+      const bpm = parseFloat(e.target.value);
+      document.getElementById('bpmValue').textContent = bpm;
+      if (simpleDelay) simpleDelay.setBPM(bpm);
+      if (pingPongDelay) pingPongDelay.setBPM(bpm);
+      if (filterDelay) filterDelay.setBPM(bpm);
+    });
+
+    // Helper to switch active delay
+    function switchDelay(newDelay) {
+      if (activeDelay === newDelay) return;
+
+      // Disconnect old
+      if (activeDelay) {
+        oscillatorGain.disconnect();
+        activeDelay.output.disconnect();
+        oscillatorGain.connect(audioContext.destination);
+      }
+
+      // Connect new
+      if (newDelay) {
+        oscillatorGain.disconnect();
+        oscillatorGain.connect(newDelay.input);
+        newDelay.output.connect(audioContext.destination);
+        activeDelay = newDelay;
+      } else {
+        activeDelay = null;
+      }
+    }
+
+    // Simple Delay controls
+    document.getElementById('enableSimple').addEventListener('click', () => {
+      if (!audioContext) { alert('Start audio first!'); return; }
+      switchDelay(simpleDelay);
+      document.getElementById('status').textContent = 'Simple Delay enabled';
+    });
+
+    document.getElementById('simpleDelay').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('simpleDelayValue').textContent = val + ' ms';
+      if (simpleDelay && !document.getElementById('simpleSync').checked) {
+        simpleDelay.setDelayTime(val);
+      }
+    });
+
+    document.getElementById('simpleFeedback').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('simpleFeedbackValue').textContent = val + '%';
+      if (simpleDelay) simpleDelay.setFeedback(val);
+    });
+
+    document.getElementById('simpleMix').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('simpleMixValue').textContent = val + '%';
+      if (simpleDelay) simpleDelay.setMix(val);
+    });
+
+    document.getElementById('simpleFilter').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('simpleFilterValue').textContent = val + ' Hz';
+      if (simpleDelay) {
+        const type = document.getElementById('simpleFilterType').value;
+        simpleDelay.setFilter(type, val);
+      }
+    });
+
+    document.getElementById('simpleFilterType').addEventListener('change', (e) => {
+      if (simpleDelay) {
+        const freq = parseFloat(document.getElementById('simpleFilter').value);
+        simpleDelay.setFilter(e.target.value, freq);
+      }
+    });
+
+    document.getElementById('simpleSync').addEventListener('change', (e) => {
+      if (simpleDelay) {
+        const division = document.getElementById('simpleDivision').value;
+        simpleDelay.setSync(e.target.checked, division);
+      }
+    });
+
+    document.getElementById('simpleDivision').addEventListener('change', (e) => {
+      if (simpleDelay && document.getElementById('simpleSync').checked) {
+        simpleDelay.setSync(true, e.target.value);
+      }
+    });
+
+    document.getElementById('simplePingPong').addEventListener('change', (e) => {
+      if (simpleDelay) simpleDelay.setPingPong(e.target.checked);
+    });
+
+    // Presets for Simple Delay
+    document.getElementById('presetDub').addEventListener('click', () => {
+      if (!simpleDelay) return;
+      document.getElementById('simpleFeedback').value = 75;
+      document.getElementById('simpleFeedbackValue').textContent = '75%';
+      document.getElementById('simpleFilter').value = 2000;
+      document.getElementById('simpleFilterValue').textContent = '2000 Hz';
+      document.getElementById('simpleFilterType').value = 'lowpass';
+      simpleDelay.setFeedback(75);
+      simpleDelay.setFilter('lowpass', 2000);
+    });
+
+    document.getElementById('presetSlapback').addEventListener('click', () => {
+      if (!simpleDelay) return;
+      document.getElementById('simpleDelay').value = 80;
+      document.getElementById('simpleDelayValue').textContent = '80 ms';
+      document.getElementById('simpleFeedback').value = 20;
+      document.getElementById('simpleFeedbackValue').textContent = '20%';
+      document.getElementById('simpleSync').checked = false;
+      simpleDelay.setDelayTime(80);
+      simpleDelay.setFeedback(20);
+      simpleDelay.setSync(false);
+    });
+
+    // Ping Pong Delay controls
+    document.getElementById('enablePingPong').addEventListener('click', () => {
+      if (!audioContext) { alert('Start audio first!'); return; }
+      switchDelay(pingPongDelay);
+      document.getElementById('status').textContent = 'Ping Pong Delay enabled';
+    });
+
+    document.getElementById('ppDelayL').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('ppDelayLValue').textContent = val + ' ms';
+      if (pingPongDelay) pingPongDelay.setDelayTimeL(val);
+    });
+
+    document.getElementById('ppDelayR').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('ppDelayRValue').textContent = val + ' ms';
+      if (pingPongDelay) pingPongDelay.setDelayTimeR(val);
+    });
+
+    document.getElementById('ppFeedback').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('ppFeedbackValue').textContent = val + '%';
+      if (pingPongDelay) pingPongDelay.setFeedback(val);
+    });
+
+    document.getElementById('ppSpread').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('ppSpreadValue').textContent = val + '%';
+      if (pingPongDelay) pingPongDelay.setSpread(val);
+    });
+
+    document.getElementById('ppMix').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('ppMixValue').textContent = val + '%';
+      if (pingPongDelay) pingPongDelay.setMix(val);
+    });
+
+    document.getElementById('ppFilter').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('ppFilterValue').textContent = val + ' Hz';
+      if (pingPongDelay) pingPongDelay.setFilter('lowpass', val);
+    });
+
+    document.getElementById('presetStereo').addEventListener('click', () => {
+      if (!pingPongDelay) return;
+      document.getElementById('ppDelayL').value = 375;
+      document.getElementById('ppDelayLValue').textContent = '375 ms';
+      document.getElementById('ppDelayR').value = 188;
+      document.getElementById('ppDelayRValue').textContent = '188 ms';
+      document.getElementById('ppSpread').value = 95;
+      document.getElementById('ppSpreadValue').textContent = '95%';
+      pingPongDelay.setDelayTimeL(375);
+      pingPongDelay.setDelayTimeR(188);
+      pingPongDelay.setSpread(95);
+    });
+
+    // Filter Delay controls
+    document.getElementById('enableFilter').addEventListener('click', () => {
+      if (!audioContext) { alert('Start audio first!'); return; }
+      switchDelay(filterDelay);
+      document.getElementById('status').textContent = 'Filter Delay enabled';
+    });
+
+    document.getElementById('fdMix').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('fdMixValue').textContent = val + '%';
+      if (filterDelay) filterDelay.setMix(val);
+    });
+
+    document.getElementById('fdInput').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('fdInputValue').textContent = val + ' dB';
+      if (filterDelay) filterDelay.setInputGain(val);
+    });
+
+    // Tap 1 controls
+    ['fd1Delay', 'fd1Feedback', 'fd1Pan', 'fd1Volume', 'fd1Filter', 'fd1FilterType'].forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+        if (!filterDelay) return;
+
+        const params = {
+          delayTime: parseFloat(document.getElementById('fd1Delay').value),
+          feedback: parseFloat(document.getElementById('fd1Feedback').value),
+          pan: parseFloat(document.getElementById('fd1Pan').value),
+          volume: parseFloat(document.getElementById('fd1Volume').value),
+          filterFreq: parseFloat(document.getElementById('fd1Filter').value),
+          filterType: document.getElementById('fd1FilterType').value
+        };
+
+        document.getElementById('fd1DelayValue').textContent = params.delayTime + ' ms';
+        document.getElementById('fd1FeedbackValue').textContent = params.feedback + '%';
+        document.getElementById('fd1PanValue').textContent = params.pan;
+        document.getElementById('fd1VolumeValue').textContent = params.volume + '%';
+        document.getElementById('fd1FilterValue').textContent = params.filterFreq + ' Hz';
+
+        filterDelay.setTap(0, params);
+      });
+    });
+
+    // Tap 2 controls
+    ['fd2Delay', 'fd2Feedback', 'fd2Pan', 'fd2Volume', 'fd2Filter', 'fd2FilterType'].forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+        if (!filterDelay) return;
+
+        const params = {
+          delayTime: parseFloat(document.getElementById('fd2Delay').value),
+          feedback: parseFloat(document.getElementById('fd2Feedback').value),
+          pan: parseFloat(document.getElementById('fd2Pan').value),
+          volume: parseFloat(document.getElementById('fd2Volume').value),
+          filterFreq: parseFloat(document.getElementById('fd2Filter').value),
+          filterType: document.getElementById('fd2FilterType').value
+        };
+
+        document.getElementById('fd2DelayValue').textContent = params.delayTime + ' ms';
+        document.getElementById('fd2FeedbackValue').textContent = params.feedback + '%';
+        document.getElementById('fd2PanValue').textContent = params.pan;
+        document.getElementById('fd2VolumeValue').textContent = params.volume + '%';
+        document.getElementById('fd2FilterValue').textContent = params.filterFreq + ' Hz';
+
+        filterDelay.setTap(1, params);
+      });
+    });
+
+    // Tap 3 controls
+    ['fd3Delay', 'fd3Feedback', 'fd3Pan', 'fd3Volume', 'fd3Filter', 'fd3FilterType'].forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+        if (!filterDelay) return;
+
+        const params = {
+          delayTime: parseFloat(document.getElementById('fd3Delay').value),
+          feedback: parseFloat(document.getElementById('fd3Feedback').value),
+          pan: parseFloat(document.getElementById('fd3Pan').value),
+          volume: parseFloat(document.getElementById('fd3Volume').value),
+          filterFreq: parseFloat(document.getElementById('fd3Filter').value),
+          filterType: document.getElementById('fd3FilterType').value
+        };
+
+        document.getElementById('fd3DelayValue').textContent = params.delayTime + ' ms';
+        document.getElementById('fd3FeedbackValue').textContent = params.feedback + '%';
+        document.getElementById('fd3PanValue').textContent = params.pan;
+        document.getElementById('fd3VolumeValue').textContent = params.volume + '%';
+        document.getElementById('fd3FilterValue').textContent = params.filterFreq + ' Hz';
+
+        filterDelay.setTap(2, params);
+      });
+    });
+
+    document.getElementById('presetRhythmic').addEventListener('click', () => {
+      if (!filterDelay) return;
+
+      // Tap 1: Short delay, left
+      document.getElementById('fd1Delay').value = 200;
+      document.getElementById('fd1Pan').value = -70;
+
+      // Tap 2: Medium delay, center
+      document.getElementById('fd2Delay').value = 400;
+      document.getElementById('fd2Pan').value = 0;
+
+      // Tap 3: Long delay, right
+      document.getElementById('fd3Delay').value = 600;
+      document.getElementById('fd3Pan').value = 70;
+
+      filterDelay.setTap(0, { delayTime: 200, pan: -70 });
+      filterDelay.setTap(1, { delayTime: 400, pan: 0 });
+      filterDelay.setTap(2, { delayTime: 600, pan: 70 });
+
+      // Update displays
+      document.getElementById('fd1DelayValue').textContent = '200 ms';
+      document.getElementById('fd1PanValue').textContent = '-70';
+      document.getElementById('fd2DelayValue').textContent = '400 ms';
+      document.getElementById('fd2PanValue').textContent = '0';
+      document.getElementById('fd3DelayValue').textContent = '600 ms';
+      document.getElementById('fd3PanValue').textContent = '70';
+    });
+  </script>
+</body>
+</html>

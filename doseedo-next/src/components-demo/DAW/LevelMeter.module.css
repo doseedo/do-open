@@ -1,0 +1,83 @@
+.levelMeterContainer {
+  align-items: center;
+  display: flex;
+  flex: 1 1;
+  flex-direction: row;
+  min-width: 144px;
+  padding: 2px;
+  position: relative;
+}
+
+.meterTrack {
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  flex: 1 1;
+  height: 20px;
+  min-width: 144px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: none;
+  outline: none;
+}
+
+.levelSegments {
+  bottom: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 1px;
+  left: 0;
+  padding: 2px;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.segment {
+  border-radius: 0;
+  flex: 1 1;
+  min-width: 2px;
+  transition: background-color 0.03s ease-out;
+}
+
+.segment.lit {
+  box-shadow: 0 0 4px currentColor;
+}
+
+.fader {
+  background: #888;
+  border: 1px solid #777;
+  border-radius: 2px;
+  cursor: ew-resize;
+  height: 18px;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  z-index: 10;
+}
+
+.fader:hover {
+  background: #999;
+  border-color: #888;
+}
+
+.fader:active {
+  background: #aaa;
+}
+
+.floatingValue {
+  background: rgba(0, 0, 0, 0.9);
+  border: 1px solid var(--color-primary-blue);
+  border-radius: 3px;
+  color: #fff;
+  font-family: Monaco, 'Courier New', monospace;
+  font-size: 9px;
+  padding: 3px 6px;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 10000;
+}

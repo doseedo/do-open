@@ -1,0 +1,7 @@
+/* Global styles are imported inside the client shell (AppShell.tsx)
+   to keep the CRA CSS import order identical. This file is intentionally
+   minimal so that RSC rendering of <html><body> doesn't pull in the
+   whole CRA stylesheet chain on the server. */
+
+html, body { margin: 0; padding: 0; }
+#root { min-height: 100vh; }

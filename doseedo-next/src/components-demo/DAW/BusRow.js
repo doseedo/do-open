@@ -1,0 +1,943 @@
+import React, { useCallback, useMemo } from 'react';
+import { useApp } from '../../context/AppContext';
+import OptimizedTrack from './OptimizedTrack';
+import CompositeMIDIView from './CompositeMIDIView';
+import LevelMeter from './LevelMeter';
+import PanKnob from './PanKnob';
+import ReverbSlider from './ReverbSlider';
+import styles from './DAW.module.css';
+
+/**
+ * BusRow Component
+ * Represents a single audio bus with tracks
+ *
+ * @param {Object} bus - Bus object containing id, type, name, tracks, gain, mute, solo, expanded
+ * @param {string} icon - Font Awesome icon class (fallback)
+ * @param {number} trackHeight - Dynamic track height in pixels
+ * @param {Map} gainNodes - Map of trackId -> gainNode for audio metering
+ * @param {boolean} draggable - Whether the bus can be dragged
+ * @param {function} onDragStart - Drag start handler
+ * @param {function} onDragOver - Drag over handler
+ * @param {function} onDragLeave - Drag leave handler
+ * @param {function} onDrop - Drop handler
+ * @param {function} onDragEnd - Drag end handler
+ * @param {boolean} isDragOver - Whether another bus is being dragged over this one
+ */
+const BusRow = React.memo(({
+  bus,
+  icon,
+  trackHeight = 72,
+  gainNodes,
+  draggable = false,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+  isDragOver = false,
+  pluginMode = false
+}) => {
+  const { state, dispatch } = useApp();
+  const [isFileDragOver, setIsFileDragOver] = React.useState(false);
+
+  // Determine which instrument icon to use based on track metadata
+  const getInstrumentIcon = useCallback(() => {
+    // First check bus-level instrumentIcon (set by UPDATE_BUS_NAME from wand mode)
+    if (bus.instrumentIcon) {
+      return bus.instrumentIcon;
+    }
+
+    // Check first track for instrument information
+    if (bus.tracks.length > 0) {
+      const firstTrack = bus.tracks[0];
+
+      // Check for direct instrumentIcon property (from wand mode)
+      if (firstTrack.instrumentIcon) {
+        return firstTrack.instrumentIcon;
+      }
+
+      // Check if this is a stem track (vocals, drums, bass, etc.)
+      if (firstTrack.metadata?.type === 'stem' && firstTrack.metadata?.stemType) {
+        const stemIconMap = {
+          'vocals': '/assets/icons/microphone.png',
+          'drums': '/assets/icons/drumkit.png',
+          'bass': '/assets/icons/elecbass.png',
+          'guitar': '/assets/icons/acguitar.png',
+          'piano': '/assets/icons/piano.png',
+          'other': '/assets/icons/keyboard.png'
+        };
+        const stemIcon = stemIconMap[firstTrack.metadata.stemType];
+        if (stemIcon) return stemIcon;
+      }
+
+      // Check instrumentSubgroup first (most specific)
+      const subgroup = firstTrack.instrumentSubgroup?.toLowerCase();
+      if (subgroup) {
+        // Map instrument subgroups to icon filenames
+        const iconMap = {
+          'violin': 'violin.png',
+          'cello': 'cello.png',
+          'piano': 'piano.png',
+          'acoustic_piano': 'piano.png',
+          'acoustic guitar': 'acguitar.png',
+          'acoustic_guitar': 'acguitar.png',
+          'electric guitar': 'elecgtr.png',
+          'electric_guitar': 'elecgtr.png',
+          'electric_bass': 'elecbass.png',
+          'upright_bass': 'elecbass.png',
+          'trumpet': '/assets/icons/tpt.png',
+          'trombone': '/assets/icons/tbn.png',
+          'tuba': '/assets/icons/tpt.png',
+          'flute': 'flute.png',
+          'sax': 'sax.png',
+          'clarinet': 'clarinet.png',
+          'ensemble_strings': 'stringens.png',
+          'ensemble_brass': '/assets/icons/tpt.png',
+          'ensemble_winds': 'windens.png',
+          'keys': 'keyboard.png'
+        };
+
+        if (iconMap[subgroup]) {
+          const icon = iconMap[subgroup];
+          return icon.startsWith('/') ? icon : `/assets/icons/${icon}`;
+        }
+      }
+
+      // Fall back to instrumentGroup
+      const group = firstTrack.instrumentGroup?.toLowerCase();
+      if (group) {
+        const groupIconMap = {
+          'strings': 'violin.png',
+          'brass': '/assets/icons/tpt.png',
+          'piano': 'piano.png',
+          'guitar': 'acguitar.png',
+          'bass': 'elecbass.png',
+          'winds': 'sax.png',
+          'keys': 'keyboard.png',
+          'drums': 'drumkit.png'
+        };
+
+        if (groupIconMap[group]) {
+          const icon = groupIconMap[group];
+          return icon.startsWith('/') ? icon : `/assets/icons/${icon}`;
+        }
+      }
+    }
+
+    // Check bus name for brass
+    if (bus.name?.toLowerCase().includes('brass')) {
+      return '/assets/icons/tpt.png';
+    }
+
+    // No instrument icon found, return null to use font awesome fallback
+    return null;
+  }, [bus.instrumentIcon, bus.tracks, bus.name]);
+
+  // Removed debug logging for performance
+
+  const handleExpandToggle = useCallback(() => {
+    dispatch({ type: 'TOGGLE_BUS_EXPANDED', payload: { busId: bus.id } });
+  }, [dispatch, bus.id]);
+
+  const handleGainChange = useCallback((e) => {
+    const value = parseFloat(e.target.value);
+    dispatch({ type: 'UPDATE_BUS_GAIN', payload: { busId: bus.id, gain: value } });
+  }, [dispatch, bus.id]);
+
+  const handlePanChange = useCallback((e) => {
+    const value = parseFloat(e.target.value);
+    dispatch({ type: 'UPDATE_BUS_PAN', payload: { busId: bus.id, pan: value } });
+  }, [dispatch, bus.id]);
+
+  const handleReverbChange = useCallback((e) => {
+    const value = parseFloat(e.target.value);
+    dispatch({ type: 'UPDATE_BUS_REVERB', payload: { busId: bus.id, reverbSend: value } });
+  }, [dispatch, bus.id]);
+
+  const handleMute = useCallback(() => {
+    dispatch({ type: 'TOGGLE_BUS_MUTE', payload: { busId: bus.id } });
+  }, [dispatch, bus.id]);
+
+  const handleSolo = useCallback(() => {
+    dispatch({ type: 'TOGGLE_BUS_SOLO', payload: { busId: bus.id } });
+  }, [dispatch, bus.id]);
+
+  const handleTrackSelect = useCallback((trackId) => {
+    dispatch({ type: 'SELECT_TRACK', payload: { trackId } });
+  }, [dispatch]);
+
+  const handleTrackGainChange = useCallback((trackId, e) => {
+    const value = parseFloat(e.target.value);
+    dispatch({ type: 'UPDATE_TRACK_GAIN', payload: { busId: bus.id, trackId, gain: value } });
+  }, [dispatch, bus.id]);
+
+  const handleTrackPanChange = useCallback((trackId, e) => {
+    const value = parseFloat(e.target.value);
+    dispatch({ type: 'UPDATE_TRACK_PAN', payload: { busId: bus.id, trackId, pan: value } });
+  }, [dispatch, bus.id]);
+
+  const handleTrackReverbChange = useCallback((trackId, e) => {
+    const value = parseFloat(e.target.value);
+    dispatch({ type: 'UPDATE_TRACK_REVERB', payload: { busId: bus.id, trackId, reverbSend: value } });
+  }, [dispatch, bus.id]);
+
+  const handleTrackMute = useCallback((trackId, e) => {
+    e.stopPropagation(); // Prevent track selection
+    dispatch({ type: 'TOGGLE_TRACK_MUTE', payload: { busId: bus.id, trackId } });
+  }, [dispatch, bus.id]);
+
+  const handleTrackSolo = useCallback((trackId, e) => {
+    e.stopPropagation(); // Prevent track selection
+    dispatch({ type: 'TOGGLE_TRACK_SOLO', payload: { busId: bus.id, trackId } });
+  }, [dispatch, bus.id]);
+
+  // Check if this bus has multitrack MIDI (must be defined before handleBusClick)
+  const hasMultitrackMIDI = useMemo(() => {
+    const midiTracks = bus.tracks.filter(t => t.type === 'midi');
+    return midiTracks.length > 1;
+  }, [bus.tracks]);
+
+  // Check if this bus has multiple tracks (audio or MIDI)
+  const hasMultipleTracks = useMemo(() => {
+    return bus.tracks.length > 1;
+  }, [bus.tracks]);
+
+  const handleBusClick = useCallback(() => {
+    console.log(`🖱️ Bus clicked: ${bus.name}, hasMultitrackMIDI: ${hasMultitrackMIDI}, hasMultipleTracks: ${hasMultipleTracks}`);
+
+    // If this is a multitrack MIDI bus, create a composite track for MIDI editing
+    if (hasMultitrackMIDI) {
+      console.log(`🎼 Creating composite track for multitrack MIDI bus`);
+      // Combine all MIDI tracks into one composite track
+      const allNotes = [];
+      let maxDuration = 0;
+      let combinedTempo = 120;
+      const voiceColors = [];
+
+      // Generate distinct colors for each voice
+      const generateVoiceColor = (index, total) => {
+        const hue = (index * 360 / total) % 360;
+        return { hue, saturation: 70, lightness: 55 };
+      };
+
+      bus.tracks.forEach((track, trackIndex) => {
+        if (track.type === 'midi' && track.midiData?.notes) {
+          // Generate color for this voice
+          const color = generateVoiceColor(trackIndex, bus.tracks.length);
+          voiceColors.push(color);
+
+          // Use tempo from first track
+          if (trackIndex === 0) {
+            combinedTempo = track.midiData.tempo || 120;
+          }
+
+          // Add notes with voice index
+          track.midiData.notes.forEach(note => {
+            allNotes.push({
+              ...note,
+              voiceIndex: trackIndex
+            });
+            const endTime = note.time + note.duration;
+            if (endTime > maxDuration) maxDuration = endTime;
+          });
+
+          // Update maxDuration from track duration
+          if (track.duration > maxDuration) maxDuration = track.duration;
+        }
+      });
+
+      // Preserve the original MIDI file from first track (all tracks share the same file)
+      const firstMidiTrack = bus.tracks.find(t => t.type === 'midi');
+      const originalMidiFile = firstMidiTrack?.file;
+
+      // Create composite track object
+      const compositeTrack = {
+        id: `composite-${bus.id}`,
+        name: `${bus.name} (All Voices)`,
+        type: 'midi',
+        midiData: {
+          notes: allNotes,
+          tempo: combinedTempo,
+          duration: maxDuration,
+          voiceColors: voiceColors,
+          isMultitrack: true,
+          trackCount: bus.tracks.filter(t => t.type === 'midi').length
+        },
+        duration: maxDuration,
+        isComposite: true,
+        compositeBusId: bus.id,
+        file: originalMidiFile // Preserve original MIDI file for generation
+      };
+
+      // Select the composite track for MIDI editing AND the bus (for showing both MIDI window and Bus Info)
+      console.log(`✅ Dispatching SELECT_TRACK for composite: ${compositeTrack.id} with busId: ${bus.id}`);
+      dispatch({ type: 'SELECT_TRACK', payload: { trackId: compositeTrack.id, compositeTrack, busId: bus.id } });
+    } else if (hasMultipleTracks) {
+      // For multi-track audio buses, select the bus (shows Bus Info)
+      console.log(`🎵 Selecting bus for multi-track audio: ${bus.id}`);
+      dispatch({ type: 'SELECT_BUS', payload: { busId: bus.id } });
+    } else {
+      // For single-track buses, select the bus normally
+      console.log(`✅ Dispatching SELECT_BUS for: ${bus.id}`);
+      dispatch({ type: 'SELECT_BUS', payload: { busId: bus.id } });
+    }
+  }, [dispatch, bus.id, bus.name, bus.tracks, hasMultitrackMIDI, hasMultipleTracks]);
+
+  // Drag and drop handlers for audio files
+  const handleFileDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsFileDragOver(true);
+  }, []);
+
+  const handleFileDragLeave = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsFileDragOver(false);
+  }, []);
+
+  const handleFileDrop = useCallback(async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsFileDragOver(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+
+      // Check if it's a MIDI file
+      const isMidiFile = file.name.toLowerCase().endsWith('.mid') ||
+                        file.name.toLowerCase().endsWith('.midi') ||
+                        file.type === 'audio/midi' ||
+                        file.type === 'audio/mid';
+
+      // Check if it's an audio file
+      if (!file.type.startsWith('audio/') && !isMidiFile) {
+        alert('Please drop an audio or MIDI file');
+        return;
+      }
+
+      console.log(`🎵 ${isMidiFile ? 'MIDI' : 'Audio'} file dropped on ${bus.name}:`, file.name);
+
+      if (isMidiFile) {
+        // Handle MIDI file
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            // Parse MIDI file using Tone.js
+            const Midi = (await import('@tonejs/midi')).Midi;
+            const midi = new Midi(e.target.result);
+
+            console.log(`🎹 Parsed MIDI: ${midi.tracks.length} tracks, duration: ${midi.duration}s`);
+
+            // Filter out empty tracks
+            const validTracks = midi.tracks.filter(track => track.notes.length > 0);
+
+            if (validTracks.length === 0) {
+              alert('MIDI file has no notes');
+              return;
+            }
+
+            // If this is a multi-track MIDI, store the original file in bus metadata
+            if (validTracks.length > 1) {
+              const originalMidiBlob = new Blob([await file.arrayBuffer()], { type: 'audio/midi' });
+              dispatch({
+                type: 'UPDATE_BUS_METADATA',
+                payload: {
+                  busId: bus.id,
+                  metadata: {
+                    originalMultitrackMidi: originalMidiBlob,
+                    originalMidiFilename: file.name
+                  }
+                }
+              });
+              console.log(`💾 Stored original multi-track MIDI file for bus ${bus.id}`);
+            }
+
+            // Create separate track for each MIDI track
+            validTracks.forEach(async (midiTrack, trackIndex) => {
+              const trackId = `track-${Date.now()}-${trackIndex}`;
+
+              // Create a single-track MIDI file for this track
+              const { Midi: ToneMidi } = await import('@tonejs/midi');
+              const singleTrackMidi = new ToneMidi();
+              singleTrackMidi.header.setTempo(midi.header.tempos[0]?.bpm || 120);
+              // Note: ppq is readonly in Tone.js, it defaults to 480
+              midi.header.timeSignatures.forEach(ts => {
+                singleTrackMidi.header.timeSignatures.push(ts);
+              });
+              const newTrack = singleTrackMidi.addTrack();
+              newTrack.name = midiTrack.name;
+              midiTrack.notes.forEach(note => {
+                newTrack.addNote({
+                  midi: note.midi,
+                  time: note.time,
+                  duration: note.duration,
+                  velocity: note.velocity
+                });
+              });
+
+              // Convert to binary and create blob
+              const singleTrackBlob = new Blob([singleTrackMidi.toArray()], { type: 'audio/midi' });
+
+              const track = {
+                id: trackId,
+                name: midiTrack.name || `${file.name} - Track ${trackIndex + 1}`,
+                type: 'midi',
+                midiData: {
+                  duration: midi.duration,
+                  notes: midiTrack.notes.map(note => ({
+                    midi: note.midi,
+                    note: note.midi,
+                    time: note.time,
+                    duration: note.duration,
+                    velocity: note.velocity,
+                    name: note.name
+                  })),
+                  tempo: midi.header.tempos[0]?.bpm || 120,
+                  tempos: midi.header.tempos.map(t => ({ time: t.time, bpm: t.bpm })),
+                  timeSignatures: midi.header.timeSignatures.map(ts => ({
+                    time: ts.time,
+                    numerator: ts.timeSignature[0],
+                    denominator: ts.timeSignature[1]
+                  })),
+                  ppq: midi.header.ppq,
+                  isMultitrack: validTracks.length > 1
+                },
+                duration: midi.duration,
+                startPosition: 0,
+                gain: 1.0,
+                isMuted: false,
+                isSolo: false,
+                fx: {
+                  reverb: 0,
+                  fadeIn: 0,
+                  fadeOut: 0
+                },
+                metadata: {
+                  type: 'uploaded',
+                  midiBlob: singleTrackBlob,
+                  midiFilename: `${file.name.replace(/\.mid$/i, '')}_track_${trackIndex + 1}.mid`,
+                  instrument: midiTrack.instrument?.name,
+                  isMultitrackSource: validTracks.length > 1
+                }
+              };
+
+              // Add track to this bus
+              dispatch({
+                type: 'ADD_TRACK',
+                payload: { busId: bus.id, track }
+              });
+            });
+
+            // Expand the bus if it's collapsed
+            if (!bus.expanded) {
+              dispatch({ type: 'TOGGLE_BUS_EXPANDED', payload: { busId: bus.id } });
+            }
+
+            console.log(`✅ MIDI file added to ${bus.name} with ${validTracks.length} tracks`);
+          } catch (error) {
+            console.error('❌ Error parsing MIDI file:', error);
+            alert(`Failed to load MIDI file: ${error.message}`);
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        // Handle audio file
+        // Create a blob URL for the audio file
+        const audioUrl = URL.createObjectURL(file);
+
+        // Get audio duration
+        const audio = new Audio();
+        audio.src = audioUrl;
+
+        audio.addEventListener('loadedmetadata', () => {
+          const duration = audio.duration;
+
+          // Create the track
+          const track = {
+            id: `track-${Date.now()}`,
+            name: file.name,
+            audioUrl: audioUrl,
+            duration: duration,
+            startPosition: 0, // Always add at the beginning when dropping on a bus
+            gain: 1.0,
+            isMuted: false,
+            isSolo: false,
+            cropStart: 0,
+            cropEnd: 0,
+            fx: {
+              reverb: 0,
+              fadeIn: 0.2,
+              fadeOut: 1.0
+            }
+          };
+
+          // Add track to this bus
+          dispatch({
+            type: 'ADD_TRACK',
+            payload: { busId: bus.id, track }
+          });
+
+          // Expand the bus if it's collapsed
+          if (!bus.expanded) {
+            dispatch({ type: 'TOGGLE_BUS_EXPANDED', payload: { busId: bus.id } });
+          }
+
+          console.log(`✅ Audio file added to ${bus.name}`);
+        });
+      }
+    }
+  }, [bus.id, bus.name, bus.expanded, dispatch]);
+
+  // Handle double-click to create empty MIDI track
+  const handleDoubleClick = useCallback((e) => {
+    // Only create MIDI track if bus is empty
+    if (bus.tracks.length > 0) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    console.log(`🎹 Creating empty MIDI track for ${bus.name}`);
+
+    // Count existing MIDI tracks to generate a unique name
+    const midiTrackCount = bus.tracks.filter(t => t.type === 'midi').length;
+    const trackNumber = midiTrackCount + 1;
+
+    // Create an empty MIDI track
+    const trackId = `track-${Date.now()}`;
+    const newTrack = {
+      id: trackId,
+      name: `MIDI ${trackNumber}`,
+      type: 'midi',
+      midiData: {
+        duration: 30, // Default 30 seconds
+        tracks: [],
+        notes: [],
+        tempo: 120, // Set tempo for playback synchronization
+        tempos: [{ time: 0, bpm: 120 }],
+        timeSignatures: [{ time: 0, numerator: 4, denominator: 4 }],
+        ppq: 480
+      },
+      duration: 30,
+      startPosition: 0,
+      color: `hsl(${Math.random() * 360}, 70%, 60%)`,
+      solo: false,
+      mute: false,
+      volume: 1.0,
+      pan: 0,
+      cropStart: 0,
+      cropEnd: 0
+    };
+
+    dispatch({
+      type: 'ADD_TRACK',
+      payload: {
+        busId: bus.id,
+        track: newTrack
+      }
+    });
+
+    // Expand the bus if it's collapsed
+    if (!bus.expanded) {
+      dispatch({ type: 'TOGGLE_BUS_EXPANDED', payload: { busId: bus.id } });
+    }
+
+    console.log(`✅ Empty MIDI track created for ${bus.name}`);
+  }, [bus.id, bus.name, bus.tracks.length, bus.expanded, dispatch]);
+
+  // Calculate heights for smooth transitions
+  const tracksHeight = useMemo(() => {
+    return bus.expanded ? bus.tracks.length * trackHeight : 0;
+  }, [bus.expanded, bus.tracks.length, trackHeight]);
+
+  const instrumentIcon = getInstrumentIcon();
+
+  return (
+    <div
+      data-bus-id={bus.id}
+      className={`${styles.busRow} ${isDragOver ? styles.dragOver : ''}`}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+    >
+      {/* Bus Header Container - unified icon + label */}
+      <div className={`${styles.busHeaderContainer} ${
+        (state.selectedBus?.id === bus.id) ? styles.selected : ''
+      } ${bus.expanded ? styles.expanded : ''} ${bus.animateIn ? styles.animateIn : ''}`} style={{ height: `${trackHeight}px` }}>
+
+        {/* Bus Icon */}
+        <div className={`${styles.busIconContainer} ${bus.expanded ? styles.expanded : ''}`} onClick={handleExpandToggle}>
+          <i className={`fa-solid fa-caret-right ${styles.busExpandCaret} ${bus.expanded ? styles.expanded : ''}`}></i>
+          {instrumentIcon && instrumentIcon.startsWith('/') ? (
+            <img
+              src={instrumentIcon}
+              alt="Instrument"
+              className={styles.busIconImage}
+            />
+          ) : (
+            <i className={`fa-solid ${instrumentIcon || icon} ${styles.busIcon}`}></i>
+          )}
+        </div>
+
+        {/* Bus Label & Controls */}
+        <div className={`${styles.busLabelRow} ${bus.expanded ? styles.expanded : ''}`} onClick={handleExpandToggle}>
+        <div className={styles.busControls} onClick={(e) => e.stopPropagation()}>
+          {bus.isGeneratingStems ? (
+            /* Generating Stems Mode - show loading text only */
+            <div className={styles.generatingStemsLabel}>
+              <span className={styles.generatingStemsText}>Generating Stems</span>
+            </div>
+          ) : pluginMode ? (
+            /* Simplified Plugin Mode - stacked layout: name above volume icon */
+            <div className={styles.busControlsPluginMode}>
+              <div className={styles.busNameLabel} title={bus.name}>
+                {bus.name.length > 12 ? bus.name.substring(0, 12) + '...' : bus.name}
+              </div>
+              <div className={styles.pluginMuteContainer}>
+                <button
+                  className={`${styles.pluginMuteButton} ${bus.mute ? styles.muted : ''}`}
+                  onClick={handleMute}
+                  title={bus.mute ? "Unmute" : "Mute"}
+                >
+                  <i className={`fa-solid ${bus.mute ? 'fa-volume-xmark' : 'fa-volume-high'}`}></i>
+                </button>
+                <div className={styles.pluginLevelSlider}>
+                  <LevelMeter
+                    gain={bus.gain}
+                    onGainChange={handleGainChange}
+                    audioNode={gainNodes && bus.tracks.length > 0 ? gainNodes.get(bus.tracks[0].id) : null}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Normal Mode - full controls */
+            <>
+              <div className={styles.busControlsLayout}>
+                <div className={styles.busNameRow}>
+                  <div className={styles.busNameLabel} title={bus.name}>
+                    {bus.name.length > 25 ? bus.name.substring(0, 25) + '...' : bus.name}
+                  </div>
+                </div>
+                <div className={styles.busSliders}>
+                  <LevelMeter
+                    gain={bus.gain}
+                    onGainChange={handleGainChange}
+                    audioNode={gainNodes && bus.tracks.length > 0 ? gainNodes.get(bus.tracks[0].id) : null}
+                  />
+                  <PanKnob
+                    pan={bus.pan || 0}
+                    onPanChange={handlePanChange}
+                  />
+                </div>
+              </div>
+              <div className={styles.busButtons}>
+                <button
+                  className={`${styles.busButton} ${styles.muteButton} ${bus.mute ? styles.activeMute : ''}`}
+                  onClick={handleMute}
+                  title="Mute"
+                >
+                  M
+                </button>
+                <button
+                  className={`${styles.busButton} ${bus.solo ? styles.active : ''}`}
+                  onClick={handleSolo}
+                  title="Solo"
+                >
+                  S
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+      </div>
+
+      {/* Waveforms - must be in same row as icon and label */}
+      <div
+        className={`${styles.busTracks} ${!bus.expanded ? styles.collapsed : ''} ${bus.expanded ? styles.expanded : ''} ${isDragOver ? styles.dragOver : ''} ${bus.animateIn ? styles.animateIn : ''}`}
+        style={{
+          height: bus.expanded ? `${trackHeight + tracksHeight}px` : `${trackHeight}px`, // header + tracks (no gap)
+          minHeight: `${trackHeight}px`,
+          paddingTop: bus.expanded ? `${trackHeight}px` : '0'
+        }}
+        onDragOver={handleFileDragOver}
+        onDragLeave={handleFileDragLeave}
+        onDrop={handleFileDrop}
+        onDoubleClick={handleDoubleClick}
+      >
+        {/* Show master track view when collapsed */}
+        {!bus.expanded ? (
+          <div
+            onClick={handleBusClick}
+            style={{ cursor: 'pointer', width: '100%', height: '100%' }}
+            className={`${styles.masterTrackView} ${
+              (state.selectedBus?.id === bus.id ||
+               (state.selectedTrack?.isComposite && state.selectedTrack?.compositeBusId === bus.id))
+              ? styles.selected : ''
+            }`}
+          >
+            {hasMultitrackMIDI ? (
+              /* Show composite MIDI view for multitrack MIDI */
+              <CompositeMIDIView tracks={bus.tracks} busId={bus.id} trackHeight={trackHeight} />
+            ) : hasMultipleTracks ? (
+              /* Show composite waveform for multi-track audio */
+              <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                {bus.tracks.map((track, index) => (
+                  <div
+                    key={track.id}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      opacity: 1,
+                      pointerEvents: 'none', // Wrapper doesn't block - let track handle events
+                      zIndex: index // Later tracks appear on top
+                    }}
+                  >
+                    <OptimizedTrack
+                      track={track}
+                      busId={bus.id}
+                      index={index}
+                      isExpanded={false}
+                      isSelected={state.selectedTrack?.id === track.id}
+                      isMasterView={false}
+                      trackHeight={trackHeight}
+                      enablePointerEvents={true} // Track element handles its own clicks
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : bus.tracks.length > 0 ? (
+              /* Show single track as master representation */
+              <OptimizedTrack
+                key={bus.tracks[0].id}
+                track={bus.tracks[0]}
+                busId={bus.id}
+                index={0}
+                isExpanded={false}
+                isSelected={state.selectedTrack?.id === bus.tracks[0].id}
+                isMasterView={true}
+                trackHeight={trackHeight}
+              />
+            ) : (
+              /* Show empty state hint */
+              <div className={styles.emptyBusHint}>
+                Double-click to create MIDI track
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Show individual tracks when expanded */
+          bus.tracks.length > 0 ? (
+            bus.tracks
+              .filter(track => track.expanded !== false) // Only show expanded tracks in plugin mode
+              .map((track, index) => (
+                <OptimizedTrack
+                  key={track.id}
+                  track={track}
+                  busId={bus.id}
+                  index={index}
+                  isExpanded={true}
+                  isSelected={state.selectedTrack?.id === track.id}
+                  trackHeight={trackHeight}
+                />
+              ))
+          ) : (
+            /* Show empty state hint for expanded empty bus */
+            <div className={styles.emptyBusHint}>
+              Double-click to create MIDI track
+            </div>
+          )
+        )}
+      </div>
+
+      {/* Track Labels (only render when expanded) */}
+      {bus.expanded && (
+        <div className={styles.trackLabelsColumn}>
+          {bus.tracks.map((track, index) => {
+            // Get instrument icon based on track metadata
+            const getTrackIcon = () => {
+              // Check for direct instrumentIcon property (from wand mode)
+              if (track.instrumentIcon) {
+                return track.instrumentIcon;
+              }
+
+              // Map instrument groups to icon files from assets folder
+              const iconMap = {
+                'piano': '/assets/icons/piano.png',
+                'guitar': '/assets/icons/acguitar.png',
+                'bass': '/assets/icons/elecbass.png',
+                'strings': '/assets/icons/violin.png',
+                'brass': '/assets/icons/tpt.png',
+                'woodwind': '/assets/icons/tpt.png', // Use trumpet as fallback
+                'winds': '/assets/icons/sax.png',
+                'keys': '/assets/icons/keyboard.png',
+                'drums': '/assets/icons/drumkit.png',
+                'cello': '/assets/icons/cello.png',
+                'trombone': '/assets/icons/tbn.png',
+                'tuba': '/assets/icons/tpt.png',
+                'trumpet': '/assets/icons/tpt.png'
+              };
+
+              // Map stem types to icons
+              const stemIconMap = {
+                'vocals': '/assets/icons/microphone.png',
+                'drums': '/assets/icons/drumkit.png',
+                'bass': '/assets/icons/elecbass.png',
+                'guitar': '/assets/icons/acguitar.png',
+                'piano': '/assets/icons/piano.png',
+                'other': '/assets/icons/keyboard.png'
+              };
+
+              // Check if this is a stem track
+              if (track.metadata?.type === 'stem' && track.metadata?.stemType) {
+                const stemType = track.metadata.stemType;
+                if (stemIconMap[stemType] !== undefined) {
+                  return stemIconMap[stemType];
+                }
+              }
+
+              // Check if track has custom instrument icon (from presets)
+              if (track.instrument?.icon) {
+                return track.instrument.icon;
+              }
+
+              // Check for instrumentGroup directly on track (from wand mode)
+              if (track.instrumentGroup && iconMap[track.instrumentGroup]) {
+                return iconMap[track.instrumentGroup];
+              }
+
+              // Check metadata for instrument group
+              const instrumentGroup = track.metadata?.params?.instrumentGroup || track.metadata?.instrumentGroup;
+              if (instrumentGroup && iconMap[instrumentGroup]) {
+                return iconMap[instrumentGroup];
+              }
+
+              // Default - return null for no icon
+              return null;
+            };
+
+            const trackIconSrc = getTrackIcon();
+
+            return (
+              <div key={track.id} className={styles.trackRow} style={{ height: `${trackHeight}px` }}>
+                {/* Track Header Container - unified icon + label */}
+                <div className={`${styles.trackHeaderContainer} ${state.selectedTrack?.id === track.id ? styles.selected : ''}`} style={{ height: `${trackHeight}px` }}>
+
+                  {/* Track Icon Container */}
+                  <div className={styles.trackIconContainer}>
+                    <i className={`fa-solid fa-caret-right ${styles.trackExpandCaret}`}></i>
+                    {trackIconSrc ? (
+                      // Check if it's a FontAwesome icon name or image path
+                      trackIconSrc.startsWith('/') || trackIconSrc.startsWith('http') ? (
+                        <img
+                          src={trackIconSrc}
+                          alt="Instrument"
+                          className={styles.trackIconImage}
+                        />
+                      ) : (
+                        <i className={`fa-solid fa-${trackIconSrc} ${styles.trackIcon}`}></i>
+                      )
+                    ) : (
+                      <i className={`fa-solid ${track.type === 'midi' ? 'fa-music' : 'fa-waveform-lines'} ${styles.trackIcon}`}></i>
+                    )}
+                  </div>
+
+                  {/* Track Label & Controls */}
+                  <div
+                    className={styles.trackLabel}
+                    onClick={() => handleTrackSelect(track.id)}
+                  >
+                  <div className={styles.trackControls} onClick={(e) => e.stopPropagation()}>
+                    {pluginMode ? (
+                      /* Simplified Plugin Mode - stacked layout: name above volume icon */
+                      <div className={styles.trackControlsPluginMode}>
+                        <div className={`${styles.trackNameLabel} ${track.isExtractingStems ? styles.extractingStems : ''}`} title={track.name || track.audioUrl?.split('/').pop() || 'Untitled'}>
+                          {(() => {
+                            const displayName = track.name || track.audioUrl?.split('/').pop() || 'Untitled';
+                            return displayName.length > 12 ? displayName.substring(0, 12) + '...' : displayName;
+                          })()}
+                        </div>
+                        <div className={styles.pluginMuteContainer}>
+                          <button
+                            className={`${styles.pluginMuteButton} ${track.isMuted ? styles.muted : ''}`}
+                            onClick={(e) => handleTrackMute(track.id, e)}
+                            title={track.isMuted ? "Unmute" : "Mute"}
+                          >
+                            <i className={`fa-solid ${track.isMuted ? 'fa-volume-xmark' : 'fa-volume-high'}`}></i>
+                          </button>
+                          <div className={styles.pluginLevelSlider}>
+                            <LevelMeter
+                              gain={track.gain || 1.0}
+                              onGainChange={(e) => handleTrackGainChange(track.id, e)}
+                              audioNode={gainNodes ? gainNodes.get(track.id) : null}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Normal Mode - full controls */
+                      <>
+                        <div className={styles.trackControlsLayout}>
+                          <div className={styles.trackNameRow}>
+                            <div className={`${styles.trackNameLabel} ${track.isExtractingStems ? styles.extractingStems : ''}`} title={track.name || track.audioUrl?.split('/').pop() || 'Untitled'}>
+                              {(() => {
+                                const displayName = track.name || track.audioUrl?.split('/').pop() || 'Untitled';
+                                return displayName.length > 25 ? displayName.substring(0, 25) + '...' : displayName;
+                              })()}
+                            </div>
+                          </div>
+                          <div className={styles.trackSliders}>
+                            <LevelMeter
+                              gain={track.gain || 1.0}
+                              onGainChange={(e) => handleTrackGainChange(track.id, e)}
+                              audioNode={gainNodes ? gainNodes.get(track.id) : null}
+                            />
+                            <PanKnob
+                              pan={track.pan || 0}
+                              onPanChange={(e) => handleTrackPanChange(track.id, e)}
+                            />
+                          </div>
+                        </div>
+                        <div className={styles.trackButtons}>
+                          <button
+                            className={`${styles.trackButton} ${styles.muteButton} ${track.isMuted ? styles.activeMute : ''}`}
+                            onClick={(e) => handleTrackMute(track.id, e)}
+                            title="Mute Track"
+                          >
+                            M
+                          </button>
+                          <button
+                            className={`${styles.trackButton} ${styles.soloButton} ${track.isSolo ? styles.activeSolo : ''}`}
+                            onClick={(e) => handleTrackSolo(track.id, e)}
+                            title="Solo Track"
+                          >
+                            S
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+});
+
+BusRow.displayName = 'BusRow';
+
+export default BusRow;

@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modulation Matrix & Advanced LFOs - Interactive Examples</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #6366f1;
+            --primary-light: #818cf8;
+            --secondary: #8b5cf6;
+            --background: #0f172a;
+            --surface: #1e293b;
+            --surface-light: #334155;
+            --text: #f1f5f9;
+            --text-dim: #94a3b8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--background) 0%, #1a1a2e 100%);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--primary-light) 0%, var(--secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            color: var(--text-dim);
+            font-size: 1.1rem;
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+
+        .section h2 {
+            margin-bottom: 1.5rem;
+            color: var(--primary-light);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .section-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .control-group {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .control-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--surface-light);
+            outline: none;
+            margin-bottom: 0.5rem;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+        }
+
+        .value-display {
+            font-size: 0.85rem;
+            color: var(--primary-light);
+            font-weight: 600;
+        }
+
+        select {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--surface-light);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .visualizer {
+            width: 100%;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            margin-top: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .macro-knobs {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .macro-knob {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+        }
+
+        .knob-circle {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 0.5rem;
+            border-radius: 50%;
+            background: conic-gradient(
+                var(--primary) 0%,
+                var(--secondary) var(--value),
+                var(--surface-light) var(--value)
+            );
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .knob-inner {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: var(--surface);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .matrix-grid {
+            display: grid;
+            grid-template-columns: auto repeat(4, 1fr);
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .matrix-cell {
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+
+        .matrix-cell.header {
+            background: rgba(99, 102, 241, 0.1);
+            font-weight: 600;
+        }
+
+        .matrix-cell.active {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%);
+            border: 1px solid var(--primary);
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .status.running {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+        }
+
+        .status.stopped {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .info-box {
+            background: rgba(99, 102, 241, 0.1);
+            border-left: 4px solid var(--primary);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        .info-box p {
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 1.8rem;
+            }
+
+            .controls-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .macro-knobs {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎛️ Modulation Matrix & Advanced LFOs</h1>
+            <p class="subtitle">Interactive Examples - Agent 17</p>
+        </header>
+
+        <!-- Example 1: Advanced LFO -->
+        <div class="section">
+            <h2>
+                <span class="section-icon">📊</span>
+                Example 1: Advanced LFO
+            </h2>
+            <div class="info-box">
+                <p>Explore multiple waveforms, BPM sync, and modulation routing with the Advanced LFO.</p>
+            </div>
+
+            <div class="controls-grid">
+                <div class="control-group">
+                    <label class="control-label">Waveform</label>
+                    <select id="lfo-waveform">
+                        <option value="sine">Sine</option>
+                        <option value="triangle">Triangle</option>
+                        <option value="square">Square</option>
+                        <option value="sawtooth">Sawtooth</option>
+                        <option value="random">Random</option>
+                        <option value="samplehold">Sample & Hold</option>
+                        <option value="step">Step Sequencer</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Frequency</label>
+                    <input type="range" class="slider" id="lfo-frequency" min="0.1" max="20" step="0.1" value="1">
+                    <div class="value-display" id="lfo-frequency-value">1.0 Hz</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Depth</label>
+                    <input type="range" class="slider" id="lfo-depth" min="0" max="1" step="0.01" value="1">
+                    <div class="value-display" id="lfo-depth-value">100%</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">BPM Sync</label>
+                    <select id="lfo-sync">
+                        <option value="1/1">1/1 (Whole)</option>
+                        <option value="1/2">1/2 (Half)</option>
+                        <option value="1/4" selected>1/4 (Quarter)</option>
+                        <option value="1/8">1/8 (Eighth)</option>
+                        <option value="1/16">1/16 (Sixteenth)</option>
+                        <option value="1/4T">1/4T (Triplet)</option>
+                        <option value="1/4D">1/4D (Dotted)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-success" id="lfo-start">▶️ Start LFO</button>
+                <button class="btn btn-danger" id="lfo-stop">⏹️ Stop LFO</button>
+                <button class="btn btn-primary" id="lfo-sync-toggle">🎵 Toggle BPM Sync</button>
+            </div>
+
+            <canvas class="visualizer" id="lfo-visualizer"></canvas>
+
+            <div style="margin-top: 1rem;">
+                <span class="status stopped" id="lfo-status">
+                    <span class="status-dot"></span>
+                    Stopped
+                </span>
+            </div>
+        </div>
+
+        <!-- Example 2: Envelope Generator -->
+        <div class="section">
+            <h2>
+                <span class="section-icon">📈</span>
+                Example 2: Envelope Generator
+            </h2>
+            <div class="info-box">
+                <p>Shape your sound with ADSR envelopes. Trigger the envelope and watch it unfold.</p>
+            </div>
+
+            <div class="controls-grid">
+                <div class="control-group">
+                    <label class="control-label">Attack</label>
+                    <input type="range" class="slider" id="env-attack" min="0.001" max="2" step="0.001" value="0.01">
+                    <div class="value-display" id="env-attack-value">10 ms</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Decay</label>
+                    <input type="range" class="slider" id="env-decay" min="0.001" max="2" step="0.001" value="0.1">
+                    <div class="value-display" id="env-decay-value">100 ms</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Sustain</label>
+                    <input type="range" class="slider" id="env-sustain" min="0" max="1" step="0.01" value="0.7">
+                    <div class="value-display" id="env-sustain-value">70%</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Release</label>
+                    <input type="range" class="slider" id="env-release" min="0.001" max="3" step="0.001" value="0.2">
+                    <div class="value-display" id="env-release-value">200 ms</div>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-success" id="env-trigger">⚡ Trigger Envelope</button>
+                <button class="btn btn-danger" id="env-release-btn">↓ Release</button>
+                <button class="btn btn-primary" id="env-preset">🎵 Load Preset</button>
+            </div>
+
+            <canvas class="visualizer" id="env-visualizer"></canvas>
+
+            <div style="margin-top: 1rem;">
+                <span class="status stopped" id="env-status">
+                    <span class="status-dot"></span>
+                    Idle
+                </span>
+            </div>
+        </div>
+
+        <!-- Example 3: Macro Controls -->
+        <div class="section">
+            <h2>
+                <span class="section-icon">🎚️</span>
+                Example 3: Macro Controls
+            </h2>
+            <div class="info-box">
+                <p>8 macro knobs for controlling multiple parameters. Perfect for performance and sound design.</p>
+            </div>
+
+            <div class="macro-knobs">
+                <div class="macro-knob">
+                    <div class="knob-circle" style="--value: 50%">
+                        <div class="knob-inner" id="macro-0-value">50</div>
+                    </div>
+                    <input type="range" class="slider" id="macro-0" min="0" max="100" value="50">
+                    <label class="control-label">Filter</label>
+                </div>
+
+                <div class="macro-knob">
+                    <div class="knob-circle" style="--value: 30%">
+                        <div class="knob-inner" id="macro-1-value">30</div>
+                    </div>
+                    <input type="range" class="slider" id="macro-1" min="0" max="100" value="30">
+                    <label class="control-label">Resonance</label>
+                </div>
+
+                <div class="macro-knob">
+                    <div class="knob-circle" style="--value: 70%">
+                        <div class="knob-inner" id="macro-2-value">70</div>
+                    </div>
+                    <input type="range" class="slider" id="macro-2" min="0" max="100" value="70">
+                    <label class="control-label">Drive</label>
+                </div>
+
+                <div class="macro-knob">
+                    <div class="knob-circle" style="--value: 40%">
+                        <div class="knob-inner" id="macro-3-value">40</div>
+                    </div>
+                    <input type="range" class="slider" id="macro-3" min="0" max="100" value="40">
+                    <label class="control-label">Reverb</label>
+                </div>
+
+                <div class="macro-knob">
+                    <div class="knob-circle" style="--value: 60%">
+                        <div class="knob-inner" id="macro-4-value">60</div>
+                    </div>
+                    <input type="range" class="slider" id="macro-4" min="0" max="100" value="60">
+                    <label class="control-label">Delay</label>
+                </div>
+
+                <div class="macro-knob">
+                    <div class="knob-circle" style="--value: 50%">
+                        <div class="knob-inner" id="macro-5-value">50</div>
+                    </div>
+                    <input type="range" class="slider" id="macro-5" min="0" max="100" value="50">
+                    <label class="control-label">Mod Depth</label>
+                </div>
+
+                <div class="macro-knob">
+                    <div class="knob-circle" style="--value: 20%">
+                        <div class="knob-inner" id="macro-6-value">20</div>
+                    </div>
+                    <input type="range" class="slider" id="macro-6" min="0" max="100" value="20">
+                    <label class="control-label">Detune</label>
+                </div>
+
+                <div class="macro-knob">
+                    <div class="knob-circle" style="--value: 80%">
+                        <div class="knob-inner" id="macro-7-value">80</div>
+                    </div>
+                    <input type="range" class="slider" id="macro-7" min="0" max="100" value="80">
+                    <label class="control-label">Level</label>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-primary" id="macro-reset">🔄 Reset All</button>
+                <button class="btn btn-primary" id="macro-randomize">🎲 Randomize</button>
+            </div>
+        </div>
+
+        <!-- Example 4: Modulation Matrix -->
+        <div class="section">
+            <h2>
+                <span class="section-icon">🔀</span>
+                Example 4: Modulation Matrix
+            </h2>
+            <div class="info-box">
+                <p>Visual routing system. Create complex modulation networks with ease.</p>
+            </div>
+
+            <div class="matrix-grid">
+                <div class="matrix-cell header">Source / Dest</div>
+                <div class="matrix-cell header">Filter</div>
+                <div class="matrix-cell header">Pitch</div>
+                <div class="matrix-cell header">Amp</div>
+                <div class="matrix-cell header">Pan</div>
+
+                <div class="matrix-cell header">LFO 1</div>
+                <div class="matrix-cell" data-src="lfo1" data-dest="filter">0%</div>
+                <div class="matrix-cell" data-src="lfo1" data-dest="pitch">0%</div>
+                <div class="matrix-cell" data-src="lfo1" data-dest="amp">0%</div>
+                <div class="matrix-cell" data-src="lfo1" data-dest="pan">0%</div>
+
+                <div class="matrix-cell header">LFO 2</div>
+                <div class="matrix-cell" data-src="lfo2" data-dest="filter">0%</div>
+                <div class="matrix-cell" data-src="lfo2" data-dest="pitch">0%</div>
+                <div class="matrix-cell" data-src="lfo2" data-dest="amp">0%</div>
+                <div class="matrix-cell" data-src="lfo2" data-dest="pan">0%</div>
+
+                <div class="matrix-cell header">ENV</div>
+                <div class="matrix-cell active" data-src="env" data-dest="filter">80%</div>
+                <div class="matrix-cell" data-src="env" data-dest="pitch">0%</div>
+                <div class="matrix-cell" data-src="env" data-dest="amp">0%</div>
+                <div class="matrix-cell" data-src="env" data-dest="pan">0%</div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-success" id="matrix-create">✨ Create Random Routing</button>
+                <button class="btn btn-danger" id="matrix-clear">🗑️ Clear All</button>
+                <button class="btn btn-primary" id="matrix-preset">💾 Load Preset</button>
+            </div>
+
+            <div style="margin-top: 1rem;">
+                <p class="control-label">Active Routings: <span id="routing-count">1</span></p>
+            </div>
+        </div>
+
+        <footer style="text-align: center; margin-top: 3rem; color: var(--text-dim);">
+            <p>Agent 17: Modulation Matrix & Advanced LFOs | Web Audio Plugins Phase 2</p>
+            <p style="font-size: 0.85rem; margin-top: 0.5rem;">
+                Powered by Web Audio API | All plugins extend BasePlugin and register with PluginFactory
+            </p>
+        </footer>
+    </div>
+
+    <script type="module">
+        // Note: In a real implementation, these would be actual imports
+        // For demonstration purposes, we're simulating the functionality
+
+        console.log('🎛️ Modulation Matrix Examples Loaded');
+        console.log('Agent 17: Advanced LFOs, Envelopes, Macros, and Modulation Matrix');
+
+        // Simulate AudioContext
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // LFO Example
+        const lfoFreqSlider = document.getElementById('lfo-frequency');
+        const lfoFreqValue = document.getElementById('lfo-frequency-value');
+        const lfoDepthSlider = document.getElementById('lfo-depth');
+        const lfoDepthValue = document.getElementById('lfo-depth-value');
+        const lfoStatus = document.getElementById('lfo-status');
+
+        let lfoRunning = false;
+
+        lfoFreqSlider.addEventListener('input', (e) => {
+            lfoFreqValue.textContent = `${e.target.value} Hz`;
+        });
+
+        lfoDepthSlider.addEventListener('input', (e) => {
+            lfoDepthValue.textContent = `${Math.round(e.target.value * 100)}%`;
+        });
+
+        document.getElementById('lfo-start').addEventListener('click', () => {
+            lfoRunning = true;
+            lfoStatus.className = 'status running';
+            lfoStatus.innerHTML = '<span class="status-dot"></span> Running';
+            console.log('LFO Started');
+        });
+
+        document.getElementById('lfo-stop').addEventListener('click', () => {
+            lfoRunning = false;
+            lfoStatus.className = 'status stopped';
+            lfoStatus.innerHTML = '<span class="status-dot"></span> Stopped';
+            console.log('LFO Stopped');
+        });
+
+        // Envelope Example
+        const envAttackSlider = document.getElementById('env-attack');
+        const envAttackValue = document.getElementById('env-attack-value');
+        const envDecaySlider = document.getElementById('env-decay');
+        const envDecayValue = document.getElementById('env-decay-value');
+        const envSustainSlider = document.getElementById('env-sustain');
+        const envSustainValue = document.getElementById('env-sustain-value');
+        const envReleaseSlider = document.getElementById('env-release');
+        const envReleaseValue = document.getElementById('env-release-value');
+        const envStatus = document.getElementById('env-status');
+
+        envAttackSlider.addEventListener('input', (e) => {
+            envAttackValue.textContent = `${Math.round(e.target.value * 1000)} ms`;
+        });
+
+        envDecaySlider.addEventListener('input', (e) => {
+            envDecayValue.textContent = `${Math.round(e.target.value * 1000)} ms`;
+        });
+
+        envSustainSlider.addEventListener('input', (e) => {
+            envSustainValue.textContent = `${Math.round(e.target.value * 100)}%`;
+        });
+
+        envReleaseSlider.addEventListener('input', (e) => {
+            envReleaseValue.textContent = `${Math.round(e.target.value * 1000)} ms`;
+        });
+
+        document.getElementById('env-trigger').addEventListener('click', () => {
+            envStatus.className = 'status running';
+            envStatus.innerHTML = '<span class="status-dot"></span> Attack → Decay → Sustain';
+            console.log('Envelope Triggered');
+        });
+
+        document.getElementById('env-release-btn').addEventListener('click', () => {
+            envStatus.className = 'status stopped';
+            envStatus.innerHTML = '<span class="status-dot"></span> Release';
+            console.log('Envelope Released');
+            setTimeout(() => {
+                envStatus.innerHTML = '<span class="status-dot"></span> Idle';
+            }, 500);
+        });
+
+        // Macro Controls
+        for (let i = 0; i < 8; i++) {
+            const slider = document.getElementById(`macro-${i}`);
+            const valueDisplay = document.getElementById(`macro-${i}-value`);
+            const knobCircle = valueDisplay.parentElement.parentElement;
+
+            slider.addEventListener('input', (e) => {
+                const value = e.target.value;
+                valueDisplay.textContent = value;
+                knobCircle.style.setProperty('--value', `${value}%`);
+            });
+        }
+
+        document.getElementById('macro-reset').addEventListener('click', () => {
+            for (let i = 0; i < 8; i++) {
+                const slider = document.getElementById(`macro-${i}`);
+                slider.value = 50;
+                slider.dispatchEvent(new Event('input'));
+            }
+            console.log('Macros Reset');
+        });
+
+        document.getElementById('macro-randomize').addEventListener('click', () => {
+            for (let i = 0; i < 8; i++) {
+                const slider = document.getElementById(`macro-${i}`);
+                slider.value = Math.floor(Math.random() * 101);
+                slider.dispatchEvent(new Event('input'));
+            }
+            console.log('Macros Randomized');
+        });
+
+        // Modulation Matrix
+        const matrixCells = document.querySelectorAll('.matrix-cell:not(.header)');
+        let routingCount = 1;
+
+        matrixCells.forEach(cell => {
+            cell.addEventListener('click', () => {
+                if (cell.classList.contains('active')) {
+                    cell.classList.remove('active');
+                    cell.textContent = '0%';
+                    routingCount--;
+                } else {
+                    cell.classList.add('active');
+                    const depth = Math.floor(Math.random() * 100);
+                    cell.textContent = `${depth}%`;
+                    routingCount++;
+                }
+                document.getElementById('routing-count').textContent = routingCount;
+            });
+        });
+
+        document.getElementById('matrix-create').addEventListener('click', () => {
+            const randomCell = matrixCells[Math.floor(Math.random() * matrixCells.length)];
+            if (!randomCell.classList.contains('active')) {
+                randomCell.click();
+            }
+        });
+
+        document.getElementById('matrix-clear').addEventListener('click', () => {
+            matrixCells.forEach(cell => {
+                cell.classList.remove('active');
+                cell.textContent = '0%';
+            });
+            routingCount = 0;
+            document.getElementById('routing-count').textContent = routingCount;
+        });
+
+        console.log('✅ All examples initialized successfully');
+        console.log('🎵 Try adjusting the controls and exploring modulation routing!');
+    </script>
+</body>
+</html>

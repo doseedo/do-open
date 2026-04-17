@@ -1,0 +1,707 @@
+/* ── DSP Editor — Max for Live inspired visual node chain editor ── */
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #0d0d1a;
+  color: #e0e0e0;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+/* ── Toolbar ── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #141428;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+
+.toolbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── View Toggle ── */
+.viewToggle {
+  display: flex;
+  background: rgba(255,255,255,0.04);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 1px;
+}
+
+.viewToggleBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(255,255,255,0.4);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.viewToggleBtn:hover {
+  color: rgba(255,255,255,0.6);
+}
+
+.viewToggleBtnActive {
+  background: rgba(102,126,234,0.2);
+  color: #667eea;
+}
+
+.toolbarLabel {
+  font-weight: 600;
+  font-size: 13px;
+  color: rgba(255,255,255,0.8);
+}
+
+.toolbarMeta {
+  font-size: 11px;
+  color: rgba(255,255,255,0.3);
+}
+
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ioSelect {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  color: rgba(255,255,255,0.7);
+  font-size: 11px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+
+.arrow {
+  color: rgba(255,255,255,0.25);
+  font-size: 14px;
+}
+
+/* ── Main Area ── */
+.mainArea {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Chain Area (horizontal node chain) ── */
+.chainArea {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  padding: 20px 16px;
+  overflow-x: auto;
+  overflow-y: auto;
+  gap: 0;
+  min-height: 0;
+}
+
+/* ── IO Nodes (input/output) ── */
+.ioNode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 8px 0;
+}
+
+.ioIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.4);
+  font-size: 14px;
+}
+
+.ioNode span {
+  font-size: 10px;
+  color: rgba(255,255,255,0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Wire + Insert Button ── */
+.wire {
+  display: flex;
+  align-items: center;
+  position: relative;
+  flex-shrink: 0;
+  width: 32px;
+  justify-content: center;
+  min-height: 40px;
+  transition: width 0.15s;
+}
+
+.wireDragOver {
+  width: 48px;
+  background: rgba(102,126,234,0.08);
+  border-radius: 6px;
+}
+
+.wireLine {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(255,255,255,0.1);
+  pointer-events: none;
+}
+
+.insertBtn {
+  position: relative;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: #1a1a30;
+  color: rgba(255,255,255,0.3);
+  font-size: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.wire:hover .insertBtn,
+.insertBtn:focus {
+  opacity: 1;
+}
+
+.insertBtn:hover {
+  background: rgba(102,126,234,0.3);
+  border-color: rgba(102,126,234,0.5);
+  color: #667eea;
+}
+
+/* ── Node Box ── */
+.node {
+  flex-shrink: 0;
+  width: 150px;
+  border-radius: 8px;
+  background: #1a1a30;
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  overflow: hidden;
+}
+
+.node:hover {
+  border-color: var(--node-color, rgba(255,255,255,0.15));
+}
+
+.nodeSelected {
+  border-color: var(--node-color, #667eea);
+  box-shadow: 0 0 0 1px var(--node-color, #667eea), 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.nodeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.nodeType {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeRemove {
+  background: none;
+  border: none;
+  color: rgba(0,0,0,0.4);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.nodeRemove:hover {
+  color: rgba(0,0,0,0.8);
+}
+
+.nodeId {
+  padding: 3px 8px 0;
+  font-size: 10px;
+  color: rgba(255,255,255,0.35);
+  font-family: 'SF Mono', 'Menlo', monospace;
+}
+
+/* ── Node Params (inline) ── */
+.nodeParams {
+  padding: 4px 8px 6px;
+}
+
+.nodeParam {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 1px 0;
+  font-size: 10px;
+}
+
+.nodeParamKey {
+  color: rgba(255,255,255,0.4);
+  flex-shrink: 0;
+}
+
+.nodeParamVal {
+  color: rgba(255,255,255,0.7);
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 10px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeParamBound {
+  color: #667eea;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.nodeParamBound i {
+  font-size: 8px;
+}
+
+.nodeParamEmpty {
+  font-size: 10px;
+  color: rgba(255,255,255,0.15);
+  font-style: italic;
+}
+
+/* ── Node Binding Dots ── */
+.nodeBindings {
+  display: flex;
+  gap: 3px;
+  padding: 0 8px 5px;
+}
+
+.bindingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  opacity: 0.6;
+}
+
+/* ── Detail Panel (right sidebar) ── */
+.detailPanel {
+  width: 240px;
+  flex-shrink: 0;
+  border-left: 1px solid rgba(255,255,255,0.06);
+  overflow-y: auto;
+  background: #111122;
+}
+
+/* ── Parameter Section ── */
+.paramSection {
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.paramHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.6);
+}
+
+.addParamBtn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: transparent;
+  color: rgba(255,255,255,0.4);
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.addParamBtn:hover {
+  background: rgba(102,126,234,0.2);
+  color: #667eea;
+}
+
+.paramList {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.paramItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background 0.1s;
+}
+
+.paramItem:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.paramItemSelected {
+  background: rgba(102,126,234,0.08);
+  border-left-color: #667eea;
+}
+
+.paramName {
+  flex: 1;
+  font-size: 11px;
+  color: rgba(255,255,255,0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paramMeta {
+  font-size: 10px;
+  color: rgba(255,255,255,0.25);
+  font-family: 'SF Mono', 'Menlo', monospace;
+}
+
+.paramBindCount {
+  font-size: 10px;
+  color: #667eea;
+}
+
+.emptyParams {
+  padding: 12px 10px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.2);
+  font-style: italic;
+}
+
+/* ── Detail Sections (Node / Param detail) ── */
+.detailSection {
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding-bottom: 8px;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-left: 3px solid;
+}
+
+.detailType {
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detailId {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  font-family: 'SF Mono', 'Menlo', monospace;
+  cursor: pointer;
+}
+
+.detailId:hover {
+  color: rgba(255,255,255,0.6);
+}
+
+.detailIdInput {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(102,126,234,0.4);
+  border-radius: 3px;
+  color: #fff;
+  font-size: 11px;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  padding: 2px 4px;
+  width: 100px;
+}
+
+.detailParams {
+  padding: 4px 10px;
+}
+
+.detailParamRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.detailParamLabel {
+  width: 70px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  text-align: right;
+}
+
+.detailParamInput {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 3px;
+  color: #e0e0e0;
+  font-size: 11px;
+  padding: 3px 6px;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  min-width: 0;
+}
+
+.detailParamInput:focus {
+  border-color: rgba(102,126,234,0.5);
+  outline: none;
+}
+
+.detailParamInputGroup {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.detailParamUnit {
+  font-size: 10px;
+  color: rgba(255,255,255,0.25);
+  flex-shrink: 0;
+}
+
+.detailParamSelect {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 3px;
+  color: #e0e0e0;
+  font-size: 11px;
+  padding: 3px 4px;
+  cursor: pointer;
+}
+
+.bindSelect {
+  width: 60px;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 3px;
+  color: rgba(255,255,255,0.3);
+  font-size: 10px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.removeBtn {
+  background: none;
+  border: none;
+  color: rgba(255,100,100,0.5);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.removeBtn:hover {
+  color: rgba(255,100,100,0.9);
+}
+
+/* ── Bindings Section ── */
+.bindingsSection {
+  padding: 6px 10px;
+}
+
+.bindingsTitle {
+  font-size: 10px;
+  color: rgba(255,255,255,0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.bindingItem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 2px 0;
+  color: rgba(255,255,255,0.5);
+}
+
+.bindingArrow {
+  color: rgba(255,255,255,0.2);
+  font-size: 10px;
+}
+
+.bindingTarget {
+  color: rgba(255,255,255,0.35);
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 10px;
+}
+
+/* ── Add Node Menu ── */
+.addMenu {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 220px;
+  max-height: 320px;
+  background: #1a1a35;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  z-index: 100;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.addMenuSearch {
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  outline: none;
+}
+
+.addMenuSearch::placeholder {
+  color: rgba(255,255,255,0.25);
+}
+
+.addMenuList {
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.addMenuCat {
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.addMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px 5px 18px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.7);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.addMenuItem:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.addMenuDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.addMenuType {
+  margin-left: auto;
+  font-size: 10px;
+  color: rgba(255,255,255,0.2);
+  font-family: 'SF Mono', 'Menlo', monospace;
+}
+
+/* ── Empty State ── */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 10px;
+  color: rgba(255,255,255,0.25);
+  text-align: center;
+  padding: 40px;
+}
+
+.emptyState i {
+  font-size: 32px;
+  opacity: 0.3;
+}
+
+.emptyState h3 {
+  margin: 0;
+  font-size: 16px;
+  color: rgba(255,255,255,0.4);
+}
+
+.emptyState p {
+  margin: 0;
+  font-size: 13px;
+  max-width: 300px;
+}
+
+.createBtn {
+  margin-top: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(102,126,234,0.3);
+  background: rgba(102,126,234,0.1);
+  color: #667eea;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.createBtn:hover {
+  background: rgba(102,126,234,0.2);
+}
+
+/* ── Graph Area (React Flow container) ── */
+.graphArea {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
