@@ -42,6 +42,9 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
   const transitionFrameRef = useRef(null);
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [duration, setDuration] = React.useState(null);
+  // Increments each time a real audio decode completes (NOT on envelope-only paint).
+  // OptimizedTrack watches this to know when to end the noise overlay on WAV arrival.
+  const [decodedAudioUrl, setDecodedAudioUrl] = React.useState(null);
 
   // paintWithTransition — every time the canvas needs a new image, pass the
   // draw through this helper instead of calling `canvas.width = width` +
@@ -176,6 +179,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
           loadedUrlRef.current = audioUrl;
           setDuration(cachedBuffer.duration);
           setIsLoaded(true);
+          setDecodedAudioUrl(audioUrl);
 
           // If envelope was already painted by the envelope effect, don't
           // repaint from cache — the envelope is the correct visual until
@@ -228,6 +232,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
         loadedUrlRef.current = audioUrl;
         setDuration(audioBuffer.duration);
         setIsLoaded(true);
+        setDecodedAudioUrl(audioUrl);
 
         // When envelopeData is present, the canvas is owned by the envelope —
         // NEVER repaint from audio. Audio loads silently for playback only.
@@ -324,7 +329,8 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     canvasRef,
     audioBuffer: audioBufferRef.current,
     duration,
-    isLoaded
+    isLoaded,
+    decodedAudioUrl,
   };
 }
 

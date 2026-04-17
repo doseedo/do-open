@@ -614,7 +614,17 @@ function appReducer(state, action) {
           ? {
               ...bus,
               tracks: bus.tracks.map(t =>
-                t.id === action.payload.trackId ? { ...t, ...clampedUpdates } : t
+                t.id === action.payload.trackId
+                  ? {
+                      ...t,
+                      ...clampedUpdates,
+                      // Deep-merge metadata so envelopeData / stemType / etc are never
+                      // wiped by a partial update like { playbackReady: true }.
+                      ...(clampedUpdates.metadata
+                        ? { metadata: { ...t.metadata, ...clampedUpdates.metadata } }
+                        : {}),
+                    }
+                  : t
               )
             }
           : bus

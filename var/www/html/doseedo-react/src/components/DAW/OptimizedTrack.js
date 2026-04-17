@@ -169,7 +169,50 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
   // CompositeBusWaveform is wired in).
   const visualGain = track.isMuted ? 0 : (track.gain ?? 1.0);
 
-  const { canvasRef, isLoaded, duration: actualDuration } = useWaveform(
+  // Noise transition animation for stem tracks.
+  // Phase: 'entering' (noise visible, canvas hidden) → 'fading' (noise fades out,
+  // canvas fades in) → 'visible' (steady state).
+  //
+  // Mount path: starts immediately as 'entering' (no blank-canvas flash), transitions
+  // to visible on a fixed 500ms schedule — envelope paints almost instantly.
+  //
+  // WAV arrival path: when audioUrl changes null→URL, resets to 'entering' and
+  // HOLDS there until useWaveform signals the audio decoded (decodedAudioUrl).
+  // This way noise stays up the entire time the browser is fetching+decoding
+  // the WAV, not just a fixed 1 second.
+  const isStemTrack = track.metadata?.type === 'stem' && track.type !== 'midi';
+  const [wavePhase, setWavePhase] = useState(() => isStemTrack ? 'entering' : 'visible');
+  const phaseTimersRef = useRef([]);
+  const clearPhaseTimers = useCallback(() => {
+    phaseTimersRef.current.forEach(clearTimeout);
+    phaseTimersRef.current = [];
+  }, []);
+  useEffect(() => () => clearPhaseTimers(), [clearPhaseTimers]);
+
+  // Mount: already in 'entering', just schedule the fade-to-visible.
+  useEffect(() => {
+    if (!isStemTrack) return;
+    phaseTimersRef.current = [
+      setTimeout(() => setWavePhase('fading'), 500),
+      setTimeout(() => setWavePhase('visible'), 1000),
+    ];
+    return () => clearPhaseTimers();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // WAV arrival: when audioUrl changes null→URL, freeze at 'entering'.
+  // The decodedAudioUrl effect below will kick off the fade once decode completes.
+  const prevAudioUrlRef = useRef(track.audioUrl);
+  useEffect(() => {
+    if (!isStemTrack) return;
+    if (prevAudioUrlRef.current === track.audioUrl) return;
+    prevAudioUrlRef.current = track.audioUrl;
+    if (!track.audioUrl) return;
+    clearPhaseTimers();
+    setWavePhase('entering');
+    // No timer here — we wait for decodedAudioUrl to change (see below).
+  }, [track.audioUrl, isStemTrack, clearPhaseTimers]);
+
+  const { canvasRef, isLoaded, duration: actualDuration, decodedAudioUrl } = useWaveform(
     track.type === 'midi' ? null : track.audioUrl, // Skip waveform for MIDI tracks
     fullAudioWidth,
     trackHeight,
@@ -180,6 +223,21 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
     track.metadata?.envelopeFps || 25,     // v4 outputs ≈31.25 Hz, latent_visual is 25
     visualGain,
   );
+
+  // Decode complete: when useWaveform finishes decoding a WAV (decodedAudioUrl
+  // updates), kick off the fade-to-visible so the noise overlay covers the
+  // entire fetch+decode window regardless of network speed.
+  const prevDecodedUrlRef = useRef(null);
+  useEffect(() => {
+    if (!isStemTrack) return;
+    if (!decodedAudioUrl || decodedAudioUrl === prevDecodedUrlRef.current) return;
+    prevDecodedUrlRef.current = decodedAudioUrl;
+    clearPhaseTimers();
+    phaseTimersRef.current = [
+      setTimeout(() => setWavePhase('fading'), 0),
+      setTimeout(() => setWavePhase('visible'), 500),
+    ];
+  }, [decodedAudioUrl, isStemTrack, clearPhaseTimers]);
 
   // Update track duration when audio loads — only when the delta is
   // meaningful (>10ms). The Web Audio decoded duration often differs
@@ -556,14 +614,29 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
           />
         </div>
       ) : (
-        <canvas
-          ref={canvasRef}
-          className={styles.waveform}
-          style={{
-            transform: `translateX(${waveformOffset}px)`,
-            height: `${trackHeight}px`
-          }}
-        />
+        <>
+          <canvas
+            ref={canvasRef}
+            className={styles.waveform}
+            style={{
+              transform: `translateX(${waveformOffset}px)`,
+              height: `${trackHeight}px`,
+              opacity: isStemTrack && wavePhase === 'entering' ? 0 : 1,
+              transition: isStemTrack && wavePhase === 'fading' ? 'opacity 0.5s ease-in' : 'none',
+            }}
+          />
+          {isStemTrack && wavePhase !== 'visible' && (
+            <div style={{
+              position: 'absolute', left: `${waveformOffset}px`, top: 0,
+              width: `${fullAudioWidth}px`, height: `${trackHeight}px`,
+              opacity: wavePhase === 'fading' ? 0 : 1,
+              transition: wavePhase === 'fading' ? 'opacity 0.5s ease-out' : 'none',
+              pointerEvents: 'none', overflow: 'hidden',
+            }}>
+              <PlaceholderWaveform width={fullAudioWidth} height={trackHeight} />
+            </div>
+          )}
+        </>
       )}
 
       {/* Inpaint selection overlay - show either active drag or confirmed selection */}
