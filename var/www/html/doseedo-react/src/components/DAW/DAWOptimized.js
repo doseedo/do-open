@@ -28,7 +28,7 @@ import {
   separate6Stems,
   STEM_NAMES_V4COND_6,
 } from '../../services/latentDemucsV4';
-import { STEM_NAMES_6 } from '../../services/semDemucsV4';
+import { analyzeRms } from '../../services/rmsDemucs';
 import { initLatentVisual, envelopeFromLatent, buildFakeBufferFromEnvelope } from '../../services/latentVisual';
 import { audioBufferCache } from '../../hooks/useWaveform';
 import ImportAudioModal from './ImportAudioModal';
@@ -174,42 +174,13 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
     // Backend prewarm — fire and forget
     fetch('/health').catch(() => {});
 
-    // ONNX model preload — decoder first (63 MB, needed for playback),
-    // then demucs (325 MB, needed for separation). Decoder is now small
-    // enough to load in parallel but sequential avoids bandwidth
-    // contention on slower connections.
-    (async () => {
-      try {
-        // semDemucsV4 (9 MB) first — it runs on EVERY upload before demucs
-        // to classify mix-vs-solo + populate instant stem envelopes.
-        // Tiny and fast, loads in parallel with the decoder below.
-        import('../../services/semDemucsV4').then(({ initSemDemucsV4 }) =>
-          initSemDemucsV4().catch(() => {})
-        ).catch(() => {});
+    // Prewarm the lightweight rmsDemucs model (577 KB) so it's ready
+    // when the user drops their first audio file.
+    import('../../services/rmsDemucs').then(({ initRmsDemucs }) =>
+      initRmsDemucs().catch(() => {})
+    ).catch(() => {});
 
-        console.log('[prewarm] loading Oobleck VAE decoder (63 MB)…');
-        await initLatentDecoder();
-        console.log('[prewarm] decoder ready, now loading latentDemucsV4 (98 MB fp16)…');
-        await initLatentDemucsV4();
-        // After demucs is ready, preload the Oobleck VAE encoder (~337 MB).
-        console.log('[prewarm] demucs ready, now loading latentEncoder (337 MB)…');
-        const { initLatentEncoder } = await import('../../services/latentEncoder');
-        initLatentEncoder().catch((e) => {
-          console.warn('[prewarm] latentEncoder preload failed (non-fatal):', e?.message || e);
-        });
-      } catch (e) {
-        // If decoder or demucs fails, still try to start them + encoder.
-        initLatentDemucsV4().catch(() => {});
-        import('../../services/latentEncoder').then(({ initLatentEncoder }) =>
-          initLatentEncoder().catch(() => {})
-        ).catch(() => {});
-        import('../../services/semDemucsV4').then(({ initSemDemucsV4 }) =>
-          initSemDemucsV4().catch(() => {})
-        ).catch(() => {});
-      }
-    })();
-
-    console.log('[prewarm] studio opened — warming Modal backend + preloading ONNX models');
+    console.log('[prewarm] studio opened — warming Modal backend + rmsDemucs model');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const timelineContainerRef = useRef(null);
@@ -919,8 +890,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
         dispatch({ type: 'ADD_TRACK', payload: { busId, track } });
         console.log(`✅ Audio file added to new SFX bus, analyzing…`);
 
-        // Pop the import modal — user can detect tempo/key/meter
-        setImportModal({ file, busId, trackId });
+        // Import modal disabled — skip tempo/key detection prompt
 
         // Background analysis: basic-pitch + PANNs + VAE latent in parallel
         analyzeAudio(file).then((res) => {
@@ -963,660 +933,121 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
           });
         });
 
-        // Background stem separation: turn this single track into a
-        // collapsed bus stack. Demucs can take ~30s; we kick it off in
-        // parallel and add all 6 stems in ONE bulk dispatch so the
-        // track tree re-renders once instead of 6× (which previously
-        // caused all existing tracks to re-fetch their audio on every
-        // ADD_TRACK).
-        // === STRICT-LATENT SEPARATION ===============================
-        // Primary path: run distill_demucs (WebGPU ONNX) in the browser.
-        //   audio → stereo 48k Float32 → 4 stem latents → upload each
-        //   latent to /api/upload-latent (backend never sees audio).
-        // Fallback path: backend /separate-stems (POST audio, get latent_ids).
-        //   Only hit if WebGPU ONNX runtime can't load the distill model.
-        // =============================================================
+        // Background stem separation: rmsDemucs paints instant envelopes,
+        // then server-side htdemucs_6s provides real WAV audio.
         (async () => {
-          const ACtx = window.AudioContext || window.webkitAudioContext;
-          const audioCtx = new ACtx({ sampleRate: 48000 });
+          const RMS_STEM_NAMES = ['drums', 'bass', 'vocals', 'other'];
 
-          // Start downloading the VAE decoder in the background so it's
-          // ready by the time we need to decode stems for playback.
-          const _loadT0 = performance.now();
-          let decoderLastPct = -20;
-          initLatentDecoder((p) => {
-            if (!p?.bytesTotal) return;
-            const pct = Math.floor((p.bytesLoaded / p.bytesTotal) * 100);
-            if (pct >= decoderLastPct + 20) {
-              decoderLastPct = pct;
-              const elap = ((performance.now() - _loadT0) / 1000).toFixed(1);
-              const mb = (p.bytesLoaded / 1e6).toFixed(0);
-              console.log(`[latentDecoder] loading ${pct}% (${mb} MB, ${elap}s)`);
-            }
-          }).catch((err) => {
-            const emsg = err?.message || err?.toString?.() || JSON.stringify(err) || 'unknown';
-            console.warn('[latentDecoder] init failed (non-fatal):', emsg);
-          });
-
-          // ── PRE-DEMUCS: v4-small-6 classifier (9 MB, WebGPU) ─────────
-          // Runs on every upload BEFORE latent demucs. Produces:
-          //   - 6 stem RMS envelopes → instant stem waveforms (no wait
-          //     for the 325 MB demucs)
-          //   - mix-vs-solo classification via per-stem mask energy
-          // If the file is a solo stem (e.g., drum loop, isolated vocal),
-          // we skip demucs entirely and run the oobleck encoder in the
-          // background to cache the single latent instead.
-          let v4Result = null;
+          // -- INSTANT 4-STEM VISUAL via rmsDemucs (577 KB) ---------------
+          // Paint stem envelopes immediately from the lightweight RMS model.
+          // No backend wait -- this runs in < 500ms on any device.
+          let rmsPainted = false;
           try {
-            const { analyze: semAnalyze } = await import('../../services/semDemucsV4');
-            const { flat: preFlat, numFrames: preN } = await audioFileToStereo48k(file);
-            v4Result = await semAnalyze(preFlat, preN);
-            const c = v4Result.classification;
-            console.log(`[semDemucsV4] ${c.rationale} (confidence=${c.confidence.toFixed(2)})`);
-            // perStemEnergy is a Float32Array; its .map returns another
-            // typed array (numbers, not entries), so Object.fromEntries
-            // throws "Iterator value NaN is not an entry object".
-            // Array.from() gives a plain Array whose .map can return
-            // arbitrary [k, v] pairs.
-            console.log(`[semDemucsV4] per-stem energy (src=${v4Result.envelopeSource}):`,
-              Object.fromEntries(Array.from(v4Result.perStemEnergy).map((e, i) => [
-                STEM_NAMES_6[i],
-                (e * 100).toFixed(1) + '%',
-              ])));
+            const { flat, numFrames } = await audioFileToStereo48k(file);
+            const rmsResult = await analyzeRms(flat, numFrames);
+            // Convert amplitude[T] -> [2*T] (min, max) pairs for useWaveform
+            const instantStems = RMS_STEM_NAMES.map((stemName, idx) => {
+              const amp = rmsResult.stemEnvelopes[idx];
+              const T = amp.length;
+              const env = new Float32Array(2 * T);
+              for (let t = 0; t < T; t++) { env[t] = -amp[t]; env[T + t] = amp[t]; }
+              return {
+                id: `stem-${trackId}-${stemName}`,
+                name: `${file.name.replace(/\.[^.]+$/, '')} -- ${stemName}`,
+                audioUrl: null,
+                duration,
+                startPosition: 0,
+                gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
+                fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
+                metadata: {
+                  type: 'stem', stemType: stemName, parentTrackId: trackId,
+                  instrument: stemName, icon: iconForType(stemName),
+                  envelopeData: env, envelopeFps: rmsResult.stemEnvelopesFps,
+                  playbackReady: false,
+                },
+              };
+            });
+            dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: instantStems } });
+            dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: true } });
+            rmsPainted = true;
+            console.log(`[rmsDemucs] painted ${RMS_STEM_NAMES.length} instant stem envelopes`);
+          } catch (rmsErr) {
+            console.warn('[rmsDemucs] instant envelopes failed (non-fatal):', rmsErr?.message || rmsErr);
+          }
 
-            if (!c.isMix) {
-              console.log(`[flow] detected solo stem (${c.soloStemName}) — skipping demucs, caching encoder latent in background`);
-              // Attach solo-stem metadata to the uploaded track so later
-              // UI can key off it (icon, name, etc.).
-              dispatch({
-                type: 'UPDATE_TRACK',
-                payload: {
-                  busId, trackId,
-                  updates: {
-                    metadata: {
-                      ...track.metadata,
-                      soloStemClassification: {
-                        stemName: c.soloStemName,
-                        stemIndex: c.soloStemIndex,
-                        confidence: c.confidence,
-                        perStemEnergy: Array.from(v4Result.perStemEnergy),
+          // -- SERVER-SIDE SEPARATION via /separate-stems ------------------
+          // htdemucs_6s on Modal returns WAV download URLs; use these
+          // directly for playback (no ONNX decoder needed in browser).
+          try {
+            const sep = await separateStemsAuto(file);
+            const wavUrls = sep?.stems || {};
+            const stemNames = Object.keys(wavUrls);
+            if (stemNames.length === 0) {
+              console.warn('[separate-stems] no WAV URLs in response');
+              return;
+            }
+            if (rmsPainted) {
+              // Update existing rms stem tracks with real audio
+              for (const stemName of stemNames) {
+                const wavUrl = wavUrls[stemName];
+                if (!wavUrl) continue;
+                dispatch({
+                  type: 'UPDATE_TRACK',
+                  payload: {
+                    busId,
+                    trackId: `stem-${trackId}-${stemName}`,
+                    updates: { audioUrl: wavUrl, metadata: { playbackReady: true } },
+                  },
+                });
+              }
+              // Add any server stems not covered by rmsDemucs (guitar, piano)
+              const rmsSet = new Set(RMS_STEM_NAMES.map(n => `stem-${trackId}-${n}`));
+              for (const stemName of stemNames) {
+                if (rmsSet.has(`stem-${trackId}-${stemName}`)) continue;
+                dispatch({
+                  type: 'ADD_TRACK',
+                  payload: {
+                    busId,
+                    track: {
+                      id: `stem-${trackId}-${stemName}`,
+                      name: `${file.name.replace(/\.[^.]+$/, '')} -- ${stemName}`,
+                      audioUrl: wavUrls[stemName],
+                      duration,
+                      startPosition: 0,
+                      gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
+                      fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
+                      metadata: {
+                        type: 'stem', stemType: stemName, parentTrackId: trackId,
+                        instrument: stemName, icon: iconForType(stemName),
+                        playbackReady: true,
                       },
                     },
                   },
-                },
-              });
-              // Background oobleck-encoder latent caching (fire-and-forget).
-              (async () => {
-                try {
-                  const { initLatentEncoder, encodeToLatent } = await import('../../services/latentEncoder');
-                  await initLatentEncoder();
-                  const latent = await encodeToLatent(preFlat, preN);
-                  const T = latent.length / 64;
-                  const { uploadLatent } = await import('../../services/latentDemucs');
-                  const meta = await uploadLatent(latent, T, 64, 25);
-                  console.log(`[flow] solo stem encoder cached latent ${meta.latent_id} (${T} frames)`);
-                  dispatch({
-                    type: 'UPDATE_TRACK',
-                    payload: { busId, trackId,
-                      updates: { metadata: {
-                        ...track.metadata,
-                        soloStemLatentId: meta.latent_id,
-                        soloStemNFrames: T,
-                      } } },
-                  });
-                } catch (err) {
-                  console.warn('[flow] solo-stem encoder caching failed (non-fatal):', err?.message || err);
-                }
-              })();
-              return; // bail out of the demucs pipeline — keep the single uploaded track
-            }
-          } catch (v4Err) {
-            console.warn('[semDemucsV4] failed (non-fatal, continuing with demucs):', v4Err?.message || v4Err);
-          }
-
-          // ── INSTANT 6-STEM VISUALIZER (mix branch) ───────────────────
-          // If v4 classified as a mix, paint 6 stem placeholder tracks
-          // right now using its per-stem RMS envelopes. demucs will
-          // later UPDATE_TRACK 4 of these with real latent_ids +
-          // refined envelopes (guitar/piano stay v4-only since the
-          // current demucs is 4-stem). This makes the DAW show 6 stem
-          // waveforms within ~200ms of upload instead of waiting ~30s
-          // for the 325 MB demucs model.
-          let v4PaintedStems = false;
-          if (v4Result && v4Result.classification.isMix && v4Result.stemEnvelopes?.length === 6) {
-            // Use the canonical order from semDemucsV4 — keeps in sync if the
-            // exporter's STEMS_6 ever changes again.
-            const v4StemNames = STEM_NAMES_6;
-            v4PaintedStems = true;
-            const instantStems = v4StemNames.map((stemName, idx) => ({
-              id: `stem-${trackId}-${stemName}`,
-              name: `${file.name.replace(/\.[^.]+$/, '')} — ${stemName}`,
-              audioUrl: null,  // envelope-only render until demucs/decoder populates audio
-              duration,
-              startPosition: 0,
-              gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
-              fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
-              metadata: {
-                type: 'stem',
-                stemType: stemName,
-                parentTrackId: trackId,
-                instrument: stemName,
-                icon: iconForType(stemName),
-                envelopeData: v4Result.stemEnvelopes[idx],
-                envelopeFps: v4Result.rmsFps,
-                fromV4Small: true,   // will be set false once latent-demucs completes
-                playbackReady: false,
-              },
-            }));
-            dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: instantStems } });
-            console.log(`[semDemucsV4] painted 6 instant stem waveforms (fps=${v4Result.rmsFps.toFixed(1)} src=${v4Result.envelopeSource})`);
-          }
-
-          // Try the browser-local latent_demucs path first.
-          let stemLatentIds = null;
-          let localFlatTDs = null;  // keep the raw stem latents around for latent_visual
-          try {
-            console.log('[latentDemucsV4] trying browser-local 6-stem separation (conditioned on v4-small)...');
-            let demucsLastPct = -20;
-            const _demucsT0 = performance.now();
-            await initLatentDemucsV4((p) => {
-              if (!p?.bytesTotal) return;
-              const pct = Math.floor((p.bytesLoaded / p.bytesTotal) * 100);
-              if (pct >= demucsLastPct + 20) {
-                demucsLastPct = pct;
-                const elap = ((performance.now() - _demucsT0) / 1000).toFixed(1);
-                const mb = (p.bytesLoaded / 1e6).toFixed(0);
-                console.log(`[latentDemucsV4] loading ${pct}% (${mb} MB, ${elap}s)`);
+                });
               }
-            });
-            const { flat, numFrames } = await audioFileToStereo48k(file);
-            console.log(`[latentDemucsV4] decoded audio in browser: ${numFrames} samples @ 48kHz`);
-            // v4Result was computed earlier (the same run that gated
-            // mix-vs-solo). We reuse its masks + embedding as
-            // conditioning here — no re-inference needed.
-            if (!v4Result) throw new Error('v4Result unavailable — semDemucsV4 must run before latentDemucsV4');
-            const stems = await separate6Stems(flat, numFrames, v4Result);
-            console.log(`[latentDemucsV4] separated into ${Object.keys(stems).length} stem latents`);
-            // Stash flatTD so we can run latent_visual without re-fetching.
-            localFlatTDs = {};
-            for (const name of Object.keys(stems)) {
-              localFlatTDs[name] = { flatTD: stems[name].flatTD, T: stems[name].T };
-            }
-            stemLatentIds = {};
-            for (const name of STEM_NAMES_V4COND_6) {
-              const s = stems[name];
-              if (!s) continue;
-              const meta = await uploadLatent(s.flatTD, s.T, s.D, 25);
-              stemLatentIds[name] = {
-                latent_id: meta.latent_id,
-                n_frames: s.T,
-              };
-              console.log(`[latentDemucsV4] uploaded ${name}: ${meta.latent_id} (${s.T} frames)`);
-            }
-
-            // ─── Refiner pass: clean latent + v4-small noisy mask →
-            //     refined per-stem STFT mask. +25.2% SI-SDR per the
-            //     training run. Stash in the module-level map so the
-            //     (follow-up) maskPlayback integration can pull them
-            //     in. We DON'T UPDATE_TRACK with them here because the
-            //     stem tracks already carry envelopeData in metadata,
-            //     and the reducer replaces metadata wholesale.
-            if (v4Result && stems) {
-              try {
-                const { refine6StemMasks, initMaskRefiner } = await import('../../services/maskRefiner');
-                await initMaskRefiner();
-                const _rfT0 = performance.now();
-                const refined = await refine6StemMasks(stems, v4Result);
-                const rfMs = (performance.now() - _rfT0).toFixed(0);
-                console.log(`[maskRefiner] refined ${Object.keys(refined).length} masks in ${rfMs}ms (F=${v4Result.maskF} T=${v4Result.maskT})`);
-                // Stash where the mask-playback block below can pick
-                // them up (same-scope async ordering is fragile across
-                // try/catch boundaries; a local variable is cleaner).
-                var _v4RefinedMasks = refined;
-                var _v4RefinedF = v4Result.maskF;
-                var _v4RefinedT = v4Result.maskT;
-              } catch (rfErr) {
-                console.warn('[maskRefiner] skipped (non-fatal):', rfErr?.message || rfErr);
-              }
-            }
-          } catch (localErr) {
-            const emsg = localErr?.message || localErr?.toString?.() || JSON.stringify(localErr) || 'unknown';
-            console.warn('[latentDemucsV4] browser path failed, falling back to backend /separate-stems:', emsg);
-            stemLatentIds = null;
-            localFlatTDs = null;
-          }
-
-          // Backend fallback: POST audio, backend runs latent_demucs server-side
-          if (!stemLatentIds) {
-            try {
-              const sep = await separateStemsAuto(file);
-              const backendStems = sep?.stem_latents || {};
-              if (Object.keys(backendStems).length === 0) {
-                console.warn('backend fallback returned no stem latents');
-                return;
-              }
-              stemLatentIds = backendStems;
-              console.log(`[separate-stems backend fallback] got ${Object.keys(backendStems).length} stems`);
-            } catch (err) {
-              const emsg = err?.message || err?.toString?.() || JSON.stringify(err) || 'unknown';
-              console.warn('auto-separation failed (both paths, non-fatal):', emsg);
-              return;
-            }
-          }
-
-          // =============================================================
-          // STEP 1: INSTANT visual previews via latent_visual (tiny model).
-          // We create stem tracks IMMEDIATELY with:
-          //   - placeholder blob URL (44-byte header; swapped on decode)
-          //   - fake AudioBuffer built from the envelope, pre-populated in
-          //     useWaveform's in-memory cache so the waveform strip
-          //     renders correctly
-          // Stems appear in the timeline in ~milliseconds after separation.
-          // =============================================================
-          const stemNames = Object.keys(stemLatentIds);
-
-          // If we took the backend fallback, we need to fetch each DOAE to
-          // get the raw latent bytes for latent_visual. Parallel fetches.
-          let flatTDs = localFlatTDs;
-          if (!flatTDs) {
-            try {
-              const entries = await Promise.all(stemNames.map(async (name) => {
-                const id = stemLatentIds[name].latent_id;
-                const resp = await fetch(`/api/latent/${id}`);
-                if (!resp.ok) throw new Error(`fetch /api/latent/${id} HTTP ${resp.status}`);
-                const buf = await resp.arrayBuffer();
-                const { flatTD, T } = parseDoae(buf);
-                return [name, { flatTD, T }];
-              }));
-              flatTDs = Object.fromEntries(entries);
-            } catch (fetchErr) {
-              console.warn('[latentVisual] failed to fetch DOAEs for preview:', fetchErr.message);
-              flatTDs = null;
-            }
-          }
-
-          // Load the tiny latent_visual envelope model on the MAIN thread
-          // (244 KB WASM, <100ms load, <1ms per call). This is separate
-          // from the heavyweight decoder worker because it needs to be
-          // available IMMEDIATELY after separation — before the 320MB
-          // decoder model finishes loading in the worker (~49s).
-          try { await initLatentVisual(); } catch (e) { /* non-fatal */ }
-
-          const placeholderTracks = [];
-          for (const stemName of stemNames) {
-            const meta = stemLatentIds[stemName];
-            const latentId = meta?.latent_id;
-            if (!latentId) continue;
-
-            let fakeBuf = null;
-            let env = null;
-            if (flatTDs?.[stemName]) {
-              try {
-                const { flatTD, T } = flatTDs[stemName];
-                env = await envelopeFromLatent(flatTD, T);
-                fakeBuf = buildFakeBufferFromEnvelope(env, T, audioCtx);
-                console.log(`[latentVisual] ${stemName}: T=${T}, buf.dur=${fakeBuf.duration.toFixed(2)}s`);
-              } catch (e) {
-                console.warn(`[latentVisual] preview gen failed for ${stemName}:`, e?.message || e);
-              }
-            }
-
-            // Placeholder blob URL that useWaveform's cache is keyed on.
-            // We pre-populate the cache with the fake envelope buffer so the
-            // waveform strip renders the right shape immediately.
-            // Valid minimal WAV: 44-byte header + 480 stereo float32 samples
-            // = 0.01s silence at 48kHz. The old 44-byte stub had NO samples
-            // and caused decodeAudioData → EncodingError which killed the
-            // decode loop. This blob decodes to a valid 0.01s AudioBuffer.
-            const _phSz = 44 + 480 * 2 * 4;
-            const _ph = new ArrayBuffer(_phSz);
-            const _pv = new DataView(_ph);
-            const _pw = (o, s) => { for (let i = 0; i < s.length; i++) _pv.setUint8(o + i, s.charCodeAt(i)); };
-            _pw(0,'RIFF'); _pv.setUint32(4,_phSz-8,true); _pw(8,'WAVE'); _pw(12,'fmt ');
-            _pv.setUint32(16,16,true); _pv.setUint16(20,3,true); _pv.setUint16(22,2,true);
-            _pv.setUint32(24,48000,true); _pv.setUint32(28,48000*8,true);
-            _pv.setUint16(32,8,true); _pv.setUint16(34,32,true); _pw(36,'data');
-            _pv.setUint32(40,480*2*4,true);
-            const placeholderBlob = new Blob([new Uint8Array(_ph)], { type: 'audio/wav' });
-            const placeholderUrl = URL.createObjectURL(placeholderBlob);
-            if (fakeBuf) audioBufferCache.set(placeholderUrl, fakeBuf);
-
-            placeholderTracks.push({
-              id: `stem-${trackId}-${stemName}`,
-              name: `${file.name.replace(/\.[^.]+$/, '')} — ${stemName}`,
-              audioUrl: placeholderUrl,
-              duration,
-              startPosition: 0,
-              gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
-              fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
-              metadata: {
-                type: 'stem',
-                stemType: stemName,
-                parentTrackId: trackId,
-                instrument: stemName,
-                icon: iconForType(stemName),
-                latentId,
-                nFrames: meta.n_frames,
-                playbackReady: false,
-                // Pre-computed envelope from latent_visual for instant
-                // waveform rendering — useWaveform reads this and draws
-                // bars directly without needing decoded audio.
-                envelopeData: env || null,
-              },
-            });
-          }
-
-          if (placeholderTracks.length === 0) {
-            console.warn('auto-separation: no previews built');
-            return;
-          }
-          if (v4PaintedStems) {
-            // v4 already added these 6 stems (4 of which match demucs).
-            // UPDATE_TRACK each one with the real latent_id, refined
-            // envelope from latent_visual, and placeholder audio URL
-            // that points at the cached fakeBuf. Non-matching v4 stems
-            // (guitar, piano) remain v4-only previews.
-            for (const t of placeholderTracks) {
-              dispatch({
-                type: 'UPDATE_TRACK',
-                payload: {
-                  busId,
-                  trackId: t.id,
-                  updates: {
-                    audioUrl: t.audioUrl,
-                    duration: t.duration,
-                    metadata: { ...t.metadata, fromV4Small: false },
-                  },
-                },
-              });
-            }
-            console.log(`🎚️ latent-demucs refined ${placeholderTracks.length} v4 stems (${file.name})`);
-          } else {
-            dispatch({
-              type: 'ADD_TRACKS_BULK',
-              payload: { busId, tracks: placeholderTracks },
-            });
-            console.log(`🎚️ Auto-separated ${file.name} → ${placeholderTracks.length} stems (instant previews, decoding audio…)`);
-          }
-          dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: false } });
-
-          // ── STEP 1b: Set up mask-based playback (instant, no decode) ──
-          // Compute spectral masks from stem latents and set up the
-          // AudioWorklet so stems can play immediately at master quality.
-          if (localFlatTDs && Object.keys(localFlatTDs).length >= 4) {
-            try {
-              // Use the SAME AudioContext as useAudioPlayback (shared via global)
-              const maskCtx = window.__doseedo_audioCtx;
-              if (!maskCtx) throw new Error('AudioContext not ready');
-              if (maskCtx.state === 'suspended') await maskCtx.resume();
-
-              const ok = await initMaskPlayback(maskCtx);
-              if (ok) {
-                // Create the worklet node FIRST so setMaster/computeAndSetMasks
-                // can actually post messages to it (previously they no-op'd
-                // because workletNode was still null).
-                createMaskPlaybackNode(maskCtx.destination);
-
-                // Send master audio to the worklet
-                const masterResp = await fetch(audioUrl);
-                const masterArrayBuf = await masterResp.arrayBuffer();
-                const masterAudioBuf = await maskCtx.decodeAudioData(masterArrayBuf);
-                setMaster(masterAudioBuf);
-
-                // Compute masks. Prefer refined masks from the
-                // latent_mask_refiner (post-v4cond-pred) if they were
-                // produced successfully; otherwise fall back to the
-                // old latent_mask_e2e path via computeAndSetMasks.
-                const T = localFlatTDs[Object.keys(localFlatTDs)[0]].T;
-                if (typeof _v4RefinedMasks !== 'undefined' && _v4RefinedMasks) {
-                  setRefinedMasks(_v4RefinedMasks, _v4RefinedF, _v4RefinedT, T);
-                  console.log('🎭 Mask playback ready — using refined masks (+25.2% SI-SDR over noisy)');
-                } else {
-                  await computeAndSetMasks(
-                    Object.fromEntries(
-                      Object.entries(localFlatTDs).map(([name, { flatTD }]) => [name, flatTD])
-                    ), T
-                  );
-                  console.log('🎭 Mask playback ready — worklet connected to main AudioContext');
-                }
-              }
-            } catch (maskErr) {
-              console.warn('🎭 Mask playback setup failed, falling back to decode:', maskErr?.message || maskErr);
-            }
-          }
-
-          // =============================================================
-          // STEP 2: round-robin streaming VAE decode.
-          // DISABLED: mask playback handles audio from master directly.
-          // Decode loop only needed for waveform visuals — re-enable
-          // after mask playback is verified working.
-          // =============================================================
-          console.log('🎭 Decode loop DISABLED — mask playback active, no decode needed');
-
-          if (false) { // DECODE LOOP DISABLED FOR MASK PLAYBACK TESTING
-          const FIRST_CHUNK = 64;
-          const CHUNK = 64;
-
-          const canStream = !!flatTDs;
-
-          (async () => {
-            if (!canStream) {
-              // Fallback: sequential one-shot decodes (old behavior).
-              for (const stemName of stemNames) {
-                const meta = stemLatentIds[stemName];
-                const latentId = meta?.latent_id;
-                if (!latentId) continue;
-                try {
-                  const realUrl = await latentIdToBlobUrl(latentId, audioCtx);
-                  dispatch({
-                    type: 'UPDATE_TRACK',
-                    payload: {
-                      busId,
-                      trackId: `stem-${trackId}-${stemName}`,
-                      updates: { audioUrl: realUrl },
-                    },
-                  });
-                  console.log(`[latentDecoder] ${stemName} playable (one-shot)`);
-                } catch (decErr) {
-                  const emsg = decErr?.message || decErr?.toString?.() || JSON.stringify(decErr) || 'unknown';
-                  console.warn(`[latentDecoder] stem "${stemName}" decode failed:`, emsg);
-                }
-              }
-              return;
-            }
-
-            // Per-stem accumulator: growing Float32Array of decoded audio
-            // in channels-first layout [L0..Ln, R0..Rn].
-            const stemAccum = {};
-            for (const name of stemNames) {
-              stemAccum[name] = {
-                data: new Float32Array(0),
-                samplesPerCh: 0,
-                framesDone: 0,
-                totalFrames: flatTDs[name].T,
-              };
-            }
-
-            // Append a newly-decoded chunk to a stem's accumulator.
-            // Only builds a WAV blob + dispatches UPDATE_TRACK when
-            // `shouldDispatch` is true (first chunk + final chunk) to
-            // avoid the massive JS overhead of WAV encoding + React
-            // re-renders on every intermediate round.
-            function appendChunk(stemName, chunk, newSamplesPerCh, endFrame) {
-              const acc = stemAccum[stemName];
-              const merged = concatChannelsFirstStereo(
-                acc.data, acc.samplesPerCh,
-                chunk,    newSamplesPerCh,
-              );
-              acc.data = merged;
-              acc.samplesPerCh += newSamplesPerCh;
-              acc.framesDone = endFrame;
-            }
-
-            // Look up the envelope data that was stored on the original
-            // placeholder track — we need to preserve it across updates
-            // so useWaveform keeps rendering the envelope until full audio.
-            const stemEnvelopes = {};
-
-            function dispatchStemAudio(stemName) {
-              const acc = stemAccum[stemName];
-              const { blobUrl, audioBuffer } = audioDataToBlobUrl(
-                acc.data, acc.samplesPerCh, audioCtx,
-              );
-              audioBufferCache.set(blobUrl, audioBuffer);
-              // Find the envelope from the original placeholder track
-              if (!stemEnvelopes[stemName]) {
-                const buses = state.buses || [];
-                for (const bus of buses) {
-                  const t = (bus.tracks || []).find((t2) => t2.id === `stem-${trackId}-${stemName}`);
-                  if (t?.metadata?.envelopeData) {
-                    stemEnvelopes[stemName] = t.metadata.envelopeData;
-                    break;
-                  }
-                }
-              }
-              dispatch({
-                type: 'UPDATE_TRACK',
-                payload: {
-                  busId,
-                  trackId: `stem-${trackId}-${stemName}`,
-                  updates: {
-                    audioUrl: blobUrl,
-                    metadata: {
-                      type: 'stem',
-                      stemType: stemName,
-                      parentTrackId: trackId,
-                      instrument: stemName,
-                      icon: iconForType(stemName),
-                      latentId: stemLatentIds[stemName].latent_id,
-                      nFrames: stemLatentIds[stemName].n_frames,
-                      playbackReady: true,
-                      decodeFramesDone: acc.framesDone,
-                      decodeTotalFrames: acc.totalFrames,
-                      // Preserve envelope data so useWaveform keeps showing
-                      // the envelope until the FULL audio replaces it.
-                      envelopeData: stemEnvelopes[stemName] || null,
-                    },
-                  },
-                },
-              });
-            }
-
-            // Run a BATCHED decode covering [startFrame..endFrame] across
-            // all stems in a single ONNX pass. Then dispatch each stem's
-            // growing blob. This replaces 4 sequential batch=1 calls with
-            // 1 batch=4 call — typically 1.5-3× faster on WebGPU.
-            async function decodeRoundBatched(startFrame, chunkFrames) {
-              const active = stemNames.filter((n) => stemAccum[n].framesDone === startFrame
-                                                    && stemAccum[n].totalFrames > startFrame);
-              if (active.length === 0) return;
-              const refT = flatTDs[active[0]].T;
-              const endFrame = Math.min(startFrame + chunkFrames, refT);
-              const newSamplesPerCh = (endFrame - startFrame) * 1920;
-              const stemsArg = active.map((n) => ({
-                flatTD: flatTDs[n].flatTD,
-                totalT: flatTDs[n].T,
-              }));
-              const outs = await decodeLatentFrameRangeBatched(stemsArg, startFrame, endFrame);
-              for (let i = 0; i < active.length; i++) {
-                appendChunk(active[i], outs[i], newSamplesPerCh, endFrame);
-              }
-            }
-
-            const t0 = performance.now();
-
-            // Round A: FIRST_CHUNK across all stems → fast time-to-first-audio.
-            // This is the ONLY intermediate dispatch — so user can play immediately.
-            try {
-              await decodeRoundBatched(0, FIRST_CHUNK);
-              // Dispatch first-chunk audio for all stems
-              for (const name of stemNames) dispatchStemAudio(name);
-              console.log(`[decode] batched first chunk (${FIRST_CHUNK}f × ${stemNames.length}) at ${((performance.now() - t0)/1000).toFixed(2)}s — all stems have ${(FIRST_CHUNK * 1920 / 48000).toFixed(1)}s playable`);
-            } catch (e) {
-              console.warn('[decode] batched first chunk failed, falling back to serial:', e?.message || e);
-              for (const name of stemNames) {
-                try {
-                  const { flatTD, T } = flatTDs[name];
-                  const end = Math.min(FIRST_CHUNK, T);
-                  const chunk = await decodeLatentFrameRange(flatTD, T, 0, end);
-                  appendChunk(name, chunk, end * 1920, end);
-                  dispatchStemAudio(name);
-                } catch (e2) { console.warn(`[decode] ${name} serial fallback failed:`, e2?.message || e2); }
-              }
-            }
-
-            // For long files (>30s), use backend L4 decode instead of WebGPU
-            // — the L4 GPU does ~60× realtime vs WebGPU's ~1× realtime.
-            const refT = flatTDs[stemNames[0]].T;
-            const audioDurS = refT * 1920 / 48000;
-            const USE_BACKEND_DECODE = false; // all WebGPU, no backend decode
-
-            if (USE_BACKEND_DECODE) {
-              console.log(`[decode] audio is ${audioDurS.toFixed(0)}s (>${30}s) — using backend L4 for full decode`);
-              for (const name of stemNames) {
-                const meta = stemLatentIds[name];
-                if (!meta?.latent_id) continue;
-                try {
-                  const realUrl = await latentIdToBlobUrl(meta.latent_id, audioCtx);
-                  dispatchStemAudio(name);
-                  // Also update with real audio URL
-                  const acc = stemAccum[name];
-                  // We don't have the raw audio data in the accum for backend path,
-                  // so build it from the blob URL directly.
-                  dispatch({
-                    type: 'UPDATE_TRACK',
-                    payload: {
-                      busId,
-                      trackId: `stem-${trackId}-${name}`,
-                      updates: { audioUrl: realUrl },
-                    },
-                  });
-                  console.log(`[decode] ${name} decoded via backend (${((performance.now() - t0)/1000).toFixed(1)}s)`);
-                } catch (e) {
-                  console.warn(`[decode] backend decode ${name} failed:`, e?.message || e);
-                }
-              }
-              console.log(`[decode] all stems fully decoded at ${((performance.now() - t0)/1000).toFixed(2)}s (backend path)`);
             } else {
-              // Rounds B..N: CHUNK frames in batched passes until all stems complete.
-              let cursor = FIRST_CHUNK;
-              let roundNum = 1;
-              const totalRounds = Math.ceil((refT - FIRST_CHUNK) / CHUNK) + 1;
-              while (true) {
-                if (cursor >= refT) break;
-                const roundEnd = Math.min(cursor + CHUNK, refT);
-                roundNum++;
-                try {
-                  await decodeRoundBatched(cursor, CHUNK);
-                } catch (e) {
-                  console.warn(`[decode] batched round at ${cursor} failed:`, e?.message || e);
-                  for (const name of stemNames) {
-                    const acc = stemAccum[name];
-                    if (acc.framesDone !== cursor || acc.framesDone >= acc.totalFrames) continue;
-                    try {
-                      const end = Math.min(cursor + CHUNK, acc.totalFrames);
-                      const chunk = await decodeLatentFrameRange(flatTDs[name].flatTD, acc.totalFrames, cursor, end);
-                      appendChunk(name, chunk, (end - cursor) * 1920, end);
-                    } catch (e2) { console.warn(`[decode] ${name} serial fallback failed:`, e2?.message || e2); }
-                  }
-                }
-                const decodedSec = (roundEnd * 1920 / 48000).toFixed(1);
-                const elap = ((performance.now() - t0) / 1000).toFixed(1);
-                console.log(`[decode] round ${roundNum}/${totalRounds}: ${decodedSec}s decoded (${elap}s elapsed)`);
-                cursor += CHUNK;
-                // Yield to the GPU compositor between rounds so the OS can
-                // render cursor + desktop frames. Without this, back-to-back
-                // WebGPU compute starves the compositor and the whole system
-                // feels frozen. 50ms = 3 compositor frames at 60fps.
-                await new Promise((r) => setTimeout(r, 50));
-              }
-
-              // Final dispatch: swap all stems to their full-length audio in one shot.
-              for (const name of stemNames) dispatchStemAudio(name);
-              console.log(`[decode] all stems fully decoded at ${((performance.now() - t0)/1000).toFixed(2)}s (WebGPU batched)`);
+              // rmsDemucs failed -- add all stems fresh with WAV audio
+              const tracks = stemNames.map((stemName) => ({
+                id: `stem-${trackId}-${stemName}`,
+                name: `${file.name.replace(/\.[^.]+$/, '')} -- ${stemName}`,
+                audioUrl: wavUrls[stemName] || null,
+                duration,
+                startPosition: 0,
+                gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
+                fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
+                metadata: {
+                  type: 'stem', stemType: stemName, parentTrackId: trackId,
+                  instrument: stemName, icon: iconForType(stemName),
+                  playbackReady: !!wavUrls[stemName],
+                },
+              }));
+              dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks } });
+              dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: true } });
             }
-          })();
-          } // END DECODE LOOP DISABLED
+            console.log(`Separation done: ${stemNames.join(', ')} (${file.name})`);
+          } catch (sepErr) {
+            console.warn('auto-separation failed:', sepErr?.message || sepErr);
+          }
         })();
       });
     }

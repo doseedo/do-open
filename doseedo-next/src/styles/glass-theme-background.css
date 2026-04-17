@@ -1,0 +1,12 @@
+/**
+ * Glass Theme - MINIMAL version for performance
+ * Only applies backdrop-filter blur to main panels
+ * All other element styling removed for performance
+ */
+
+body.theme-glass {
+  background: #000000;
+}
+
+/* That's it - no button styling, no transforms, no box-shadows */
+/* Panel blur is handled by liquid-glass.css */

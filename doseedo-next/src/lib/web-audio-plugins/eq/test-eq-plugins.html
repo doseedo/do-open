@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EQ Plugins Test - AudioWorklet</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+
+        h1 {
+            color: #4CAF50;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            color: #2196F3;
+            margin-top: 30px;
+        }
+
+        .plugin-section {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #444;
+        }
+
+        .control {
+            margin: 15px 0;
+        }
+
+        label {
+            display: inline-block;
+            width: 150px;
+            color: #bbb;
+        }
+
+        input[type="range"] {
+            width: 300px;
+            vertical-align: middle;
+        }
+
+        .value {
+            display: inline-block;
+            width: 80px;
+            text-align: right;
+            color: #4CAF50;
+            font-family: monospace;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            background: #333;
+        }
+
+        .status.success {
+            background: #1b5e20;
+            color: #a5d6a7;
+        }
+
+        .status.error {
+            background: #b71c1c;
+            color: #ef9a9a;
+        }
+
+        .status.info {
+            background: #01579b;
+            color: #81d4fa;
+        }
+
+        select {
+            background: #333;
+            color: #e0e0e0;
+            border: 1px solid #555;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .band-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+
+        .band {
+            background: #333;
+            padding: 15px;
+            border-radius: 4px;
+        }
+
+        .band h4 {
+            margin-top: 0;
+            color: #81c784;
+        }
+    </style>
+</head>
+<body>
+    <h1>EQ Plugins Test - AudioWorklet Migration</h1>
+    <p>Agent 2: Testing 3-Band EQ, 10-Band Graphic EQ, and Filter plugins</p>
+
+    <div id="status" class="status info">
+        Click "Initialize Audio" to start testing
+    </div>
+
+    <div style="margin: 20px 0;">
+        <button id="initBtn">Initialize Audio</button>
+        <button id="playBtn" disabled>Play Test Tone</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <button id="testOfflineBtn" disabled>Test Offline Rendering</button>
+    </div>
+
+    <!-- EQPlugin (3-Band) -->
+    <div class="plugin-section">
+        <h2>EQPlugin (3-Band Parametric EQ)</h2>
+
+        <div class="band-controls">
+            <div class="band">
+                <h4>Low Band</h4>
+                <div class="control">
+                    <label>Frequency:</label>
+                    <input type="range" id="eq3-freq1" min="20" max="500" value="100" step="1">
+                    <span class="value" id="eq3-freq1-val">100 Hz</span>
+                </div>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="eq3-gain1" min="-15" max="15" value="0" step="0.1">
+                    <span class="value" id="eq3-gain1-val">0.0 dB</span>
+                </div>
+                <div class="control">
+                    <label>Q:</label>
+                    <input type="range" id="eq3-q1" min="0.1" max="10" value="1.0" step="0.1">
+                    <span class="value" id="eq3-q1-val">1.0</span>
+                </div>
+            </div>
+
+            <div class="band">
+                <h4>Mid Band</h4>
+                <div class="control">
+                    <label>Frequency:</label>
+                    <input type="range" id="eq3-freq2" min="200" max="5000" value="1000" step="10">
+                    <span class="value" id="eq3-freq2-val">1000 Hz</span>
+                </div>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="eq3-gain2" min="-15" max="15" value="0" step="0.1">
+                    <span class="value" id="eq3-gain2-val">0.0 dB</span>
+                </div>
+                <div class="control">
+                    <label>Q:</label>
+                    <input type="range" id="eq3-q2" min="0.1" max="10" value="1.0" step="0.1">
+                    <span class="value" id="eq3-q2-val">1.0</span>
+                </div>
+            </div>
+
+            <div class="band">
+                <h4>High Band</h4>
+                <div class="control">
+                    <label>Frequency:</label>
+                    <input type="range" id="eq3-freq3" min="2000" max="20000" value="10000" step="100">
+                    <span class="value" id="eq3-freq3-val">10000 Hz</span>
+                </div>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="eq3-gain3" min="-15" max="15" value="0" step="0.1">
+                    <span class="value" id="eq3-gain3-val">0.0 dB</span>
+                </div>
+                <div class="control">
+                    <label>Q:</label>
+                    <input type="range" id="eq3-q3" min="0.1" max="10" value="1.0" step="0.1">
+                    <span class="value" id="eq3-q3-val">1.0</span>
+                </div>
+            </div>
+        </div>
+
+        <button id="eq3-reset">Reset</button>
+    </div>
+
+    <!-- GraphicEQPlugin (10-Band) -->
+    <div class="plugin-section">
+        <h2>GraphicEQPlugin (10-Band Graphic EQ)</h2>
+
+        <div class="band-controls">
+            <div class="band">
+                <h4>31 Hz</h4>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="geq-gain31" min="-15" max="15" value="0" step="0.5">
+                    <span class="value" id="geq-gain31-val">0.0 dB</span>
+                </div>
+            </div>
+            <div class="band">
+                <h4>62 Hz</h4>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="geq-gain62" min="-15" max="15" value="0" step="0.5">
+                    <span class="value" id="geq-gain62-val">0.0 dB</span>
+                </div>
+            </div>
+            <div class="band">
+                <h4>125 Hz</h4>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="geq-gain125" min="-15" max="15" value="0" step="0.5">
+                    <span class="value" id="geq-gain125-val">0.0 dB</span>
+                </div>
+            </div>
+            <div class="band">
+                <h4>250 Hz</h4>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="geq-gain250" min="-15" max="15" value="0" step="0.5">
+                    <span class="value" id="geq-gain250-val">0.0 dB</span>
+                </div>
+            </div>
+            <div class="band">
+                <h4>500 Hz</h4>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="geq-gain500" min="-15" max="15" value="0" step="0.5">
+                    <span class="value" id="geq-gain500-val">0.0 dB</span>
+                </div>
+            </div>
+            <div class="band">
+                <h4>1 kHz</h4>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="geq-gain1k" min="-15" max="15" value="0" step="0.5">
+                    <span class="value" id="geq-gain1k-val">0.0 dB</span>
+                </div>
+            </div>
+            <div class="band">
+                <h4>2 kHz</h4>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="geq-gain2k" min="-15" max="15" value="0" step="0.5">
+                    <span class="value" id="geq-gain2k-val">0.0 dB</span>
+                </div>
+            </div>
+            <div class="band">
+                <h4>4 kHz</h4>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="geq-gain4k" min="-15" max="15" value="0" step="0.5">
+                    <span class="value" id="geq-gain4k-val">0.0 dB</span>
+                </div>
+            </div>
+            <div class="band">
+                <h4>8 kHz</h4>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="geq-gain8k" min="-15" max="15" value="0" step="0.5">
+                    <span class="value" id="geq-gain8k-val">0.0 dB</span>
+                </div>
+            </div>
+            <div class="band">
+                <h4>16 kHz</h4>
+                <div class="control">
+                    <label>Gain:</label>
+                    <input type="range" id="geq-gain16k" min="-15" max="15" value="0" step="0.5">
+                    <span class="value" id="geq-gain16k-val">0.0 dB</span>
+                </div>
+            </div>
+        </div>
+
+        <button id="geq-reset">Reset</button>
+    </div>
+
+    <!-- FilterPlugin -->
+    <div class="plugin-section">
+        <h2>FilterPlugin (Versatile Filter)</h2>
+
+        <div class="control">
+            <label>Filter Type:</label>
+            <select id="filter-type">
+                <option value="lowpass">Lowpass</option>
+                <option value="highpass">Highpass</option>
+                <option value="bandpass">Bandpass</option>
+                <option value="notch">Notch</option>
+                <option value="peaking">Peaking</option>
+                <option value="lowshelf">Low Shelf</option>
+                <option value="highshelf">High Shelf</option>
+                <option value="allpass">Allpass</option>
+            </select>
+        </div>
+
+        <div class="control">
+            <label>Frequency:</label>
+            <input type="range" id="filter-freq" min="20" max="20000" value="1000" step="1">
+            <span class="value" id="filter-freq-val">1000 Hz</span>
+        </div>
+
+        <div class="control">
+            <label>Q:</label>
+            <input type="range" id="filter-q" min="0.1" max="20" value="1.0" step="0.1">
+            <span class="value" id="filter-q-val">1.0</span>
+        </div>
+
+        <div class="control">
+            <label>Gain:</label>
+            <input type="range" id="filter-gain" min="-15" max="15" value="0" step="0.1">
+            <span class="value" id="filter-gain-val">0.0 dB</span>
+        </div>
+
+        <div class="control">
+            <label>Mix:</label>
+            <input type="range" id="filter-mix" min="0" max="1" value="1.0" step="0.01">
+            <span class="value" id="filter-mix-val">100%</span>
+        </div>
+
+        <button id="filter-reset">Reset</button>
+    </div>
+
+    <script type="module">
+        import { EQPlugin, GraphicEQPlugin, FilterPlugin } from './index.js';
+
+        let audioContext;
+        let eq3Plugin, geqPlugin, filterPlugin;
+        let oscillator, gainNode;
+        let isPlaying = false;
+
+        // Status update helper
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+
+        // Initialize Audio
+        document.getElementById('initBtn').addEventListener('click', async () => {
+            try {
+                updateStatus('Initializing audio context...', 'info');
+
+                audioContext = new AudioContext();
+
+                // Create plugins
+                eq3Plugin = new EQPlugin(audioContext);
+                geqPlugin = new GraphicEQPlugin(audioContext);
+                filterPlugin = new FilterPlugin(audioContext);
+
+                // Initialize plugins
+                await eq3Plugin.initialize();
+                await geqPlugin.initialize();
+                await filterPlugin.initialize();
+
+                updateStatus('All plugins initialized successfully!', 'success');
+
+                // Enable playcontrols
+                document.getElementById('playBtn').disabled = false;
+                document.getElementById('testOfflineBtn').disabled = false;
+                document.getElementById('initBtn').disabled = true;
+
+                setupControls();
+            } catch (error) {
+                updateStatus(`Initialization failed: ${error.message}`, 'error');
+                console.error(error);
+            }
+        });
+
+        // Play test tone
+        document.getElementById('playBtn').addEventListener('click', () => {
+            if (isPlaying) return;
+
+            oscillator = audioContext.createOscillator();
+            gainNode = audioContext.createGain();
+
+            oscillator.frequency.value = 440; // A4
+            gainNode.gain.value = 0.2;
+
+            // Route: oscillator -> eq3 -> geq -> filter -> gain -> output
+            oscillator.connect(eq3Plugin.input);
+            eq3Plugin.output.connect(geqPlugin.input);
+            geqPlugin.output.connect(filterPlugin.input);
+            filterPlugin.output.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.start();
+            isPlaying = true;
+
+            document.getElementById('playBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+
+            updateStatus('Playing test tone through all EQ plugins', 'success');
+        });
+
+        // Stop playback
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            if (oscillator) {
+                oscillator.stop();
+                oscillator = null;
+            }
+
+            isPlaying = false;
+            document.getElementById('playBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+
+            updateStatus('Playback stopped', 'info');
+        });
+
+        // Test offline rendering
+        document.getElementById('testOfflineBtn').addEventListener('click', async () => {
+            try {
+                updateStatus('Running offline rendering test...', 'info');
+
+                // Create test buffer (1 second, 440 Hz sine wave)
+                const testBuffer = audioContext.createBuffer(2, audioContext.sampleRate, audioContext.sampleRate);
+                for (let ch = 0; ch < 2; ch++) {
+                    const data = testBuffer.getChannelData(ch);
+                    for (let i = 0; i < data.length; i++) {
+                        data[i] = Math.sin(2 * Math.PI * 440 * i / audioContext.sampleRate) * 0.5;
+                    }
+                }
+
+                // Test each plugin
+                const startEQ3 = performance.now();
+                const eq3Result = await eq3Plugin.processOffline(testBuffer);
+                const eq3Time = performance.now() - startEQ3;
+
+                const startGEQ = performance.now();
+                const geqResult = await geqPlugin.processOffline(testBuffer);
+                const geqTime = performance.now() - startGEQ;
+
+                const startFilter = performance.now();
+                const filterResult = await filterPlugin.processOffline(testBuffer);
+                const filterTime = performance.now() - startFilter;
+
+                const results = `
+Offline Rendering Performance:
+- EQPlugin (3-band): ${(1000 / eq3Time).toFixed(1)}x real-time (${eq3Time.toFixed(0)}ms)
+- GraphicEQPlugin (10-band): ${(1000 / geqTime).toFixed(1)}x real-time (${geqTime.toFixed(0)}ms)
+- FilterPlugin: ${(1000 / filterTime).toFixed(1)}x real-time (${filterTime.toFixed(0)}ms)
+                `;
+
+                updateStatus(results, 'success');
+                console.log('Offline rendering test complete:', results);
+            } catch (error) {
+                updateStatus(`Offline rendering failed: ${error.message}`, 'error');
+                console.error(error);
+            }
+        });
+
+        // Setup UI controls
+        function setupControls() {
+            // EQPlugin (3-band) controls
+            setupSlider('eq3-freq1', (v) => {
+                eq3Plugin.setBand1({ frequency: parseFloat(v) });
+            }, (v) => `${v} Hz`);
+
+            setupSlider('eq3-gain1', (v) => {
+                eq3Plugin.setBand1({ gain: parseFloat(v) });
+            }, (v) => `${v} dB`);
+
+            setupSlider('eq3-q1', (v) => {
+                eq3Plugin.setBand1({ q: parseFloat(v) });
+            }, (v) => v);
+
+            setupSlider('eq3-freq2', (v) => {
+                eq3Plugin.setBand2({ frequency: parseFloat(v) });
+            }, (v) => `${v} Hz`);
+
+            setupSlider('eq3-gain2', (v) => {
+                eq3Plugin.setBand2({ gain: parseFloat(v) });
+            }, (v) => `${v} dB`);
+
+            setupSlider('eq3-q2', (v) => {
+                eq3Plugin.setBand2({ q: parseFloat(v) });
+            }, (v) => v);
+
+            setupSlider('eq3-freq3', (v) => {
+                eq3Plugin.setBand3({ frequency: parseFloat(v) });
+            }, (v) => `${v} Hz`);
+
+            setupSlider('eq3-gain3', (v) => {
+                eq3Plugin.setBand3({ gain: parseFloat(v) });
+            }, (v) => `${v} dB`);
+
+            setupSlider('eq3-q3', (v) => {
+                eq3Plugin.setBand3({ q: parseFloat(v) });
+            }, (v) => v);
+
+            document.getElementById('eq3-reset').addEventListener('click', () => {
+                eq3Plugin.reset();
+                // Reset UI
+                ['freq1', 'gain1', 'q1', 'freq2', 'gain2', 'q2', 'freq3', 'gain3', 'q3'].forEach(param => {
+                    const slider = document.getElementById(`eq3-${param}`);
+                    slider.value = slider.getAttribute('value');
+                    slider.dispatchEvent(new Event('input'));
+                });
+            });
+
+            // GraphicEQPlugin controls
+            ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'].forEach((freq, idx) => {
+                setupSlider(`geq-gain${freq}`, (v) => {
+                    geqPlugin.setBandGain(idx, parseFloat(v));
+                }, (v) => `${v} dB`);
+            });
+
+            document.getElementById('geq-reset').addEventListener('click', () => {
+                geqPlugin.reset();
+                ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'].forEach(freq => {
+                    const slider = document.getElementById(`geq-gain${freq}`);
+                    slider.value = 0;
+                    slider.dispatchEvent(new Event('input'));
+                });
+            });
+
+            // FilterPlugin controls
+            document.getElementById('filter-type').addEventListener('change', (e) => {
+                filterPlugin.setType(e.target.value);
+            });
+
+            setupSlider('filter-freq', (v) => {
+                filterPlugin.setFrequency(parseFloat(v));
+            }, (v) => `${v} Hz`);
+
+            setupSlider('filter-q', (v) => {
+                filterPlugin.setQ(parseFloat(v));
+            }, (v) => v);
+
+            setupSlider('filter-gain', (v) => {
+                filterPlugin.setGain(parseFloat(v));
+            }, (v) => `${v} dB`);
+
+            setupSlider('filter-mix', (v) => {
+                filterPlugin.setMix(parseFloat(v));
+            }, (v) => `${(v * 100).toFixed(0)}%`);
+
+            document.getElementById('filter-reset').addEventListener('click', () => {
+                filterPlugin.reset();
+                document.getElementById('filter-type').value = 'lowpass';
+                ['freq', 'q', 'gain', 'mix'].forEach(param => {
+                    const slider = document.getElementById(`filter-${param}`);
+                    slider.value = slider.getAttribute('value');
+                    slider.dispatchEvent(new Event('input'));
+                });
+            });
+        }
+
+        function setupSlider(id, callback, formatter) {
+            const slider = document.getElementById(id);
+            const valueDisplay = document.getElementById(`${id}-val`);
+
+            slider.addEventListener('input', (e) => {
+                const value = e.target.value;
+                valueDisplay.textContent = formatter(value);
+                callback(value);
+            });
+
+            // Initialize display
+            valueDisplay.textContent = formatter(slider.value);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modulation Effects Showcase</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: white;
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 2.5em;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .subtitle {
+      color: rgba(255,255,255,0.9);
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 1.1em;
+    }
+
+    .controls-panel {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+
+    .audio-controls {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      font-size: 1em;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: 600;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+
+    .btn-secondary:hover {
+      background: #e0e0e0;
+    }
+
+    .effects-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .effect-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      transition: transform 0.3s ease;
+    }
+
+    .effect-card:hover {
+      transform: translateY(-5px);
+    }
+
+    .effect-card.active {
+      border: 3px solid #667eea;
+      box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+    }
+
+    .effect-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .effect-title {
+      font-size: 1.4em;
+      font-weight: 700;
+      color: #667eea;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 60px;
+      height: 30px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: 0.4s;
+      border-radius: 30px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 22px;
+      width: 22px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: 0.4s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: #667eea;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(30px);
+    }
+
+    .param-group {
+      margin-bottom: 15px;
+    }
+
+    .param-label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #555;
+      font-size: 0.9em;
+    }
+
+    .param-value {
+      color: #667eea;
+      font-weight: 700;
+    }
+
+    .param-control {
+      width: 100%;
+      height: 8px;
+      border-radius: 4px;
+      outline: none;
+      -webkit-appearance: none;
+      background: linear-gradient(to right, #e0e0e0 0%, #667eea 100%);
+    }
+
+    .param-control::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #667eea;
+      cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+
+    .param-control::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #667eea;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+
+    select {
+      width: 100%;
+      padding: 8px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 0.9em;
+      cursor: pointer;
+      background: white;
+    }
+
+    .info-panel {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+
+    .info-panel h2 {
+      color: #667eea;
+      margin-bottom: 15px;
+    }
+
+    .info-panel ul {
+      list-style-position: inside;
+      line-height: 1.8;
+    }
+
+    .visualizer {
+      background: #000;
+      border-radius: 8px;
+      margin-top: 15px;
+      overflow: hidden;
+    }
+
+    #visualizerCanvas {
+      display: block;
+      width: 100%;
+      height: 150px;
+    }
+
+    @media (max-width: 768px) {
+      h1 {
+        font-size: 2em;
+      }
+
+      .effects-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .audio-controls {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🌊 Modulation Effects Showcase</h1>
+    <p class="subtitle">Explore Chorus, Flanger, Phaser, and Tremolo/Auto Pan effects</p>
+
+    <!-- Audio Controls -->
+    <div class="controls-panel">
+      <div class="audio-controls">
+        <button id="startBtn" class="btn btn-primary">▶ Start Audio</button>
+        <button id="stopBtn" class="btn btn-secondary" disabled>⏹ Stop</button>
+        <label style="color: #555; font-weight: 600;">
+          Input:
+          <select id="sourceSelect" style="width: auto; margin-left: 10px;">
+            <option value="oscillator">Oscillator (Synth)</option>
+            <option value="noise">White Noise</option>
+            <option value="microphone">Microphone</option>
+          </select>
+        </label>
+        <label style="color: #555; font-weight: 600;">
+          Master Volume:
+          <input type="range" id="masterVolume" min="0" max="100" value="50" style="width: 150px; margin-left: 10px;">
+          <span id="masterVolumeValue" class="param-value">50%</span>
+        </label>
+      </div>
+
+      <!-- Visualizer -->
+      <div class="visualizer">
+        <canvas id="visualizerCanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Effects Grid -->
+    <div class="effects-grid">
+      <!-- Chorus -->
+      <div class="effect-card" id="chorusCard">
+        <div class="effect-header">
+          <h3 class="effect-title">Chorus</h3>
+          <label class="toggle-switch">
+            <input type="checkbox" id="chorusToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Rate</span>
+            <span class="param-value" id="chorusRateValue">0.5 Hz</span>
+          </div>
+          <input type="range" class="param-control" id="chorusRate" min="0.01" max="10" step="0.01" value="0.5">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Depth</span>
+            <span class="param-value" id="chorusDepthValue">50%</span>
+          </div>
+          <input type="range" class="param-control" id="chorusDepth" min="0" max="100" step="1" value="50">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Voices</span>
+            <span class="param-value" id="chorusVoicesValue">4</span>
+          </div>
+          <input type="range" class="param-control" id="chorusVoices" min="1" max="8" step="1" value="4">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Spread</span>
+            <span class="param-value" id="chorusSpreadValue">50%</span>
+          </div>
+          <input type="range" class="param-control" id="chorusSpread" min="0" max="100" step="1" value="50">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Feedback</span>
+            <span class="param-value" id="chorusFeedbackValue">0%</span>
+          </div>
+          <input type="range" class="param-control" id="chorusFeedback" min="0" max="100" step="1" value="0">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Mix</span>
+            <span class="param-value" id="chorusMixValue">50%</span>
+          </div>
+          <input type="range" class="param-control" id="chorusMix" min="0" max="100" step="1" value="50">
+        </div>
+      </div>
+
+      <!-- Flanger -->
+      <div class="effect-card" id="flangerCard">
+        <div class="effect-header">
+          <h3 class="effect-title">Flanger</h3>
+          <label class="toggle-switch">
+            <input type="checkbox" id="flangerToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Rate</span>
+            <span class="param-value" id="flangerRateValue">0.5 Hz</span>
+          </div>
+          <input type="range" class="param-control" id="flangerRate" min="0.01" max="10" step="0.01" value="0.5">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Depth</span>
+            <span class="param-value" id="flangerDepthValue">50%</span>
+          </div>
+          <input type="range" class="param-control" id="flangerDepth" min="0" max="100" step="1" value="50">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Feedback</span>
+            <span class="param-value" id="flangerFeedbackValue">50%</span>
+          </div>
+          <input type="range" class="param-control" id="flangerFeedback" min="-100" max="100" step="1" value="50">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Manual</span>
+            <span class="param-value" id="flangerManualValue">50%</span>
+          </div>
+          <input type="range" class="param-control" id="flangerManual" min="0" max="100" step="1" value="50">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label"><span>Waveform</span></div>
+          <select id="flangerWaveform">
+            <option value="sine" selected>Sine</option>
+            <option value="triangle">Triangle</option>
+            <option value="square">Square</option>
+            <option value="sawtooth">Sawtooth</option>
+          </select>
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Mix</span>
+            <span class="param-value" id="flangerMixValue">50%</span>
+          </div>
+          <input type="range" class="param-control" id="flangerMix" min="0" max="100" step="1" value="50">
+        </div>
+      </div>
+
+      <!-- Phaser -->
+      <div class="effect-card" id="phaserCard">
+        <div class="effect-header">
+          <h3 class="effect-title">Phaser</h3>
+          <label class="toggle-switch">
+            <input type="checkbox" id="phaserToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Rate</span>
+            <span class="param-value" id="phaserRateValue">0.5 Hz</span>
+          </div>
+          <input type="range" class="param-control" id="phaserRate" min="0.01" max="10" step="0.01" value="0.5">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Depth</span>
+            <span class="param-value" id="phaserDepthValue">50%</span>
+          </div>
+          <input type="range" class="param-control" id="phaserDepth" min="0" max="100" step="1" value="50">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Feedback</span>
+            <span class="param-value" id="phaserFeedbackValue">0%</span>
+          </div>
+          <input type="range" class="param-control" id="phaserFeedback" min="0" max="100" step="1" value="0">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label"><span>Stages</span></div>
+          <select id="phaserStages">
+            <option value="4">4 Stages</option>
+            <option value="6" selected>6 Stages</option>
+            <option value="8">8 Stages</option>
+            <option value="12">12 Stages</option>
+          </select>
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Frequency</span>
+            <span class="param-value" id="phaserFrequencyValue">1000 Hz</span>
+          </div>
+          <input type="range" class="param-control" id="phaserFrequency" min="200" max="8000" step="10" value="1000">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Mix</span>
+            <span class="param-value" id="phaserMixValue">50%</span>
+          </div>
+          <input type="range" class="param-control" id="phaserMix" min="0" max="100" step="1" value="50">
+        </div>
+      </div>
+
+      <!-- Tremolo -->
+      <div class="effect-card" id="tremoloCard">
+        <div class="effect-header">
+          <h3 class="effect-title">Tremolo / Auto Pan</h3>
+          <label class="toggle-switch">
+            <input type="checkbox" id="tremoloToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="param-group">
+          <div class="param-label"><span>Mode</span></div>
+          <select id="tremoloMode">
+            <option value="tremolo" selected>Tremolo (Amplitude)</option>
+            <option value="pan">Auto Pan</option>
+          </select>
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Rate</span>
+            <span class="param-value" id="tremoloRateValue">5 Hz</span>
+          </div>
+          <input type="range" class="param-control" id="tremoloRate" min="0.01" max="40" step="0.1" value="5">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Depth</span>
+            <span class="param-value" id="tremoloDepthValue">50%</span>
+          </div>
+          <input type="range" class="param-control" id="tremoloDepth" min="0" max="100" step="1" value="50">
+        </div>
+
+        <div class="param-group">
+          <div class="param-label"><span>Waveform</span></div>
+          <select id="tremoloWaveform">
+            <option value="sine" selected>Sine</option>
+            <option value="triangle">Triangle</option>
+            <option value="square">Square</option>
+            <option value="sawtooth">Sawtooth</option>
+          </select>
+        </div>
+
+        <div class="param-group">
+          <div class="param-label">
+            <span>Stereo</span>
+            <label class="toggle-switch" style="margin-left: auto;">
+              <input type="checkbox" id="tremoloStereo">
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info Panel -->
+    <div class="info-panel">
+      <h2>About Modulation Effects</h2>
+      <ul>
+        <li><strong>Chorus:</strong> Creates rich, ensemble-like sounds by layering multiple delayed and detuned copies</li>
+        <li><strong>Flanger:</strong> Produces the classic "jet plane" whoosh effect using short delays with feedback</li>
+        <li><strong>Phaser:</strong> Creates sweeping notches using cascaded all-pass filters</li>
+        <li><strong>Tremolo:</strong> Modulates amplitude for rhythmic volume changes; Auto Pan sweeps stereo position</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Load effect modules -->
+  <script src="../modulation/Chorus.js"></script>
+  <script src="../modulation/Flanger.js"></script>
+  <script src="../modulation/Phaser.js"></script>
+  <script src="../modulation/Tremolo.js"></script>
+
+  <script>
+    // Audio context and nodes
+    let audioContext = null;
+    let sourceNode = null;
+    let masterGain = null;
+    let analyser = null;
+
+    // Effect instances
+    let chorus = null;
+    let flanger = null;
+    let phaser = null;
+    let tremolo = null;
+
+    // Effect chains
+    let effectChain = null;
+
+    // Active effects
+    let activeEffects = {
+      chorus: false,
+      flanger: false,
+      phaser: false,
+      tremolo: false
+    };
+
+    // Visualizer
+    let visualizerCanvas = null;
+    let visualizerContext = null;
+    let animationId = null;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      setupEventListeners();
+      initVisualizer();
+    });
+
+    function setupEventListeners() {
+      // Audio controls
+      document.getElementById('startBtn').addEventListener('click', startAudio);
+      document.getElementById('stopBtn').addEventListener('click', stopAudio);
+      document.getElementById('sourceSelect').addEventListener('change', changeSource);
+      document.getElementById('masterVolume').addEventListener('input', updateMasterVolume);
+
+      // Chorus
+      document.getElementById('chorusToggle').addEventListener('change', (e) => toggleEffect('chorus', e.target.checked));
+      document.getElementById('chorusRate').addEventListener('input', updateChorusParams);
+      document.getElementById('chorusDepth').addEventListener('input', updateChorusParams);
+      document.getElementById('chorusVoices').addEventListener('input', updateChorusParams);
+      document.getElementById('chorusSpread').addEventListener('input', updateChorusParams);
+      document.getElementById('chorusFeedback').addEventListener('input', updateChorusParams);
+      document.getElementById('chorusMix').addEventListener('input', updateChorusParams);
+
+      // Flanger
+      document.getElementById('flangerToggle').addEventListener('change', (e) => toggleEffect('flanger', e.target.checked));
+      document.getElementById('flangerRate').addEventListener('input', updateFlangerParams);
+      document.getElementById('flangerDepth').addEventListener('input', updateFlangerParams);
+      document.getElementById('flangerFeedback').addEventListener('input', updateFlangerParams);
+      document.getElementById('flangerManual').addEventListener('input', updateFlangerParams);
+      document.getElementById('flangerWaveform').addEventListener('change', updateFlangerParams);
+      document.getElementById('flangerMix').addEventListener('input', updateFlangerParams);
+
+      // Phaser
+      document.getElementById('phaserToggle').addEventListener('change', (e) => toggleEffect('phaser', e.target.checked));
+      document.getElementById('phaserRate').addEventListener('input', updatePhaserParams);
+      document.getElementById('phaserDepth').addEventListener('input', updatePhaserParams);
+      document.getElementById('phaserFeedback').addEventListener('input', updatePhaserParams);
+      document.getElementById('phaserStages').addEventListener('change', updatePhaserParams);
+      document.getElementById('phaserFrequency').addEventListener('input', updatePhaserParams);
+      document.getElementById('phaserMix').addEventListener('input', updatePhaserParams);
+
+      // Tremolo
+      document.getElementById('tremoloToggle').addEventListener('change', (e) => toggleEffect('tremolo', e.target.checked));
+      document.getElementById('tremoloMode').addEventListener('change', updateTremoloParams);
+      document.getElementById('tremoloRate').addEventListener('input', updateTremoloParams);
+      document.getElementById('tremoloDepth').addEventListener('input', updateTremoloParams);
+      document.getElementById('tremoloWaveform').addEventListener('change', updateTremoloParams);
+      document.getElementById('tremoloStereo').addEventListener('change', updateTremoloParams);
+    }
+
+    async function startAudio() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Create effects
+        chorus = new Chorus(audioContext);
+        flanger = new Flanger(audioContext);
+        phaser = new Phaser(audioContext);
+        tremolo = new Tremolo(audioContext);
+
+        // Create master gain and analyser
+        masterGain = audioContext.createGain();
+        masterGain.gain.value = 0.5;
+
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+
+        // Connect to output
+        masterGain.connect(analyser);
+        analyser.connect(audioContext.destination);
+      }
+
+      // Create source
+      await createSource();
+
+      // Update UI
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('stopBtn').disabled = false;
+
+      // Start visualizer
+      drawVisualizer();
+    }
+
+    async function createSource() {
+      const sourceType = document.getElementById('sourceSelect').value;
+
+      if (sourceNode) {
+        sourceNode.disconnect();
+        if (sourceNode.stop) sourceNode.stop();
+      }
+
+      if (sourceType === 'oscillator') {
+        sourceNode = audioContext.createOscillator();
+        sourceNode.type = 'sawtooth';
+        sourceNode.frequency.value = 220; // A3
+        sourceNode.start();
+      } else if (sourceType === 'noise') {
+        const bufferSize = 2 * audioContext.sampleRate;
+        const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          output[i] = Math.random() * 2 - 1;
+        }
+        sourceNode = audioContext.createBufferSource();
+        sourceNode.buffer = noiseBuffer;
+        sourceNode.loop = true;
+        sourceNode.start();
+      } else if (sourceType === 'microphone') {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          sourceNode = audioContext.createMediaStreamSource(stream);
+        } catch (error) {
+          alert('Microphone access denied');
+          return;
+        }
+      }
+
+      // Rebuild effect chain
+      rebuildEffectChain();
+    }
+
+    function rebuildEffectChain() {
+      if (!sourceNode || !masterGain) return;
+
+      // Disconnect everything
+      sourceNode.disconnect();
+      chorus.input.disconnect();
+      flanger.input.disconnect();
+      phaser.input.disconnect();
+      tremolo.input.disconnect();
+
+      let currentNode = sourceNode;
+
+      // Chain active effects in order
+      if (activeEffects.chorus) {
+        currentNode.connect(chorus.input);
+        currentNode = chorus.output;
+      }
+
+      if (activeEffects.flanger) {
+        currentNode.connect(flanger.input);
+        currentNode = flanger.output;
+      }
+
+      if (activeEffects.phaser) {
+        currentNode.connect(phaser.input);
+        currentNode = phaser.output;
+      }
+
+      if (activeEffects.tremolo) {
+        currentNode.connect(tremolo.input);
+        currentNode = tremolo.output;
+      }
+
+      // Connect to master output
+      currentNode.connect(masterGain);
+    }
+
+    function stopAudio() {
+      if (sourceNode) {
+        sourceNode.disconnect();
+        if (sourceNode.stop) sourceNode.stop();
+        sourceNode = null;
+      }
+
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('stopBtn').disabled = true;
+    }
+
+    function changeSource() {
+      if (sourceNode) {
+        stopAudio();
+        startAudio();
+      }
+    }
+
+    function updateMasterVolume() {
+      const volume = document.getElementById('masterVolume').value;
+      document.getElementById('masterVolumeValue').textContent = volume + '%';
+      if (masterGain) {
+        masterGain.gain.value = volume / 100;
+      }
+    }
+
+    function toggleEffect(effect, enabled) {
+      activeEffects[effect] = enabled;
+      document.getElementById(`${effect}Card`).classList.toggle('active', enabled);
+      rebuildEffectChain();
+    }
+
+    // Update functions for each effect
+    function updateChorusParams() {
+      if (!chorus) return;
+
+      const rate = parseFloat(document.getElementById('chorusRate').value);
+      const depth = parseFloat(document.getElementById('chorusDepth').value);
+      const voices = parseInt(document.getElementById('chorusVoices').value);
+      const spread = parseFloat(document.getElementById('chorusSpread').value);
+      const feedback = parseFloat(document.getElementById('chorusFeedback').value);
+      const mix = parseFloat(document.getElementById('chorusMix').value);
+
+      chorus.setRate(rate);
+      chorus.setDepth(depth);
+      chorus.setVoices(voices);
+      chorus.setSpread(spread);
+      chorus.setFeedback(feedback);
+      chorus.setMix(mix);
+
+      document.getElementById('chorusRateValue').textContent = rate.toFixed(2) + ' Hz';
+      document.getElementById('chorusDepthValue').textContent = depth.toFixed(0) + '%';
+      document.getElementById('chorusVoicesValue').textContent = voices;
+      document.getElementById('chorusSpreadValue').textContent = spread.toFixed(0) + '%';
+      document.getElementById('chorusFeedbackValue').textContent = feedback.toFixed(0) + '%';
+      document.getElementById('chorusMixValue').textContent = mix.toFixed(0) + '%';
+    }
+
+    function updateFlangerParams() {
+      if (!flanger) return;
+
+      const rate = parseFloat(document.getElementById('flangerRate').value);
+      const depth = parseFloat(document.getElementById('flangerDepth').value);
+      const feedback = parseFloat(document.getElementById('flangerFeedback').value);
+      const manual = parseFloat(document.getElementById('flangerManual').value);
+      const waveform = document.getElementById('flangerWaveform').value;
+      const mix = parseFloat(document.getElementById('flangerMix').value);
+
+      flanger.setRate(rate);
+      flanger.setDepth(depth);
+      flanger.setFeedback(feedback);
+      flanger.setManual(manual);
+      flanger.setWaveform(waveform);
+      flanger.setMix(mix);
+
+      document.getElementById('flangerRateValue').textContent = rate.toFixed(2) + ' Hz';
+      document.getElementById('flangerDepthValue').textContent = depth.toFixed(0) + '%';
+      document.getElementById('flangerFeedbackValue').textContent = feedback.toFixed(0) + '%';
+      document.getElementById('flangerManualValue').textContent = manual.toFixed(0) + '%';
+      document.getElementById('flangerMixValue').textContent = mix.toFixed(0) + '%';
+    }
+
+    function updatePhaserParams() {
+      if (!phaser) return;
+
+      const rate = parseFloat(document.getElementById('phaserRate').value);
+      const depth = parseFloat(document.getElementById('phaserDepth').value);
+      const feedback = parseFloat(document.getElementById('phaserFeedback').value);
+      const stages = parseInt(document.getElementById('phaserStages').value);
+      const frequency = parseFloat(document.getElementById('phaserFrequency').value);
+      const mix = parseFloat(document.getElementById('phaserMix').value);
+
+      phaser.setRate(rate);
+      phaser.setDepth(depth);
+      phaser.setFeedback(feedback);
+      phaser.setStages(stages);
+      phaser.setFrequency(frequency);
+      phaser.setMix(mix);
+
+      document.getElementById('phaserRateValue').textContent = rate.toFixed(2) + ' Hz';
+      document.getElementById('phaserDepthValue').textContent = depth.toFixed(0) + '%';
+      document.getElementById('phaserFeedbackValue').textContent = feedback.toFixed(0) + '%';
+      document.getElementById('phaserFrequencyValue').textContent = frequency.toFixed(0) + ' Hz';
+      document.getElementById('phaserMixValue').textContent = mix.toFixed(0) + '%';
+    }
+
+    function updateTremoloParams() {
+      if (!tremolo) return;
+
+      const mode = document.getElementById('tremoloMode').value;
+      const rate = parseFloat(document.getElementById('tremoloRate').value);
+      const depth = parseFloat(document.getElementById('tremoloDepth').value);
+      const waveform = document.getElementById('tremoloWaveform').value;
+      const stereo = document.getElementById('tremoloStereo').checked;
+
+      tremolo.setMode(mode);
+      tremolo.setRate(rate);
+      tremolo.setDepth(depth);
+      tremolo.setWaveform(waveform);
+      tremolo.setStereo(stereo);
+
+      document.getElementById('tremoloRateValue').textContent = rate.toFixed(1) + ' Hz';
+      document.getElementById('tremoloDepthValue').textContent = depth.toFixed(0) + '%';
+    }
+
+    // Visualizer
+    function initVisualizer() {
+      visualizerCanvas = document.getElementById('visualizerCanvas');
+      visualizerContext = visualizerCanvas.getContext('2d');
+
+      // Set canvas size
+      visualizerCanvas.width = visualizerCanvas.offsetWidth;
+      visualizerCanvas.height = 150;
+    }
+
+    function drawVisualizer() {
+      if (!analyser) return;
+
+      animationId = requestAnimationFrame(drawVisualizer);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyser.getByteTimeDomainData(dataArray);
+
+      visualizerContext.fillStyle = '#000';
+      visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+
+      visualizerContext.lineWidth = 2;
+      visualizerContext.strokeStyle = '#667eea';
+      visualizerContext.beginPath();
+
+      const sliceWidth = visualizerCanvas.width / bufferLength;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * visualizerCanvas.height / 2;
+
+        if (i === 0) {
+          visualizerContext.moveTo(x, y);
+        } else {
+          visualizerContext.lineTo(x, y);
+        }
+
+        x += sliceWidth;
+      }
+
+      visualizerContext.lineTo(visualizerCanvas.width, visualizerCanvas.height / 2);
+      visualizerContext.stroke();
+    }
+  </script>
+</body>
+</html>

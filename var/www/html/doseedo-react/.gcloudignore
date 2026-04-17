@@ -1,5 +1,4 @@
 node_modules/
-build/
 .git
 *~*
 
@@ -12,3 +11,7 @@ public/static/models/
 public/static/
 *.onnx
 *.onnx.data
+
+# Large WASM runtime in the build output (24MB) — served from GCS by the
+# GCLB url-map before requests reach Cloud Run, so the container doesn't need it.
+build/static/media/

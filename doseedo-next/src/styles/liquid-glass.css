@@ -1,0 +1,175 @@
+/**
+ * Liquid Glass Effects - MINIMAL for performance
+ * Only backdrop-filter on main panels - no button styling
+ */
+
+/* CSS Variables for glass panel controls */
+:root {
+  --glass-panel-opacity: 0.55;
+  --glass-panel-blur: 8;
+}
+
+/* ============================================
+   RIGHT SIDEBAR - Glass Effect
+   ============================================ */
+body.theme-glass [class*="TrackInfoSidebar"] {
+  background: rgb(15 15 25 / var(--glass-panel-opacity, 0.5)) !important;
+  backdrop-filter: blur(calc(var(--glass-panel-blur, 8) * 1px)) saturate(120%) !important;
+  -webkit-backdrop-filter: blur(calc(var(--glass-panel-blur, 8) * 1px)) saturate(120%) !important;
+}
+
+/* ============================================
+   LEFT SIDEBAR - Glass Effect
+   ============================================ */
+body.theme-glass [class*="GenerationPanel"],
+body.theme-glass [class*="LeftSidebar"] {
+  background: rgb(15 15 25 / var(--glass-panel-opacity, 0.5)) !important;
+  backdrop-filter: blur(calc(var(--glass-panel-blur, 8) * 1px)) saturate(120%) !important;
+  -webkit-backdrop-filter: blur(calc(var(--glass-panel-blur, 8) * 1px)) saturate(120%) !important;
+}
+
+/* ============================================
+   DAW MAIN AREA - Glass Effect
+   ============================================ */
+body.theme-glass [class*="dawGrid"],
+body.theme-glass [class*="DAW_daw"] {
+  background: rgb(15 15 25 / var(--glass-panel-opacity, 0.5)) !important;
+  backdrop-filter: blur(calc(var(--glass-panel-blur, 8) * 1px)) saturate(120%) !important;
+  -webkit-backdrop-filter: blur(calc(var(--glass-panel-blur, 8) * 1px)) saturate(120%) !important;
+}
+
+/* ============================================
+   CINEMA MODE PANELS - Glass Effect
+   ============================================ */
+body.theme-glass [class*="cinemaOverlay"] [class*="leftPanel"],
+body.theme-glass [class*="cinemaOverlay"] [class*="rightPanel"],
+body.theme-glass [class*="cinemaOverlay"] [class*="bottomPanel"] {
+  background: rgb(15 15 25 / var(--glass-panel-opacity, 0.5)) !important;
+  backdrop-filter: blur(calc(var(--glass-panel-blur, 8) * 1px)) saturate(120%) !important;
+  -webkit-backdrop-filter: blur(calc(var(--glass-panel-blur, 8) * 1px)) saturate(120%) !important;
+}
+
+/* ============================================
+   CINEMA MODE - Hide Resize Bars
+   ============================================ */
+body.cinema-mode [class*="ResizeBar"],
+body.cinema-mode [class*="resizeBar"],
+[class*="cinemaOverlay"] [class*="ResizeBar"],
+[class*="cinemaOverlay"] [class*="resizeBar"] {
+  display: none !important;
+}
+
+/* ============================================
+   CINEMA MODE - Disable Video Upload Hover
+   ============================================ */
+body.cinema-mode [class*="glowContainer"]:hover,
+body.cinema-mode [class*="VideoUpload"]:hover,
+[class*="cinemaOverlay"] [class*="glowContainer"]:hover,
+[class*="cinemaOverlay"] [class*="VideoUpload"]:hover {
+  background: transparent !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+body.cinema-mode [class*="glowContainer"]:hover [class*="uploadIcon"],
+[class*="cinemaOverlay"] [class*="glowContainer"]:hover [class*="uploadIcon"] {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* ============================================
+   DAW TRACKS / BUS ROWS - Transparent
+   ============================================ */
+body.theme-glass [class*="trackRow"],
+body.theme-glass [class*="busRow"],
+body.theme-glass [class*="busTracks"] {
+  background: transparent !important;
+}
+
+body.theme-glass [class*="trackHeaderContainer"],
+body.theme-glass [class*="busHeaderContainer"] {
+  background: rgb(15 15 25 / 0.4) !important;
+}
+
+body.theme-glass [class*="scrollableContent"],
+body.theme-glass [class*="scrollableWrapper"],
+body.theme-glass [class*="tracksContainer"] {
+  background: transparent !important;
+}
+
+/* Child elements inside panels - transparent */
+body.theme-glass [class*="TrackInfoSidebar"] > *,
+body.theme-glass [class*="GenerationPanel"] > *,
+body.theme-glass [class*="LeftSidebar"] > *,
+body.theme-glass [class*="dawGrid"] > * {
+  background: transparent !important;
+}
+
+/* Nested containers - transparent */
+body.theme-glass [class*="section"],
+body.theme-glass [class*="sectionContent"] {
+  background: transparent !important;
+}
+
+/* ============================================
+   GENERATION PANEL - Glass Mode Styling
+   Remove box-shadow, use border only
+   ============================================ */
+body.theme-glass [class*="GenerationPanel"] [class*="sectionContent"] {
+  border: 1px solid var(--input-border) !important;
+  box-shadow: none !important;
+  border-radius: 6.4px;
+}
+
+/* All buttons in GenerationPanel - remove box-shadow, add border */
+body.theme-glass [class*="GenerationPanel"] [class*="instrumentGroupBtn"],
+body.theme-glass [class*="GenerationPanel"] [class*="instrumentSubgroupBtn"],
+body.theme-glass [class*="GenerationPanel"] [class*="midiTargetBtn"],
+body.theme-glass [class*="GenerationPanel"] [class*="recordBtn"],
+body.theme-glass [class*="GenerationPanel"] [class*="uploadLabel"],
+body.theme-glass [class*="GenerationPanel"] [class*="generateButton"],
+body.theme-glass [class*="GenerationPanel"] [class*="saveButton"],
+body.theme-glass [class*="GenerationPanel"] [class*="testGenerateButton"],
+body.theme-glass [class*="GenerationPanel"] [class*="clearBtn"],
+body.theme-glass [class*="GenerationPanel"] [class*="Btn"],
+body.theme-glass [class*="GenerationPanel"] [class*="Button"] {
+  box-shadow: none !important;
+  border: 1px solid var(--input-border) !important;
+}
+
+/* Remove border from wrapper/text elements - only icon box should have it */
+body.theme-glass [class*="GenerationPanel"] [class*="uploadButtons"],
+body.theme-glass [class*="GenerationPanel"] [class*="uploadLabelWrapper"],
+body.theme-glass [class*="GenerationPanel"] [class*="uploadLabelText"],
+body.theme-glass [class*="GenerationPanel"] [class*="recordBtnWrapper"],
+body.theme-glass [class*="GenerationPanel"] [class*="recordBtnText"] {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Active/hover states - keep border, no box-shadow */
+body.theme-glass [class*="GenerationPanel"] [class*="Btn"]:hover,
+body.theme-glass [class*="GenerationPanel"] [class*="Button"]:hover,
+body.theme-glass [class*="GenerationPanel"] [class*="Btn"][class*="active"],
+body.theme-glass [class*="GenerationPanel"] [class*="Button"][class*="active"],
+body.theme-glass [class*="GenerationPanel"] [class*="Btn"].active,
+body.theme-glass [class*="GenerationPanel"] [class*="Button"].active {
+  box-shadow: none !important;
+  border: 1px solid var(--input-border) !important;
+}
+
+/* Timeline, chord row, spacers - transparent */
+body.theme-glass [class*="timeline"],
+body.theme-glass [class*="Timeline"],
+body.theme-glass [class*="chordRow"],
+body.theme-glass [class*="ChordRow"],
+body.theme-glass [class*="chordTrack"],
+body.theme-glass [class*="ChordTrack"],
+body.theme-glass [class*="spacer"],
+body.theme-glass [class*="Spacer"],
+body.theme-glass [class*="timelineSpacer"],
+body.theme-glass [class*="headerSpacer"],
+body.theme-glass [class*="gridHeader"],
+body.theme-glass [class*="timelineHeader"] {
+  background: transparent !important;
+}

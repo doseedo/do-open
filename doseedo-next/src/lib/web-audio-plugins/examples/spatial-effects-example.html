@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spatial Effects Demo - Reverb, Hybrid Reverb, Echo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .subtitle {
+      font-size: 1.2em;
+      opacity: 0.9;
+    }
+
+    .effects-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .effect-panel {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 15px;
+      padding: 25px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    .effect-panel h2 {
+      margin-bottom: 20px;
+      font-size: 1.5em;
+      border-bottom: 2px solid rgba(255,255,255,0.3);
+      padding-bottom: 10px;
+    }
+
+    .control-group {
+      margin-bottom: 20px;
+    }
+
+    .control-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      font-size: 0.9em;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.2);
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .value-display {
+      min-width: 60px;
+      text-align: right;
+      font-weight: 600;
+      font-size: 0.9em;
+    }
+
+    select, input[type="file"] {
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      font-size: 0.9em;
+      cursor: pointer;
+    }
+
+    select option {
+      background: #667eea;
+      color: #fff;
+    }
+
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1em;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      margin: 5px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.2);
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .controls-section {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 15px;
+      padding: 25px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.2);
+      margin-bottom: 20px;
+    }
+
+    .button-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .info-panel {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      padding: 15px;
+      margin-top: 20px;
+      font-size: 0.9em;
+    }
+
+    .status {
+      margin-top: 10px;
+      padding: 10px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 5px;
+      font-size: 0.85em;
+    }
+
+    @media (max-width: 768px) {
+      .effects-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 2em;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎭 Spatial Effects Demo</h1>
+      <p class="subtitle">Reverb, Hybrid Reverb & Echo Plugins</p>
+    </header>
+
+    <!-- Audio Controls -->
+    <div class="controls-section">
+      <h2>Audio Source</h2>
+      <div class="button-group">
+        <button class="btn-primary" onclick="playTone()">Play Test Tone</button>
+        <button class="btn-primary" onclick="playDrumLoop()">Play Drum Loop</button>
+        <button class="btn-secondary" onclick="stopAudio()">Stop</button>
+      </div>
+      <div class="control-group" style="margin-top: 20px;">
+        <label>Load Audio File:</label>
+        <input type="file" id="audioFile" accept="audio/*" onchange="loadAudioFile(event)">
+      </div>
+      <div class="status" id="status">Ready. Click a button to start audio.</div>
+    </div>
+
+    <!-- Effects Panels -->
+    <div class="effects-grid">
+      <!-- Reverb Panel -->
+      <div class="effect-panel">
+        <h2>🌊 Algorithmic Reverb</h2>
+
+        <div class="control-group">
+          <label>Pre-Delay: <span id="reverb-predelay-val">0 ms</span></label>
+          <input type="range" id="reverb-predelay" min="0" max="250" value="0" oninput="updateReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Decay Time: <span id="reverb-decay-val">2.0 s</span></label>
+          <input type="range" id="reverb-decay" min="0.1" max="20" step="0.1" value="2.0" oninput="updateReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Room Size: <span id="reverb-size-val">50%</span></label>
+          <input type="range" id="reverb-size" min="0" max="100" value="50" oninput="updateReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Diffusion: <span id="reverb-diffusion-val">70%</span></label>
+          <input type="range" id="reverb-diffusion" min="0" max="100" value="70" oninput="updateReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Damping: <span id="reverb-damping-val">50%</span></label>
+          <input type="range" id="reverb-damping" min="0" max="100" value="50" oninput="updateReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Modulation: <span id="reverb-mod-val">20%</span></label>
+          <input type="range" id="reverb-mod" min="0" max="100" value="20" oninput="updateReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Stereo Width: <span id="reverb-width-val">100%</span></label>
+          <input type="range" id="reverb-width" min="0" max="100" value="100" oninput="updateReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Early Level: <span id="reverb-early-val">-12 dB</span></label>
+          <input type="range" id="reverb-early" min="-60" max="0" value="-12" oninput="updateReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Tail Level: <span id="reverb-tail-val">-6 dB</span></label>
+          <input type="range" id="reverb-tail" min="-60" max="0" value="-6" oninput="updateReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Mix: <span id="reverb-mix-val">30%</span></label>
+          <input type="range" id="reverb-mix" min="0" max="100" value="30" oninput="updateReverb()">
+        </div>
+
+        <button class="btn-primary" onclick="toggleReverb()">Toggle Reverb</button>
+      </div>
+
+      <!-- Hybrid Reverb Panel -->
+      <div class="effect-panel">
+        <h2>🎪 Hybrid Reverb</h2>
+
+        <div class="control-group">
+          <label>Impulse Response:</label>
+          <input type="file" id="ir-file" accept="audio/wav" onchange="loadIR(event)">
+        </div>
+
+        <div class="control-group">
+          <label>IR Length: <span id="hybrid-irlength-val">100%</span></label>
+          <input type="range" id="hybrid-irlength" min="1" max="100" value="100" oninput="updateHybridReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Pre-Delay: <span id="hybrid-predelay-val">0 ms</span></label>
+          <input type="range" id="hybrid-predelay" min="0" max="250" value="0" oninput="updateHybridReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Decay Time: <span id="hybrid-decay-val">2.0 s</span></label>
+          <input type="range" id="hybrid-decay" min="0.1" max="20" step="0.1" value="2.0" oninput="updateHybridReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Crossover: <span id="hybrid-crossover-val">2000 Hz</span></label>
+          <input type="range" id="hybrid-crossover" min="200" max="8000" value="2000" oninput="updateHybridReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>IR Level: <span id="hybrid-erlevel-val">-6 dB</span></label>
+          <input type="range" id="hybrid-erlevel" min="-60" max="0" value="-6" oninput="updateHybridReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Tail Level: <span id="hybrid-taillevel-val">-6 dB</span></label>
+          <input type="range" id="hybrid-taillevel" min="-60" max="0" value="-6" oninput="updateHybridReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Damping: <span id="hybrid-damping-val">50%</span></label>
+          <input type="range" id="hybrid-damping" min="0" max="100" value="50" oninput="updateHybridReverb()">
+        </div>
+
+        <div class="control-group">
+          <label>Mix: <span id="hybrid-mix-val">30%</span></label>
+          <input type="range" id="hybrid-mix" min="0" max="100" value="30" oninput="updateHybridReverb()">
+        </div>
+
+        <button class="btn-primary" onclick="toggleHybridReverb()">Toggle Hybrid Reverb</button>
+        <div class="info-panel" id="ir-info">No IR loaded</div>
+      </div>
+
+      <!-- Echo Panel -->
+      <div class="effect-panel">
+        <h2>📡 Echo</h2>
+
+        <div class="control-group">
+          <label>Delay Time L: <span id="echo-delayl-val">250 ms</span></label>
+          <input type="range" id="echo-delayl" min="0" max="2000" value="250" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Delay Time R: <span id="echo-delayr-val">375 ms</span></label>
+          <input type="range" id="echo-delayr" min="0" max="2000" value="375" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Feedback: <span id="echo-feedback-val">40%</span></label>
+          <input type="range" id="echo-feedback" min="0" max="100" value="40" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Channel Mode:</label>
+          <select id="echo-mode" onchange="updateEcho()">
+            <option value="stereo">Stereo</option>
+            <option value="left">Left Only</option>
+            <option value="right">Right Only</option>
+            <option value="ping-pong">Ping-Pong</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>Stereo Offset: <span id="echo-offset-val">0 ms</span></label>
+          <input type="range" id="echo-offset" min="-50" max="50" value="0" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Modulation Rate: <span id="echo-modrate-val">0.5 Hz</span></label>
+          <input type="range" id="echo-modrate" min="0" max="10" step="0.1" value="0.5" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Modulation Amount: <span id="echo-modamt-val">0%</span></label>
+          <input type="range" id="echo-modamt" min="0" max="100" value="0" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Ducking Threshold: <span id="echo-duckthresh-val">-20 dB</span></label>
+          <input type="range" id="echo-duckthresh" min="-60" max="0" value="-20" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Ducking Ratio: <span id="echo-duckratio-val">4:1</span></label>
+          <input type="range" id="echo-duckratio" min="1" max="10" value="4" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Reverb Amount: <span id="echo-revamt-val">0%</span></label>
+          <input type="range" id="echo-revamt" min="0" max="100" value="0" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Reverb Decay: <span id="echo-revdecay-val">2.0 s</span></label>
+          <input type="range" id="echo-revdecay" min="0.1" max="10" step="0.1" value="2.0" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Highpass: <span id="echo-hp-val">20 Hz</span></label>
+          <input type="range" id="echo-hp" min="20" max="1000" value="20" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Lowpass: <span id="echo-lp-val">20000 Hz</span></label>
+          <input type="range" id="echo-lp" min="1000" max="20000" value="20000" oninput="updateEcho()">
+        </div>
+
+        <div class="control-group">
+          <label>Mix: <span id="echo-mix-val">30%</span></label>
+          <input type="range" id="echo-mix" min="0" max="100" value="30" oninput="updateEcho()">
+        </div>
+
+        <button class="btn-primary" onclick="toggleEcho()">Toggle Echo</button>
+        <button class="btn-secondary" onclick="toggleDucking()">Toggle Ducking</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load plugins -->
+  <script src="../reverb/Reverb.js"></script>
+  <script src="../reverb/HybridReverb.js"></script>
+  <script src="../reverb/Echo.js"></script>
+
+  <script>
+    // Audio context and nodes
+    let audioContext;
+    let sourceNode;
+    let reverbEffect;
+    let hybridReverbEffect;
+    let echoEffect;
+    let masterGain;
+
+    // Effect states
+    let reverbEnabled = true;
+    let hybridReverbEnabled = false;
+    let echoEnabled = false;
+    let duckingEnabled = false;
+
+    // Initialize audio system
+    function initAudio() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        masterGain = audioContext.createGain();
+        masterGain.gain.value = 0.7;
+
+        // Create effects
+        reverbEffect = new Reverb(audioContext);
+        hybridReverbEffect = new HybridReverb(audioContext);
+        echoEffect = new Echo(audioContext);
+
+        // Connect master output
+        masterGain.connect(audioContext.destination);
+
+        updateStatus('Audio system initialized');
+      }
+    }
+
+    // Play test tone
+    function playTone() {
+      initAudio();
+      stopAudio();
+
+      const osc = audioContext.createOscillator();
+      const oscGain = audioContext.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.value = 440;
+      oscGain.gain.value = 0.3;
+
+      osc.connect(oscGain);
+      sourceNode = oscGain;
+
+      routeAudio();
+
+      osc.start();
+      osc.stop(audioContext.currentTime + 2);
+
+      updateStatus('Playing 440 Hz test tone');
+    }
+
+    // Play drum loop (synthesized)
+    function playDrumLoop() {
+      initAudio();
+      stopAudio();
+
+      const bufferSize = audioContext.sampleRate * 4; // 4 seconds
+      const buffer = audioContext.createBuffer(2, bufferSize, audioContext.sampleRate);
+
+      // Generate simple drum pattern
+      for (let channel = 0; channel < 2; channel++) {
+        const data = buffer.getChannelData(channel);
+        const beatsPerMeasure = 4;
+        const measuresTotal = 4;
+
+        for (let measure = 0; measure < measuresTotal; measure++) {
+          for (let beat = 0; beat < beatsPerMeasure; beat++) {
+            const beatTime = (measure * beatsPerMeasure + beat) * (audioContext.sampleRate * 0.5);
+
+            // Kick drum (every beat)
+            for (let i = 0; i < 0.1 * audioContext.sampleRate; i++) {
+              const decay = Math.exp(-i / (audioContext.sampleRate * 0.05));
+              data[beatTime + i] = Math.sin(2 * Math.PI * 60 * i / audioContext.sampleRate) * decay * 0.5;
+            }
+
+            // Snare (beats 2 and 4)
+            if (beat === 1 || beat === 3) {
+              for (let i = 0; i < 0.05 * audioContext.sampleRate; i++) {
+                const decay = Math.exp(-i / (audioContext.sampleRate * 0.02));
+                data[beatTime + i] += (Math.random() * 2 - 1) * decay * 0.3;
+              }
+            }
+
+            // Hi-hat (8th notes)
+            for (let eighth = 0; eighth < 2; eighth++) {
+              const hhTime = beatTime + eighth * (audioContext.sampleRate * 0.25);
+              for (let i = 0; i < 0.02 * audioContext.sampleRate; i++) {
+                const decay = Math.exp(-i / (audioContext.sampleRate * 0.01));
+                data[hhTime + i] += (Math.random() * 2 - 1) * decay * 0.1;
+              }
+            }
+          }
+        }
+      }
+
+      const bufferSource = audioContext.createBufferSource();
+      bufferSource.buffer = buffer;
+      bufferSource.loop = true;
+
+      sourceNode = bufferSource;
+      routeAudio();
+
+      bufferSource.start();
+      updateStatus('Playing drum loop');
+    }
+
+    // Load audio file
+    async function loadAudioFile(event) {
+      initAudio();
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const arrayBuffer = await file.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      stopAudio();
+
+      const bufferSource = audioContext.createBufferSource();
+      bufferSource.buffer = audioBuffer;
+      bufferSource.loop = true;
+
+      sourceNode = bufferSource;
+      routeAudio();
+
+      bufferSource.start();
+      updateStatus(`Playing: ${file.name}`);
+    }
+
+    // Route audio through effects
+    function routeAudio() {
+      if (!sourceNode) return;
+
+      // Disconnect all first
+      sourceNode.disconnect();
+      reverbEffect.disconnect();
+      hybridReverbEffect.disconnect();
+      echoEffect.disconnect();
+
+      // Create routing chain
+      let currentNode = sourceNode;
+
+      if (reverbEnabled) {
+        currentNode.connect(reverbEffect.input);
+        reverbEffect.connect(masterGain);
+      }
+
+      if (hybridReverbEnabled) {
+        currentNode.connect(hybridReverbEffect.input);
+        hybridReverbEffect.connect(masterGain);
+      }
+
+      if (echoEnabled) {
+        currentNode.connect(echoEffect.input);
+        echoEffect.connect(masterGain);
+      }
+
+      // Direct connection if no effects
+      if (!reverbEnabled && !hybridReverbEnabled && !echoEnabled) {
+        currentNode.connect(masterGain);
+      }
+    }
+
+    // Stop audio
+    function stopAudio() {
+      if (sourceNode) {
+        try {
+          sourceNode.stop();
+        } catch (e) {
+          // Already stopped
+        }
+        sourceNode = null;
+      }
+      updateStatus('Stopped');
+    }
+
+    // Toggle effects
+    function toggleReverb() {
+      reverbEnabled = !reverbEnabled;
+      routeAudio();
+      updateStatus(`Reverb ${reverbEnabled ? 'enabled' : 'disabled'}`);
+    }
+
+    function toggleHybridReverb() {
+      hybridReverbEnabled = !hybridReverbEnabled;
+      routeAudio();
+      updateStatus(`Hybrid Reverb ${hybridReverbEnabled ? 'enabled' : 'disabled'}`);
+    }
+
+    function toggleEcho() {
+      echoEnabled = !echoEnabled;
+      routeAudio();
+      updateStatus(`Echo ${echoEnabled ? 'enabled' : 'disabled'}`);
+    }
+
+    function toggleDucking() {
+      duckingEnabled = !duckingEnabled;
+      if (echoEffect) {
+        echoEffect.setDuckingEnabled(duckingEnabled);
+        updateStatus(`Ducking ${duckingEnabled ? 'enabled' : 'disabled'}`);
+      }
+    }
+
+    // Update reverb parameters
+    function updateReverb() {
+      if (!reverbEffect) return;
+
+      const preDelay = parseFloat(document.getElementById('reverb-predelay').value);
+      const decay = parseFloat(document.getElementById('reverb-decay').value);
+      const size = parseFloat(document.getElementById('reverb-size').value);
+      const diffusion = parseFloat(document.getElementById('reverb-diffusion').value);
+      const damping = parseFloat(document.getElementById('reverb-damping').value);
+      const mod = parseFloat(document.getElementById('reverb-mod').value);
+      const width = parseFloat(document.getElementById('reverb-width').value);
+      const early = parseFloat(document.getElementById('reverb-early').value);
+      const tail = parseFloat(document.getElementById('reverb-tail').value);
+      const mix = parseFloat(document.getElementById('reverb-mix').value);
+
+      reverbEffect.setPreDelay(preDelay);
+      reverbEffect.setDecayTime(decay);
+      reverbEffect.setSize(size);
+      reverbEffect.setDiffusion(diffusion);
+      reverbEffect.setDamping(damping);
+      reverbEffect.setModulation(mod);
+      reverbEffect.setStereoWidth(width);
+      reverbEffect.setEarlyLevel(early);
+      reverbEffect.setTailLevel(tail);
+      reverbEffect.setMix(mix);
+
+      // Update displays
+      document.getElementById('reverb-predelay-val').textContent = `${preDelay} ms`;
+      document.getElementById('reverb-decay-val').textContent = `${decay.toFixed(1)} s`;
+      document.getElementById('reverb-size-val').textContent = `${size}%`;
+      document.getElementById('reverb-diffusion-val').textContent = `${diffusion}%`;
+      document.getElementById('reverb-damping-val').textContent = `${damping}%`;
+      document.getElementById('reverb-mod-val').textContent = `${mod}%`;
+      document.getElementById('reverb-width-val').textContent = `${width}%`;
+      document.getElementById('reverb-early-val').textContent = `${early} dB`;
+      document.getElementById('reverb-tail-val').textContent = `${tail} dB`;
+      document.getElementById('reverb-mix-val').textContent = `${mix}%`;
+    }
+
+    // Update hybrid reverb parameters
+    function updateHybridReverb() {
+      if (!hybridReverbEffect) return;
+
+      const irLength = parseFloat(document.getElementById('hybrid-irlength').value);
+      const preDelay = parseFloat(document.getElementById('hybrid-predelay').value);
+      const decay = parseFloat(document.getElementById('hybrid-decay').value);
+      const crossover = parseFloat(document.getElementById('hybrid-crossover').value);
+      const erLevel = parseFloat(document.getElementById('hybrid-erlevel').value);
+      const tailLevel = parseFloat(document.getElementById('hybrid-taillevel').value);
+      const damping = parseFloat(document.getElementById('hybrid-damping').value);
+      const mix = parseFloat(document.getElementById('hybrid-mix').value);
+
+      hybridReverbEffect.setIRLength(irLength);
+      hybridReverbEffect.setPreDelay(preDelay);
+      hybridReverbEffect.setDecayTime(decay);
+      hybridReverbEffect.setCrossover(crossover);
+      hybridReverbEffect.setIRLevel(erLevel);
+      hybridReverbEffect.setTailLevel(tailLevel);
+      hybridReverbEffect.setDamping(damping);
+      hybridReverbEffect.setMix(mix);
+
+      // Update displays
+      document.getElementById('hybrid-irlength-val').textContent = `${irLength}%`;
+      document.getElementById('hybrid-predelay-val').textContent = `${preDelay} ms`;
+      document.getElementById('hybrid-decay-val').textContent = `${decay.toFixed(1)} s`;
+      document.getElementById('hybrid-crossover-val').textContent = `${crossover} Hz`;
+      document.getElementById('hybrid-erlevel-val').textContent = `${erLevel} dB`;
+      document.getElementById('hybrid-taillevel-val').textContent = `${tailLevel} dB`;
+      document.getElementById('hybrid-damping-val').textContent = `${damping}%`;
+      document.getElementById('hybrid-mix-val').textContent = `${mix}%`;
+    }
+
+    // Update echo parameters
+    function updateEcho() {
+      if (!echoEffect) return;
+
+      const delayL = parseFloat(document.getElementById('echo-delayl').value);
+      const delayR = parseFloat(document.getElementById('echo-delayr').value);
+      const feedback = parseFloat(document.getElementById('echo-feedback').value);
+      const mode = document.getElementById('echo-mode').value;
+      const offset = parseFloat(document.getElementById('echo-offset').value);
+      const modRate = parseFloat(document.getElementById('echo-modrate').value);
+      const modAmt = parseFloat(document.getElementById('echo-modamt').value);
+      const duckThresh = parseFloat(document.getElementById('echo-duckthresh').value);
+      const duckRatio = parseFloat(document.getElementById('echo-duckratio').value);
+      const revAmt = parseFloat(document.getElementById('echo-revamt').value);
+      const revDecay = parseFloat(document.getElementById('echo-revdecay').value);
+      const hp = parseFloat(document.getElementById('echo-hp').value);
+      const lp = parseFloat(document.getElementById('echo-lp').value);
+      const mix = parseFloat(document.getElementById('echo-mix').value);
+
+      echoEffect.setDelayTimeL(delayL);
+      echoEffect.setDelayTimeR(delayR);
+      echoEffect.setFeedback(feedback);
+      echoEffect.setChannelMode(mode);
+      echoEffect.setStereoOffset(offset);
+      echoEffect.setModulationRate(modRate);
+      echoEffect.setModulationAmount(modAmt);
+      echoEffect.setDuckingThreshold(duckThresh);
+      echoEffect.setDuckingRatio(duckRatio);
+      echoEffect.setReverbAmount(revAmt);
+      echoEffect.setReverbDecay(revDecay);
+      echoEffect.setHighpass(hp);
+      echoEffect.setLowpass(lp);
+      echoEffect.setMix(mix);
+
+      // Update displays
+      document.getElementById('echo-delayl-val').textContent = `${delayL} ms`;
+      document.getElementById('echo-delayr-val').textContent = `${delayR} ms`;
+      document.getElementById('echo-feedback-val').textContent = `${feedback}%`;
+      document.getElementById('echo-offset-val').textContent = `${offset} ms`;
+      document.getElementById('echo-modrate-val').textContent = `${modRate.toFixed(1)} Hz`;
+      document.getElementById('echo-modamt-val').textContent = `${modAmt}%`;
+      document.getElementById('echo-duckthresh-val').textContent = `${duckThresh} dB`;
+      document.getElementById('echo-duckratio-val').textContent = `${duckRatio}:1`;
+      document.getElementById('echo-revamt-val').textContent = `${revAmt}%`;
+      document.getElementById('echo-revdecay-val').textContent = `${revDecay.toFixed(1)} s`;
+      document.getElementById('echo-hp-val').textContent = `${hp} Hz`;
+      document.getElementById('echo-lp-val').textContent = `${lp} Hz`;
+      document.getElementById('echo-mix-val').textContent = `${mix}%`;
+    }
+
+    // Load impulse response
+    async function loadIR(event) {
+      initAudio();
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const success = await hybridReverbEffect.loadImpulseResponseFile(file);
+      if (success) {
+        const info = hybridReverbEffect.getIRInfo();
+        document.getElementById('ir-info').innerHTML = `
+          <strong>IR Loaded:</strong> ${file.name}<br>
+          Duration: ${info.duration.toFixed(2)}s<br>
+          Channels: ${info.numberOfChannels}<br>
+          Sample Rate: ${info.sampleRate} Hz
+        `;
+        updateStatus(`Loaded IR: ${file.name}`);
+      } else {
+        updateStatus('Failed to load IR');
+      }
+    }
+
+    // Update status display
+    function updateStatus(message) {
+      document.getElementById('status').textContent = message;
+    }
+
+    // Initialize on load
+    window.addEventListener('load', () => {
+      updateStatus('Ready. Click a button to start audio.');
+    });
+  </script>
+</body>
+</html>

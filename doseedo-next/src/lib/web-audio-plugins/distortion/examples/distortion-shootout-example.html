@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Distortion & Saturation Plugin Shootout</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      color: #fff;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 2.5rem;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .subtitle {
+      text-align: center;
+      margin-bottom: 30px;
+      opacity: 0.9;
+      font-size: 1.1rem;
+    }
+
+    .control-panel {
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 15px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    .transport {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      color: white;
+      padding: 12px 30px;
+      border-radius: 25px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .plugin-section {
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 15px;
+      padding: 25px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    .plugin-section h2 {
+      margin-bottom: 20px;
+      color: #ffd700;
+      font-size: 1.8rem;
+      border-bottom: 2px solid rgba(255,215,0,0.3);
+      padding-bottom: 10px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 15px;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .control-group label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+
+    .value-display {
+      background: rgba(0,0,0,0.3);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.85rem;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.2);
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #ffd700;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #ffd700;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      border: none;
+    }
+
+    select {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: none;
+      background: rgba(255,255,255,0.2);
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    select option {
+      background: #1e3c72;
+      color: white;
+    }
+
+    .info-box {
+      background: rgba(255,215,0,0.1);
+      border-left: 4px solid #ffd700;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .info-box p {
+      margin: 5px 0;
+      font-size: 0.95rem;
+    }
+
+    .active-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #00ff00;
+      box-shadow: 0 0 10px #00ff00;
+      animation: pulse 1.5s infinite;
+      margin-left: 10px;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 40px;
+      opacity: 0.7;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎸 Distortion & Saturation Plugin Shootout</h1>
+    <p class="subtitle">Interactive demonstration of all 4 distortion plugins</p>
+
+    <!-- Info Box -->
+    <div class="info-box">
+      <p><strong>Instructions:</strong> Click "Start Audio" to begin, then select a plugin and adjust parameters in real-time.</p>
+      <p>Test signals: Sine wave (440 Hz), Square wave, Sawtooth, or White noise</p>
+    </div>
+
+    <!-- Transport Controls -->
+    <div class="control-panel">
+      <div class="transport">
+        <button id="startBtn">🎵 Start Audio</button>
+        <button id="stopBtn" disabled>⏹️ Stop Audio</button>
+      </div>
+
+      <div class="controls">
+        <div class="control-group">
+          <label>
+            Test Signal
+            <span class="value-display" id="waveformDisplay">Sine</span>
+          </label>
+          <select id="waveform">
+            <option value="sine">Sine Wave (440 Hz)</option>
+            <option value="square">Square Wave (220 Hz)</option>
+            <option value="sawtooth">Sawtooth (330 Hz)</option>
+            <option value="triangle">Triangle (440 Hz)</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>
+            Active Plugin
+            <span class="value-display" id="pluginDisplay">None</span>
+          </label>
+          <select id="activePlugin">
+            <option value="none">None (Dry)</option>
+            <option value="overdrive">Overdrive</option>
+            <option value="saturator">Saturator</option>
+            <option value="distortion">Distortion</option>
+            <option value="redux">Redux</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>
+            Master Volume
+            <span class="value-display" id="volumeDisplay">50%</span>
+          </label>
+          <input type="range" id="volume" min="0" max="100" value="50">
+        </div>
+      </div>
+    </div>
+
+    <!-- Overdrive Plugin -->
+    <div class="plugin-section" id="overdriveSection" style="display:none;">
+      <h2>Overdrive <span class="active-indicator"></span></h2>
+      <div class="controls">
+        <div class="control-group">
+          <label>
+            Drive
+            <span class="value-display" id="od-drive-val">30%</span>
+          </label>
+          <input type="range" id="od-drive" min="0" max="100" value="30">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Tone
+            <span class="value-display" id="od-tone-val">50%</span>
+          </label>
+          <input type="range" id="od-tone" min="0" max="100" value="50">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Bias
+            <span class="value-display" id="od-bias-val">0%</span>
+          </label>
+          <input type="range" id="od-bias" min="-100" max="100" value="0">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Output
+            <span class="value-display" id="od-output-val">0 dB</span>
+          </label>
+          <input type="range" id="od-output" min="-24" max="24" value="0">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Mix
+            <span class="value-display" id="od-mix-val">100%</span>
+          </label>
+          <input type="range" id="od-mix" min="0" max="100" value="100">
+        </div>
+
+        <div class="control-group">
+          <label>Curve Type</label>
+          <select id="od-curve">
+            <option value="tanh">Tanh (Warm)</option>
+            <option value="atan">Atan (Soft)</option>
+            <option value="softClip">Soft Clip</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Saturator Plugin -->
+    <div class="plugin-section" id="saturatorSection" style="display:none;">
+      <h2>Saturator <span class="active-indicator"></span></h2>
+      <div class="controls">
+        <div class="control-group">
+          <label>
+            Drive
+            <span class="value-display" id="sat-drive-val">0%</span>
+          </label>
+          <input type="range" id="sat-drive" min="0" max="100" value="0">
+        </div>
+
+        <div class="control-group">
+          <label>Saturation Type</label>
+          <select id="sat-type">
+            <option value="warm">Warm</option>
+            <option value="digital">Digital</option>
+            <option value="analog">Analog</option>
+            <option value="clip">Clip</option>
+            <option value="foldback">Foldback</option>
+            <option value="sine-fold">Sine-Fold</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>
+            Color
+            <span class="value-display" id="sat-color-val">0%</span>
+          </label>
+          <input type="range" id="sat-color" min="0" max="100" value="0">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Depth
+            <span class="value-display" id="sat-depth-val">100%</span>
+          </label>
+          <input type="range" id="sat-depth" min="0" max="100" value="100">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Output
+            <span class="value-display" id="sat-output-val">0 dB</span>
+          </label>
+          <input type="range" id="sat-output" min="-24" max="24" value="0">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Mix
+            <span class="value-display" id="sat-mix-val">100%</span>
+          </label>
+          <input type="range" id="sat-mix" min="0" max="100" value="100">
+        </div>
+      </div>
+    </div>
+
+    <!-- Distortion Plugin -->
+    <div class="plugin-section" id="distortionSection" style="display:none;">
+      <h2>Distortion <span class="active-indicator"></span></h2>
+      <div class="controls">
+        <div class="control-group">
+          <label>
+            Drive
+            <span class="value-display" id="dist-drive-val">50%</span>
+          </label>
+          <input type="range" id="dist-drive" min="0" max="100" value="50">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Tone Freq
+            <span class="value-display" id="dist-tone-val">1000 Hz</span>
+          </label>
+          <input type="range" id="dist-tone" min="20" max="20000" value="1000">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Tone Width (Q)
+            <span class="value-display" id="dist-width-val">1.0</span>
+          </label>
+          <input type="range" id="dist-width" min="0.1" max="10" step="0.1" value="1">
+        </div>
+
+        <div class="control-group">
+          <label>Clip Type</label>
+          <select id="dist-clip">
+            <option value="hard">Hard</option>
+            <option value="soft">Soft</option>
+            <option value="asymmetric">Asymmetric</option>
+            <option value="foldback">Foldback</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>Filter Position</label>
+          <select id="dist-position">
+            <option value="post">Post</option>
+            <option value="pre">Pre</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label>
+            Output
+            <span class="value-display" id="dist-output-val">0 dB</span>
+          </label>
+          <input type="range" id="dist-output" min="-24" max="24" value="0">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Mix
+            <span class="value-display" id="dist-mix-val">100%</span>
+          </label>
+          <input type="range" id="dist-mix" min="0" max="100" value="100">
+        </div>
+      </div>
+    </div>
+
+    <!-- Redux Plugin -->
+    <div class="plugin-section" id="reduxSection" style="display:none;">
+      <h2>Redux <span class="active-indicator"></span></h2>
+      <div class="controls">
+        <div class="control-group">
+          <label>
+            Bit Depth
+            <span class="value-display" id="rdx-bits-val">8 bits</span>
+          </label>
+          <input type="range" id="rdx-bits" min="1" max="16" value="8">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Sample Rate
+            <span class="value-display" id="rdx-rate-val">22050 Hz</span>
+          </label>
+          <input type="range" id="rdx-rate" min="50" max="44100" value="22050">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Hardness
+            <span class="value-display" id="rdx-hard-val">50%</span>
+          </label>
+          <input type="range" id="rdx-hard" min="0" max="100" value="50">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Dither
+            <span class="value-display" id="rdx-dither-val">0%</span>
+          </label>
+          <input type="range" id="rdx-dither" min="0" max="100" value="0">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Jitter
+            <span class="value-display" id="rdx-jitter-val">0%</span>
+          </label>
+          <input type="range" id="rdx-jitter" min="0" max="100" value="0">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Mix
+            <span class="value-display" id="rdx-mix-val">100%</span>
+          </label>
+          <input type="range" id="rdx-mix" min="0" max="100" value="100">
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Web Audio API Distortion & Saturation Plugins</p>
+      <p>Built with ❤️ for audio enthusiasts</p>
+    </div>
+  </div>
+
+  <!-- Load plugins -->
+  <script src="../Overdrive.js"></script>
+  <script src="../Saturator.js"></script>
+  <script src="../Distortion.js"></script>
+  <script src="../Redux.js"></script>
+
+  <script>
+    // Audio context and nodes
+    let audioContext;
+    let oscillator;
+    let noiseBuffer;
+    let noiseSource;
+    let masterGain;
+
+    // Plugin instances
+    let overdrive;
+    let saturator;
+    let distortion;
+    let redux;
+
+    // Current routing
+    let activePlugin = null;
+
+    // UI elements
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const waveformSelect = document.getElementById('waveform');
+    const pluginSelect = document.getElementById('activePlugin');
+    const volumeSlider = document.getElementById('volume');
+
+    // Start audio
+    startBtn.addEventListener('click', async () => {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Create master gain
+        masterGain = audioContext.createGain();
+        masterGain.gain.value = 0.5;
+        masterGain.connect(audioContext.destination);
+
+        // Create plugins
+        overdrive = new Overdrive(audioContext);
+        saturator = new Saturator(audioContext);
+        distortion = new Distortion(audioContext);
+        redux = new Redux(audioContext);
+
+        // Setup UI handlers
+        setupControls();
+      }
+
+      // Create oscillator
+      createOscillator();
+
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+    });
+
+    // Stop audio
+    stopBtn.addEventListener('click', () => {
+      if (oscillator) {
+        oscillator.stop();
+        oscillator = null;
+      }
+      if (noiseSource) {
+        noiseSource.stop();
+        noiseSource = null;
+      }
+
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    });
+
+    // Create oscillator based on waveform
+    function createOscillator() {
+      if (oscillator) oscillator.stop();
+      if (noiseSource) noiseSource.stop();
+
+      const waveform = waveformSelect.value;
+
+      if (waveform === 'noise') {
+        // Create white noise
+        if (!noiseBuffer) {
+          const bufferSize = 2 * audioContext.sampleRate;
+          noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+          const output = noiseBuffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) {
+            output[i] = Math.random() * 2 - 1;
+          }
+        }
+        noiseSource = audioContext.createBufferSource();
+        noiseSource.buffer = noiseBuffer;
+        noiseSource.loop = true;
+        routeSource(noiseSource);
+        noiseSource.start();
+      } else {
+        oscillator = audioContext.createOscillator();
+        oscillator.type = waveform;
+
+        // Different frequencies for different waveforms
+        const frequencies = {
+          sine: 440,
+          square: 220,
+          sawtooth: 330,
+          triangle: 440
+        };
+        oscillator.frequency.value = frequencies[waveform];
+
+        routeSource(oscillator);
+        oscillator.start();
+      }
+    }
+
+    // Route source through active plugin
+    function routeSource(source) {
+      // Disconnect previous routing
+      if (activePlugin) {
+        activePlugin.disconnect();
+      }
+
+      const plugin = pluginSelect.value;
+
+      if (plugin === 'none') {
+        source.connect(masterGain);
+        activePlugin = null;
+      } else if (plugin === 'overdrive') {
+        source.connect(overdrive.input);
+        overdrive.connect(masterGain);
+        activePlugin = overdrive;
+      } else if (plugin === 'saturator') {
+        source.connect(saturator.input);
+        saturator.connect(masterGain);
+        activePlugin = saturator;
+      } else if (plugin === 'distortion') {
+        source.connect(distortion.input);
+        distortion.connect(masterGain);
+        activePlugin = distortion;
+      } else if (plugin === 'redux') {
+        source.connect(redux.input);
+        redux.connect(masterGain);
+        activePlugin = redux;
+      }
+
+      updatePluginVisibility(plugin);
+    }
+
+    // Update plugin visibility
+    function updatePluginVisibility(plugin) {
+      document.getElementById('overdriveSection').style.display = plugin === 'overdrive' ? 'block' : 'none';
+      document.getElementById('saturatorSection').style.display = plugin === 'saturator' ? 'block' : 'none';
+      document.getElementById('distortionSection').style.display = plugin === 'distortion' ? 'block' : 'none';
+      document.getElementById('reduxSection').style.display = plugin === 'redux' ? 'block' : 'none';
+
+      document.getElementById('pluginDisplay').textContent = plugin.charAt(0).toUpperCase() + plugin.slice(1);
+    }
+
+    // Waveform change
+    waveformSelect.addEventListener('change', () => {
+      if (oscillator || noiseSource) {
+        createOscillator();
+      }
+      document.getElementById('waveformDisplay').textContent =
+        waveformSelect.options[waveformSelect.selectedIndex].text;
+    });
+
+    // Plugin change
+    pluginSelect.addEventListener('change', () => {
+      if (oscillator || noiseSource) {
+        createOscillator();
+      }
+    });
+
+    // Volume control
+    volumeSlider.addEventListener('input', (e) => {
+      const value = e.target.value;
+      if (masterGain) {
+        masterGain.gain.value = value / 100;
+      }
+      document.getElementById('volumeDisplay').textContent = value + '%';
+    });
+
+    // Setup all plugin controls
+    function setupControls() {
+      // Overdrive controls
+      setupSlider('od-drive', (v) => { overdrive.setDrive(v); }, '%');
+      setupSlider('od-tone', (v) => { overdrive.setTone(v); }, '%');
+      setupSlider('od-bias', (v) => { overdrive.setBias(v); }, '%');
+      setupSlider('od-output', (v) => { overdrive.setOutput(v); }, ' dB');
+      setupSlider('od-mix', (v) => { overdrive.setMix(v); }, '%');
+      document.getElementById('od-curve').addEventListener('change', (e) => {
+        overdrive.setCurveType(e.target.value);
+      });
+
+      // Saturator controls
+      setupSlider('sat-drive', (v) => { saturator.setDrive(v); }, '%');
+      setupSlider('sat-color', (v) => { saturator.setColor(v); }, '%');
+      setupSlider('sat-depth', (v) => { saturator.setDepth(v); }, '%');
+      setupSlider('sat-output', (v) => { saturator.setOutput(v); }, ' dB');
+      setupSlider('sat-mix', (v) => { saturator.setMix(v); }, '%');
+      document.getElementById('sat-type').addEventListener('change', (e) => {
+        saturator.setType(e.target.value);
+      });
+
+      // Distortion controls
+      setupSlider('dist-drive', (v) => { distortion.setDrive(v); }, '%');
+      setupSlider('dist-tone', (v) => { distortion.setTone(v); }, ' Hz');
+      setupSlider('dist-width', (v) => { distortion.setToneWidth(v); }, '');
+      setupSlider('dist-output', (v) => { distortion.setOutput(v); }, ' dB');
+      setupSlider('dist-mix', (v) => { distortion.setMix(v); }, '%');
+      document.getElementById('dist-clip').addEventListener('change', (e) => {
+        distortion.setClipType(e.target.value);
+      });
+      document.getElementById('dist-position').addEventListener('change', (e) => {
+        distortion.setFilterPosition(e.target.value);
+      });
+
+      // Redux controls
+      setupSlider('rdx-bits', (v) => { redux.setBitDepth(v); }, ' bits');
+      setupSlider('rdx-rate', (v) => { redux.setSampleRate(v); }, ' Hz');
+      setupSlider('rdx-hard', (v) => { redux.setHardness(v); }, '%');
+      setupSlider('rdx-dither', (v) => { redux.setDither(v); }, '%');
+      setupSlider('rdx-jitter', (v) => { redux.setJitter(v); }, '%');
+      setupSlider('rdx-mix', (v) => { redux.setMix(v); }, '%');
+    }
+
+    // Helper to setup slider
+    function setupSlider(id, callback, unit) {
+      const slider = document.getElementById(id);
+      const display = document.getElementById(id + '-val');
+
+      slider.addEventListener('input', (e) => {
+        const value = parseFloat(e.target.value);
+        callback(value);
+        display.textContent = value + unit;
+      });
+    }
+  </script>
+</body>
+</html>
