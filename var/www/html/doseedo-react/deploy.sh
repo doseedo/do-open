@@ -171,22 +171,34 @@ else
 fi
 
 # ── 1. sync build/ → bucket ───────────────────────────────────────────
-# `-d` deletes bucket objects that aren't in build/. ONNX models and the
-# `assets/icons/*.png` lot are gitignored (`*.onnx` in repo root) and
-# never present in build/, so without an exclude they would get wiped on
-# every deploy from a fresh clone — that incident on 2026-04-14 cost
-# ~470 MB of recovered objects (oobleck_encoder, sem_demucs_v4, latent_*,
-# all 16 instrument icons). Exclude regex matches the *destination* path
-# inside the bucket — keep this list in sync with anything live in the
-# bucket but absent from build/.
-RSYNC_EXCLUDE='^models/|^static/models/|^assets/icons/'
-echo "── 1. rsync build/ → $BUCKET (exclude: $RSYNC_EXCLUDE) ──"
-run gsutil -m rsync -r -c -d -x "$RSYNC_EXCLUDE" build/ "$BUCKET/"
+# Sync each subdirectory explicitly using `gcloud storage rsync` (avoids
+# the gsutil credential issues on macOS and the pattern-matching bug that
+# caused gcloud storage rsync to skip static/js/ chunks when a top-level
+# rsync was used with an exclude regex — 2026-04-16 incident).
+#
+# Directories that live in the bucket but NOT in build/ (must not be wiped):
+#   static/models/  — ONNX model files served from GCS
+#   models/         — legacy path, also GCS-only
+#   assets/icons/   — instrument icon PNGs, GCS-only
+#   static/media/   — WASM runtime (24 MB), GCS-only
+echo "── 1. rsync build/static/js → $BUCKET/static/js ──"
+run gcloud storage rsync --recursive --delete-unmatched-destination-objects \
+  build/static/js/ "$BUCKET/static/js/"
+
+echo "── 1b. rsync build/static/css → $BUCKET/static/css ──"
+run gcloud storage rsync --recursive --delete-unmatched-destination-objects \
+  build/static/css/ "$BUCKET/static/css/"
+
+echo "── 1c. rsync build root (html, manifest, favicon, workers…) → $BUCKET ──"
+# Top-level rsync with no --delete so it never touches static/ or models/
+run gcloud storage rsync --recursive \
+  --exclude="^static/|^models/|^assets/" \
+  build/ "$BUCKET/"
 
 # ── 2. force-upload cache-bypass HTML/manifest ────────────────────────
 echo "── 2. force-upload index.html + asset-manifest.json with no-store ──"
-run gsutil -h "Cache-Control:no-store, max-age=0" cp build/index.html        "$BUCKET/index.html"
-run gsutil -h "Cache-Control:no-store, max-age=0" cp build/asset-manifest.json "$BUCKET/asset-manifest.json"
+run gcloud storage cp --cache-control="no-store, max-age=0" build/index.html        "$BUCKET/index.html"
+run gcloud storage cp --cache-control="no-store, max-age=0" build/asset-manifest.json "$BUCKET/asset-manifest.json"
 
 # ── 3. cloud run image rebuild ────────────────────────────────────────
 if [[ $SKIP_CLOUD_RUN -eq 0 ]]; then
