@@ -289,68 +289,43 @@ function AppContent() {
   // Enable keyboard controls (spacebar for play/pause)
   useKeyboardControls(dispatch, state.isPlaying);
 
-  // Calculate initial position and constraints from rendered element
+  // Track the sidebar's left edge with a ResizeObserver — when the left
+  // sidebar collapses/expands or the window resizes, leftOffset updates but
+  // we DO NOT force-shrink panelWidth (that was the source of the "snap").
+  // The user's chosen bar position is sticky; only the ResizeBar's own drag
+  // clamps against minWidth/maxWidth.
   useEffect(() => {
-    if (contentRef.current) {
-      const rect = contentRef.current.getBoundingClientRect();
+    const el = contentRef.current;
+    if (!el) return;
 
-      // Calculate proper min/max based on left edge
-      const leftEdge = rect.left;
-      const newMin = leftEdge + 310;
-      const newMax = Math.max(newMin, leftEdge + Math.floor(window.innerWidth * 0.3));
-      setLeftOffset(leftEdge); // Capture left offset for DAW alignment
-      setMinWidth(newMin);
-      setMaxWidth(newMax);
-      // Clamp panelWidth into [min, max] so the bar is never below its own minimum
-      setPanelWidth(prev => Math.max(newMin, Math.min(prev, newMax)));
-
-      // Also set CSS variable immediately
-      const actualWidth = rect.width;
-      document.documentElement.style.setProperty('--bus-label-width', `${actualWidth}px`);
-      window.dispatchEvent(new CustomEvent('busLabelWidthChanged', { detail: actualWidth }));
-    }
-
-    // Update maxWidth when window is resized
-    const handleWindowResize = () => {
-      if (contentRef.current) {
-        const leftEdge = contentRef.current.getBoundingClientRect().left;
-        const newMin = leftEdge + 310;
-        const newMax = Math.max(newMin, leftEdge + Math.floor(window.innerWidth * 0.3));
-        setMinWidth(newMin);
-        setMaxWidth(newMax);
-        // Clamp panelWidth between min and max so the bar stays grabbable
-        setPanelWidth(prev => Math.max(newMin, Math.min(prev, newMax)));
-      }
+    const recompute = () => {
+      const leftEdge = el.getBoundingClientRect().left;
+      setLeftOffset(leftEdge);
+      // Min: 310px of content after the sidebar. Max: 30% of viewport.
+      setMinWidth(leftEdge + 310);
+      setMaxWidth(Math.max(leftEdge + 310, leftEdge + Math.floor(window.innerWidth * 0.3)));
     };
-    window.addEventListener('resize', handleWindowResize);
-    return () => window.removeEventListener('resize', handleWindowResize);
+    recompute();
+
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    // Also watch window resize for viewport-dependent maxWidth.
+    window.addEventListener('resize', recompute);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', recompute);
+    };
   }, []);
 
-  // Update CSS custom property when panel width changes
+  // Single source of truth for the bus-label column width. Everything
+  // downstream (CSS variable, DAW controls, AutomationWindow) derives from
+  // this. No more custom DOM events, no mirrored state in children.
+  const busLabelWidth = Math.max(0, panelWidth - leftOffset);
+
+  // Publish as CSS variable (many .module.css files read --bus-label-width).
   useEffect(() => {
-    if (!contentRef.current) return;
-    // Calculate width exactly as GenerationPanel does: panelWidth - current left position
-    const currentLeft = contentRef.current.getBoundingClientRect().left;
-    const actualWidth = panelWidth - currentLeft;
-    document.documentElement.style.setProperty('--bus-label-width', `${actualWidth}px`);
-
-    // Dispatch custom event to notify DAW of width change
-    window.dispatchEvent(new CustomEvent('busLabelWidthChanged', { detail: actualWidth }));
-  }, [panelWidth]);
-
-  // Force alignment recalculation after initial render when layout is complete
-  useEffect(() => {
-    // Use requestAnimationFrame to ensure DOM is fully laid out
-    const rafId = requestAnimationFrame(() => {
-      if (!contentRef.current) return;
-      const currentLeft = contentRef.current.getBoundingClientRect().left;
-      const actualWidth = panelWidth - currentLeft;
-      document.documentElement.style.setProperty('--bus-label-width', `${actualWidth}px`);
-      window.dispatchEvent(new CustomEvent('busLabelWidthChanged', { detail: actualWidth }));
-    });
-
-    return () => cancelAnimationFrame(rafId);
-  }, [currentView, panelWidth]); // Re-run when view changes or initial panelWidth is set
+    document.documentElement.style.setProperty('--bus-label-width', `${busLabelWidth}px`);
+  }, [busLabelWidth]);
 
   const handleResize = (newLeft) => {
     setPanelWidth(newLeft);
@@ -1168,7 +1143,7 @@ function AppContent() {
                   <DAWOptimized
                     maxTracksHeight={pluginDawHeight - 50}
                     onTracksHeightChange={() => {}}
-                    panelWidth={panelWidth}
+                    busLabelWidth={busLabelWidth}
                     pluginMode={state.pluginMode}
                   />
                 </div>
@@ -1199,7 +1174,7 @@ function AppContent() {
               <DAWOptimized
                 maxTracksHeight={dawTracksHeight}
                 onTracksHeightChange={setDawTracksHeight}
-                panelWidth={panelWidth}
+                busLabelWidth={busLabelWidth}
                 pluginMode={state.pluginMode}
               />
             </div>

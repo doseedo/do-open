@@ -16,21 +16,29 @@ const ResizeBar = React.memo(({ leftPosition, onResize, minWidth = 200, maxWidth
     e.preventDefault();
     setIsDragging(true);
 
-    // Store the offset between mouse and bar position
     const startX = e.clientX;
     const startPosition = leftPosition;
+    let rafId = null;
+    let pendingTarget = startPosition;
+
+    const flush = () => {
+      rafId = null;
+      onResize(Math.max(minWidth, Math.min(pendingTarget, maxWidth)));
+    };
 
     const handleMouseMove = (moveEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const newLeft = startPosition + deltaX;
-
-      // Clamp between min and max
-      const clampedLeft = Math.max(minWidth, Math.min(newLeft, maxWidth));
-
-      onResize(clampedLeft);
+      // Coalesce mousemove → single update per animation frame. Prevents
+      // React from queueing dozens of state updates per second and keeps
+      // the clamp at min/max feeling smooth instead of snappy.
+      pendingTarget = startPosition + (moveEvent.clientX - startX);
+      if (rafId === null) rafId = requestAnimationFrame(flush);
     };
 
     const handleMouseUp = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        flush();
+      }
       setIsDragging(false);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);

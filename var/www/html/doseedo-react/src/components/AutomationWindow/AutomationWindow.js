@@ -71,12 +71,8 @@ function AutomationWindow() {
     };
 
     handleWidthChange();
-    window.addEventListener('busLabelWidthChanged', handleWidthChange);
     window.addEventListener('resize', handleWidthChange);
-    return () => {
-      window.removeEventListener('busLabelWidthChanged', handleWidthChange);
-      window.removeEventListener('resize', handleWidthChange);
-    };
+    return () => window.removeEventListener('resize', handleWidthChange);
   }, [state.timelineWidth, state.zoomLevel]);
 
   // Initialize when automation window becomes visible

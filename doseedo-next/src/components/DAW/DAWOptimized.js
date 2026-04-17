@@ -54,7 +54,7 @@ import styles from './DAW.module.css';
  */
 
 // Main DAW Component
-const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, pluginMode = false }) => {
+const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, pluginMode = false }) => {
   const { state, dispatch } = useApp();
   const timelineRef = useRef(null);
   const scrollableContentRef = useRef(null);
@@ -62,13 +62,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
   const dragIndexRef = useRef(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
 
-  // Track sidebar width for progressive label visibility
-  const [busLabelWidth, setBusLabelWidth] = React.useState(300);
-  React.useEffect(() => {
-    const handler = (e) => setBusLabelWidth(e.detail);
-    window.addEventListener('busLabelWidthChanged', handler);
-    return () => window.removeEventListener('busLabelWidthChanged', handler);
-  }, []);
+  // Progressive label visibility based on the sidebar column width driven
+  // by App.js's ResizeBar. Breakpoints are the smallest width at which the
+  // control still fits without the row wrapping or clipping.
   const showTempoLabels  = busLabelWidth >= 310;
   const showMetronome    = busLabelWidth >= 280;
   const showAutomation   = busLabelWidth >= 260;
@@ -1295,8 +1291,10 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
         {/* Timeline Row with ChordTrack/SceneMarkers - Hidden in plugin mode */}
         {!pluginMode && (
           <div className={styles.timelineContainer}>
-          {/* Spacer cols 1-2: BPM / Meter / Transport controls */}
-          <div className={styles.timelineSpacer1} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', overflow: 'hidden' }}>
+          {/* Spacer cols 1-2: BPM / Meter / Transport controls.
+              All styling lives in .timelineSpacer1 (DAW.module.css) so the
+              left edge aligns with the bus-label column below it. */}
+          <div className={styles.timelineSpacer1}>
             {/* LEFT: Metronome + BPM + Meter */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flex: '0 0 auto' }}>
               {showMetronome && (
