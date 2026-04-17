@@ -62,6 +62,18 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
   const dragIndexRef = useRef(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
 
+  // Track sidebar width for progressive label visibility
+  const [busLabelWidth, setBusLabelWidth] = React.useState(300);
+  React.useEffect(() => {
+    const handler = (e) => setBusLabelWidth(e.detail);
+    window.addEventListener('busLabelWidthChanged', handler);
+    return () => window.removeEventListener('busLabelWidthChanged', handler);
+  }, []);
+  const showTempoLabels  = busLabelWidth >= 310;
+  const showMetronome    = busLabelWidth >= 280;
+  const showAutomation   = busLabelWidth >= 260;
+  const showTimeDisplay  = busLabelWidth >= 260;
+
   // Marquee selection state
   const [isMarqueeSelecting, setIsMarqueeSelecting] = useState(false);
   const [marqueeStart, setMarqueeStart] = useState({ x: 0, y: 0 });
@@ -1283,113 +1295,65 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
         {/* Timeline Row with ChordTrack/SceneMarkers - Hidden in plugin mode */}
         {!pluginMode && (
           <div className={styles.timelineContainer}>
-          {/* Combined spacer - spans columns 1 & 2 with transport controls */}
-          <div className={styles.timelineSpacer1} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 8px 4px 8px', justifyContent: 'space-between', paddingRight: '18px' }}>
-            {/* Tempo + Meter Group: Metronome + BPM + Meter (LEFT) */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: 'rgba(30, 30, 30, 0.6)',
-              padding: '4px',
-              borderRadius: '6px',
-              border: '1px solid rgba(102, 126, 234, 0.2)',
-              flex: '0 0 auto'
-            }}>
-              <Button
-                id="metronome-btn"
-                icon="fa-solid fa-drum"
-                onClick={toggleMetronome}
-                isActive={state.isMetronomeOn}
-                title="Toggle Metronome"
-                style={{ padding: '6px 10px' }}
-              />
-
-              {/* BPM Input */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                <label htmlFor="bpm-input" style={{ color: '#c5cae9', fontSize: '11px', fontWeight: '600' }}>
-                  BPM
-                </label>
-                <input
-                  type="number"
-                  id="bpm-input"
-                  min="40"
-                  max="240"
-                  value={state.bpm}
-                  onChange={(e) => dispatch({ type: 'UPDATE_BPM', payload: parseInt(e.target.value, 10) })}
-                  style={{
-                    width: '48px',
-                    padding: '4px 5px',
-                    borderRadius: '4px',
-                    border: '1px solid rgba(102, 126, 234, 0.3)',
-                    background: 'rgba(20, 20, 20, 0.8)',
-                    color: 'white',
-                    fontSize: '12px',
-                    textAlign: 'center'
-                  }}
+          {/* Spacer cols 1-2: BPM / Meter / Transport controls */}
+          <div className={styles.timelineSpacer1} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', overflow: 'hidden' }}>
+            {/* LEFT: Metronome + BPM + Meter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flex: '0 0 auto' }}>
+              {showMetronome && (
+                <Button
+                  id="metronome-btn"
+                  icon="fa-solid fa-drum"
+                  onClick={toggleMetronome}
+                  isActive={state.isMetronomeOn}
+                  title="Toggle Metronome"
+                  style={{ padding: '4px 8px' }}
                 />
-              </div>
-
-              {/* Meter Select */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title="Time signature">
-                <label htmlFor="meter-input" style={{ color: '#c5cae9', fontSize: '11px', fontWeight: '600' }}>
-                  Meter
-                </label>
-                <select
-                  id="meter-input"
-                  value={`${state.beatsPerBar || 4}/${state.meterDenominator || 4}`}
-                  onChange={(e) => dispatch({ type: 'SET_METER', payload: e.target.value })}
-                  style={{
-                    width: '60px',
-                    padding: '4px 5px',
-                    borderRadius: '4px',
-                    border: '1px solid rgba(102, 126, 234, 0.3)',
-                    background: 'rgba(20, 20, 20, 0.8)',
-                    color: 'white',
-                    fontSize: '12px',
-                    textAlign: 'center'
-                  }}
-                >
-                  <option value="3/4">3/4</option>
-                  <option value="4/4">4/4</option>
-                  <option value="5/4">5/4</option>
-                  <option value="6/8">6/8</option>
-                  <option value="7/8">7/8</option>
-                </select>
-              </div>
-
+              )}
+              {showTempoLabels && <span style={{ color: '#c5cae9', fontSize: '11px', fontWeight: 600 }}>BPM</span>}
+              <input
+                type="number" min="40" max="240"
+                value={state.bpm}
+                onChange={(e) => dispatch({ type: 'UPDATE_BPM', payload: parseInt(e.target.value, 10) })}
+                style={{ width: '46px', padding: '3px 5px', borderRadius: '4px', border: '1px solid rgba(102,126,234,0.3)', background: 'rgba(20,20,20,0.8)', color: 'white', fontSize: '12px', textAlign: 'center' }}
+              />
+              {showTempoLabels && <span style={{ color: '#c5cae9', fontSize: '11px', fontWeight: 600 }}>Meter</span>}
+              <select
+                value={`${state.beatsPerBar || 4}/${state.meterDenominator || 4}`}
+                onChange={(e) => dispatch({ type: 'SET_METER', payload: e.target.value })}
+                style={{ width: '58px', padding: '3px 5px', borderRadius: '4px', border: '1px solid rgba(102,126,234,0.3)', background: 'rgba(20,20,20,0.8)', color: 'white', fontSize: '12px' }}
+              >
+                <option value="3/4">3/4</option>
+                <option value="4/4">4/4</option>
+                <option value="5/4">5/4</option>
+                <option value="6/8">6/8</option>
+                <option value="7/8">7/8</option>
+              </select>
               {repaintApplying && (
-                <i className="fa-solid fa-wand-magic-sparkles fa-spin"
-                   style={{ color: '#8B7FF0', marginLeft: 4, fontSize: 14 }}
-                   title="Repainting tracks via stemphonic stage2d-130k" />
+                <i className="fa-solid fa-wand-magic-sparkles fa-spin" style={{ color: '#8B7FF0', fontSize: 13 }} title="Repainting tracks" />
               )}
             </div>
 
-            {/* Automation + Transport Group (RIGHT) */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Button
-                id="autobtn"
-                icon="fa-solid fa-chart-simple"
-                onClick={toggleAutomation}
-                isActive={state.automationWindow.isVisible}
-                title="Toggle automation"
-              />
+            {/* Spacer */}
+            <div style={{ flex: '1 1 0' }} />
 
-              {/* Transport Group: Play/Pause/Stop */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0px',
-                background: 'rgba(30, 30, 30, 0.6)',
-                padding: '4px',
-                borderRadius: '6px',
-                border: '1px solid rgba(102, 126, 234, 0.2)'
-              }}>
+            {/* RIGHT: Automation + Transport */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flex: '0 0 auto' }}>
+              {showAutomation && (
+                <Button
+                  id="autobtn"
+                  icon="fa-solid fa-chart-simple"
+                  onClick={toggleAutomation}
+                  isActive={state.automationWindow.isVisible}
+                  title="Toggle automation"
+                />
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0px', background: 'rgba(30,30,30,0.6)', padding: '4px', borderRadius: '6px', border: '1px solid rgba(102,126,234,0.2)' }}>
                 <TransportControls
                   isPlaying={state.isPlaying}
                   playheadPosition={state.playheadPosition}
                   onPlayPause={handlePlayPause}
                   onStop={handleStop}
+                  showTime={showTimeDisplay}
                 />
               </div>
             </div>

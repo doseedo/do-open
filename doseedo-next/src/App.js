@@ -293,13 +293,16 @@ function AppContent() {
   useEffect(() => {
     if (contentRef.current) {
       const rect = contentRef.current.getBoundingClientRect();
-      // Don't override panelWidth - let initial state control it
 
       // Calculate proper min/max based on left edge
       const leftEdge = rect.left;
+      const newMin = leftEdge + 310;
+      const newMax = Math.max(newMin, leftEdge + Math.floor(window.innerWidth * 0.3));
       setLeftOffset(leftEdge); // Capture left offset for DAW alignment
-      setMinWidth(leftEdge + 330); // Min: 330px sidebar content (enough for BPM+Meter+transport)
-      setMaxWidth(leftEdge + Math.floor(window.innerWidth * 0.3)); // Max: 30% of window
+      setMinWidth(newMin);
+      setMaxWidth(newMax);
+      // Clamp panelWidth into [min, max] so the bar is never below its own minimum
+      setPanelWidth(prev => Math.max(newMin, Math.min(prev, newMax)));
 
       // Also set CSS variable immediately
       const actualWidth = rect.width;
@@ -311,10 +314,12 @@ function AppContent() {
     const handleWindowResize = () => {
       if (contentRef.current) {
         const leftEdge = contentRef.current.getBoundingClientRect().left;
-        const newMax = leftEdge + Math.floor(window.innerWidth * 0.3);
+        const newMin = leftEdge + 310;
+        const newMax = Math.max(newMin, leftEdge + Math.floor(window.innerWidth * 0.3));
+        setMinWidth(newMin);
         setMaxWidth(newMax);
-        // Clamp panelWidth if it now exceeds the new max
-        setPanelWidth(prev => Math.min(prev, newMax));
+        // Clamp panelWidth between min and max so the bar stays grabbable
+        setPanelWidth(prev => Math.max(newMin, Math.min(prev, newMax)));
       }
     };
     window.addEventListener('resize', handleWindowResize);

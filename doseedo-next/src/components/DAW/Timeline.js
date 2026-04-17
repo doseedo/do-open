@@ -775,7 +775,7 @@ const Timeline = React.memo(({
   // Full timeline with ticks and interaction
   return (
     <div className={styles.timelineRow}>
-      {/* Combined spacer for columns 1 and 2 - just add bus button */}
+      {/* Combined spacer for columns 1 and 2 - add bus button + zoom */}
       <div
         className={styles.timelineSpacer1}
         onClick={handleSpacerClick}
@@ -792,7 +792,6 @@ const Timeline = React.memo(({
 
         {/* Zoom Controls */}
         <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginRight: '10px' }}>
-          {/* Zoom Mode Toggle */}
           <button
             className={styles.zoomModeButton}
             onClick={() => {
@@ -804,30 +803,20 @@ const Timeline = React.memo(({
             <i className={`fa-solid ${state.zoomMode === 'y' ? 'fa-up-down' : 'fa-left-right'}`}></i>
           </button>
 
-          {/* Zoom Out */}
           <button
             className={styles.zoomButton}
             onClick={() => {
-              if (state.zoomMode === 'x') {
-                onZoomOut();
-              } else {
-                onZoomYOut();
-              }
+              if (state.zoomMode === 'x') { onZoomOut(); } else { onZoomYOut(); }
             }}
             title={state.zoomMode === 'x' ? 'Zoom Out (Horizontal)' : 'Decrease Track Height'}
           >
             <i className="fa-solid fa-minus"></i>
           </button>
 
-          {/* Zoom In */}
           <button
             className={styles.zoomButton}
             onClick={() => {
-              if (state.zoomMode === 'x') {
-                onZoomIn();
-              } else {
-                onZoomYIn();
-              }
+              if (state.zoomMode === 'x') { onZoomIn(); } else { onZoomYIn(); }
             }}
             title={state.zoomMode === 'x' ? 'Zoom In (Horizontal)' : 'Increase Track Height'}
           >

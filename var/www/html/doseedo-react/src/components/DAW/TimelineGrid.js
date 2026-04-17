@@ -31,6 +31,9 @@ const TimelineGrid = React.memo(({
 
   // Determine optimal tick interval based on zoom level (matches Timeline.js logic)
   const tickInterval = useMemo(() => {
+    if (pixelsPerSecond < 2)  return 120;
+    if (pixelsPerSecond < 4)  return 60;
+    if (pixelsPerSecond < 7)  return 30;
     if (pixelsPerSecond < 10) return 10;  // Very zoomed out - 10s intervals
     if (pixelsPerSecond < 20) return 5;   // Zoomed out - 5s intervals
     if (pixelsPerSecond < 40) return 2;   // Medium zoom - 2s intervals
@@ -49,6 +52,18 @@ const TimelineGrid = React.memo(({
     if (pixelsPerBeat < 60) return 2;  // Show 8th notes
     return 4; // Show 16th notes
   }, [isBPMMode, bpm, sceneTempos, pixelsPerSecond]);
+
+  // Bar skip: skip every N bars so grid lines stay >= 20px apart (matches Timeline.js)
+  const barSkip = useMemo(() => {
+    if (!isBPMMode) return 1;
+    const avgBPM = sceneTempos.length > 0 ? sceneTempos.reduce((a, b) => a + b) / sceneTempos.length : bpm;
+    const beatUnitFactor = (state.meterDenominator || 4) === 8 ? 0.5 : 1;
+    const secondsPerBar = (60 / avgBPM) * beatUnitFactor * beatsPerBar;
+    const pxPerBar = pixelsPerSecond * secondsPerBar;
+    if (pxPerBar <= 0) return 1;
+    const raw = Math.ceil(20 / pxPerBar);
+    return raw <= 1 ? 1 : Math.pow(2, Math.ceil(Math.log2(raw)));
+  }, [isBPMMode, bpm, beatsPerBar, sceneTempos, pixelsPerSecond, state.meterDenominator]);
 
   // Generate BPM tick marks (bars, beats, and sub-beats)
   const bpmTicks = useMemo(() => {
@@ -79,36 +94,42 @@ const TimelineGrid = React.memo(({
         let barTime = firstBarTime;
         while (barTime < sceneEnd && barTime <= totalDuration) {
           if (barTime >= sceneStart) {
-            const barPosition = (barTime / totalDuration) * width;
+            const showThisBar = (barNumber - 1) % barSkip === 0;
 
-            // Add bar marker
-            tickArray.push({
-              id: `bar-${barNumber}`,
-              time: barTime,
-              position: barPosition,
-              isMajor: true,
-              isBar: true,
-              subdivision: 1
-            });
+            if (showThisBar) {
+              const barPosition = (barTime / totalDuration) * width;
 
-            // Add beat and sub-beat subdivisions
-            const totalSubdivisions = beatsPerBar * subdivisionLevel;
-            for (let sub = 1; sub < totalSubdivisions; sub++) {
-              const subTime = barTime + (sub * secondsPerBeat / subdivisionLevel);
-              if (subTime >= sceneEnd || subTime > totalDuration) break;
-
-              const subPosition = (subTime / totalDuration) * width;
-              const isBeat = (sub % subdivisionLevel) === 0;
-
+              // Add bar marker
               tickArray.push({
-                id: `bar-${barNumber}-sub-${sub}`,
-                time: subTime,
-                position: subPosition,
-                isMajor: false,
-                isBeat: isBeat,
-                isSubBeat: !isBeat,
-                subdivision: subdivisionLevel
+                id: `bar-${barNumber}`,
+                time: barTime,
+                position: barPosition,
+                isMajor: true,
+                isBar: true,
+                subdivision: 1
               });
+
+              // Add beat and sub-beat subdivisions (only when not skipping)
+              if (barSkip === 1) {
+                const totalSubdivisions = beatsPerBar * subdivisionLevel;
+                for (let sub = 1; sub < totalSubdivisions; sub++) {
+                  const subTime = barTime + (sub * secondsPerBeat / subdivisionLevel);
+                  if (subTime >= sceneEnd || subTime > totalDuration) break;
+
+                  const subPosition = (subTime / totalDuration) * width;
+                  const isBeat = (sub % subdivisionLevel) === 0;
+
+                  tickArray.push({
+                    id: `bar-${barNumber}-sub-${sub}`,
+                    time: subTime,
+                    position: subPosition,
+                    isMajor: false,
+                    isBeat: isBeat,
+                    isSubBeat: !isBeat,
+                    subdivision: subdivisionLevel
+                  });
+                }
+              }
             }
 
             barNumber++;
@@ -132,21 +153,26 @@ const TimelineGrid = React.memo(({
         if (bm[i].pos !== 1) continue;
         const time = bm[i].t;
         if (time > totalDuration) break;
-        tickArray.push({
-          id: `bar-${barNumber}`,
-          time,
-          position: (time / totalDuration) * width,
-          isMajor: true, isBar: true, subdivision: 1,
-        });
-        for (let j = 1; j < beatsPerBar && (i + j) < bm.length; j++) {
-          const subTime = bm[i + j].t;
-          if (subTime > totalDuration) break;
+        const showThisBar = (barNumber - 1) % barSkip === 0;
+        if (showThisBar) {
           tickArray.push({
-            id: `bar-${barNumber}-sub-${j}`,
-            time: subTime,
-            position: (subTime / totalDuration) * width,
-            isMajor: false, isBeat: true, isSubBeat: false, subdivision: 1,
+            id: `bar-${barNumber}`,
+            time,
+            position: (time / totalDuration) * width,
+            isMajor: true, isBar: true, subdivision: 1,
           });
+          if (barSkip === 1) {
+            for (let j = 1; j < beatsPerBar && (i + j) < bm.length; j++) {
+              const subTime = bm[i + j].t;
+              if (subTime > totalDuration) break;
+              tickArray.push({
+                id: `bar-${barNumber}-sub-${j}`,
+                time: subTime,
+                position: (subTime / totalDuration) * width,
+                isMajor: false, isBeat: true, isSubBeat: false, subdivision: 1,
+              });
+            }
+          }
         }
         barNumber++;
       }
@@ -158,36 +184,42 @@ const TimelineGrid = React.memo(({
       let barNumber = 1;
 
       for (let time = tlOffset; time <= totalDuration; time += secondsPerBar) {
-        const barPosition = (time / totalDuration) * width;
+        const showThisBar = (barNumber - 1) % barSkip === 0;
 
-        // Add bar marker
-        tickArray.push({
-          id: `bar-${barNumber}`,
-          time,
-          position: barPosition,
-          isMajor: true,
-          isBar: true,
-          subdivision: 1
-        });
+        if (showThisBar) {
+          const barPosition = (time / totalDuration) * width;
 
-        // Add beat and sub-beat subdivisions
-        const totalSubdivisions = beatsPerBar * subdivisionLevel;
-        for (let sub = 1; sub < totalSubdivisions; sub++) {
-          const subTime = time + (sub * secondsPerBeat / subdivisionLevel);
-          if (subTime > totalDuration) break;
-
-          const subPosition = (subTime / totalDuration) * width;
-          const isBeat = (sub % subdivisionLevel) === 0;
-
+          // Add bar marker
           tickArray.push({
-            id: `bar-${barNumber}-sub-${sub}`,
-            time: subTime,
-            position: subPosition,
-            isMajor: false,
-            isBeat: isBeat,
-            isSubBeat: !isBeat,
-            subdivision: subdivisionLevel
+            id: `bar-${barNumber}`,
+            time,
+            position: barPosition,
+            isMajor: true,
+            isBar: true,
+            subdivision: 1
           });
+
+          // Add beat and sub-beat subdivisions (only when not skipping)
+          if (barSkip === 1) {
+            const totalSubdivisions = beatsPerBar * subdivisionLevel;
+            for (let sub = 1; sub < totalSubdivisions; sub++) {
+              const subTime = time + (sub * secondsPerBeat / subdivisionLevel);
+              if (subTime > totalDuration) break;
+
+              const subPosition = (subTime / totalDuration) * width;
+              const isBeat = (sub % subdivisionLevel) === 0;
+
+              tickArray.push({
+                id: `bar-${barNumber}-sub-${sub}`,
+                time: subTime,
+                position: subPosition,
+                isMajor: false,
+                isBeat: isBeat,
+                isSubBeat: !isBeat,
+                subdivision: subdivisionLevel
+              });
+            }
+          }
         }
 
         barNumber++;
@@ -195,7 +227,7 @@ const TimelineGrid = React.memo(({
     }
 
     return tickArray;
-  }, [isBPMMode, bpm, beatsPerBar, beatUnitFactor, sceneTempos, sceneChanges, totalDuration, containerWidth, zoomLevel, subdivisionLevel, state.timelineOffset, state.beatMap]);
+  }, [isBPMMode, bpm, beatsPerBar, beatUnitFactor, sceneTempos, sceneChanges, totalDuration, containerWidth, zoomLevel, subdivisionLevel, barSkip, state.timelineOffset, state.beatMap]);
 
   // Generate time tick marks (seconds)
   const timeTicks = useMemo(() => {

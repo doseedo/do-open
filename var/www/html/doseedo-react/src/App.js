@@ -148,7 +148,7 @@ function AppContent() {
   const [dawTracksHeight, setDawTracksHeight] = useState(600); // Height for DAW tracks scrollable area
   const [pluginDawHeight, setPluginDawHeight] = useState(200); // Height for DAW in plugin mode
   const [minWidth, setMinWidth] = useState(200);
-  const [maxWidth, setMaxWidth] = useState(1400);
+  const [maxWidth, setMaxWidth] = useState(Math.floor(window.innerWidth * 0.3));
   const [leftOffset, setLeftOffset] = useState(0); // Track left offset for DAW alignment
   const contentRef = React.useRef(null);
 
@@ -293,19 +293,37 @@ function AppContent() {
   useEffect(() => {
     if (contentRef.current) {
       const rect = contentRef.current.getBoundingClientRect();
-      // Don't override panelWidth - let initial state control it
 
       // Calculate proper min/max based on left edge
       const leftEdge = rect.left;
+      const newMin = leftEdge + 310;
+      const newMax = Math.max(newMin, leftEdge + Math.floor(window.innerWidth * 0.3));
       setLeftOffset(leftEdge); // Capture left offset for DAW alignment
-      setMinWidth(leftEdge + 200); // Min width of 200px
-      setMaxWidth(leftEdge + 1400); // Max width of 1400px
+      setMinWidth(newMin);
+      setMaxWidth(newMax);
+      // Clamp panelWidth into [min, max] so the bar is never below its own minimum
+      setPanelWidth(prev => Math.max(newMin, Math.min(prev, newMax)));
 
       // Also set CSS variable immediately
       const actualWidth = rect.width;
       document.documentElement.style.setProperty('--bus-label-width', `${actualWidth}px`);
       window.dispatchEvent(new CustomEvent('busLabelWidthChanged', { detail: actualWidth }));
     }
+
+    // Update maxWidth when window is resized
+    const handleWindowResize = () => {
+      if (contentRef.current) {
+        const leftEdge = contentRef.current.getBoundingClientRect().left;
+        const newMin = leftEdge + 310;
+        const newMax = Math.max(newMin, leftEdge + Math.floor(window.innerWidth * 0.3));
+        setMinWidth(newMin);
+        setMaxWidth(newMax);
+        // Clamp panelWidth between min and max so the bar stays grabbable
+        setPanelWidth(prev => Math.max(newMin, Math.min(prev, newMax)));
+      }
+    };
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
   }, []);
 
   // Update CSS custom property when panel width changes

@@ -172,6 +172,8 @@
   padding: 4px 8px;
   gap: 8px;
   z-index: 301; /* Higher than timeline and bus/track labels */
+  overflow: hidden; /* Nothing escapes sidebar width */
+  min-width: 0;
 }
 
 .addTrackButton {
@@ -315,7 +317,7 @@
   position: sticky;
   left: 0;
   z-index: 200;
-  overflow: visible;
+  overflow: hidden; /* Clip contents — nothing escapes the sidebar width */
 }
 
 .busHeaderContainer.expanded {
@@ -403,8 +405,10 @@
   align-items: center;
   gap: 9.6px;
   flex: 1;
+  min-width: 0; /* Allow flex shrink below content size */
   padding: 0 9.6px;
   transition: all 0.2s ease;
+  overflow: hidden;
 }
 
 .busNameSection {
@@ -439,6 +443,8 @@
   align-items: center;
   gap: 6.4px;
   flex: 1;
+  min-width: 0; /* Allow flex shrink */
+  overflow: hidden;
 }
 
 /* Plugin Mode Simplified Controls */

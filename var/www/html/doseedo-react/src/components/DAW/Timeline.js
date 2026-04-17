@@ -105,6 +105,9 @@ const Timeline = React.memo(({
 
   // Determine optimal tick interval based on zoom level - NO FLOATS
   const tickInterval = useMemo(() => {
+    if (pixelsPerSecond < 2)  return 120; // Very very zoomed out - 2min intervals
+    if (pixelsPerSecond < 4)  return 60;  // 1min intervals
+    if (pixelsPerSecond < 7)  return 30;  // 30s intervals
     if (pixelsPerSecond < 10) return 10;  // Very zoomed out - 10s intervals
     if (pixelsPerSecond < 20) return 5;   // Zoomed out - 5s intervals
     if (pixelsPerSecond < 40) return 2;   // Medium zoom - 2s intervals
@@ -126,6 +129,20 @@ const Timeline = React.memo(({
     if (pixelsPerBeat < 60) return 2;  // Show 8th notes
     return 4; // Show 16th notes
   }, [isBPMMode, bpm, sceneTempos, pixelsPerSecond]);
+
+  // How many bars to skip so grid lines stay >= MIN_BAR_PX apart.
+  // Rounds up to a nice value (1, 2, 4, 8, 16, …).
+  const MIN_BAR_PX = 20;
+  const barSkip = useMemo(() => {
+    if (!isBPMMode) return 1;
+    const avgBPM = sceneTempos.length > 0 ? sceneTempos.reduce((a, b) => a + b) / sceneTempos.length : bpm;
+    const secondsPerBar = (60 / avgBPM) * beatUnitFactor * beatsPerBar;
+    const pxPerBar = pixelsPerSecond * secondsPerBar;
+    if (pxPerBar <= 0) return 1;
+    const raw = Math.ceil(MIN_BAR_PX / pxPerBar);
+    // Round up to nearest power-of-2 for clean musical skips (1, 2, 4, 8 …)
+    return raw <= 1 ? 1 : Math.pow(2, Math.ceil(Math.log2(raw)));
+  }, [isBPMMode, bpm, beatsPerBar, beatUnitFactor, sceneTempos, pixelsPerSecond]);
 
   // Update global state with subdivision level for snapping
   useEffect(() => {
@@ -165,37 +182,42 @@ const Timeline = React.memo(({
         let barTime = firstBarTime;
         while (barTime < sceneEnd && barTime <= totalDuration) {
           if (barTime >= sceneStart) {
-            const barPosition = (barTime / totalDuration) * width;
+            const showThisBar = (barNumber - 1) % barSkip === 0;
+            if (showThisBar) {
+              const barPosition = (barTime / totalDuration) * width;
 
-            // Add bar marker
-            tickArray.push({
-              id: `bar-${barNumber}`,
-              time: barTime,
-              position: barPosition,
-              label: `${barNumber}`,
-              isMajor: true,
-              isBar: true,
-              subdivision: 1
-            });
-
-            // Add beat and sub-beat subdivisions
-            const totalSubdivisions = beatsPerBar * subdivisionLevel;
-            for (let sub = 1; sub < totalSubdivisions; sub++) {
-              const subTime = barTime + (sub * secondsPerBeat / subdivisionLevel);
-              if (subTime >= sceneEnd || subTime > totalDuration) break;
-
-              const subPosition = (subTime / totalDuration) * width;
-              const isBeat = (sub % subdivisionLevel) === 0; // Every Nth subdivision is a beat
-
+              // Add bar marker
               tickArray.push({
-                id: `bar-${barNumber}-sub-${sub}`,
-                time: subTime,
-                position: subPosition,
-                isMajor: false,
-                isBeat: isBeat,
-                isSubBeat: !isBeat,
-                subdivision: subdivisionLevel
+                id: `bar-${barNumber}`,
+                time: barTime,
+                position: barPosition,
+                label: `${barNumber}`,
+                isMajor: true,
+                isBar: true,
+                subdivision: 1
               });
+
+              // Only add subdivisions when bars aren't being skipped
+              if (barSkip === 1) {
+                const totalSubdivisions = beatsPerBar * subdivisionLevel;
+                for (let sub = 1; sub < totalSubdivisions; sub++) {
+                  const subTime = barTime + (sub * secondsPerBeat / subdivisionLevel);
+                  if (subTime >= sceneEnd || subTime > totalDuration) break;
+
+                  const subPosition = (subTime / totalDuration) * width;
+                  const isBeat = (sub % subdivisionLevel) === 0;
+
+                  tickArray.push({
+                    id: `bar-${barNumber}-sub-${sub}`,
+                    time: subTime,
+                    position: subPosition,
+                    isMajor: false,
+                    isBeat: isBeat,
+                    isSubBeat: !isBeat,
+                    subdivision: subdivisionLevel
+                  });
+                }
+              }
             }
 
             barNumber++;
@@ -223,29 +245,34 @@ const Timeline = React.memo(({
         if (bm[i].pos !== 1) continue;
         const time = bm[i].t;
         if (time > totalDuration) break;
-        const barPosition = (time / totalDuration) * width;
-        tickArray.push({
-          id: `bar-${barNumber}`,
-          time,
-          position: barPosition,
-          label: `${barNumber}`,
-          isMajor: true,
-          isBar: true,
-          subdivision: 1,
-        });
-        // Sub-beats: the next (beatsPerBar - 1) beats from this downbeat
-        for (let j = 1; j < beatsPerBar && (i + j) < bm.length; j++) {
-          const subTime = bm[i + j].t;
-          if (subTime > totalDuration) break;
+        const showThisBar = (barNumber - 1) % barSkip === 0;
+        if (showThisBar) {
+          const barPosition = (time / totalDuration) * width;
           tickArray.push({
-            id: `bar-${barNumber}-sub-${j}`,
-            time: subTime,
-            position: (subTime / totalDuration) * width,
-            isMajor: false,
-            isBeat: true,
-            isSubBeat: false,
+            id: `bar-${barNumber}`,
+            time,
+            position: barPosition,
+            label: `${barNumber}`,
+            isMajor: true,
+            isBar: true,
             subdivision: 1,
           });
+          // Sub-beats only when bars aren't being skipped
+          if (barSkip === 1) {
+            for (let j = 1; j < beatsPerBar && (i + j) < bm.length; j++) {
+              const subTime = bm[i + j].t;
+              if (subTime > totalDuration) break;
+              tickArray.push({
+                id: `bar-${barNumber}-sub-${j}`,
+                time: subTime,
+                position: (subTime / totalDuration) * width,
+                isMajor: false,
+                isBeat: true,
+                isSubBeat: false,
+                subdivision: 1,
+              });
+            }
+          }
         }
         barNumber++;
       }
@@ -258,37 +285,42 @@ const Timeline = React.memo(({
       let barNumber = 1;
 
       for (let time = tlOffset; time <= totalDuration; time += secondsPerBar) {
-        const barPosition = (time / totalDuration) * width;
+        const showThisBar = (barNumber - 1) % barSkip === 0;
+        if (showThisBar) {
+          const barPosition = (time / totalDuration) * width;
 
-        // Add bar marker
-        tickArray.push({
-          id: `bar-${barNumber}`,
-          time,
-          position: barPosition,
-          label: `${barNumber}`,
-          isMajor: true,
-          isBar: true,
-          subdivision: 1
-        });
-
-        // Add beat and sub-beat subdivisions
-        const totalSubdivisions = beatsPerBar * subdivisionLevel;
-        for (let sub = 1; sub < totalSubdivisions; sub++) {
-          const subTime = time + (sub * secondsPerBeat / subdivisionLevel);
-          if (subTime > totalDuration) break;
-
-          const subPosition = (subTime / totalDuration) * width;
-          const isBeat = (sub % subdivisionLevel) === 0; // Every Nth subdivision is a beat
-
+          // Add bar marker
           tickArray.push({
-            id: `bar-${barNumber}-sub-${sub}`,
-            time: subTime,
-            position: subPosition,
-            isMajor: false,
-            isBeat: isBeat,
-            isSubBeat: !isBeat,
-            subdivision: subdivisionLevel
+            id: `bar-${barNumber}`,
+            time,
+            position: barPosition,
+            label: `${barNumber}`,
+            isMajor: true,
+            isBar: true,
+            subdivision: 1
           });
+
+          // Only add subdivisions when bars aren't being skipped
+          if (barSkip === 1) {
+            const totalSubdivisions = beatsPerBar * subdivisionLevel;
+            for (let sub = 1; sub < totalSubdivisions; sub++) {
+              const subTime = time + (sub * secondsPerBeat / subdivisionLevel);
+              if (subTime > totalDuration) break;
+
+              const subPosition = (subTime / totalDuration) * width;
+              const isBeat = (sub % subdivisionLevel) === 0;
+
+              tickArray.push({
+                id: `bar-${barNumber}-sub-${sub}`,
+                time: subTime,
+                position: subPosition,
+                isMajor: false,
+                isBeat: isBeat,
+                isSubBeat: !isBeat,
+                subdivision: subdivisionLevel
+              });
+            }
+          }
         }
 
         barNumber++;
@@ -297,7 +329,7 @@ const Timeline = React.memo(({
     }
 
     return tickArray;
-  }, [isBPMMode, bpm, beatsPerBar, beatUnitFactor, sceneTempos, sceneChanges, totalDuration, effectiveContainerWidth, zoomLevel, subdivisionLevel, state.beatMap, state.timelineOffset]);
+  }, [isBPMMode, bpm, beatsPerBar, beatUnitFactor, sceneTempos, sceneChanges, totalDuration, effectiveContainerWidth, zoomLevel, subdivisionLevel, barSkip, state.beatMap, state.timelineOffset]);
 
   // Generate time tick marks (seconds)
   const timeTicks = useMemo(() => {
@@ -743,7 +775,7 @@ const Timeline = React.memo(({
   // Full timeline with ticks and interaction
   return (
     <div className={styles.timelineRow}>
-      {/* Combined spacer for columns 1 and 2 - just add bus button */}
+      {/* Combined spacer for columns 1 and 2 - add bus button + zoom */}
       <div
         className={styles.timelineSpacer1}
         onClick={handleSpacerClick}
@@ -760,7 +792,6 @@ const Timeline = React.memo(({
 
         {/* Zoom Controls */}
         <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginRight: '10px' }}>
-          {/* Zoom Mode Toggle */}
           <button
             className={styles.zoomModeButton}
             onClick={() => {
@@ -772,30 +803,20 @@ const Timeline = React.memo(({
             <i className={`fa-solid ${state.zoomMode === 'y' ? 'fa-up-down' : 'fa-left-right'}`}></i>
           </button>
 
-          {/* Zoom Out */}
           <button
             className={styles.zoomButton}
             onClick={() => {
-              if (state.zoomMode === 'x') {
-                onZoomOut();
-              } else {
-                onZoomYOut();
-              }
+              if (state.zoomMode === 'x') { onZoomOut(); } else { onZoomYOut(); }
             }}
             title={state.zoomMode === 'x' ? 'Zoom Out (Horizontal)' : 'Decrease Track Height'}
           >
             <i className="fa-solid fa-minus"></i>
           </button>
 
-          {/* Zoom In */}
           <button
             className={styles.zoomButton}
             onClick={() => {
-              if (state.zoomMode === 'x') {
-                onZoomIn();
-              } else {
-                onZoomYIn();
-              }
+              if (state.zoomMode === 'x') { onZoomIn(); } else { onZoomYIn(); }
             }}
             title={state.zoomMode === 'x' ? 'Zoom In (Horizontal)' : 'Increase Track Height'}
           >

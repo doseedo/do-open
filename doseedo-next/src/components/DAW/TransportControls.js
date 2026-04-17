@@ -14,7 +14,8 @@ const TransportControls = React.memo(({
   isPlaying,
   playheadPosition,
   onPlayPause,
-  onStop
+  onStop,
+  showTime = true
 }) => {
   const formatTime = useCallback((seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -38,9 +39,11 @@ const TransportControls = React.memo(({
       >
         <i className="fa-solid fa-stop"></i>
       </button>
-      <span className={styles.timeDisplay}>
-        {formatTime(playheadPosition || 0)}
-      </span>
+      {showTime && (
+        <span className={styles.timeDisplay}>
+          {formatTime(playheadPosition || 0)}
+        </span>
+      )}
     </div>
   );
 });
