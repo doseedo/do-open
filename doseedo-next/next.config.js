@@ -11,6 +11,12 @@ const FRAMER   = process.env.NEXT_PUBLIC_FRAMER_ORIGIN   || 'https://heartwarmin
 const nextConfig = {
   reactStrictMode: true,
 
+  // Emit browser source maps in production so Sentry can un-minify stack
+  // traces. The .map files are uploaded to Sentry in scripts/sentry-sourcemaps.sh
+  // and should NOT be served alongside the bundle — the postbuild hook moves
+  // them out of .next/static before Vercel publishes the assets.
+  productionBrowserSourceMaps: true,
+
   // CRA shim: components use ${process.env.PUBLIC_URL}/assets/... which in
   // CRA resolves to '' in prod. Next.js doesn't expose PUBLIC_URL by default,
   // so without this it'd stringify to 'undefined/assets/...' and 404.
