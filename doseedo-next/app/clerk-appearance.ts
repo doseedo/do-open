@@ -1,16 +1,14 @@
 import { dark } from '@clerk/themes';
-import type { Appearance } from '@clerk/types';
 
 /**
  * Minimal, Linear/Vercel-style dark aesthetic matching
  * auth-service/static/login/index.html (the desktop sign-in page).
  *
- * We start from Clerk's modern `dark` baseTheme and override only the
- * font + radius + a handful of accent colors. Less is more — Clerk's
- * default dark components are already modern; heavy overrides make
- * them look worse, not better.
+ * Typed loosely (no @clerk/types import) since @clerk/nextjs doesn't
+ * pull that package in as a dep; Clerk's components accept plain
+ * objects as the `appearance` prop at runtime.
  */
-export const doseedoClerkAppearance: Appearance = {
+export const doseedoClerkAppearance = {
   baseTheme: dark,
   variables: {
     colorPrimary: '#ffffff',
