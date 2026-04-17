@@ -18,16 +18,17 @@
 .panelGrid {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: auto;
   gap: 12px;
   width: 100%;
-  /* max-width removed to allow horizontal resize */
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
   background: var(--panel-bg);
   padding: 16px;
   border-radius: 6.4px;
   border: 0.8px solid var(--section-border);
-  /* Use transform for smooth animations */
   will-change: transform;
   z-index: 100;
 }
@@ -1048,7 +1049,10 @@ textarea.controlSelect {
 /* ========== Instrument Subgroup Selection ========== */
 .instrumentSubgroupGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 70px));
+  /* Fluid columns — each is up to 70px but will shrink to share the
+     available width when the sidebar is dragged narrow. Prevents the
+     instrument picker from overflowing past the bus-label column. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 15px;
   background: transparent;
@@ -1076,8 +1080,11 @@ textarea.controlSelect {
   font-weight: 600;
   aspect-ratio: 1;
   min-height: 0;
-  width: 70px;
+  /* Button scales with the fluid grid column above; cap at 70px so it
+     doesn't become comically huge at wide sidebar widths. */
+  width: 100%;
   max-width: 70px;
+  min-width: 0;
 }
 
 .instrumentSubgroupBtn img {

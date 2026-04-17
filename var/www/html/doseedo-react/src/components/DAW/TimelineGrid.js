@@ -53,7 +53,10 @@ const TimelineGrid = React.memo(({
     return 4; // Show 16th notes
   }, [isBPMMode, bpm, sceneTempos, pixelsPerSecond]);
 
-  // Bar skip: skip every N bars so grid lines stay >= 20px apart (matches Timeline.js)
+  // Bar skip: skip every N bars so grid lines stay >= MIN_BAR_PX apart.
+  // Kept in sync with Timeline.js — see comment there.
+  const MIN_BAR_PX = 50;
+  const BAR_SKIP_STEPS = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256];
   const barSkip = useMemo(() => {
     if (!isBPMMode) return 1;
     const avgBPM = sceneTempos.length > 0 ? sceneTempos.reduce((a, b) => a + b) / sceneTempos.length : bpm;
@@ -61,8 +64,8 @@ const TimelineGrid = React.memo(({
     const secondsPerBar = (60 / avgBPM) * beatUnitFactor * beatsPerBar;
     const pxPerBar = pixelsPerSecond * secondsPerBar;
     if (pxPerBar <= 0) return 1;
-    const raw = Math.ceil(20 / pxPerBar);
-    return raw <= 1 ? 1 : Math.pow(2, Math.ceil(Math.log2(raw)));
+    const raw = MIN_BAR_PX / pxPerBar;
+    return BAR_SKIP_STEPS.find(s => s >= raw) || BAR_SKIP_STEPS[BAR_SKIP_STEPS.length - 1];
   }, [isBPMMode, bpm, beatsPerBar, sceneTempos, pixelsPerSecond, state.meterDenominator]);
 
   // Generate BPM tick marks (bars, beats, and sub-beats)
