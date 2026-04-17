@@ -1038,11 +1038,12 @@ textarea.controlSelect {
 /* ========== Instrument Subgroup Selection ========== */
 .instrumentSubgroupGrid {
   display: grid;
-  /* Fluid columns — each is up to 70px but will shrink to share the
-     available width when the sidebar is dragged narrow. Prevents the
-     instrument picker from overflowing past the bus-label column. */
+  /* Fluid columns + justify-content:center so buttons stay centered and
+     evenly spaced as the sidebar narrows. Gap shrinks proportionally so
+     they never collide or overflow. */
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: clamp(4px, 2%, 8px);
+  justify-items: center;
   margin-bottom: 15px;
   background: transparent;
   filter: brightness(1.4);
@@ -1070,14 +1071,27 @@ textarea.controlSelect {
   aspect-ratio: 1;
   min-height: 0;
   /* Button scales with the fluid grid column above; cap at 70px so it
-     doesn't become comically huge at wide sidebar widths. */
+     doesn't become comically huge at wide sidebar widths. Internal
+     padding shrinks with the button via clamp so the icon + label
+     still fit at narrow widths. */
   width: 100%;
   max-width: 70px;
   min-width: 0;
+  padding: clamp(4px, 6%, 12px) clamp(2px, 4%, 8px);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .instrumentSubgroupBtn img {
-  flex-shrink: 0;
+  /* Icon scales with the button so narrow sidebar widths don't overflow.
+     Was flex-shrink:0 with an intrinsic ~64px image, which punched through
+     the 70px button cap once padding was factored in. */
+  width: 100%;
+  max-width: 40px;
+  height: auto;
+  flex-shrink: 1;
+  min-width: 0;
+  object-fit: contain;
   margin-bottom: auto;
 }
 
