@@ -7,8 +7,22 @@
 
 set -euo pipefail
 
+# Skip on Vercel builds: the build container may not have rsync, and the
+# committed src/ snapshot is already the state we want to ship. sync.sh is
+# a local-dev + CI tool, not part of the Vercel build path.
+if [[ "${VERCEL:-}" = "1" ]]; then
+  echo "sync.sh: detected Vercel build (VERCEL=1) — using committed src/ snapshot"
+  exit 0
+fi
+
 SRC_ROOT="$(cd "$(dirname "$0")/.." && pwd)/var/www/html/doseedo-react"
 DST_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# Also skip if rsync isn't available (e.g., minimal build container).
+if ! command -v rsync >/dev/null 2>&1; then
+  echo "sync.sh: rsync not available — using committed src/ snapshot"
+  exit 0
+fi
 
 if [[ ! -d "$SRC_ROOT/src" ]]; then
   # Not an error: this happens when Vercel builds from a CLI-upload (no
