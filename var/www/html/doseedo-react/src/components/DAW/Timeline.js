@@ -131,10 +131,11 @@ const Timeline = React.memo(({
   }, [isBPMMode, bpm, sceneTempos, pixelsPerSecond]);
 
   // How many bars to skip so grid lines stay >= MIN_BAR_PX apart.
-  // MIN_BAR_PX higher = declutter sooner on zoom out. Steps are denser
-  // than powers-of-two (~1.5× ratio) so transitions feel gradual instead
-  // of halving the bar count at every step.
-  const MIN_BAR_PX = 50;
+  // MIN_BAR_PX sets the on-screen density: bar lines are always ~this
+  // many pixels apart regardless of zoom level, so the grid feels
+  // equally dense at every zoom. Steps are denser than powers-of-two
+  // (~1.5× ratio) so transitions feel gradual.
+  const MIN_BAR_PX = 30;
   const BAR_SKIP_STEPS = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256];
   const barSkip = useMemo(() => {
     if (!isBPMMode) return 1;

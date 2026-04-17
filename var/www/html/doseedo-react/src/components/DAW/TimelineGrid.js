@@ -54,8 +54,8 @@ const TimelineGrid = React.memo(({
   }, [isBPMMode, bpm, sceneTempos, pixelsPerSecond]);
 
   // Bar skip: skip every N bars so grid lines stay >= MIN_BAR_PX apart.
-  // Kept in sync with Timeline.js — see comment there.
-  const MIN_BAR_PX = 50;
+  // Kept in sync with Timeline.js.
+  const MIN_BAR_PX = 30;
   const BAR_SKIP_STEPS = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256];
   const barSkip = useMemo(() => {
     if (!isBPMMode) return 1;

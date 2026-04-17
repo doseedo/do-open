@@ -1380,8 +1380,8 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                 className={styles.addTrackButton}
                 title="Add new bus"
               >
-                <span style={{ fontSize: '16px', marginRight: '4px' }}>+</span>
-                <span style={{ fontSize: '11px', fontWeight: 500 }}>Add Track</span>
+                <span style={{ fontSize: '14px', fontWeight: 600, lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}>+</span>
+                <span style={{ fontSize: '11px', fontWeight: 500, lineHeight: 1, marginLeft: '6px', display: 'inline-flex', alignItems: 'center' }}>Add Track</span>
               </button>
             </div>
 
