@@ -179,6 +179,7 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
     track.metadata?.envelopeData || null,  // latent_visual or v4-small instant envelope
     track.metadata?.envelopeFps || 25,     // v4 outputs ≈31.25 Hz, latent_visual is 25
     visualGain,
+    track.metadata?.generating || false,   // paint noise immediately when generating
   );
 
   // Update track duration when audio loads — only when the delta is
@@ -541,7 +542,7 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
         />
       ) : (
         <>
-          {/* Visualization - either waveform or MIDI piano roll */}
+          {/* Visualization - either waveform/noise canvas or MIDI piano roll */}
           {track.type === 'midi' && !track.metadata?.generating ? (
         <div style={{ transform: `translateX(${waveformOffset}px)` }}>
           <MIDITrackVisualization
@@ -553,15 +554,6 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
             endTime={(track.duration || 10) - (track.cropEnd || 0)}
             timelineBpm={state.bpm || 120}
             f0Contour={track.f0Contour}
-          />
-        </div>
-      ) : track.type === 'midi' && track.metadata?.generating ? (
-        <div style={{ transform: `translateX(${waveformOffset}px)` }}>
-          <PlaceholderWaveform
-            width={fullAudioWidth}
-            height={trackHeight}
-            duration={track.duration || 16}
-            settling={false}
           />
         </div>
       ) : (

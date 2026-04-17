@@ -236,7 +236,7 @@ function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, 
  *   bar heights so volume changes are reflected in the waveform in real time.
  *   Pass 0 for muted tracks / soloed-out stems.
  */
-export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5', cropStart = 0, cropEnd = 0, envelopeData = null, envelopeFps = 25, gain = 1.0) {
+export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5', cropStart = 0, cropEnd = 0, envelopeData = null, envelopeFps = 25, gain = 1.0, showNoise = false) {
   const canvasRef = useRef(null);
   const audioBufferRef = useRef(null);
   const loadedUrlRef = useRef(null);
@@ -363,6 +363,15 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
       setIsLoaded(true);
     }
   }, [envelopeData, width, height, color, envelopeFps, isLoaded, gain]);
+
+  // When showNoise is true (e.g. MIDI track mid-generation with no audioUrl yet),
+  // paint static noise bars immediately so the canvas shows something right away.
+  useEffect(() => {
+    if (!showNoise || envelopePaintedRef.current || audioPaintedRef.current) return;
+    if (canvasRef.current) {
+      paintNoise(canvasRef.current, width, height, color);
+    }
+  }, [showNoise, width, height, color]);
 
   // Load audio only when URL changes
   useEffect(() => {
