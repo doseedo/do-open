@@ -8,3 +8,11 @@ out
 next-env.d.ts
 .vercel
 .DS_Store
+
+# Un-ignore frontend image assets (root .gitignore blocks *.png, *.jpg,
+# etc. to keep ML media out of the repo, but this Next.js app needs them).
+!**/*.png
+!**/*.jpg
+!**/*.jpeg
+!**/*.gif
+!**/*.webp
