@@ -8,11 +8,15 @@ export const audioBufferCache = new Map();
 const MAX_CACHE_SIZE = 50; // Limit in-memory cache size
 
 /**
- * Paint random noise bars on the canvas immediately (synchronous, no animation).
- * Used to put tracks into "noise" state before async audio load begins.
+ * Continuously animate random noise bars on the canvas (RAF loop).
+ * Each bar smoothly lerps toward a new random target each frame.
+ * The loop runs until transitionFrameRef is cancelled (e.g. by
+ * paintBarAnimationFromBuffer or paintBarAnimation when audio arrives).
  */
-function paintNoise(canvas, width, height, color) {
+function startNoiseAnimation(canvas, width, height, color, transitionFrameRef) {
   if (!canvas) return;
+  if (transitionFrameRef.current) cancelAnimationFrame(transitionFrameRef.current);
+
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
@@ -21,20 +25,44 @@ function paintNoise(canvas, width, height, color) {
   const numBars = Math.floor(width / (barWidth + barSpacing));
   const midY = height / 2;
   const maxBarHeight = height * 0.45;
-  ctx.clearRect(0, 0, width, height);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = barWidth;
-  ctx.lineCap = 'round';
-  ctx.globalAlpha = 0.7;
+
+  // Initialise bar heights randomly
+  const heights = new Float32Array(numBars);
+  const targets = new Float32Array(numBars);
   for (let i = 0; i < numBars; i++) {
-    const barH = (0.15 + Math.random() * 0.85) * maxBarHeight;
-    const x = i * (barWidth + barSpacing) + barWidth / 2;
-    ctx.beginPath();
-    ctx.moveTo(x, midY - barH);
-    ctx.lineTo(x, midY + barH);
-    ctx.stroke();
+    heights[i] = (0.15 + Math.random() * 0.85) * maxBarHeight;
+    targets[i] = (0.15 + Math.random() * 0.85) * maxBarHeight;
   }
-  ctx.globalAlpha = 1;
+
+  let frameCount = 0;
+  const tick = () => {
+    // Pick new random targets every ~20 frames so the noise feels alive
+    frameCount++;
+    if (frameCount % 20 === 0) {
+      for (let i = 0; i < numBars; i++) {
+        targets[i] = (0.15 + Math.random() * 0.85) * maxBarHeight;
+      }
+    }
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = barWidth;
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = 0.7;
+
+    for (let i = 0; i < numBars; i++) {
+      heights[i] += (targets[i] - heights[i]) * 0.08;
+      const x = i * (barWidth + barSpacing) + barWidth / 2;
+      ctx.beginPath();
+      ctx.moveTo(x, midY - heights[i]);
+      ctx.lineTo(x, midY + heights[i]);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    transitionFrameRef.current = requestAnimationFrame(tick);
+  };
+  transitionFrameRef.current = requestAnimationFrame(tick);
 }
 
 /**
@@ -369,7 +397,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
   useEffect(() => {
     if (!showNoise || envelopePaintedRef.current || audioPaintedRef.current) return;
     if (canvasRef.current) {
-      paintNoise(canvasRef.current, width, height, color);
+      startNoiseAnimation(canvasRef.current, width, height, color, transitionFrameRef);
     }
   }, [showNoise, width, height, color]);
 
@@ -385,7 +413,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     // Immediately show noise on the canvas while we wait for audio to download.
     // This ensures there's never a blank/grey gap between URL change and decode.
     if (!envelopePaintedRef.current && canvasRef.current) {
-      paintNoise(canvasRef.current, width, height, color);
+      startNoiseAnimation(canvasRef.current, width, height, color, transitionFrameRef);
     }
 
     if (!envelopePaintedRef.current && !audioBufferRef.current) {
