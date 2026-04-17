@@ -8,6 +8,7 @@
     "prebuild": "bash sync.sh",
     "dev": "next dev -p 3000",
     "build": "next build",
+    "postbuild": "bash scripts/sentry-sourcemaps.sh",
     "start": "next start",
     "lint": "next lint"
   },
@@ -16,7 +17,7 @@
     "@clerk/themes": "^2.4.57",
     "@gradio/client": "^2.0.0-dev.1",
     "@huggingface/inference": "^4.13.0",
-    "@sentry/react": "^10.48.0",
+    "@sentry/react": "^10.49.0",
     "@tonejs/midi": "^2.0.28",
     "@xyflow/react": "^12.0.0",
     "axios": "^1.6.0",
@@ -41,6 +42,7 @@
     "wavesurfer.js": "^7.4.0"
   },
   "devDependencies": {
+    "@sentry/cli": "^2.43.0",
     "@types/node": "^20.12.0",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
