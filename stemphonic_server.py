@@ -2495,9 +2495,16 @@ _silence_frame_cache = {"frame": None}
 from typing import Optional, Dict as _Dict
 _latent_sf_cache: _Dict[str, dict] = {}
 LATENT_SOUNDFONT_DIR = "/scratch/latent_soundfonts"
+# Subgroup names that don't match their .pt filename directly
+_LATENT_SF_ALIASES = {
+    "drum_kit":   "drums",
+    "electronic": "drums",
+    "percussion": "drums",
+}
 
 def _load_latent_sf(instrument: str):
     """Lazy-load + cache a precached latent soundfont per instrument."""
+    instrument = _LATENT_SF_ALIASES.get(instrument, instrument)
     if instrument in _latent_sf_cache:
         return _latent_sf_cache[instrument]
     p = os.path.join(LATENT_SOUNDFONT_DIR, f"{instrument}.pt")

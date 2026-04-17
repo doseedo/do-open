@@ -71,6 +71,38 @@ Known limitations for launch version:
 """
 
 import modal
+import pathlib as _pathlib, sys as _sys
+
+# ---------------------------------------------------------------------------
+# Path helper — resolves VM paths to Mac equivalents when deploying from Mac.
+# VM:  /home/arlo/do2  →  Mac: /Users/hydroadmin/Downloads/Do
+# VM:  /scratch        →  Mac: /Users/hydroadmin/scratch  (or skip if absent)
+# ---------------------------------------------------------------------------
+_VM_DO2      = "/home/arlo/do2"
+_MAC_DO2     = "/Users/hydroadmin/Downloads/Do"
+_MAC_SCRATCH = "/Users/hydroadmin/scratch"
+_MAC_DEPLOY  = "/Users/hydroadmin/Downloads/Do/deploy_resources"
+_ON_MAC      = not _pathlib.Path(_VM_DO2).exists() and _pathlib.Path(_MAC_DO2).exists()
+
+_re = __import__('re')
+
+def _p(vm_path: str) -> str:
+    """Return the local equivalent of a VM-absolute path.
+    Priority: /home/arlo/do2 → MAC_DO2, /scratch/X → MAC_DEPLOY/X else MAC_SCRATCH/X
+    """
+    if not _ON_MAC:
+        return vm_path
+    p = vm_path.replace(_VM_DO2, _MAC_DO2)
+    # Any /scratch/X — check deploy_resources first, fall back to ~/scratch
+    def _remap_scratch(m):
+        subdir = m.group(1)   # e.g. "latent_pitch_ckpts", "ACE-Step-1.5", "cache"
+        rest   = m.group(2)   # e.g. "/pitch_054000.pt"
+        mac_dir = _pathlib.Path(_MAC_DEPLOY) / subdir
+        if mac_dir.exists():
+            return str(mac_dir) + rest
+        return _MAC_SCRATCH + "/" + subdir + rest
+    p = _re.sub(r'/scratch/([^/]+)(.*)', _remap_scratch, p)
+    return p
 
 # ---------------------------------------------------------------------------
 # Volumes
@@ -165,7 +197,7 @@ image = (
     # basic-pitch and demucs in favour of the latent student models
     # (latent_demucs / latent_drumsep / latent_pitch / latent_visual).
     .pip_install_from_requirements(
-        "/home/arlo/do2/stemphonic_requirements_modal.txt",
+        _p("/home/arlo/do2/stemphonic_requirements_modal.txt"),
         extra_options="--no-deps",
     )
     # Explicit torch install — wins any version conflict with transitive deps.
@@ -204,34 +236,41 @@ image = (
     .pip_install("demucs==4.0.1", extra_options="--force-reinstall --no-deps")
     # ACE-Step source — exclude the 14 GB checkpoints subdir (goes on volume)
     .add_local_dir(
-        "/scratch/ACE-Step-1.5",
+        _p("/scratch/ACE-Step-1.5"),
         remote_path="/opt/ACE-Step-1.5",
         ignore=_ignore_patterns("checkpoints", "checkpoints/**"),
         copy=True,
     )
     # do2 source (32 MB) — stemphonic_trainer, time-sig-editor, harmony, etc.
     .add_local_dir(
-        "/home/arlo/do2",
+        _p("/home/arlo/do2"),
         remote_path="/opt/do2",
         ignore=_ignore_patterns(),
         copy=True,
     )
     # harmonymodule (420 KB) — legacy /scratch/Do/harmonymodule import path
     .add_local_dir(
-        "/scratch/Do/harmonymodule",
+        _p("/home/arlo/do2/harmonymodule") if _ON_MAC else "/scratch/Do/harmonymodule",
         remote_path="/opt/harmonymodule",
         ignore=_ignore_patterns(),
         copy=True,
     )
-    # soundfonts dir (334 MB of .pt preset files). These are loaded at
-    # module import time with map_location='cpu', so they need to be on the
-    # cold-start path without a volume roundtrip.
-    .add_local_dir(
-        "/scratch/soundfonts",
+)
+
+# soundfonts dir (334 MB of .pt preset files) — bake in only when the local
+# path exists (present on VM at /scratch/soundfonts, NOT on Mac). When
+# deploying from Mac, skip; the server falls back to the default GM sf2 for
+# any sf2-backed instrument (latent soundfonts are unaffected).
+_sf_local = "/scratch/soundfonts" if not _ON_MAC else None
+if _sf_local and _pathlib.Path(_sf_local).exists():
+    image = image.add_local_dir(
+        _sf_local,
         remote_path="/opt/soundfonts",
         ignore=_ignore_patterns(),
         copy=True,
     )
+
+image = (image
     # Pin the live server file from /home/arlo/do2. The earlier convention
     # pinned /scratch/stemphonic/stemphonic_server.py as "the running prod
     # version", but /scratch is a local SSD and gets wiped on any VM stop,
@@ -239,7 +278,7 @@ image = (
     # /home/arlo/do2 lives on a persistent disk and is the single source
     # of truth, so edits survive reboots and the two-copy footgun is gone.
     .add_local_file(
-        "/home/arlo/do2/stemphonic_server.py",
+        _p("/home/arlo/do2/stemphonic_server.py"),
         remote_path="/opt/do2/stemphonic_server.py",
         copy=True,
     )
@@ -248,7 +287,7 @@ image = (
     # Runtime code expects these at /scratch/latent_*_ckpts/*_final.pt;
     # setup_cpu_state symlinks those paths to /opt/latent_ckpts/*.
     .add_local_file(
-        "/scratch/latent_pitch_ckpts/pitch_054000.pt",
+        _p("/scratch/latent_pitch_ckpts/pitch_054000.pt"),
         remote_path="/opt/latent_ckpts/latent_pitch/pitch_final.pt",
         copy=True,
     )
@@ -259,14 +298,14 @@ image = (
     #     copy=True,
     # )
     .add_local_file(
-        "/scratch/latent_visual_ckpts/latent_visual_final.pt",
+        _p("/scratch/latent_visual_ckpts/latent_visual_final.pt"),
         remote_path="/opt/latent_ckpts/latent_visual/latent_visual_final.pt",
         copy=True,
     )
     # latent_demucs distill student (325 MB) — loaded by
     # latent_demucs.runtime.LatentDemucsRuntime from this exact path.
     .add_local_file(
-        "/scratch/latent_demucs/distill_final.pt",
+        _p("/scratch/latent_demucs/distill_final.pt"),
         remote_path="/opt/latent_ckpts/latent_demucs/distill_final.pt",
         copy=True,
     )
@@ -278,7 +317,7 @@ image = (
     # )
     # panns_inference package expects /root/panns_data/class_labels_indices.csv
     .add_local_file(
-        "/scratch/cache/panns_data/class_labels_indices.csv",
+        _p("/scratch/cache/panns_data/class_labels_indices.csv"),
         remote_path="/root/panns_data/class_labels_indices.csv",
         copy=True,
     )
