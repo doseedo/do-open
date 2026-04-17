@@ -121,7 +121,13 @@
   grid-column: 1;
   grid-row: 1 / 3;
   display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1fr);
+  /* 1fr 1fr so each cell is exactly half the bus-label-width and
+     stretches/shrinks with the resize bar. Top-bottom alignment is
+     guaranteed by sharing this grid across all 4 cells. A small
+     column-gap keeps a visible divider between the left and right
+     clusters; inside each cell content is left-aligned, so it looks
+     compact when the cell is narrow and breathes as the bar widens. */
+  grid-template-columns: 1fr 1fr;
   grid-template-rows: auto auto;
   align-items: center;
   column-gap: 8px;
