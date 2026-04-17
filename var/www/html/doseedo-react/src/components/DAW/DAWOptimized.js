@@ -63,14 +63,12 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
   const [dragOverIndex, setDragOverIndex] = useState(null);
 
   // Progressive visibility driven by the current bus-label column width.
-  // Each breakpoint is the smallest width at which that element still fits
-  // inside its 50%-of-bus-label cell without clipping the dropdown or
-  // pushing the right cluster out of view. Labels ("BPM", "Meter") drop
-  // out first — the dropdowns themselves always stay.
+  // Metronome is ALWAYS visible (it's the primary transport affordance).
+  // Text labels drop first, then the larger right-cell controls.
   const showTempoLabels  = busLabelWidth >= 380;
-  const showMetronome    = busLabelWidth >= 320;
-  const showAutomation   = busLabelWidth >= 280;
-  const showTimeDisplay  = busLabelWidth >= 280;
+  const showMetronome    = true;
+  const showAutomation   = busLabelWidth >= 260;
+  const showTimeDisplay  = busLabelWidth >= 260;
 
   // Marquee selection state
   const [isMarqueeSelecting, setIsMarqueeSelecting] = useState(false);
