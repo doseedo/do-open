@@ -1227,7 +1227,9 @@ textarea.controlSelect {
   font-weight: 600;
   color: var(--text-primary);
   font-size: 12px;
-  min-width: 140px;
+  /* No min-width — the format picker needs to collapse cleanly when the
+     sidebar is dragged below ~200px. The surrounding .startcontainer has
+     overflow-x: hidden so truncation is fine at narrow widths. */
 }
 
 .formatDescription {

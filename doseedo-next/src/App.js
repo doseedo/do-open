@@ -307,11 +307,13 @@ function AppContent() {
       const leftEdge = el.getBoundingClientRect().left;
       setLeftOffset(leftEdge);
       // ResizeBar clamp bounds are in ABSOLUTE X (that's ResizeBar's API).
-      // Content width bounds are 310 (min) to 30vw (max), so we translate
-      // to absolute X by adding leftEdge. leftOffset changes keep the bar
-      // grabbable without touching panelWidth itself.
-      setMinWidth(leftEdge + 310);
-      setMaxWidth(Math.max(leftEdge + 310, leftEdge + Math.floor(window.innerWidth * 0.3)));
+      // Content width bounds are 200 (min) to 30vw (max); progressive-hide
+      // in the DAW controls (see showTempoLabels/showMetronome/etc.)
+      // keeps the header readable at narrow widths, so we can let users
+      // shrink the sidebar further than the old 310px floor.
+      const MIN_CONTENT = 200;
+      setMinWidth(leftEdge + MIN_CONTENT);
+      setMaxWidth(Math.max(leftEdge + MIN_CONTENT, leftEdge + Math.floor(window.innerWidth * 0.3)));
     };
     recompute();
 
@@ -900,12 +902,16 @@ function AppContent() {
               className="content"
               style={{
                 // panelWidth IS the column width now — no subtraction needed.
+                // minWidth:0 overrides the `.content { min-width: 160px }`
+                // media-query rule in original-style5.css so the sidebar
+                // can shrink down to the ResizeBar's 200px floor.
                 width: `${panelWidth}px`,
+                minWidth: 0,
                 height: `${panelHeight}px`,
                 overflow: 'hidden'
               }}
             >
-              <div className="startcontainer scrollable" style={{ height: '100%', overflowY: 'auto' }}>
+              <div className="startcontainer scrollable" style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
                 {showChatWindow ? (
                   <ChatWindowDemo onClose={() => setShowChatWindow(false)} />
                 ) : showMidiBrowser ? (
@@ -1062,11 +1068,12 @@ function AppContent() {
             className="content"
             style={{
               width: `${panelWidth}px`,
+              minWidth: 0,
               height: `${panelHeight}px`,
               overflow: 'hidden'
             }}
           >
-            <div className="startcontainer scrollable" style={{ height: '100%', overflowY: 'auto' }}>
+            <div className="startcontainer scrollable" style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
               {showChatWindow ? (
                 <ChatWindow onClose={() => setShowChatWindow(false)} />
               ) : showMidiBrowser ? (
