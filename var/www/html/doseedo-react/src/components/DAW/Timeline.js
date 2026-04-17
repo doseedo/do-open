@@ -775,23 +775,27 @@ const Timeline = React.memo(({
   // Full timeline with ticks and interaction
   return (
     <div className={styles.timelineRow}>
-      {/* Combined spacer for columns 1 and 2 - add bus button + zoom */}
+      {/* Row 2 of the 2×2 timeline header grid — uses the same
+          .timelineSpacer1 sub-grid as the BPM/Transport row above, so the
+          bottom-left (Add Track) and bottom-right (Zoom) cells are
+          pixel-locked to the corresponding top-row cells. */}
       <div
         className={styles.timelineSpacer1}
         onClick={handleSpacerClick}
         style={{ cursor: 'pointer' }}
       >
-        <button
-          onClick={handleAddBus}
-          className={styles.addTrackButton}
-          title="Add new bus"
-        >
-          <span style={{ fontSize: '16px', marginRight: '4px' }}>+</span>
-          <span style={{ fontSize: '11px', fontWeight: '500' }}>Add Track</span>
-        </button>
+        <div className={styles.spacerCellLeft}>
+          <button
+            onClick={handleAddBus}
+            className={styles.addTrackButton}
+            title="Add new bus"
+          >
+            <span style={{ fontSize: '16px', marginRight: '4px' }}>+</span>
+            <span style={{ fontSize: '11px', fontWeight: '500' }}>Add Track</span>
+          </button>
+        </div>
 
-        {/* Zoom Controls */}
-        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginRight: '10px' }}>
+        <div className={styles.spacerCellRight}>
           <button
             className={styles.zoomModeButton}
             onClick={() => {
@@ -802,7 +806,6 @@ const Timeline = React.memo(({
           >
             <i className={`fa-solid ${state.zoomMode === 'y' ? 'fa-up-down' : 'fa-left-right'}`}></i>
           </button>
-
           <button
             className={styles.zoomButton}
             onClick={() => {
@@ -812,7 +815,6 @@ const Timeline = React.memo(({
           >
             <i className="fa-solid fa-minus"></i>
           </button>
-
           <button
             className={styles.zoomButton}
             onClick={() => {

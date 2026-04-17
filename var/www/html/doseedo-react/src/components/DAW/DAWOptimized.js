@@ -1291,12 +1291,13 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
         {/* Timeline Row with ChordTrack/SceneMarkers - Hidden in plugin mode */}
         {!pluginMode && (
           <div className={styles.timelineContainer}>
-          {/* Spacer cols 1-2: BPM / Meter / Transport controls.
-              All styling lives in .timelineSpacer1 (DAW.module.css) so the
-              left edge aligns with the bus-label column below it. */}
+          {/* Row 1 of the 2×2 timeline header grid.
+              Top-left cell: Metronome / BPM / Meter.
+              Top-right cell: Automation toggle + Transport controls.
+              Row 2 (Add Track / Zoom) lives in Timeline.js and shares this
+              same column grid — they stay perfectly aligned. */}
           <div className={styles.timelineSpacer1}>
-            {/* LEFT: Metronome + BPM + Meter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flex: '0 0 auto' }}>
+            <div className={styles.spacerCellLeft}>
               {showMetronome && (
                 <Button
                   id="metronome-btn"
@@ -1331,11 +1332,8 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               )}
             </div>
 
-            {/* Spacer */}
-            <div style={{ flex: '1 1 0' }} />
-
-            {/* RIGHT: Automation + Transport */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flex: '0 0 auto' }}>
+            {/* Top-right cell: Automation + Transport */}
+            <div className={styles.spacerCellRight}>
               {showAutomation && (
                 <Button
                   id="autobtn"

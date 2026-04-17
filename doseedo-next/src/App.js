@@ -143,7 +143,12 @@ function AppContent() {
   const [contentMode, setContentMode] = useState('video'); // 'video', 'midi', 'audio', 'image', or 'fx'
   const [showMidiBrowser, setShowMidiBrowser] = useState(false); // Toggle between generation panel and MIDI browser
   const [showChatWindow, setShowChatWindow] = useState(false); // Toggle for chat window
-  const [panelWidth, setPanelWidth] = useState(340); // Initial width (15% smaller: 400 * 0.85)
+  // panelWidth stores the BUS-LABEL COLUMN WIDTH (not the bar's absolute X).
+  // The bar's visible X position is derived at render time as leftOffset +
+  // panelWidth. This way, when the left sidebar collapses/expands, the bar
+  // slides with it but the column width stays locked — no "snap" or sudden
+  // DAW-column resize when the user toggles the sidebar.
+  const [panelWidth, setPanelWidth] = useState(340); // Initial bus-label column width (px)
   const [panelHeight, setPanelHeight] = useState(420); // Initial height (user preference)
   const [dawTracksHeight, setDawTracksHeight] = useState(600); // Height for DAW tracks scrollable area
   const [pluginDawHeight, setPluginDawHeight] = useState(200); // Height for DAW in plugin mode
@@ -301,7 +306,10 @@ function AppContent() {
     const recompute = () => {
       const leftEdge = el.getBoundingClientRect().left;
       setLeftOffset(leftEdge);
-      // Min: 310px of content after the sidebar. Max: 30% of viewport.
+      // ResizeBar clamp bounds are in ABSOLUTE X (that's ResizeBar's API).
+      // Content width bounds are 310 (min) to 30vw (max), so we translate
+      // to absolute X by adding leftEdge. leftOffset changes keep the bar
+      // grabbable without touching panelWidth itself.
       setMinWidth(leftEdge + 310);
       setMaxWidth(Math.max(leftEdge + 310, leftEdge + Math.floor(window.innerWidth * 0.3)));
     };
@@ -317,18 +325,21 @@ function AppContent() {
     };
   }, []);
 
-  // Single source of truth for the bus-label column width. Everything
-  // downstream (CSS variable, DAW controls, AutomationWindow) derives from
-  // this. No more custom DOM events, no mirrored state in children.
-  const busLabelWidth = Math.max(0, panelWidth - leftOffset);
+  // panelWidth IS the bus-label column width. Single source of truth.
+  const busLabelWidth = panelWidth;
 
-  // Publish as CSS variable (many .module.css files read --bus-label-width).
+  // Publish as CSS variable + custom event (components-demo components
+  // still listen to the event; prod components receive busLabelWidth as
+  // a prop). Keep the event alive so Demo side doesn't silently break.
   useEffect(() => {
     document.documentElement.style.setProperty('--bus-label-width', `${busLabelWidth}px`);
+    window.dispatchEvent(new CustomEvent('busLabelWidthChanged', { detail: busLabelWidth }));
   }, [busLabelWidth]);
 
-  const handleResize = (newLeft) => {
-    setPanelWidth(newLeft);
+  // ResizeBar reports the bar's absolute X. Translate back to column width
+  // by subtracting the current leftOffset.
+  const handleResize = (newBarX) => {
+    setPanelWidth(Math.max(0, newBarX - leftOffset));
   };
 
   const handleVerticalResize = (newTop) => {
@@ -888,7 +899,8 @@ function AppContent() {
               ref={contentRef}
               className="content"
               style={{
-                width: contentRef.current ? `${panelWidth - contentRef.current.getBoundingClientRect().left}px` : 'auto',
+                // panelWidth IS the column width now — no subtraction needed.
+                width: `${panelWidth}px`,
                 height: `${panelHeight}px`,
                 overflow: 'hidden'
               }}
@@ -906,7 +918,9 @@ function AppContent() {
 
             {!state.pluginMode && !state.cinemaMode && (
               <ResizeBarDemo
-                leftPosition={panelWidth}
+                // ResizeBar uses absolute X (clientX-based). Translate from
+                // column width → absolute X by adding the sidebar offset.
+                leftPosition={leftOffset + panelWidth}
                 onResize={handleResize}
                 minWidth={minWidth}
                 maxWidth={maxWidth}
@@ -1047,7 +1061,7 @@ function AppContent() {
             ref={contentRef}
             className="content"
             style={{
-              width: contentRef.current ? `${panelWidth - contentRef.current.getBoundingClientRect().left}px` : 'auto',
+              width: `${panelWidth}px`,
               height: `${panelHeight}px`,
               overflow: 'hidden'
             }}
@@ -1066,7 +1080,7 @@ function AppContent() {
           {/* Horizontal Resize Bar */}
           {!state.pluginMode && (
             <ResizeBar
-              leftPosition={panelWidth}
+              leftPosition={leftOffset + panelWidth}
               onResize={handleResize}
               minWidth={minWidth}
               maxWidth={maxWidth}
