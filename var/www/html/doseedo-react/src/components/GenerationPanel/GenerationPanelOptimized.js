@@ -2275,6 +2275,33 @@ const GenerationPanelOptimized = React.memo(() => {
       setIsGenerating(true);
       setGenerationError(null);
       startTimer();
+      // Instantly flip a MIDI source track to noise animation while we wait.
+      const pendingMidiTrackId = state.selectedTrack?.type === 'midi' ? state.selectedTrack.id : null;
+      const pendingMidiBusId = pendingMidiTrackId
+        ? state.buses.find((b) => b.tracks?.some((t) => t.id === pendingMidiTrackId))?.id
+        : null;
+      if (pendingMidiTrackId && pendingMidiBusId) {
+        dispatch({
+          type: 'UPDATE_TRACK',
+          payload: {
+            busId: pendingMidiBusId,
+            trackId: pendingMidiTrackId,
+            updates: { metadata: { generating: true } },
+          },
+        });
+      }
+      const clearGeneratingFlag = () => {
+        if (pendingMidiTrackId && pendingMidiBusId) {
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: {
+              busId: pendingMidiBusId,
+              trackId: pendingMidiTrackId,
+              updates: { metadata: { generating: false } },
+            },
+          });
+        }
+      };
       try {
         const subgroup = state.generationParams.instrumentSubgroup || 'acoustic_piano';
         const variant = state.generationParams.timbreVariant ?? 0;
@@ -2442,6 +2469,7 @@ const GenerationPanelOptimized = React.memo(() => {
         stopTimer();
       } catch (error) {
         console.error('❌ Stemphonic generation error:', error);
+        clearGeneratingFlag();
         setGenerationError(error.message);
         setIsGenerating(false);
         setGenerationProgress(null);

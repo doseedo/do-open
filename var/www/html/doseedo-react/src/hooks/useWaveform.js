@@ -8,6 +8,123 @@ export const audioBufferCache = new Map();
 const MAX_CACHE_SIZE = 50; // Limit in-memory cache size
 
 /**
+ * Paint random noise bars on the canvas immediately (synchronous, no animation).
+ * Used to put tracks into "noise" state before async audio load begins.
+ */
+function paintNoise(canvas, width, height, color) {
+  if (!canvas) return;
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  const barSpacing = 2;
+  const barWidth = 2;
+  const numBars = Math.floor(width / (barWidth + barSpacing));
+  const midY = height / 2;
+  const maxBarHeight = height * 0.45;
+  ctx.clearRect(0, 0, width, height);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = barWidth;
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = 0.7;
+  for (let i = 0; i < numBars; i++) {
+    const barH = (0.15 + Math.random() * 0.85) * maxBarHeight;
+    const x = i * (barWidth + barSpacing) + barWidth / 2;
+    ctx.beginPath();
+    ctx.moveTo(x, midY - barH);
+    ctx.lineTo(x, midY + barH);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/**
+ * Animate every bar from a random noise height to its correct waveform height
+ * computed from a decoded AudioBuffer. Duration ≈550 ms.
+ */
+function paintBarAnimationFromBuffer(canvas, audioBuffer, width, height, color, gain, cropStart, cropEnd, transitionFrameRef) {
+  if (!canvas || !audioBuffer) return;
+  if (transitionFrameRef.current) cancelAnimationFrame(transitionFrameRef.current);
+
+  const ctx = canvas.getContext('2d');
+  const barSpacing = 2;
+  const barWidth = 2;
+  const numBars = Math.floor(width / (barWidth + barSpacing));
+  const midY = height / 2;
+  const maxBarHeight = height * 0.45;
+  const g = Math.max(0, gain);
+
+  const data = audioBuffer.getChannelData(0);
+  const duration = audioBuffer.duration;
+  const sampleRate = audioBuffer.sampleRate;
+  const startSample = Math.floor(cropStart * sampleRate);
+  const endSample = cropEnd > 0 ? Math.floor((duration - cropEnd) * sampleRate) : data.length;
+  const visibleLength = endSample - startSample;
+  const samplesPerBar = Math.floor(visibleLength / numBars);
+
+  const ptpValues = new Float32Array(numBars);
+  let maxPtp = 0;
+  for (let i = 0; i < numBars; i++) {
+    const s = startSample + i * samplesPerBar;
+    const e = Math.min(s + samplesPerBar, endSample);
+    let mx = -Infinity, mn = Infinity;
+    for (let j = s; j < e && j < data.length; j++) {
+      if (data[j] > mx) mx = data[j];
+      if (data[j] < mn) mn = data[j];
+    }
+    ptpValues[i] = mx === -Infinity ? 0 : (mx - mn);
+    if (ptpValues[i] > maxPtp) maxPtp = ptpValues[i];
+  }
+  const normFactor = maxPtp > 0.001 ? maxBarHeight / maxPtp : 1.0;
+  const noiseFloor = maxPtp * 0.02;
+  const targetHeights = new Float32Array(numBars);
+  for (let i = 0; i < numBars; i++) {
+    targetHeights[i] = (ptpValues[i] < noiseFloor || g === 0)
+      ? 0.5
+      : Math.min(ptpValues[i] * normFactor * g, maxBarHeight);
+  }
+
+  const startHeights = new Float32Array(numBars);
+  for (let i = 0; i < numBars; i++) {
+    startHeights[i] = (0.15 + Math.random() * 0.85) * maxBarHeight;
+  }
+
+  canvas.width = width;
+  canvas.height = height;
+
+  const DURATION = 550;
+  const animStart = performance.now();
+
+  const tick = (now) => {
+    const t = Math.min((now - animStart) / DURATION, 1);
+    const ease = 1 - Math.pow(1 - t, 2.5);
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = barWidth;
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = 0.7;
+
+    for (let i = 0; i < numBars; i++) {
+      const barH = startHeights[i] + (targetHeights[i] - startHeights[i]) * ease;
+      const x = i * (barWidth + barSpacing) + barWidth / 2;
+      ctx.beginPath();
+      ctx.moveTo(x, midY - barH);
+      ctx.lineTo(x, midY + barH);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    if (t < 1) {
+      transitionFrameRef.current = requestAnimationFrame(tick);
+    } else {
+      transitionFrameRef.current = null;
+      renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain);
+    }
+  };
+  transitionFrameRef.current = requestAnimationFrame(tick);
+}
+
+/**
  * Animate every bar from a random noise height to its correct envelope height.
  * Each bar stays in the same horizontal slot — only height changes. Duration ≈550 ms.
  * Fires on first envelope paint (stem mount) and again when WAV audio decodes
@@ -124,6 +241,9 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
   const audioBufferRef = useRef(null);
   const loadedUrlRef = useRef(null);
   const envelopePaintedRef = useRef(false);
+  // Set to true once any audio-based waveform is painted. Prevents subsequent
+  // audio-decode events from repainting (only envelopeData changes can do so).
+  const audioPaintedRef = useRef(false);
   const lastEnvelopeRef = useRef(null);
   const transitionFrameRef = useRef(null);
   const [isLoaded, setIsLoaded] = React.useState(false);
@@ -249,12 +369,16 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     if (!audioUrl || loadedUrlRef.current === audioUrl) return;
 
     let cancelled = false;
-    // Only flip isLoaded=false (which triggers the grey `.trackLoading`
-    // shimmer in OptimizedTrack) when we genuinely have nothing to show.
-    // If an envelope is already painted, the canvas is NOT blank during
-    // the async fetch/decode — keeping isLoaded=true prevents the shimmer
-    // overlay from momentarily replacing the waveform during transient
-    // URL swaps (e.g. v4 placeholder → latent_demucs placeholder blob).
+
+    // New URL = new waveform; reset audio-painted guard so it re-animates.
+    audioPaintedRef.current = false;
+
+    // Immediately show noise on the canvas while we wait for audio to download.
+    // This ensures there's never a blank/grey gap between URL change and decode.
+    if (!envelopePaintedRef.current && canvasRef.current) {
+      paintNoise(canvasRef.current, width, height, color);
+    }
+
     if (!envelopePaintedRef.current && !audioBufferRef.current) {
       setIsLoaded(false);
     }
@@ -275,14 +399,14 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
 
           if (canvasRef.current) {
             if (envelopeData) {
-              // Bar animation: noise → envelope (signals audio is ready for playback)
+              // Envelope wins — noise → envelope shape
               const envT = envelopeData.length / 2;
               paintBarAnimation(canvasRef.current, envelopeData, envT, width, height, color, gain, transitionFrameRef);
               envelopePaintedRef.current = true;
-            } else if (!envelopePaintedRef.current) {
-              paintWithTransition(
-                (ctx) => renderWaveform(ctx, cachedBuffer, width, height, color, cropStart, cropEnd, gain)
-              );
+            } else if (!audioPaintedRef.current) {
+              // First audio paint: noise → waveform bar animation
+              paintBarAnimationFromBuffer(canvasRef.current, cachedBuffer, width, height, color, gain, cropStart, cropEnd, transitionFrameRef);
+              audioPaintedRef.current = true;
             }
           }
           return;
@@ -308,11 +432,9 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
         // Store in in-memory cache for fast re-access
         audioBufferCache.set(audioUrl, audioBuffer);
 
-        // Limit in-memory cache size (LRU-style: remove oldest entries)
         if (audioBufferCache.size > MAX_CACHE_SIZE) {
           const firstKey = audioBufferCache.keys().next().value;
           audioBufferCache.delete(firstKey);
-          console.log(`🗑️ Removed oldest in-memory cached buffer`);
         }
 
         audioBufferRef.current = audioBuffer;
@@ -323,21 +445,18 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
 
         if (canvasRef.current) {
           if (envelopeData) {
-            // Bar animation: noise → envelope (signals audio is decoded and ready)
+            // Envelope wins — noise → envelope shape
             const envT = envelopeData.length / 2;
             paintBarAnimation(canvasRef.current, envelopeData, envT, width, height, color, gain, transitionFrameRef);
             envelopePaintedRef.current = true;
-          } else {
-            paintWithTransition(
-              (ctx) => renderWaveform(ctx, audioBuffer, width, height, color, cropStart, cropEnd, gain)
-            );
+          } else if (!audioPaintedRef.current) {
+            // First audio paint: noise → waveform bar animation
+            paintBarAnimationFromBuffer(canvasRef.current, audioBuffer, width, height, color, gain, cropStart, cropEnd, transitionFrameRef);
+            audioPaintedRef.current = true;
           }
         }
       } catch (error) {
         console.error('Error loading audio:', error);
-        // Only reset the loaded flag on real failure when nothing is
-        // paintable — otherwise leaving the last-good canvas on screen
-        // is better than a shimmer strobe while the caller retries.
         if (!envelopePaintedRef.current && !audioBufferRef.current) {
           setIsLoaded(false);
           if (canvasRef.current) {
@@ -356,7 +475,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     return () => {
       cancelled = true;
     };
-  }, [audioUrl, width, height, color, cropStart, cropEnd, paintWithTransition]);
+  }, [audioUrl, width, height, color, cropStart, cropEnd]);
 
   // Re-render waveform when dimensions, crop, envelope, OR gain change
   // (without reloading audio). Gain repaints are how real-time volume ↔
@@ -399,9 +518,12 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     if (envelopeData) {
       const envT = envelopeData.length / 2;
       renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
-    } else {
+    } else if (audioPaintedRef.current) {
+      // Only repaint from audio buffer once the initial noise→waveform
+      // animation has completed. Skips while noise is still showing.
       renderWaveform(ctx, audioBufferRef.current, width, height, color, cropStart, cropEnd, gain);
     }
+    // If neither condition: noise is currently displayed — leave it alone.
   }, [width, height, color, cropStart, cropEnd, envelopeData, gain, envelopeFps]);
 
   return {

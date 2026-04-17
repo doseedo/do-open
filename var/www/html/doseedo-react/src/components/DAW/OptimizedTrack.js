@@ -542,7 +542,7 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
       ) : (
         <>
           {/* Visualization - either waveform or MIDI piano roll */}
-          {track.type === 'midi' ? (
+          {track.type === 'midi' && !track.metadata?.generating ? (
         <div style={{ transform: `translateX(${waveformOffset}px)` }}>
           <MIDITrackVisualization
             midiData={track.midiData}
@@ -553,6 +553,15 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
             endTime={(track.duration || 10) - (track.cropEnd || 0)}
             timelineBpm={state.bpm || 120}
             f0Contour={track.f0Contour}
+          />
+        </div>
+      ) : track.type === 'midi' && track.metadata?.generating ? (
+        <div style={{ transform: `translateX(${waveformOffset}px)` }}>
+          <PlaceholderWaveform
+            width={fullAudioWidth}
+            height={trackHeight}
+            duration={track.duration || 16}
+            settling={false}
           />
         </div>
       ) : (
