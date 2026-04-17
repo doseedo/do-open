@@ -51,6 +51,7 @@ const initialState = {
     useSelfConsistency: false,
     consistencySamples: 3,
     extractFormats: ['midi'], // Default: extract only MIDI
+    stemphonicCkpt: 'stage2d-130k', // Always default to 130k, never DoPerformer
   },
 
   // Automation state

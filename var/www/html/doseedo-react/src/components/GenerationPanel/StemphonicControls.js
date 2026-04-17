@@ -65,7 +65,7 @@ export function CheckpointDropdown({ value, onChange, disabled }) {
         Model checkpoint
       </label>
       <select
-        value={value || DOPERFORMER_ID}
+        value={value || 'stage2d-130k'}
         onChange={handleChange}
         disabled={disabled || loading}
         style={{
