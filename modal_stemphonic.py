@@ -233,7 +233,15 @@ image = (
     # "No module named 'demucs.api'" at runtime. --force-reinstall with
     # --no-deps ensures exactly 4.0.1 (with api.py) regardless of any
     # previously installed version or cached image layer.
-    .pip_install("demucs==4.0.1", extra_options="--force-reinstall --no-deps")
+    # demucs==4.0.1 is the latest PyPI release but it does NOT ship demucs/api.py
+    # (the `api` module was added to the GitHub main branch after 4.0.1, and
+    # there's been no PyPI release since). stemphonic_server.py imports
+    # `demucs.api`, so we have to install from GitHub directly. Still --no-deps
+    # to keep the openunmix/dora-search pins from stemphonic_requirements_modal.txt.
+    .pip_install(
+        "demucs @ git+https://github.com/adefossez/demucs.git@b9ab48cad45976ba42b2ff17b229c071f0df9390",
+        extra_options="--force-reinstall --no-deps",
+    )
     # ACE-Step source — exclude the 14 GB checkpoints subdir (goes on volume)
     .add_local_dir(
         _p("/scratch/ACE-Step-1.5"),
