@@ -169,7 +169,7 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
   // CompositeBusWaveform is wired in).
   const visualGain = track.isMuted ? 0 : (track.gain ?? 1.0);
 
-  const { canvasRef, isLoaded, duration: actualDuration } = useWaveform(
+  const { canvasRef, duration: actualDuration } = useWaveform(
     track.type === 'midi' ? null : track.audioUrl, // Skip waveform for MIDI tracks
     fullAudioWidth,
     trackHeight,
@@ -179,7 +179,8 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
     track.metadata?.envelopeData || null,  // latent_visual or v4-small instant envelope
     track.metadata?.envelopeFps || 25,     // v4 outputs ≈31.25 Hz, latent_visual is 25
     visualGain,
-    track.metadata?.generating || false,   // paint noise immediately when generating
+    // Show noise loop whenever there's nothing painted yet (loading, generating, placeholder)
+    !!(track.isPlaceholder || track.metadata?.generating),
   );
 
   // Update track duration when audio loads — only when the delta is
@@ -517,7 +518,7 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
     <div
       ref={trackRef}
       data-track-id={track.id}
-      className={`${styles.track} ${isSelected ? styles.selected : ''} ${isMultiSelected ? styles.multiSelected : ''} ${isDragging ? styles.dragging : ''} ${!isLoaded || track.isPlaceholder ? styles.trackLoading : ''} ${isInInpaintMode ? styles.inpaintMode : ''} ${track.isMuted ? styles.muted : ''} ${track.isPlaceholder ? styles.placeholder : ''}`}
+      className={`${styles.track} ${isSelected ? styles.selected : ''} ${isMultiSelected ? styles.multiSelected : ''} ${isDragging ? styles.dragging : ''} ${isInInpaintMode ? styles.inpaintMode : ''} ${track.isMuted ? styles.muted : ''} ${track.isPlaceholder ? styles.placeholder : ''}`}
       style={{
         transform: trackTransform,
         width: `${trackWidth}px`,
@@ -531,19 +532,8 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => { setIsHovering(false); clearTimeout(pluginHoldTimerRef.current); }}
     >
-      {/* Placeholder loading indicator */}
-      {track.isPlaceholder ? (
-        <PlaceholderWaveform
-          width={trackWidth}
-          height={trackHeight}
-          duration={track.duration || 30}
-          settling={track.isSettling || false}
-          actualWaveform={track.waveformPeaks || null}
-        />
-      ) : (
-        <>
-          {/* Visualization - either waveform/noise canvas or MIDI piano roll */}
-          {track.type === 'midi' && !track.metadata?.generating ? (
+      {/* Visualization - MIDI piano roll OR canvas (waveform / noise) */}
+      {track.type === 'midi' && !track.metadata?.generating && !track.isPlaceholder ? (
         <div style={{ transform: `translateX(${waveformOffset}px)` }}>
           <MIDITrackVisualization
             midiData={track.midiData}
@@ -580,19 +570,17 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
         />
       )}
 
-          {/* Resize handles - hidden in inpaint mode */}
-          {!isInInpaintMode && (
-            <>
-              <div
-                className={`${styles.resizeHandle} ${styles.resizeHandleLeft}`}
-                onMouseDown={handleResizeStart('left')}
-              />
-              <div
-                className={`${styles.resizeHandle} ${styles.resizeHandleRight}`}
-                onMouseDown={handleResizeStart('right')}
-              />
-            </>
-          )}
+      {/* Resize handles - hidden in inpaint mode */}
+      {!isInInpaintMode && (
+        <>
+          <div
+            className={`${styles.resizeHandle} ${styles.resizeHandleLeft}`}
+            onMouseDown={handleResizeStart('left')}
+          />
+          <div
+            className={`${styles.resizeHandle} ${styles.resizeHandleRight}`}
+            onMouseDown={handleResizeStart('right')}
+          />
         </>
       )}
     </div>
