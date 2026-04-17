@@ -2360,43 +2360,80 @@ const GenerationPanelOptimized = React.memo(() => {
         const filePaths = result?.file_paths || [];
         const midiUrl = result?.input_files?.midi || null;
         if (filePaths.length > 0) {
-          let musicBusId = state.buses.find((b) => b.type === 'Music')?.id;
-          if (!musicBusId) {
-            musicBusId = `music-${Date.now()}`;
-            dispatch({
-              type: 'CREATE_BUS',
-              payload: { id: musicBusId, type: 'Music', name: 'Music 1', expanded: true },
-            });
+          // If the source was a MIDI track, replace it in-place (keeping midiData
+          // so the MIDI window still works). Extra candidates go to the same bus.
+          const sourceMidiTrack =
+            state.selectedTrack?.type === 'midi' ? state.selectedTrack : null;
+          const sourceBusId = sourceMidiTrack
+            ? state.buses.find((b) => b.tracks?.some((t) => t.id === sourceMidiTrack.id))?.id
+            : null;
+
+          let targetBusId = sourceBusId;
+          if (!targetBusId) {
+            targetBusId = state.buses.find((b) => b.type === 'Music')?.id;
+            if (!targetBusId) {
+              targetBusId = `music-${Date.now()}`;
+              dispatch({
+                type: 'CREATE_BUS',
+                payload: { id: targetBusId, type: 'Music', name: 'Music 1', expanded: true },
+              });
+            }
           }
+
           filePaths.forEach((filePath, index) => {
-            dispatch({
-              type: 'ADD_TRACK',
-              payload: {
-                busId: musicBusId,
-                track: {
-                  id: `stemphonic-${Date.now()}-${index}`,
-                  name: `Stemphonic ${subgroup} ${index + 1}`,
-                  audioUrl: filePath,
-                  duration: stemParams.duration,
-                  startPosition: 0,
-                  gain: 1.0,
-                  isMuted: false,
-                  isSolo: false,
-                  cropStart: 0,
-                  cropEnd: 0,
-                  metadata: {
-                    type: 'generated',
-                    source: 'stemphonic',
-                    subgroup,
-                    activeTab,
-                    tempo: 120,
-                    midi: midiUrl,
-                    inputFiles: midiUrl ? { midiPath: midiUrl } : undefined,
-                    params: { ...stemParams },
+            const trackMeta = {
+              type: 'generated',
+              source: 'stemphonic',
+              subgroup,
+              activeTab,
+              tempo: 120,
+              midi: midiUrl,
+              inputFiles: midiUrl ? { midiPath: midiUrl } : undefined,
+              params: { ...stemParams },
+            };
+            if (index === 0 && sourceMidiTrack) {
+              // Replace the MIDI track in-place, preserving midiData
+              dispatch({
+                type: 'REPLACE_TRACK',
+                payload: {
+                  busId: targetBusId,
+                  trackId: sourceMidiTrack.id,
+                  newTrack: {
+                    name: `${subgroup.replace(/_/g, ' ')} (gen)`,
+                    audioUrl: filePath,
+                    duration: stemParams.duration,
+                    startPosition: sourceMidiTrack.startPosition ?? 0,
+                    gain: sourceMidiTrack.gain ?? 1.0,
+                    isMuted: sourceMidiTrack.isMuted ?? false,
+                    isSolo: sourceMidiTrack.isSolo ?? false,
+                    cropStart: 0,
+                    cropEnd: 0,
+                    midiData: sourceMidiTrack.midiData || null,
+                    metadata: trackMeta,
                   },
                 },
-              },
-            });
+              });
+            } else {
+              dispatch({
+                type: 'ADD_TRACK',
+                payload: {
+                  busId: targetBusId,
+                  track: {
+                    id: `stemphonic-${Date.now()}-${index}`,
+                    name: `Stemphonic ${subgroup} ${index + 1}`,
+                    audioUrl: filePath,
+                    duration: stemParams.duration,
+                    startPosition: 0,
+                    gain: 1.0,
+                    isMuted: false,
+                    isSolo: false,
+                    cropStart: 0,
+                    cropEnd: 0,
+                    metadata: trackMeta,
+                  },
+                },
+              });
+            }
           });
         }
 
