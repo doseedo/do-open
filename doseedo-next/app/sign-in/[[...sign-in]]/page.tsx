@@ -16,8 +16,8 @@ export default function Page() {
         path="/sign-in"
         routing="path"
         signUpUrl="/sign-up"
-        forceRedirectUrl="/studio"
-        fallbackRedirectUrl="/studio"
+        forceRedirectUrl="/after-signin"
+        fallbackRedirectUrl="/after-signin"
       />
     </div>
   );

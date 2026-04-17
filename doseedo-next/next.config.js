@@ -59,6 +59,9 @@ const nextConfig = {
       { source: '/settings/api-keys',        destination: `${AUTH}/settings/api-keys` },
       { source: '/settings/api-keys/:path*', destination: `${AUTH}/settings/api-keys/:path*` },
 
+      // Clerk → legacy cookie bridge (called from /after-signin after Clerk sign-in)
+      { source: '/api/auth/clerk-bridge',  destination: `${AUTH}/api/auth/clerk-bridge` },
+
       // Auth APIs (match GCLB url-map exactly)
       { source: '/api/sessions',           destination: `${AUTH}/api/sessions` },
       { source: '/api/sessions/:path*',    destination: `${AUTH}/api/sessions/:path*` },
