@@ -96,6 +96,8 @@ const nextConfig = {
       { source: '/api/generate-stemphonic/:path*',  destination: `${MODAL}/api/generate-stemphonic/:path*` },
       { source: '/download-stemphonic/:path*',      destination: `${MODAL}/download-stemphonic/:path*` },
       { source: '/api/encode-latents-bulk',         destination: `${MODAL}/api/encode-latents-bulk` },
+      { source: '/separate-stems',                  destination: `${MODAL}/separate-stems` },
+      { source: '/separate-stems/:path*',           destination: `${MODAL}/separate-stems/:path*` },
       { source: '/api/encode-audio-latent',         destination: `${MODAL}/api/encode-audio-latent` },
       { source: '/api/latents/:path*',              destination: `${MODAL}/api/latents/:path*` },
       { source: '/api/upload-latent',               destination: `${MODAL}/api/upload-latent` },
