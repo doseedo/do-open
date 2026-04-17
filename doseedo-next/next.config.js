@@ -2,7 +2,7 @@
 
 // Backend origins — matches the GCLB `bassify` url-map.
 // Override per environment via Vercel project env vars if needed.
-const AUTH     = process.env.NEXT_PUBLIC_AUTH_ORIGIN     || 'https://doseedo-auth-1028528394180.us-central1.run.app';
+const AUTH     = process.env.NEXT_PUBLIC_AUTH_ORIGIN     || 'https://doseedo-api.fly.dev';
 const CHATBOT  = process.env.NEXT_PUBLIC_CHATBOT_ORIGIN  || 'https://doseedo-chatbot-1028528394180.us-central1.run.app';
 const MODAL    = process.env.NEXT_PUBLIC_MODAL_ORIGIN    || 'https://arlo-dose--stemphonic.modal.run';
 const BACKEND  = process.env.NEXT_PUBLIC_BACKEND_ORIGIN  || 'https://backend10-1028528394180.us-central1.run.app';
