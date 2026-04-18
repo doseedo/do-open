@@ -171,7 +171,16 @@ function buildChunkTensor(ort, flat, numFrames, startSample, chunkSamples) {
 }
 
 /** Envelope at 93.75 fps (hop 512) of a stereo decoded chunk [1,2,N].
- * Returns Float32Array[2*T] min/max pairs like rmsDemucs. */
+ * Returns Float32Array[2*T] min/max pairs, stored as ±peak.
+ *
+ * Peak-hold (max |sample| across both channels over each 512-sample frame).
+ * This MUST match DAWOptimized._envelopeFromAudioBuffer byte-for-byte on the
+ * same audio, because that's the function the waveform uses when the real WAV
+ * arrives. If they diverge, the preview bars render at a different scale than
+ * the final bars (and than any other track's renderWaveform output, which
+ * also uses peak-to-peak of samples). RMS was ~2-3× shorter than peak and
+ * made decoded bars look squashed next to the real WAV.
+ */
 function envelopeOfStereoChunk(audio, numSamples) {
   // audio: Float32Array length 2*N, channels-first [L...; R...]
   const T = Math.floor(numSamples / ENV_HOP);
@@ -181,10 +190,12 @@ function envelopeOfStereoChunk(audio, numSamples) {
     let peak = 0;
     const endL = off + ENV_HOP;
     for (let i = off; i < endL; i++) {
-      const l = Math.abs(audio[i]);
-      const r = Math.abs(audio[numSamples + i]);
-      const v = l > r ? l : r;
-      if (v > peak) peak = v;
+      const l = audio[i];
+      const r = audio[numSamples + i];
+      const la = l < 0 ? -l : l;
+      const ra = r < 0 ? -r : r;
+      if (la > peak) peak = la;
+      if (ra > peak) peak = ra;
     }
     env[t]     = -peak;
     env[T + t] =  peak;
