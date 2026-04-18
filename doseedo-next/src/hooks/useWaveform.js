@@ -153,12 +153,23 @@ function paintBarAnimationFromBuffer(canvas, audioBuffer, width, height, color, 
 }
 
 /**
- * Animate every bar from a random noise height to its correct envelope height.
- * Each bar stays in the same horizontal slot — only height changes. Duration ≈550 ms.
- * Fires on first envelope paint (stem mount) and again when WAV audio decodes
- * (signalling the track is ready for playback).
+ * Animate every bar from its CURRENT displayed height to the new target
+ * envelope height. Each bar stays in the same horizontal slot — only
+ * height changes. Duration ≈550 ms.
+ *
+ * Two start-state modes, picked automatically:
+ *   (1) If `currentHeightsRef.current` has a length-matched Float32Array,
+ *       use it as the start — bars morph smoothly from their on-screen
+ *       height to the new target. This is the envelope-swap path
+ *       (rms → WAV) so it looks like a per-tick fade, not a full redraw.
+ *   (2) Otherwise start from random noise heights — the initial stem-mount
+ *       path where there's nothing on screen yet.
+ *
+ * The ref is kept in sync per frame so if another paintBarAnimation
+ * interrupts this one mid-flight, it picks up the interpolated heights
+ * as its new start (smooth handoff).
  */
-function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, transitionFrameRef) {
+function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, transitionFrameRef, currentHeightsRef = null) {
   if (!canvas) return;
   if (transitionFrameRef.current) cancelAnimationFrame(transitionFrameRef.current);
 
@@ -195,11 +206,23 @@ function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, 
       : Math.min(ptpValues[i] * normFactor * g, maxBarHeight);
   }
 
-  // Start heights — random, spanning the full bar area (the "noise" state)
-  const startHeights = new Float32Array(numBars);
-  for (let i = 0; i < numBars; i++) {
-    startHeights[i] = (0.15 + Math.random() * 0.85) * maxBarHeight;
+  // Snapshot the current on-screen heights for a per-tick morph, if
+  // we have them. Copy so the old ref isn't mutated mid-animation.
+  const prev = currentHeightsRef?.current;
+  let startHeights;
+  if (prev && prev.length === numBars) {
+    startHeights = new Float32Array(prev);
+  } else {
+    startHeights = new Float32Array(numBars);
+    for (let i = 0; i < numBars; i++) {
+      startHeights[i] = (0.15 + Math.random() * 0.85) * maxBarHeight;
+    }
   }
+
+  // Live buffer the ref points at — updated each frame so interrupting
+  // paintBarAnimations can pick up the mid-flight heights.
+  const live = new Float32Array(numBars);
+  if (currentHeightsRef) currentHeightsRef.current = live;
 
   canvas.width = width;
   canvas.height = height;
@@ -219,6 +242,7 @@ function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, 
 
     for (let i = 0; i < numBars; i++) {
       const barH = startHeights[i] + (targetHeights[i] - startHeights[i]) * ease;
+      live[i] = barH;
       const x = i * (barWidth + barSpacing) + barWidth / 2;
       ctx.beginPath();
       ctx.moveTo(x, midY - barH);
@@ -232,7 +256,7 @@ function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, 
     } else {
       transitionFrameRef.current = null;
       // Final pixel-perfect render at steady state
-      renderEnvelope(ctx, envelopeData, T, width, height, color, gain);
+      renderEnvelope(ctx, envelopeData, T, width, height, color, gain, currentHeightsRef);
     }
   };
   transitionFrameRef.current = requestAnimationFrame(tick);
@@ -283,6 +307,12 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
   // re-captures fresh envelopeData.
   const envelopeDataRef = useRef(envelopeData);
   envelopeDataRef.current = envelopeData;
+  // Per-bar height snapshot. paintBarAnimation / renderEnvelope mirror the
+  // current on-screen bar heights here so the next animated repaint morphs
+  // from those heights (e.g. rms → WAV envelope swap becomes a per-tick
+  // fade rather than a random-noise → shape redraw that looks like a
+  // refresh).
+  const currentBarHeightsRef = useRef(null);
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [duration, setDuration] = React.useState(null);
   // Increments each time a real audio decode completes (NOT on envelope-only paint).
@@ -305,14 +335,14 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     const isNewEnvelope = envelopeData !== lastEnvelopeRef.current;
     if (isNewEnvelope) {
       // New envelope: bar-height animation (noise → shape).
-      paintBarAnimation(canvasRef.current, envelopeData, T, width, height, color, gain, transitionFrameRef);
+      paintBarAnimation(canvasRef.current, envelopeData, T, width, height, color, gain, transitionFrameRef, currentBarHeightsRef);
     } else {
       // Same envelope, just a dimension / gain repaint — instant, no animation.
       const canvas = canvasRef.current;
       if (canvas) {
         canvas.width = width;
         canvas.height = height;
-        renderEnvelope(canvas.getContext('2d'), envelopeData, T, width, height, color, gain);
+        renderEnvelope(canvas.getContext('2d'), envelopeData, T, width, height, color, gain, currentBarHeightsRef);
       }
     }
     lastEnvelopeRef.current = envelopeData;
@@ -371,7 +401,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
               // Envelope wins — noise → envelope shape. Use the latest
               // envelope, not the one captured at effect-creation time.
               const envT = currentEnv.length / 2;
-              paintBarAnimation(canvasRef.current, currentEnv, envT, width, height, color, gain, transitionFrameRef);
+              paintBarAnimation(canvasRef.current, currentEnv, envT, width, height, color, gain, transitionFrameRef, currentBarHeightsRef);
               lastEnvelopeRef.current = currentEnv;
               envelopePaintedRef.current = true;
             } else if (!audioPaintedRef.current) {
@@ -421,7 +451,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
             // env from the ref; closure-captured `envelopeData` may be
             // stale by the time decodeAudioData resolves.
             const envT = currentEnv.length / 2;
-            paintBarAnimation(canvasRef.current, currentEnv, envT, width, height, color, gain, transitionFrameRef);
+            paintBarAnimation(canvasRef.current, currentEnv, envT, width, height, color, gain, transitionFrameRef, currentBarHeightsRef);
             lastEnvelopeRef.current = currentEnv;
             envelopePaintedRef.current = true;
           } else if (!audioPaintedRef.current) {
@@ -476,14 +506,14 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     // Prefer envelope paint for repaints while envelope is the live view.
     if (envelopeData && envelopePaintedRef.current) {
       const envT = envelopeData.length / 2;
-      renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
+      renderEnvelope(ctx, envelopeData, envT, width, height, color, gain, currentBarHeightsRef);
       return;
     }
     if (!audioBufferRef.current) {
       // No audio decoded yet, but we may still have envelope — paint it.
       if (envelopeData) {
         const envT = envelopeData.length / 2;
-        renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
+        renderEnvelope(ctx, envelopeData, envT, width, height, color, gain, currentBarHeightsRef);
         envelopePaintedRef.current = true;
       }
       return;
@@ -492,7 +522,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     // If envelopeData exists it is the permanent visual — always render it.
     if (envelopeData) {
       const envT = envelopeData.length / 2;
-      renderEnvelope(ctx, envelopeData, envT, width, height, color, gain);
+      renderEnvelope(ctx, envelopeData, envT, width, height, color, gain, currentBarHeightsRef);
     } else if (audioPaintedRef.current) {
       // Only repaint from audio buffer once the initial noise→waveform
       // animation has completed. Skips while noise is still showing.
@@ -600,8 +630,11 @@ function renderWaveform(ctx, audioBuffer, width, height, color, cropStart = 0, c
  * Called INSTANTLY from latent_visual output — no audio decoding needed.
  * @param {number} gain - visual gain multiplier (0..N). Bar heights scale
  *   linearly with gain so volume slider tracks waveform size in real time.
+ * @param {{current: Float32Array|null}} [currentHeightsRef] - optional ref
+ *   to mirror the final bar heights into, so a subsequent animated repaint
+ *   can morph from these heights instead of restarting from noise.
  */
-function renderEnvelope(ctx, envFlat, T, width, height, color, gain = 1.0) {
+function renderEnvelope(ctx, envFlat, T, width, height, color, gain = 1.0, currentHeightsRef = null) {
   const mins = envFlat.subarray(0, T);
   const maxs = envFlat.subarray(T, 2 * T);
 
@@ -642,10 +675,19 @@ function renderEnvelope(ctx, envFlat, T, width, height, color, gain = 1.0) {
   ctx.lineCap = 'round';
   ctx.globalAlpha = 0.7;
 
+  // Mirror final heights into the shared ref so subsequent animated
+  // repaints can morph from these values instead of noise.
+  const live = currentHeightsRef
+    ? ((currentHeightsRef.current && currentHeightsRef.current.length === numBars)
+        ? currentHeightsRef.current
+        : (currentHeightsRef.current = new Float32Array(numBars)))
+    : null;
+
   for (let i = 0; i < numBars; i++) {
     const x = i * (barWidth + barSpacing);
     const ptp = ptpValues[i];
     if (ptp < noiseFloor || g === 0) {
+      if (live) live[i] = 0.5;
       ctx.beginPath();
       ctx.moveTo(x + barWidth / 2, midY - 0.5);
       ctx.lineTo(x + barWidth / 2, midY + 0.5);
@@ -653,6 +695,7 @@ function renderEnvelope(ctx, envFlat, T, width, height, color, gain = 1.0) {
       continue;
     }
     const barH = Math.min(ptp * normFactor * g, maxBarHeight);
+    if (live) live[i] = barH;
     ctx.beginPath();
     ctx.moveTo(x + barWidth / 2, midY - barH);
     ctx.lineTo(x + barWidth / 2, midY + barH);
