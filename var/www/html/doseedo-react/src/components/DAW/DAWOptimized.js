@@ -1199,13 +1199,44 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
           // htdemucs_6s on Modal returns WAV download URLs; use these
           // directly for playback (no ONNX decoder needed in browser).
           try {
+            const tSep0 = performance.now();
             const sep = await separateStemsAuto(file);
+            console.log(`[separate-stems] job complete in ${(performance.now() - tSep0).toFixed(0)}ms`);
             const wavUrls = sep?.stems || {};
             const stemNames = Object.keys(wavUrls);
             if (stemNames.length === 0) {
               console.warn('[separate-stems] no WAV URLs in response');
               return;
             }
+            // Mask path: if the backend included an STFT mask bundle, decode
+            // it client-side and use those blob URLs instead of downloading
+            // 6 WAVs. One HTTP round-trip, ~4× smaller wire payload. Falls
+            // through to WAVs on any failure.
+            let maskWavUrls = null;
+            if (sep?.mask_bundle?.url && decodedSrc) {
+              try {
+                const { decodeStemMasks } = await import('../../services/stemMasksFromServer');
+                const ctxForBuf = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+                const masterBuf = ctxForBuf.createBuffer(2, decodedSrc.numFrames, 48000);
+                masterBuf.getChannelData(0).set(decodedSrc.flat.subarray(0, decodedSrc.numFrames));
+                masterBuf.getChannelData(1).set(decodedSrc.flat.subarray(decodedSrc.numFrames, 2 * decodedSrc.numFrames));
+                const token = localStorage.getItem('token');
+                const hdrs = token ? { Authorization: `Bearer ${token}` } : {};
+                const tMask0 = performance.now();
+                const { stems: maskStems } = await decodeStemMasks({
+                  bundleUrl: sep.mask_bundle.url,
+                  masterAudioBuffer: masterBuf,
+                  headers: hdrs,
+                });
+                console.log(`[stemMasks] total wall-time ${(performance.now() - tMask0).toFixed(0)}ms`);
+                maskWavUrls = {};
+                for (const { stemName, wavUrl } of maskStems) maskWavUrls[stemName] = wavUrl;
+              } catch (e) {
+                console.warn('[stemMasks] decode failed, falling back to WAV downloads:', e?.message || e);
+                maskWavUrls = null;
+              }
+            }
+            const effectiveWavUrls = maskWavUrls || wavUrls;
             if (rmsPainted) {
               // Update existing rms stem tracks with real audio. Keep
               // envelopeData populated at every phase — useWaveform should
@@ -1213,7 +1244,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               // for playback rides on `audioUrl`, independent from the
               // waveform canvas, which is always driven by envelopeData.
               for (const stemName of stemNames) {
-                const wavUrl = wavUrls[stemName];
+                const wavUrl = effectiveWavUrls[stemName];
                 if (!wavUrl) continue;
                 // 1) audioUrl wired in immediately so playback can start
                 dispatch({
@@ -1255,7 +1286,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                     track: {
                       id: `stem-${trackId}-${stemName}`,
                       name: `${file.name.replace(/\.[^.]+$/, '')} -- ${stemName}`,
-                      audioUrl: wavUrls[stemName],
+                      audioUrl: effectiveWavUrls[stemName],
                       duration,
                       startPosition: 0,
                       gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
@@ -1270,7 +1301,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                     },
                   },
                 });
-                envelopeFromWavUrl(wavUrls[stemName], RMS_FPS)
+                envelopeFromWavUrl(effectiveWavUrls[stemName], RMS_FPS)
                   .then((env) => dispatch({
                     type: 'UPDATE_TRACK',
                     payload: {
@@ -1289,7 +1320,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               const tracks = stemNames.map((stemName) => ({
                 id: `stem-${trackId}-${stemName}`,
                 name: `${file.name.replace(/\.[^.]+$/, '')} -- ${stemName}`,
-                audioUrl: wavUrls[stemName] || null,
+                audioUrl: effectiveWavUrls[stemName] || null,
                 duration,
                 startPosition: 0,
                 gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
@@ -1297,7 +1328,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                 metadata: {
                   type: 'stem', stemType: stemName, parentTrackId: trackId,
                   instrument: stemName, icon: iconForType(stemName),
-                  playbackReady: !!wavUrls[stemName],
+                  playbackReady: !!effectiveWavUrls[stemName],
                   envelopeData: new Float32Array(2 * T),
                   envelopeFps: RMS_FPS,
                 },
@@ -1305,8 +1336,8 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks } });
               dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: true } });
               for (const stemName of stemNames) {
-                if (!wavUrls[stemName]) continue;
-                envelopeFromWavUrl(wavUrls[stemName], RMS_FPS)
+                if (!effectiveWavUrls[stemName]) continue;
+                envelopeFromWavUrl(effectiveWavUrls[stemName], RMS_FPS)
                   .then((env) => dispatch({
                     type: 'UPDATE_TRACK',
                     payload: {

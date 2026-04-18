@@ -2650,6 +2650,131 @@ def _encode_audio_path_to_latent(audio_path, stem_type=None, source_path=None):
     }
 
 
+# ── STFT-mask bundle (bandwidth-optimized stem delivery) ───────────────
+#
+# After htdemucs produces 6 stem waveforms, compute a mono ratio mask for
+# each: mask[f,t] = |STFT(stem)[f,t]| / (|STFT(mix)[f,t]| + eps), clipped
+# to [0,1]. Quantize to uint8 and bundle all 6 into one binary file. The
+# client iSTFTs back to audio at playback by applying the mask to the
+# master STFT (reuses master phase — sounds clean). Net: ~32 MB of WAVs
+# collapses to ~8 MB for a 30 s clip; phase stays native so no audible
+# quality loss from the quantization / mono-mask approximation.
+MASK_NFFT = 2048
+MASK_HOP = 1024
+MASK_EPS = 1e-7
+MASK_BUNDLE_HEADER_SIZE = 128  # fixed, so client parse is trivial
+
+
+def _compute_and_save_mask_bundle(task_id, out_dir, mix_path, sources, sr):
+    import numpy as np
+    import torch
+    import torchaudio
+    import struct as _struct
+
+    t0 = time.time()
+
+    mix_wave, mix_sr = torchaudio.load(mix_path)
+    if mix_sr != sr:
+        mix_wave = torchaudio.functional.resample(mix_wave, mix_sr, sr)
+    if mix_wave.shape[0] == 1:
+        mix_mono = mix_wave[0].float()
+    else:
+        mix_mono = mix_wave.mean(dim=0).float()
+
+    window = torch.hann_window(MASK_NFFT)
+    mix_stft = torch.stft(
+        mix_mono, n_fft=MASK_NFFT, hop_length=MASK_HOP, window=window,
+        center=True, return_complex=True, pad_mode="reflect",
+    )  # [n_bins, n_frames]
+    mix_mag = mix_stft.abs()
+    n_bins, n_frames = mix_mag.shape
+
+    stem_names = list(sources.keys())
+    n_stems = len(stem_names)
+    masks = np.zeros((n_stems, n_bins, n_frames), dtype=np.uint8)
+
+    for i, stem_name in enumerate(stem_names):
+        stem_audio = sources[stem_name].cpu()
+        stem_mono = stem_audio[0].float() if stem_audio.shape[0] == 1 else stem_audio.mean(dim=0).float()
+        # Pad/truncate to match mix length
+        if stem_mono.shape[0] < mix_mono.shape[0]:
+            stem_mono = torch.nn.functional.pad(stem_mono, (0, mix_mono.shape[0] - stem_mono.shape[0]))
+        elif stem_mono.shape[0] > mix_mono.shape[0]:
+            stem_mono = stem_mono[:mix_mono.shape[0]]
+        stem_stft = torch.stft(
+            stem_mono, n_fft=MASK_NFFT, hop_length=MASK_HOP, window=window,
+            center=True, return_complex=True, pad_mode="reflect",
+        )
+        stem_mag = stem_stft.abs()
+        T_min = min(stem_mag.shape[1], n_frames)
+        ratio = stem_mag[:, :T_min] / (mix_mag[:, :T_min] + MASK_EPS)
+        ratio = ratio.clamp(0.0, 1.0)
+        if T_min < n_frames:
+            pad = torch.zeros((n_bins, n_frames - T_min))
+            ratio = torch.cat([ratio, pad], dim=1)
+        q = (ratio * 255.0).round().clamp(0, 255).to(torch.uint8).numpy()
+        masks[i] = q
+
+    # Binary bundle: 128-byte header + n_stems × n_bins × n_frames uint8.
+    # Header layout (little-endian, all offsets fixed so the client parses
+    # via a DataView with no allocation loop):
+    #   0   "DMSK"          magic (4)
+    #   4   version         u8
+    #   5   n_stems         u8
+    #   6   n_channels      u8  (1 = mono mask, 2 = per-channel — 1 here)
+    #   7   dtype           u8  (0 = uint8)
+    #   8   n_fft           u16
+    #   10  hop             u16
+    #   12  sr              u32
+    #   16  n_bins          u16
+    #   18  n_frames        u32
+    #   22  n_samples       u32  (client can validate its master matches)
+    #   26  reserved (6)
+    #   32  6 × 16-byte ascii-padded stem names (96 bytes → byte 128)
+    header = bytearray(MASK_BUNDLE_HEADER_SIZE)
+    header[0:4] = b"DMSK"
+    header[4] = 1
+    header[5] = n_stems
+    header[6] = 1
+    header[7] = 0
+    _struct.pack_into("<H", header, 8, MASK_NFFT)
+    _struct.pack_into("<H", header, 10, MASK_HOP)
+    _struct.pack_into("<I", header, 12, int(sr))
+    _struct.pack_into("<H", header, 16, n_bins)
+    _struct.pack_into("<I", header, 18, n_frames)
+    _struct.pack_into("<I", header, 22, int(mix_mono.shape[0]))
+    for i, name in enumerate(stem_names):
+        b = name.encode("ascii")[:15]
+        header[32 + i * 16 : 32 + i * 16 + len(b)] = b
+
+    bundle_path = os.path.join(out_dir, "masks.bin")
+    with open(bundle_path, "wb") as f:
+        f.write(header)
+        f.write(masks.tobytes())
+
+    bundle_bytes = MASK_BUNDLE_HEADER_SIZE + int(masks.size)
+    dt = time.time() - t0
+    logger.info(
+        "[%s] mask bundle: %d stems × %d bins × %d frames → %.1f MB (%.2fs)",
+        task_id, n_stems, n_bins, n_frames, bundle_bytes / 1e6, dt,
+    )
+    return {
+        "url": f"/separate-stems/mask/{task_id}/masks.bin",
+        "n_stems": n_stems,
+        "stem_names": stem_names,
+        "n_fft": MASK_NFFT,
+        "hop": MASK_HOP,
+        "sr": int(sr),
+        "n_bins": int(n_bins),
+        "n_frames": int(n_frames),
+        "n_samples": int(mix_mono.shape[0]),
+        "channels": 1,
+        "dtype": "uint8",
+        "quant": "linear_0_1",
+        "bytes": bundle_bytes,
+    }
+
+
 def _run_demucs_separation(task_id, audio_path):
     """Worker: separate audio into 6 stems via htdemucs_6s, encode each
     stem to a VAE latent, and persist both WAVs and latent_ids.
@@ -2658,6 +2783,7 @@ def _run_demucs_separation(task_id, audio_path):
     uses latent_ids for downstream generation (repaint, regen, etc.).
     """
     try:
+        t_total = time.time()
         DEMUCS_TASKS[task_id]["status"] = "processing"
         out_dir = os.path.join(DEMUCS_OUTPUT_DIR, task_id)
         os.makedirs(out_dir, exist_ok=True)
@@ -2668,11 +2794,24 @@ def _run_demucs_separation(task_id, audio_path):
         import demucs.api
         separator = demucs.api.Separator(model="htdemucs_6s", device="cuda")
         logger.info("[%s] htdemucs_6s separation starting", task_id)
+        t_sep = time.time()
         _, sources = separator.separate_audio_file(Path(audio_path))
+        logger.info("[%s] htdemucs_6s separation done in %.2fs", task_id, time.time() - t_sep)
         stem_names = list(sources.keys())
         logger.info("[%s] htdemucs_6s produced %d stems: %s",
                     task_id, len(stem_names), stem_names)
 
+        # Compute the mask bundle FIRST (uses sources tensors before they're
+        # moved to disk-only state). Small overhead vs the separation itself.
+        try:
+            mask_meta = _compute_and_save_mask_bundle(
+                task_id, out_dir, audio_path, sources, separator.samplerate,
+            )
+            DEMUCS_TASKS[task_id]["mask_bundle"] = mask_meta
+        except Exception as mask_err:
+            logger.warning("[%s] mask bundle failed (non-fatal): %s", task_id, mask_err)
+
+        t_wav = time.time()
         for stem_name in stem_names:
             stem_audio = sources[stem_name]  # torch tensor [channels, samples]
             stem_path = os.path.join(out_dir, f"{stem_name}.wav")
@@ -2692,11 +2831,13 @@ def _run_demucs_separation(task_id, audio_path):
             except Exception as enc_err:
                 logger.warning("  %s encode failed: %s", stem_name, enc_err)
 
+        logger.info("[%s] wav + latent encode done in %.2fs", task_id, time.time() - t_wav)
         DEMUCS_TASKS[task_id]["stems"] = stem_urls
         DEMUCS_TASKS[task_id]["stem_latents"] = stem_latents
         DEMUCS_TASKS[task_id]["separator"] = "htdemucs_6s"
         DEMUCS_TASKS[task_id]["status"] = "completed"
-        logger.info("✅ htdemucs_6s task %s done: %s", task_id, stem_names)
+        logger.info("✅ htdemucs_6s task %s done in %.2fs total: %s",
+                    task_id, time.time() - t_total, stem_names)
     except Exception as e:
         traceback.print_exc()
         DEMUCS_TASKS[task_id]["status"] = "failed"
@@ -2764,6 +2905,7 @@ def separate_stems_status(task_id):
         "stems": task.get("stems"),
         "stem_latents": task.get("stem_latents"),
         "drum_substem_latents": task.get("drum_substem_latents"),
+        "mask_bundle": task.get("mask_bundle"),
         "error": task.get("error"),
     })
 
@@ -2775,6 +2917,18 @@ def separate_stems_download(task_id, filename):
         return jsonify({"error": "stem not found"}), 404
     return send_file(fpath, mimetype="audio/wav", as_attachment=False,
                      download_name=filename)
+
+
+@app.route("/separate-stems/mask/<task_id>/<filename>", methods=["GET"])
+def separate_stems_mask(task_id, filename):
+    """Serve the uint8 STFT mask bundle for a completed task. Client
+    iSTFTs (mask × master_stft) to reconstruct each stem — 1 request
+    replacing 6 WAV downloads."""
+    fpath = os.path.join(DEMUCS_OUTPUT_DIR, task_id, filename)
+    if not os.path.exists(fpath):
+        return jsonify({"error": "mask bundle not found"}), 404
+    return send_file(fpath, mimetype="application/octet-stream",
+                     as_attachment=False, download_name=filename)
 
 
 @app.route("/api/separate-stemphonic", methods=["POST"])
