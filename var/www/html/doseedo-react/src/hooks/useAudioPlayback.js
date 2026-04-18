@@ -311,47 +311,82 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       console.log('🎬 Starting playback from position:', currentPlayheadTime.toFixed(2), 's');
       console.log('⏱️  AudioContext time at scheduling start:', schedulingStartTime.toFixed(3), 's');
 
-      // Resume MIDI player audio context once (if there are MIDI tracks)
+      // Establish the timeline origin BEFORE any async work. This ensures
+      // the playhead advances the instant the user hits play even if no
+      // buffers are cached yet. Tracks whose buffers arrive later schedule
+      // themselves retroactively at the live playhead (see scheduleOrDefer
+      // below).
+      startTimeRef.current = schedulingStartTime - currentPlayheadTime;
+      hasStartedPlaybackRef.current = true;
+      updatePlayhead();
+
+      // Resume MIDI player audio context — fire and forget. If it misses
+      // the first few ms of notes, the notes are still scheduled against
+      // AudioContext time so they catch up.
       const hasMidiTracks = allTracks.some(t => t.type === 'midi' && t.midiData);
       if (hasMidiTracks) {
-        await midiPlayer.resume();
-        console.log('🎹 MIDI player audio context resumed');
+        midiPlayer.resume().then(() => console.log('🎹 MIDI player audio context resumed'))
+          .catch((e) => console.warn('MIDI resume failed:', e));
       }
 
-      // Pre-load all audio buffers before playback (to avoid missing buffers)
-      console.log('📦 Pre-loading audio buffers...');
-      const tracksWithAudio = allTracks.filter(t => t.audioUrl && !t.type);
-      for (const track of tracksWithAudio) {
-        if (!audioBufferCache.has(track.audioUrl)) {
-          console.log(`  📥 Loading buffer: ${track.audioUrl}`);
-          try {
-            const response = await fetch(track.audioUrl);
-            const arrayBuffer = await response.arrayBuffer();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            audioBufferCache.set(track.audioUrl, audioBuffer);
-            console.log(`  ✅ Buffer loaded: ${track.audioUrl}`);
-          } catch (error) {
-            console.error(`  ❌ Failed to load buffer: ${track.audioUrl}`, error);
-          }
-        }
+      // Non-blocking preload — kicks off fetches + decodes for any URLs
+      // not yet in the cache. The actual scheduling happens in
+      // scheduleOrDefer on a per-track basis and doesn't wait for this.
+      const urlsToWarm = [];
+      for (const t of allTracks) {
+        if (t.audioUrl && !audioBufferCache.has(t.audioUrl)) urlsToWarm.push(t.audioUrl);
+        if (t.type === 'midi' && t.f0Audio && !audioBufferCache.has(t.f0Audio)) urlsToWarm.push(t.f0Audio);
+      }
+      if (urlsToWarm.length) {
+        console.log(`📦 Warming ${urlsToWarm.length} uncached buffer(s) in background`);
       }
 
-      // Pre-load F0 audio from MIDI tracks
-      const tracksWithF0 = allTracks.filter(t => t.type === 'midi' && t.f0Audio);
-      for (const track of tracksWithF0) {
-        if (!audioBufferCache.has(track.f0Audio)) {
-          console.log(`  📥 Loading F0 buffer: ${track.f0Audio}`);
-          try {
-            const response = await fetch(track.f0Audio);
-            const arrayBuffer = await response.arrayBuffer();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            audioBufferCache.set(track.f0Audio, audioBuffer);
-            console.log(`  ✅ F0 buffer loaded: ${track.f0Audio}`);
-          } catch (error) {
-            console.error(`  ❌ Failed to load F0 buffer: ${track.f0Audio}`, error);
+      // scheduleOrDefer: schedule a regular-audio track immediately if its
+      // buffer is cached; otherwise fetch+decode async and schedule it at
+      // the live playhead when it lands. This is what unblocks "hit play,
+      // timeline advances, audio streams in as it loads."
+      const scheduleOrDefer = (track, finalGain) => {
+        const url = track.audioUrl;
+        if (!url) return;
+        const trackStartTime = track.startPosition || 0;
+        const trackCropStart = track.cropStart || 0;
+        if (audioBufferCache.has(url)) {
+          const { source, gainNode } = scheduleTrack(
+            audioContext, url, finalGain, trackStartTime, trackCropStart,
+            currentPlayheadTime, schedulingStartTime, masterGainNodeRef.current,
+          );
+          if (source && gainNode) {
+            sourceNodesRef.current.push(source);
+            gainNodesRef.current.set(track.id, gainNode);
           }
+          return;
         }
-      }
+        // Not cached — fire async, schedule on arrival if still playing.
+        (async () => {
+          try {
+            const { fetchAudioWithCache } = await import('../services/audioCacheService');
+            const { blob } = await fetchAudioWithCache(url);
+            const arrayBuffer = await blob.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            audioBufferCache.set(url, audioBuffer);
+            if (!isPlayingRef.current) return;
+            const livePlayhead = audioContext.currentTime - startTimeRef.current;
+            const trackDuration = track.duration || audioBuffer.duration;
+            if (livePlayhead > trackStartTime + trackDuration) return;  // already past
+            const { source, gainNode } = scheduleTrack(
+              audioContext, url, finalGain, trackStartTime, trackCropStart,
+              livePlayhead, audioContext.currentTime, masterGainNodeRef.current,
+            );
+            if (source && gainNode) {
+              sourceNodesRef.current.push(source);
+              gainNodesRef.current.set(track.id, gainNode);
+              console.log(`  🔈 Late-scheduled: ${track.name || url} at live playhead ${livePlayhead.toFixed(2)}s`);
+            }
+          } catch (error) {
+            console.warn(`  ❌ Late-load failed for ${url}:`, error?.message || error);
+          }
+        })();
+      };
 
       // ── Mask-based playback for stem tracks ──────────────────────
       // If mask playback is ready, stem tracks play through the worklet
@@ -461,35 +496,14 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
               }
             }
           } else if (track.audioUrl) {
-            // Regular track (non-drum)
-            const trackStartTime = track.startPosition || 0; // When track starts on timeline
-            const trackCropStart = track.cropStart || 0; // Cropped portion at start
+            // Regular track (non-drum). scheduleOrDefer handles both
+            // cached-immediately and arrive-later buffers — neither path
+            // blocks the play-click.
+            const trackStartTime = track.startPosition || 0;
             const trackDuration = track.duration || track.length || 10;
             const trackEndTime = trackStartTime + trackDuration;
-
-            // Only play if playhead is within or before the track's time range
             if (currentPlayheadTime <= trackEndTime) {
-              console.log(`  ▶ Scheduling track: ${track.name || track.audioUrl}
-                 Track starts at: ${trackStartTime.toFixed(2)}s on timeline
-                 Track ends at: ${trackEndTime.toFixed(2)}s
-                 Playhead currently at: ${currentPlayheadTime.toFixed(2)}s
-                 Track is ${currentPlayheadTime >= trackStartTime && currentPlayheadTime <= trackEndTime ? 'ACTIVE' : 'upcoming'}`);
-
-              const { source, gainNode } = scheduleTrack(
-                audioContext,
-                track.audioUrl,
-                finalGain,
-                trackStartTime,
-                trackCropStart,
-                currentPlayheadTime,
-                schedulingStartTime,
-                masterGainNodeRef.current // Master gain node
-              );
-
-              if (source && gainNode) {
-                sourceNodesRef.current.push(source);
-                gainNodesRef.current.set(track.id, gainNode);
-              }
+              scheduleOrDefer(track, finalGain);
             } else {
               console.log(`  ⏭ Skipping track (playhead already past): ${track.name || track.audioUrl}`);
             }
@@ -565,19 +579,14 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         }
       }
 
-      // Record when playback starts in AudioContext time
-      // Use the SAME time reference that was used for scheduling
-      startTimeRef.current = schedulingStartTime - currentPlayheadTime;
-      hasStartedPlaybackRef.current = true; // Mark that playback has actually started
-
+      // startTimeRef + hasStartedPlaybackRef + updatePlayhead() were set
+      // above, before any async work, so the timeline has already been
+      // advancing while we iterated tracks.
       console.log('⏱️  Playback timing:', {
         schedulingStartTime: schedulingStartTime.toFixed(3),
         startTimeRef: startTimeRef.current.toFixed(3),
         playheadPosition: currentPlayheadTime.toFixed(3)
       });
-
-      // Start playhead animation
-      updatePlayhead();
     } catch (error) {
       console.error('❌ Error starting playback:', error);
       dispatch({ type: 'SET_PLAYING', payload: false });
