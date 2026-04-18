@@ -105,6 +105,10 @@ vercel-last: ## obs Last 3 Vercel production deploys.
 smoke: ## test Full end-to-end smoke: health + auth + live Modal stem-separation POST.
 	@python3 scripts/e2e_smoke.py
 
+.PHONY: verify-frontend
+verify-frontend: ## test Verify sem4Decoder deploy: R2 model routes + bundle markers + live ONNX pipeline. No browser.
+	@python3 scripts/verify_frontend_deploy.py
+
 .PHONY: smoke-preview
 smoke-preview: ## test Like `smoke` but against a Vercel preview URL (set BASE env var).
 	@BASE=$${BASE:-$$(cd doseedo-next && vercel list --scope doseedo --prod 2>/dev/null | grep '● Ready' | head -1 | awk '{print $$3}')} python3 scripts/e2e_smoke.py
