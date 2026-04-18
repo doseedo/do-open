@@ -28,9 +28,8 @@ import {
   separate6Stems,
   STEM_NAMES_V4COND_6,
 } from '../../services/latentDemucsV4';
-import { analyzeRms } from '../../services/rmsDemucs';
-import { streamPreviewSeparation, SEM4_STEM_NAMES, SEM4_ENVELOPE_FPS } from '../../services/sem4Decoder';
-import { stemAudiosFromMaskOverMaster, LATENT_MASK_STEM_NAMES } from '../../services/latentMask';
+import { analyzeRms, RMS_FPS } from '../../services/rmsDemucs';
+import { streamPreviewSeparation, SEM4_LATENT_CHANS } from '../../services/sem4Decoder';
 
 // Compute a min/max peak envelope from an AudioBuffer at `fps`. Same layout
 // as rmsDemucs + sem4Decoder emit: Float32Array[2*T], first T are -peak,
@@ -72,7 +71,7 @@ function _sharedAudioContext() {
   return _envCtx;
 }
 
-async function envelopeFromWavUrl(url, fps = SEM4_ENVELOPE_FPS) {
+async function envelopeFromWavUrl(url, fps = RMS_FPS) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`wav fetch ${url} HTTP ${resp.status}`);
   const ab = await resp.arrayBuffer();
@@ -234,20 +233,14 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
     fetch('/health').catch(() => {});
 
     // Prewarm ALL WebGPU ORT sessions serially so none of them lazy-loads
-    // during a file drop — concurrent session creates on the same GPU
-    // invalidate in-flight inferences. Order smallest→largest:
-    //   rmsDemucs         577 KB  WASM
-    //   latentMask        8 MB    WebGPU (master-STFT × mask playback)
-    //   sem4Decoder       190 MB  WebGPU (distill_demucs + sem_demucs + sem_decoder)
-    //   latentEncoder     161 MB  WebGPU (oobleck_encoder)
+    // during a file drop. Order smallest→largest:
+    //   rmsDemucs     577 KB  WASM
+    //   sem4Decoder   170 MB  WebGPU (distill_demucs — latent extractor only)
+    //   latentEncoder 161 MB  WebGPU (oobleck_encoder)
     (async () => {
       try {
         const { initRmsDemucs } = await import('../../services/rmsDemucs');
         await initRmsDemucs();
-      } catch (_) { /* non-fatal */ }
-      try {
-        const { initLatentMask } = await import('../../services/latentMask');
-        await initLatentMask();
       } catch (_) { /* non-fatal */ }
       try {
         const { initSem4Decoder } = await import('../../services/sem4Decoder');
@@ -259,7 +252,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
       } catch (_) { /* non-fatal */ }
     })();
 
-    console.log('[prewarm] studio opened — warming Modal + rmsDemucs + latentMask + sem4Decoder + latentEncoder');
+    console.log('[prewarm] studio opened — warming Modal + rmsDemucs + sem4Decoder + latentEncoder');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const timelineContainerRef = useRef(null);
@@ -1086,104 +1079,46 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
             console.warn('[rmsDemucs] instant envelopes failed (non-fatal):', rmsErr?.message || rmsErr);
           }
 
-          // -- WEBGPU PREVIEW via distill_demucs + sem_decoder (10M params) -
-          // In parallel with the backend call: stream a 4-stem preview so the
-          // envelope animation moves with real decoded audio and the user can
-          // scrub/play placeholder stems before /separate-stems returns. When
-          // the backend resolves we abort the decoder (stem WAVs will overwrite
-          // the preview blob URLs) but keep distill_demucs running to produce
-          // the stem latents we'd otherwise have to encode separately.
-          const previewAbort = new AbortController();          // full kill
-          const previewDecodeAbort = new AbortController();    // decode only
-          // Stems the backend has already provided the real WAV for; the
-          // preview must not overwrite their audioUrl even if a late decode
-          // finishes after the abort is requested.
-          const backendStemsWon = new Set();
-          const previewPromise = (async () => {
+          // -- WEBGPU LATENT EXTRACTION via distill_demucs ------------------
+          // In parallel with the backend call: run distill_demucs to get
+          // per-stem oobleck latents and cache them on each stem track.
+          // No intermediate decode, no preview envelope — UX stays:
+          // rmsDemucs (instant) → backend WAV (final). Latents feed
+          // downstream features (drum sub-sep, regeneration) that send
+          // latent to the backend instead of re-encoding audio.
+          const previewAbort = new AbortController();
+          const latentPromise = (async () => {
             try {
-              // decodedSrc is populated by the rms block; fall back to a fresh
-              // decode if rms threw before the call.
               const src = decodedSrc || await audioFileToStereo48k(file);
               await streamPreviewSeparation(src.flat, src.numFrames, {
                 abortSignal: previewAbort.signal,
-                decodeAbortSignal: previewDecodeAbort.signal,
-                // Seed the per-stem envelope accumulator with the rmsDemucs
-                // shape so regions outside the decoded time range keep the
-                // predicted envelope instead of going flat.
-                seedEnvelopes: rmsStemEnvelopes,
-                onStemEnvelopeExtended: ({ stemIdx, envelope }) => {
-                  const stemName = SEM4_STEM_NAMES[stemIdx];
-                  // useWaveform compares envelopeData by reference (see
-                  // hooks/useWaveform.js:296). sem4Decoder mutates the same
-                  // Float32Array in place per chunk, so we have to clone
-                  // before dispatch or the stem canvas won't repaint live.
-                  dispatch({
-                    type: 'UPDATE_TRACK',
-                    payload: {
-                      busId,
-                      trackId: `stem-${trackId}-${stemName}`,
-                      updates: {
-                        metadata: {
-                          envelopeData: new Float32Array(envelope),
-                          envelopeFps: SEM4_ENVELOPE_FPS,
-                        },
-                      },
-                    },
-                  });
-                },
-                onStemDecoded: ({ stemIdx, stemName, wavUrl }) => {
-                  if (backendStemsWon.has(stemName)) {
-                    URL.revokeObjectURL(wavUrl);
-                    return;
-                  }
-                  dispatch({
-                    type: 'UPDATE_TRACK',
-                    payload: {
-                      busId,
-                      trackId: `stem-${trackId}-${stemName}`,
-                      updates: {
-                        audioUrl: wavUrl,
-                        metadata: { previewSource: 'sem_decoder_fp16', playbackReady: true },
-                      },
-                    },
-                  });
-                },
-                // Once distill_demucs has finished producing 4-stem
-                // latents, run latent_mask_e2e against them + the
-                // master waveform. The result is 4 stereo WAVs that
-                // are the master passed through per-stem STFT soft
-                // masks — the real "playback source until backend
-                // returns". These overwrite the sem_decoder previews.
-                onAllLatentsReady: async ({ stemLatents }) => {
-                  try {
-                    const stems = await stemAudiosFromMaskOverMaster(
-                      stemLatents, src.flat, src.numFrames
-                    );
-                    for (const { stemName, wavUrl } of stems) {
-                      if (backendStemsWon.has(stemName)) {
-                        URL.revokeObjectURL(wavUrl);
-                        continue;
-                      }
-                      dispatch({
-                        type: 'UPDATE_TRACK',
-                        payload: {
-                          busId,
-                          trackId: `stem-${trackId}-${stemName}`,
-                          updates: {
-                            audioUrl: wavUrl,
-                            metadata: { previewSource: 'latent_mask_e2e', playbackReady: true },
+                onAllLatentsReady: ({ stemLatents, stemNames, fps }) => {
+                  // Attach each stem's latent [64, T] to its track metadata.
+                  // Only the 4 rmsDemucs-covered stems (drums/bass/vocals/other)
+                  // have a matching track here; htdemucs_6s guitar/piano
+                  // stems don't exist yet when this fires.
+                  for (let i = 0; i < stemNames.length; i++) {
+                    const stemName = stemNames[i];
+                    dispatch({
+                      type: 'UPDATE_TRACK',
+                      payload: {
+                        busId,
+                        trackId: `stem-${trackId}-${stemName}`,
+                        updates: {
+                          metadata: {
+                            latent: stemLatents[i],
+                            latentChans: SEM4_LATENT_CHANS,
+                            latentFps: fps,
                           },
                         },
-                      });
-                    }
-                    console.log('[latentMask] preview playback ready for 4 stems (master × mask)');
-                  } catch (e) {
-                    console.warn('[latentMask] preview playback failed (non-fatal):', e?.message || e);
+                      },
+                    });
                   }
+                  console.log(`[sem4Decoder] cached ${stemNames.length} stem latents on track metadata`);
                 },
               });
-            } catch (previewErr) {
-              console.warn('[sem4Decoder] preview failed (non-fatal):', previewErr?.message || previewErr);
+            } catch (err) {
+              console.warn('[sem4Decoder] latent extract failed (non-fatal):', err?.message || err);
             }
           })();
 
@@ -1192,9 +1127,6 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
           // directly for playback (no ONNX decoder needed in browser).
           try {
             const sep = await separateStemsAuto(file);
-            // Backend won — stop issuing decoder calls. distill_demucs keeps
-            // running so we still get stem latents for downstream features.
-            previewDecodeAbort.abort();
             const wavUrls = sep?.stems || {};
             const stemNames = Object.keys(wavUrls);
             if (stemNames.length === 0) {
@@ -1210,7 +1142,6 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               for (const stemName of stemNames) {
                 const wavUrl = wavUrls[stemName];
                 if (!wavUrl) continue;
-                backendStemsWon.add(stemName);
                 // 1) audioUrl wired in immediately so playback can start
                 dispatch({
                   type: 'UPDATE_TRACK',
@@ -1223,13 +1154,13 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                 // 2) compute envelope from the real WAV and swap it in —
                 //    triggers the noise→shape animation over the preview
                 //    envelope, never a fresh waveform load.
-                envelopeFromWavUrl(wavUrl, SEM4_ENVELOPE_FPS)
+                envelopeFromWavUrl(wavUrl, RMS_FPS)
                   .then((env) => dispatch({
                     type: 'UPDATE_TRACK',
                     payload: {
                       busId,
                       trackId: `stem-${trackId}-${stemName}`,
-                      updates: { metadata: { envelopeData: env, envelopeFps: SEM4_ENVELOPE_FPS } },
+                      updates: { metadata: { envelopeData: env, envelopeFps: RMS_FPS } },
                     },
                   }))
                   .catch((e) => console.warn(`[envelope] ${stemName} from WAV failed:`, e?.message || e));
@@ -1242,7 +1173,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               const rmsSet = new Set(RMS_STEM_NAMES.map(n => `stem-${trackId}-${n}`));
               for (const stemName of stemNames) {
                 if (rmsSet.has(`stem-${trackId}-${stemName}`)) continue;
-                const T = Math.max(1, Math.floor(duration * SEM4_ENVELOPE_FPS));
+                const T = Math.max(1, Math.floor(duration * RMS_FPS));
                 const placeholderEnv = new Float32Array(2 * T); // all zeros → noise shape
                 dispatch({
                   type: 'ADD_TRACK',
@@ -1261,18 +1192,18 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                         instrument: stemName, icon: iconForType(stemName),
                         playbackReady: true,
                         envelopeData: placeholderEnv,
-                        envelopeFps: SEM4_ENVELOPE_FPS,
+                        envelopeFps: RMS_FPS,
                       },
                     },
                   },
                 });
-                envelopeFromWavUrl(wavUrls[stemName], SEM4_ENVELOPE_FPS)
+                envelopeFromWavUrl(wavUrls[stemName], RMS_FPS)
                   .then((env) => dispatch({
                     type: 'UPDATE_TRACK',
                     payload: {
                       busId,
                       trackId: `stem-${trackId}-${stemName}`,
-                      updates: { metadata: { envelopeData: env, envelopeFps: SEM4_ENVELOPE_FPS } },
+                      updates: { metadata: { envelopeData: env, envelopeFps: RMS_FPS } },
                     },
                   }))
                   .catch((e) => console.warn(`[envelope] ${stemName} from WAV failed:`, e?.message || e));
@@ -1281,8 +1212,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               // rmsDemucs failed -- add stems with a flat placeholder
               // envelope so the canvas stays envelope-driven, then async
               // swap in the real envelope computed from each WAV.
-              stemNames.forEach((n) => backendStemsWon.add(n));
-              const T = Math.max(1, Math.floor(duration * SEM4_ENVELOPE_FPS));
+              const T = Math.max(1, Math.floor(duration * RMS_FPS));
               const tracks = stemNames.map((stemName) => ({
                 id: `stem-${trackId}-${stemName}`,
                 name: `${file.name.replace(/\.[^.]+$/, '')} -- ${stemName}`,
@@ -1296,20 +1226,20 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                   instrument: stemName, icon: iconForType(stemName),
                   playbackReady: !!wavUrls[stemName],
                   envelopeData: new Float32Array(2 * T),
-                  envelopeFps: SEM4_ENVELOPE_FPS,
+                  envelopeFps: RMS_FPS,
                 },
               }));
               dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks } });
               dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: true } });
               for (const stemName of stemNames) {
                 if (!wavUrls[stemName]) continue;
-                envelopeFromWavUrl(wavUrls[stemName], SEM4_ENVELOPE_FPS)
+                envelopeFromWavUrl(wavUrls[stemName], RMS_FPS)
                   .then((env) => dispatch({
                     type: 'UPDATE_TRACK',
                     payload: {
                       busId,
                       trackId: `stem-${trackId}-${stemName}`,
-                      updates: { metadata: { envelopeData: env, envelopeFps: SEM4_ENVELOPE_FPS } },
+                      updates: { metadata: { envelopeData: env, envelopeFps: RMS_FPS } },
                     },
                   }))
                   .catch((e) => console.warn(`[envelope] ${stemName} from WAV failed:`, e?.message || e));

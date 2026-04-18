@@ -39,6 +39,7 @@ export function getProjects() {
 // on save — which is why the studio tab was hanging on close.
 const HEAVY_METADATA_FIELDS = [
   'envelopeData',     // Float32Array from rmsDemucs / sem4Decoder
+  'latent',           // per-stem distill_demucs latent [64*T] Float32Array
   'latents',          // per-stem oobleck latents
   'stemLatents',
   'waveformBuffer',   // pre-decoded stereo PCM
