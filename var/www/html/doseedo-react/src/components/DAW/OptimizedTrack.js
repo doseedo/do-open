@@ -169,6 +169,17 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
   // CompositeBusWaveform is wired in).
   const visualGain = track.isMuted ? 0 : (track.gain ?? 1.0);
 
+  // Stem-track UX: while no real audio has arrived, bars wobble slightly
+  // around their rms-derived heights to signal "still loading". Once
+  // audioUrl (backend WAV) is set, wobble stops and the envelope morph
+  // animation carries us into the final shape.
+  const isStem = track.metadata?.type === 'stem';
+  const loadingWobble = isStem && !!track.metadata?.envelopeData && !track.audioUrl;
+  // First time the stem canvas mounts (bus expands after mix detection),
+  // hold flat noise for 1 s before revealing the rms envelope. Later
+  // envelope swaps (backend WAV) morph instantly.
+  const revealDelayMs = isStem ? 1000 : 0;
+
   const { canvasRef, duration: actualDuration } = useWaveform(
     track.type === 'midi' ? null : track.audioUrl, // Skip waveform for MIDI tracks
     fullAudioWidth,
@@ -181,6 +192,8 @@ const OptimizedTrack = React.memo(({ track, busId, index, isExpanded, isSelected
     visualGain,
     // Show noise loop whenever there's nothing painted yet (loading, generating, placeholder)
     !!(track.isPlaceholder || track.metadata?.generating),
+    loadingWobble,
+    revealDelayMs,
   );
 
   // Update track duration when audio loads — only when the delta is

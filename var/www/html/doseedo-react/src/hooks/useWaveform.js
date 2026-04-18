@@ -169,7 +169,62 @@ function paintBarAnimationFromBuffer(canvas, audioBuffer, width, height, color, 
  * interrupts this one mid-flight, it picks up the interpolated heights
  * as its new start (smooth handoff).
  */
-function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, transitionFrameRef, currentHeightsRef = null) {
+/**
+ * Infinite idle wobble — each bar oscillates a tiny amount around its
+ * target envelope height via per-bar sine waves with random phases and
+ * slightly different frequencies. Signals "still loading" while keeping
+ * the rms shape recognizable. Exits cleanly when
+ * `loadingWobbleRef.current` goes false or when a new transition
+ * cancels transitionFrameRef.
+ */
+function startIdleWobble(ctx, targetHeights, width, height, color, transitionFrameRef, currentHeightsRef, loadingWobbleRef) {
+  const barSpacing = 2;
+  const barWidth = 2;
+  const numBars = targetHeights.length;
+  const midY = height / 2;
+  const maxBarHeight = height * 0.45;
+  const wobbleAmp = Math.max(1.2, maxBarHeight * 0.05);  // tiny, ~5% of max
+
+  const phases = new Float32Array(numBars);
+  const freqs = new Float32Array(numBars);
+  for (let i = 0; i < numBars; i++) {
+    phases[i] = Math.random() * Math.PI * 2;
+    freqs[i] = 0.6 + Math.random() * 0.8;   // 0.6..1.4 Hz, per-bar
+  }
+
+  const live = currentHeightsRef && currentHeightsRef.current && currentHeightsRef.current.length === numBars
+    ? currentHeightsRef.current
+    : (currentHeightsRef ? (currentHeightsRef.current = new Float32Array(numBars)) : null);
+
+  const start = performance.now();
+  const tick = (now) => {
+    if (!loadingWobbleRef || !loadingWobbleRef.current) {
+      transitionFrameRef.current = null;
+      return;
+    }
+    const dt = (now - start) / 1000;
+    ctx.clearRect(0, 0, width, height);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = barWidth;
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = 0.7;
+    for (let i = 0; i < numBars; i++) {
+      const w = wobbleAmp * Math.sin(2 * Math.PI * freqs[i] * dt + phases[i]);
+      const h = Math.max(0.5, targetHeights[i] + w);
+      if (live) live[i] = h;
+      const x = i * (barWidth + barSpacing) + barWidth / 2;
+      ctx.beginPath();
+      ctx.moveTo(x, midY - h);
+      ctx.lineTo(x, midY + h);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    transitionFrameRef.current = requestAnimationFrame(tick);
+  };
+  transitionFrameRef.current = requestAnimationFrame(tick);
+}
+
+function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, transitionFrameRef, currentHeightsRef = null, loadingWobbleRef = null) {
   if (!canvas) return;
   if (transitionFrameRef.current) cancelAnimationFrame(transitionFrameRef.current);
 
@@ -257,6 +312,11 @@ function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, 
       transitionFrameRef.current = null;
       // Final pixel-perfect render at steady state
       renderEnvelope(ctx, envelopeData, T, width, height, color, gain, currentHeightsRef);
+      // If we're in "still loading" mode (envelope painted but no real
+      // audio yet), kick off the idle wobble around these target heights.
+      if (loadingWobbleRef && loadingWobbleRef.current) {
+        startIdleWobble(ctx, targetHeights, width, height, color, transitionFrameRef, currentHeightsRef, loadingWobbleRef);
+      }
     }
   };
   transitionFrameRef.current = requestAnimationFrame(tick);
@@ -288,7 +348,7 @@ function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, 
  *   bar heights so volume changes are reflected in the waveform in real time.
  *   Pass 0 for muted tracks / soloed-out stems.
  */
-export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5', cropStart = 0, cropEnd = 0, envelopeData = null, envelopeFps = 25, gain = 1.0, showNoise = false) {
+export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5', cropStart = 0, cropEnd = 0, envelopeData = null, envelopeFps = 25, gain = 1.0, showNoise = false, loadingWobble = false, revealDelayMs = 0) {
   const canvasRef = useRef(null);
   const audioBufferRef = useRef(null);
   const loadedUrlRef = useRef(null);
@@ -298,6 +358,18 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
   const audioPaintedRef = useRef(false);
   const lastEnvelopeRef = useRef(null);
   const transitionFrameRef = useRef(null);
+  // `loadingWobble` drives an idle sine-based wobble around the envelope
+  // target heights after the initial paint settles, so stem tracks look
+  // "still loading" before the backend WAV arrives. Mirrored into a ref
+  // so the animation-end callback can read the latest value.
+  const loadingWobbleRef = useRef(loadingWobble);
+  loadingWobbleRef.current = loadingWobble;
+  // First-envelope-paint reveal gate: if revealDelayMs > 0, hold the
+  // canvas on flat noise for that long before the envelope appears. Only
+  // applied the very first time this canvas paints an envelope — later
+  // envelope swaps (rms → WAV) always morph instantly.
+  const revealedRef = useRef(false);
+  const revealTimeoutRef = useRef(null);
   // Mirror the latest envelopeData into a ref so the async loadAudio path can
   // read the CURRENT value when it resolves, not the stale value captured at
   // effect-run time. Otherwise the WAV-derived envelope painted by the
@@ -323,6 +395,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
   // Cleanup: cancel any in-flight transition on unmount / dep change.
   useEffect(() => () => {
     if (transitionFrameRef.current) cancelAnimationFrame(transitionFrameRef.current);
+    if (revealTimeoutRef.current) clearTimeout(revealTimeoutRef.current);
   }, []);
 
   // Instant envelope rendering — draws the waveform from latent_visual
@@ -333,16 +406,50 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     const T = envelopeData.length / 2;
     const dur = T / envelopeFps;
     const isNewEnvelope = envelopeData !== lastEnvelopeRef.current;
+
+    // First-paint reveal delay: hold on flat noise for revealDelayMs, then
+    // do the noise → envelope animation. Only applies to the FIRST envelope
+    // paint for this canvas instance. Later envelope swaps morph instantly.
+    const doEnvelopePaint = () => {
+      paintBarAnimation(
+        canvasRef.current, envelopeData, T, width, height, color, gain,
+        transitionFrameRef, currentBarHeightsRef, loadingWobbleRef,
+      );
+    };
     if (isNewEnvelope) {
-      // New envelope: bar-height animation (noise → shape).
-      paintBarAnimation(canvasRef.current, envelopeData, T, width, height, color, gain, transitionFrameRef, currentBarHeightsRef);
+      if (revealDelayMs > 0 && !revealedRef.current) {
+        // Flat noise first — small random jitter, no shape yet.
+        startNoiseAnimation(canvasRef.current, width, height, color, transitionFrameRef);
+        if (revealTimeoutRef.current) clearTimeout(revealTimeoutRef.current);
+        revealTimeoutRef.current = setTimeout(() => {
+          revealedRef.current = true;
+          revealTimeoutRef.current = null;
+          if (canvasRef.current && envelopeDataRef.current) {
+            const liveEnv = envelopeDataRef.current;
+            const liveT = liveEnv.length / 2;
+            paintBarAnimation(
+              canvasRef.current, liveEnv, liveT, width, height, color, gain,
+              transitionFrameRef, currentBarHeightsRef, loadingWobbleRef,
+            );
+          }
+        }, revealDelayMs);
+      } else {
+        revealedRef.current = true;
+        doEnvelopePaint();
+      }
     } else {
       // Same envelope, just a dimension / gain repaint — instant, no animation.
-      const canvas = canvasRef.current;
-      if (canvas) {
-        canvas.width = width;
-        canvas.height = height;
-        renderEnvelope(canvas.getContext('2d'), envelopeData, T, width, height, color, gain, currentBarHeightsRef);
+      // Skip during delay (the noise loop owns the canvas) or during any
+      // live transition.
+      if (revealTimeoutRef.current || transitionFrameRef.current) {
+        // leave it alone
+      } else {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.width = width;
+          canvas.height = height;
+          renderEnvelope(canvas.getContext('2d'), envelopeData, T, width, height, color, gain, currentBarHeightsRef);
+        }
       }
     }
     lastEnvelopeRef.current = envelopeData;
@@ -351,7 +458,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
       setDuration(dur);
       setIsLoaded(true);
     }
-  }, [envelopeData, width, height, color, envelopeFps, isLoaded, gain]);
+  }, [envelopeData, width, height, color, envelopeFps, isLoaded, gain, revealDelayMs]);
 
   // When showNoise is true (e.g. MIDI track mid-generation with no audioUrl yet),
   // paint static noise bars immediately so the canvas shows something right away.
