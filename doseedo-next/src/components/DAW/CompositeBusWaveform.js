@@ -164,13 +164,16 @@ const CompositeBusWaveform = React.memo(({
       if (canvas.width !== s.width) canvas.width = s.width;
       if (canvas.height !== s.height) canvas.height = s.height;
 
-      // Ensure wobble phase/freq arrays.
+      // Ensure wobble phase/freq arrays. Frequencies are in the 2–5 Hz
+      // band so the sine advances enough per frame to read as motion
+      // from frame one (at 1 Hz the phase only moves 0.1 rad per frame
+      // at 60 Hz — too slow to perceive during the brief noise hold).
       if (!s.wobble.phases || s.wobble.phases.length !== numBars) {
         s.wobble.phases = new Float32Array(numBars);
         s.wobble.freqs = new Float32Array(numBars);
         for (let i = 0; i < numBars; i++) {
           s.wobble.phases[i] = Math.random() * Math.PI * 2;
-          s.wobble.freqs[i] = 0.8 + Math.random() * 1.0;  // 0.8–1.8 Hz
+          s.wobble.freqs[i] = 2.0 + Math.random() * 3.0;  // 2–5 Hz
         }
       }
 
@@ -249,10 +252,15 @@ const CompositeBusWaveform = React.memo(({
       ctx.globalAlpha = 0.7;
       const wobbleActive = s.wobble.amp > 0.05;
       const wobbleDt = (now - s.animStartMs) / 1000;
+      // Per-frame jitter amplitude — guarantees every frame differs
+      // from the last even if the sine phase barely advanced, so the
+      // user never perceives a "frozen" noise frame on the first paint.
+      const jitterAmp = s.wobble.amp * 0.4;
       for (let i = 0; i < numBars; i++) {
         let h = s.current[i];
         if (wobbleActive) {
           h += s.wobble.amp * Math.sin(2 * Math.PI * s.wobble.freqs[i] * wobbleDt + s.wobble.phases[i]);
+          h += (Math.random() - 0.5) * jitterAmp;
         }
         h = Math.max(0.5, h);
         const x = i * barStride + barWidth / 2;
