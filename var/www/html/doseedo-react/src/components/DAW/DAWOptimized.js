@@ -183,20 +183,23 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
     // Backend prewarm — fire and forget
     fetch('/health').catch(() => {});
 
-    // Prewarm the lightweight rmsDemucs model (577 KB) so it's ready
-    // when the user drops their first audio file.
-    import('../../services/rmsDemucs').then(({ initRmsDemucs }) =>
-      initRmsDemucs().catch(() => {})
-    ).catch(() => {});
-
-    // Prewarm the sem4Decoder pipeline (distill_demucs_fp16 163 MB +
-    // sem_demucs_packed 5 MB + sem_decoder_fp16 21 MB). Without this
-    // prewarm the 190 MB download only starts on file drop, so the
-    // backend almost always wins the race and the preview never shows.
-    // Fire-and-forget — the service is idempotent and IndexedDB-cached.
-    import('../../services/sem4Decoder').then(({ initSem4Decoder }) =>
-      initSem4Decoder().catch(() => {})
-    ).catch(() => {});
+    // Prewarm ONNX models serially: rmsDemucs first (577 KB, ~1 s) so
+    // its WebGPU session lands cleanly, THEN the sem4Decoder pipeline
+    // (distill_demucs_fp16 163 MB + sem_demucs_packed 5 MB +
+    // sem_decoder_fp16 21 MB). Running both in parallel caused rms's
+    // WebGPU session to race the 3 sem4Decoder sessions — ORT's EP
+    // returned a null-backed session and analyzeRms crashed with
+    // "Cannot read properties of null (reading 'Nd')".
+    (async () => {
+      try {
+        const { initRmsDemucs } = await import('../../services/rmsDemucs');
+        await initRmsDemucs();
+      } catch (_) { /* non-fatal */ }
+      try {
+        const { initSem4Decoder } = await import('../../services/sem4Decoder');
+        await initSem4Decoder();
+      } catch (_) { /* non-fatal */ }
+    })();
 
     console.log('[prewarm] studio opened — warming Modal backend + rmsDemucs + sem4Decoder');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

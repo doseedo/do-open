@@ -300,6 +300,7 @@ export async function streamPreviewSeparation(flat, numFrames, opts = {}) {
   const stemsEmitted = new Array(N_STEMS).fill(false);
 
   const isAborted = () => abortSignal?.aborted;
+  console.log(`[sem4Decoder] preview: ${nChunks} chunks × 4 stems on ${numFrames / SR | 0}s input`);
 
   for (let c = 0; c < nChunks; c++) {
     if (isAborted()) return;
@@ -370,17 +371,22 @@ export async function streamPreviewSeparation(flat, numFrames, opts = {}) {
         }
 
         // If this stem just completed all chunks, emit the WAV URL.
-        if (stemChunksDone[s] === nChunks && !stemsEmitted[s] && onStemDecoded) {
+        if (stemChunksDone[s] === nChunks && !stemsEmitted[s]) {
           const url = stereoBufferToWavUrl(audioBufs[s], numFrames);
           stemsEmitted[s] = true;
-          onStemDecoded({ stemIdx: s, stemName: STEM_NAMES[s], wavUrl: url });
+          console.log(`[sem4Decoder] decoded ${STEM_NAMES[s]}`);
+          onStemDecoded && onStemDecoded({ stemIdx: s, stemName: STEM_NAMES[s], wavUrl: url });
         }
       }
     }
   }
 
-  if (onAllLatentsReady && !isAborted()) {
-    onAllLatentsReady({ stemLatents: latentBufs, stemNames: STEM_NAMES });
+  if (!isAborted()) {
+    const status = decodeAbortSignal?.aborted
+      ? 'latents complete, decode aborted (backend won)'
+      : 'latents + decode complete';
+    console.log(`[sem4Decoder] preview: ${status}`);
+    onAllLatentsReady && onAllLatentsReady({ stemLatents: latentBufs, stemNames: STEM_NAMES });
   }
 }
 
