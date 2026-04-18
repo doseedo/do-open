@@ -205,6 +205,13 @@ function startIdleWobble(ctx, targetHeights, width, height, color, transitionFra
     ? currentHeightsRef.current
     : (currentHeightsRef ? (currentHeightsRef.current = new Float32Array(numBars)) : null);
 
+  // Fade the wobble IN from zero over ~500 ms. Without this, the wobble
+  // starts with sin(random phase) which is generally non-zero → bars
+  // jump ±wobbleAmp at the handoff between the paint-animation ending
+  // and the wobble loop starting. The fade-in keeps every bar at its
+  // exact final paint position at t=0 and grows the oscillation from
+  // there, so the transition is visually continuous.
+  const FADE_IN_SEC = 0.5;
   const start = performance.now();
   const tick = (now) => {
     if (!loadingWobbleRef || !loadingWobbleRef.current) {
@@ -212,13 +219,14 @@ function startIdleWobble(ctx, targetHeights, width, height, color, transitionFra
       return;
     }
     const dt = (now - start) / 1000;
+    const fadeIn = Math.min(dt / FADE_IN_SEC, 1);
     ctx.clearRect(0, 0, width, height);
     ctx.strokeStyle = color;
     ctx.lineWidth = barWidth;
     ctx.lineCap = 'round';
     ctx.globalAlpha = 0.7;
     for (let i = 0; i < numBars; i++) {
-      const w = wobbleAmp * Math.sin(2 * Math.PI * freqs[i] * dt + phases[i]);
+      const w = wobbleAmp * fadeIn * Math.sin(2 * Math.PI * freqs[i] * dt + phases[i]);
       const h = Math.max(0.5, targetHeights[i] + w);
       if (live) live[i] = h;
       const x = i * (barWidth + barSpacing) + barWidth / 2;

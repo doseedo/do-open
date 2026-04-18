@@ -194,11 +194,25 @@ const CompositeBusWaveform = React.memo(({
       const norm = maxBarHeight / maxMasterPtp;
       const noiseFloor = maxMasterPtp * 0.02;
 
+      // Per-bar ratio modulation is ENVELOPE-dependent, so during
+      // extraction (where envelopes swap from rms → mask → backend WAV)
+      // the master shape would visibly change with every envelope
+      // update. User rule: master only moves when *they* pull a stem
+      // fader; it must not ride along with envelope refinements.
+      //
+      // Skip the ratio pipeline entirely when every stem is at default
+      // gain (1.0) AND not soloed/muted away. The moment a user touches
+      // a slider, ratio kicks in as before.
+      const anyUserModulation = stemInputs.some((s) => s.gain !== 1.0);
+
       for (let i = 0; i < numBars; i++) {
         const x = i * (barWidth + barSpacing);
         const mv = masterPtp[i];
-        const bs = baselineSummed[i];
-        const ratio = bs > 1e-6 ? summed[i] / bs : 0;
+        let ratio = 1;
+        if (anyUserModulation) {
+          const bs = baselineSummed[i];
+          ratio = bs > 1e-6 ? summed[i] / bs : 0;
+        }
         const v = mv * ratio;
         if (mv < noiseFloor || busGain === 0 || ratio === 0) {
           ctx.beginPath();

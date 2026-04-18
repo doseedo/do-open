@@ -211,20 +211,36 @@ export async function decodeStemMasks({ bundleUrl, masterAudioBuffer, headers = 
     throw new Error(`mask payload size ${payload.length} != expected ${expectedPayload}`);
   }
 
-  const masterSr = masterAudioBuffer.sampleRate;
-  if (masterSr !== meta.sr) {
-    // We don't resample — the master should already be at meta.sr (48 kHz).
-    // If not, bail and let the caller fall back to WAV URLs.
-    throw new Error(`master sr ${masterSr} != bundle sr ${meta.sr} — no client-side resample`);
+  // If master SR ≠ bundle SR, resample the master in-browser via
+  // OfflineAudioContext before STFTing. htdemucs runs at 44.1 kHz so
+  // the bundle is emitted at 44100 while our master is 48000. Browser's
+  // built-in resampler is quality-adequate for this preview path.
+  let srcBuffer = masterAudioBuffer;
+  if (masterAudioBuffer.sampleRate !== meta.sr) {
+    const targetLen = Math.round(masterAudioBuffer.duration * meta.sr);
+    const offline = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(
+      Math.max(1, masterAudioBuffer.numberOfChannels),
+      targetLen,
+      meta.sr,
+    );
+    const srcNode = offline.createBufferSource();
+    srcNode.buffer = masterAudioBuffer;
+    srcNode.connect(offline.destination);
+    srcNode.start();
+    srcBuffer = await offline.startRendering();
+    console.log(
+      `[stemMasks] resampled master ${masterAudioBuffer.sampleRate}→${meta.sr} Hz (${targetLen} samples)`
+    );
   }
+  const masterSr = srcBuffer.sampleRate;
   const nFft = meta.nFft, hop = meta.hop, nBins = meta.nBins, nFrames = meta.nFrames;
   const window = _hann(nFft);
 
   // STFT master ONCE per channel — reused for every stem.
   const tStft0 = performance.now();
-  const nCh = masterAudioBuffer.numberOfChannels;
-  const chL = masterAudioBuffer.getChannelData(0);
-  const chR = nCh > 1 ? masterAudioBuffer.getChannelData(1) : chL;
+  const nCh = srcBuffer.numberOfChannels;
+  const chL = srcBuffer.getChannelData(0);
+  const chR = nCh > 1 ? srcBuffer.getChannelData(1) : chL;
   const stftL = _stft(chL, nFft, hop, window, nFrames, nBins);
   const stftR = _stft(chR, nFft, hop, window, nFrames, nBins);
   const tStft = performance.now() - tStft0;
