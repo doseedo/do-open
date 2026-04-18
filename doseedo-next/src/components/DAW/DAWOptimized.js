@@ -992,8 +992,29 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
       const audio = new Audio();
       audio.src = audioUrl;
 
-      audio.addEventListener('loadedmetadata', () => {
+      audio.addEventListener('loadedmetadata', async () => {
         const duration = audio.duration;
+
+        // Pre-decode the master AudioBuffer and seed the shared
+        // audioBufferCache BEFORE we dispatch ADD_TRACK. When the
+        // track's OptimizedTrack mounts and calls useWaveform,
+        // audioBufferCache.has(audioUrl) will already be true → the
+        // buffer target is applied on the first animator frame, and
+        // the waveform appears at its full shape immediately rather
+        // than easing in from the noise baseline. This is the ONLY
+        // way to guarantee the uploaded waveform looks identical from
+        // first paint through every phase of extraction.
+        let preDecodedSrc = null;
+        try {
+          preDecodedSrc = await audioFileToStereo48k(file);
+          const ctxForCache = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+          const masterBuf = ctxForCache.createBuffer(2, preDecodedSrc.numFrames, 48000);
+          masterBuf.getChannelData(0).set(preDecodedSrc.flat.subarray(0, preDecodedSrc.numFrames));
+          masterBuf.getChannelData(1).set(preDecodedSrc.flat.subarray(preDecodedSrc.numFrames, 2 * preDecodedSrc.numFrames));
+          audioBufferCache.set(audioUrl, masterBuf);
+        } catch (preErr) {
+          console.warn('[drop] master pre-decode failed (non-fatal):', preErr?.message || preErr);
+        }
 
         // Create a new SFX bus for this track.
         // Start COLLAPSED: the bus row renders the uploaded track as
@@ -1099,34 +1120,13 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
           // Paint stem envelopes immediately from the lightweight RMS model.
           // No backend wait -- this runs in < 500ms on any device.
           let rmsPainted = false;
-          // Hoisted so the sem4Decoder preview below can reuse the decoded
-          // PCM without re-running ctx.decodeAudioData, and so the per-stem
-          // rmsDemucs envelopes seed the chunked sem4Decoder accumulator.
-          let decodedSrc = null;
+          // preDecodedSrc was produced + cached above, before ADD_TRACK
+          // dispatch. Reuse it here — no second decode of the same file.
+          let decodedSrc = preDecodedSrc;
           let rmsStemEnvelopes = null;
           try {
-            decodedSrc = await audioFileToStereo48k(file);
+            if (!decodedSrc) decodedSrc = await audioFileToStereo48k(file);
             const { flat, numFrames } = decodedSrc;
-            // Pre-populate the shared audioBufferCache with the master's
-            // decoded buffer under its blob URL key, BEFORE the bus expands
-            // and hides the master's OptimizedTrack. Without this,
-            // CompositeBusWaveform's masterInput.audioBuffer is null on its
-            // first few renders (the master never gets decoded via
-            // useWaveform because it's filtered out of visibleTracks) and
-            // the composite falls through to its stem-sum fallback, whose
-            // normalization IS envelope-dependent → master visibly ripples
-            // as rms → mask → backend envelopes land. With the buffer
-            // cached up-front, the composite locks to master ptp × norm
-            // from the very first render.
-            try {
-              const ctxForCache = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-              const masterBuf = ctxForCache.createBuffer(2, numFrames, 48000);
-              masterBuf.getChannelData(0).set(flat.subarray(0, numFrames));
-              masterBuf.getChannelData(1).set(flat.subarray(numFrames, 2 * numFrames));
-              audioBufferCache.set(audioUrl, masterBuf);
-            } catch (cacheErr) {
-              console.warn('[drop] master pre-cache failed (non-fatal):', cacheErr?.message || cacheErr);
-            }
             const rmsResult = await analyzeRms(flat, numFrames);
             // Convert amplitude[T] -> [2*T] (min, max) pairs for useWaveform
             // Build per-stem envelopes once, keep a reference for seeding

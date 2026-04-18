@@ -171,6 +171,11 @@ export function useWaveform(
       animStartMs: 0,
       // whether target needs recompute (set by target-source effects)
       targetKind: 'noise',   // 'noise' | 'envelope' | 'buffer'
+      // Has a REAL (non-noise) target been applied yet? The first time it
+      // is, we snap `current` to match so the waveform appears at full
+      // shape instantly — no ease-in from the noise baseline. Subsequent
+      // target swaps still ease normally for smooth rms → mask → WAV.
+      hasRealTarget: false,
     };
   }
   const envelopeDataRef = useRef(envelopeData);
@@ -299,6 +304,10 @@ export function useWaveform(
     const apply = () => {
       s.target = newTarget;
       s.targetKind = 'envelope';
+      if (!s.hasRealTarget) {
+        s.current = new Float32Array(newTarget);  // snap on first real target
+        s.hasRealTarget = true;
+      }
     };
 
     // First envelope paint may be gated by a reveal delay (e.g. stems
@@ -348,10 +357,16 @@ export function useWaveform(
       // Re-apply buffer target on dim / crop / gain changes.
       const buf = audioBufferRef.current;
       if (buf && !envelopeDataRef.current) {
+        const s = stateRef.current;
         const numBars = Math.max(1, Math.floor(width / BAR_STRIDE));
         const maxBar = height * 0.45;
-        stateRef.current.target = _targetFromBuffer(buf, numBars, maxBar, gain, cropStart, cropEnd);
-        stateRef.current.targetKind = 'buffer';
+        const newTarget = _targetFromBuffer(buf, numBars, maxBar, gain, cropStart, cropEnd);
+        s.target = newTarget;
+        s.targetKind = 'buffer';
+        if (!s.hasRealTarget) {
+          s.current = new Float32Array(newTarget);
+          s.hasRealTarget = true;
+        }
       }
       return;
     }
@@ -388,8 +403,13 @@ export function useWaveform(
         if (!envelopeDataRef.current) {
           const numBars = Math.max(1, Math.floor(width / BAR_STRIDE));
           const maxBar = height * 0.45;
-          s.target = _targetFromBuffer(audioBuffer, numBars, maxBar, gain, cropStart, cropEnd);
+          const newTarget = _targetFromBuffer(audioBuffer, numBars, maxBar, gain, cropStart, cropEnd);
+          s.target = newTarget;
           s.targetKind = 'buffer';
+          if (!s.hasRealTarget) {
+            s.current = new Float32Array(newTarget);  // snap on first real target
+            s.hasRealTarget = true;
+          }
         }
       } catch (err) {
         console.error('Error loading audio:', err);

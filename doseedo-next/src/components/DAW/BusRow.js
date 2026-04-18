@@ -655,7 +655,7 @@ const BusRow = React.memo(({
             expanded, child stem tracks sit below it (pushed down by the
             paddingTop: trackHeight on the parent). Clicking it toggles
             the bus expansion so the interaction stays identical. */}
-        {hasStems || hasMultipleTracks || hasMultitrackMIDI ? (
+        {hasStems || hasMultipleTracks || hasMultitrackMIDI || hasPendingUpload ? (
           <div
             onClick={handleBusClick}
             style={{
@@ -693,9 +693,10 @@ const BusRow = React.memo(({
 
         {/* Expanded: render the visible child tracks (stems only once
             separation is done; master is hidden but still in bus.tracks
-            for analysis + mask playback). Collapsed with a single
-            pre-separation track: render that one track here so the
-            user still sees a waveform before stems arrive. */}
+            for analysis + mask playback). Collapsed: the master header
+            above already renders the CompositeBusWaveform for every
+            audio case (stems, multi-track, and single uploaded track
+            pre-separation via hasPendingUpload) — nothing extra here. */}
         {bus.expanded ? (
           visibleTracks.length > 0 ? (
             visibleTracks
@@ -717,21 +718,11 @@ const BusRow = React.memo(({
             </div>
           )
         ) : (
-          /* Collapsed + no stems + single track → the single-track
-             preview replaces the composite (that branch returned null
-             above). */
-          !hasStems && !hasMultipleTracks && !hasMultitrackMIDI && bus.tracks.length > 0 ? (
-            <OptimizedTrack
-              key={bus.tracks[0].id}
-              track={bus.tracks[0]}
-              busId={bus.id}
-              index={0}
-              isExpanded={false}
-              isSelected={state.selectedTrack?.id === bus.tracks[0].id}
-              isMasterView={true}
-              trackHeight={trackHeight}
-            />
-          ) : bus.tracks.length === 0 ? (
+          /* Collapsed view: the master header above already renders the
+             CompositeBusWaveform (including the single-uploaded-track
+             pre-separation case via hasPendingUpload). Only render an
+             empty-state hint when the bus has no tracks at all. */
+          bus.tracks.length === 0 ? (
             <div className={styles.emptyBusHint}>
               Double-click to create MIDI track
             </div>
