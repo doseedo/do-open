@@ -1046,6 +1046,10 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                 decodeAbortSignal: previewDecodeAbort.signal,
                 onStemEnvelopeExtended: ({ stemIdx, envelope }) => {
                   const stemName = SEM4_STEM_NAMES[stemIdx];
+                  // useWaveform compares envelopeData by reference (see
+                  // hooks/useWaveform.js:296). sem4Decoder mutates the same
+                  // Float32Array in place per chunk, so we have to clone
+                  // before dispatch or the stem canvas won't repaint live.
                   dispatch({
                     type: 'UPDATE_TRACK',
                     payload: {
@@ -1053,7 +1057,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                       trackId: `stem-${trackId}-${stemName}`,
                       updates: {
                         metadata: {
-                          envelopeData: envelope,
+                          envelopeData: new Float32Array(envelope),
                           envelopeFps: SEM4_ENVELOPE_FPS,
                         },
                       },
@@ -1103,12 +1107,20 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                 const wavUrl = wavUrls[stemName];
                 if (!wavUrl) continue;
                 backendStemsWon.add(stemName);
+                // Null out envelopeData so useWaveform stops painting the
+                // rmsDemucs/sem4Decoder predicted envelope and draws the
+                // real waveform from the decoded WAV instead (see
+                // hooks/useWaveform.js:360-414 — envelopeData "wins" if
+                // present).
                 dispatch({
                   type: 'UPDATE_TRACK',
                   payload: {
                     busId,
                     trackId: `stem-${trackId}-${stemName}`,
-                    updates: { audioUrl: wavUrl, metadata: { playbackReady: true } },
+                    updates: {
+                      audioUrl: wavUrl,
+                      metadata: { playbackReady: true, envelopeData: null, envelopeFps: null },
+                    },
                   },
                 });
               }
