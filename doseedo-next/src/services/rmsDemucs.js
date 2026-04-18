@@ -187,9 +187,13 @@ export async function initRmsDemucs() {
     const graphBuf = await fetchModelWithCache(MODEL_URL);
     const graphBytes = new Uint8Array(graphBuf);
 
-    const backends = [];
-    if (ort.env?.webgpu) backends.push('webgpu');
-    backends.push('wasm');
+    // Pin rmsDemucs to WASM. The model is 577 KB and runs in < 500 ms on
+    // WASM for a full song — WebGPU isn't worth contending for. When rms
+    // shared the GPU with sem4Decoder (190 MB) + latentEncoder (161 MB),
+    // Chrome's WebGPU EP evicted rms's tiny buffers under memory
+    // pressure and analyzeRms crashed with "Cannot read properties of
+    // null (reading 'Nd')" on the first drop. WASM sidesteps that.
+    const backends = ['wasm'];
 
     let lastErr = null;
     for (const ep of backends) {
