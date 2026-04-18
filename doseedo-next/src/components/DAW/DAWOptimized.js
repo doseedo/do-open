@@ -1030,11 +1030,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
           const backendStemsWon = new Set();
           const previewPromise = (async () => {
             try {
-              console.log('[sem4Decoder] preview kicked off');
               // decodedSrc is populated by the rms block; fall back to a fresh
               // decode if rms threw before the call.
               const src = decodedSrc || await audioFileToStereo48k(file);
-              console.log(`[sem4Decoder] calling streamPreviewSeparation (numFrames=${src.numFrames})`);
               await streamPreviewSeparation(src.flat, src.numFrames, {
                 abortSignal: previewAbort.signal,
                 decodeAbortSignal: previewDecodeAbort.signal,

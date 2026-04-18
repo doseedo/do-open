@@ -56,11 +56,9 @@ export async function initSem4Decoder(onProgress = null) {
   if (_sessions) return _sessions;
   if (_initPromise) return _initPromise;
 
-  console.log('[sem4Decoder] initSem4Decoder starting');
   _initPromise = (async () => {
     const ort = await import('onnxruntime-web');
     _ort = ort;
-    console.log('[sem4Decoder] ort loaded; webgpu?', !!ort.env?.webgpu);
 
     if (ort.env?.wasm) {
       ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/';
@@ -78,7 +76,7 @@ export async function initSem4Decoder(onProgress = null) {
     const subProg = (tag, base) => (p) => {
       if (onProgress) onProgress({ tag, ...p, base });
     };
-    console.log('[sem4Decoder] fetching 5 model files (first visit: ~190 MB)');
+    console.log('[sem4Decoder] loading latent_demucs + latent_sem + decoder (190 MB cold / IndexedDB warm)');
     const [
       demucsGraph, demucsWeights,
       semGraph,
@@ -90,7 +88,6 @@ export async function initSem4Decoder(onProgress = null) {
       fetchModelWithCache(MODELS.decoder,     subProg('decoder.onnx', 'decoder')),
       fetchModelWithCache(MODELS.decoderData, subProg('decoder.data', 'decoder')),
     ]);
-    console.log('[sem4Decoder] all model bytes loaded, building sessions');
 
     async function makeSession(graphBuf, extPairs /* [{path, bytes}, ...] */) {
       const backends = [];
@@ -111,8 +108,7 @@ export async function initSem4Decoder(onProgress = null) {
             }));
           }
           const sess = await ort.InferenceSession.create(new Uint8Array(graphBuf), options);
-          console.log(`[sem4Decoder] ${extPairs ? 'ext' : 'inline'} ready on ${ep}`);
-          return sess;
+          return { sess, ep };
         } catch (err) {
           const msg = err?.message || String(err);
           console.warn(`[sem4Decoder] ${ep} init failed:`, msg);
@@ -126,15 +122,17 @@ export async function initSem4Decoder(onProgress = null) {
     // and the graphs are small. Avoids a GPU OOM race on lower-end machines.
     const demucsBytes = new Uint8Array(demucsWeights);
     const decoderBytes = new Uint8Array(decoderWeights);
-    const demucsSess = await makeSession(demucsGraph, [
+    const demucsR = await makeSession(demucsGraph, [
       { path: 'distill_demucs_fp16.onnx.data', bytes: demucsBytes },
     ]);
-    const semSess = await makeSession(semGraph, null);
-    const decoderSess = await makeSession(decoderGraph, [
+    const semR = await makeSession(semGraph, null);
+    const decoderR = await makeSession(decoderGraph, [
       { path: 'sem_decoder_fp16.onnx.data', bytes: decoderBytes },
     ]);
 
-    _sessions = { demucs: demucsSess, sem: semSess, decoder: decoderSess };
+    _sessions = { demucs: demucsR.sess, sem: semR.sess, decoder: decoderR.sess };
+    // All three EPs should match; report the one the demucs session landed on.
+    console.log(`[sem4Decoder] ready on ${demucsR.ep} (latent_demucs + latent_sem + decoder)`);
     return _sessions;
   })();
 
