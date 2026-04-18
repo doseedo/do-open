@@ -31,6 +31,45 @@ export function getProjects() {
   }
 }
 
+// Metadata fields that are typed-array / binary blobs — cheap to
+// recompute but catastrophic to serialize. `JSON.stringify(Float32Array)`
+// produces an object with one numeric string key per sample, which blows
+// a 12 KB envelope into ~150 KB of JSON. Over many stem tracks that
+// exhausts the 5-10 MB localStorage quota and blocks the main thread
+// on save — which is why the studio tab was hanging on close.
+const HEAVY_METADATA_FIELDS = [
+  'envelopeData',     // Float32Array from rmsDemucs / sem4Decoder
+  'latents',          // per-stem oobleck latents
+  'stemLatents',
+  'waveformBuffer',   // pre-decoded stereo PCM
+  'midiBuffer',       // ArrayBuffer of a MIDI file
+  'audioBuffer',      // AudioBuffer / ArrayBuffer
+];
+
+function stripHeavyTrackMetadata(state) {
+  // Shallow-clone the buses spine; deep-clone only the parts that carry
+  // the heavy fields. Cheaper than structuredClone on the full tree.
+  if (!state || !Array.isArray(state.buses)) return state;
+  return {
+    ...state,
+    buses: state.buses.map((bus) => ({
+      ...bus,
+      tracks: (bus.tracks || []).map((track) => {
+        if (!track?.metadata) return track;
+        let metadata = track.metadata;
+        let cloned = false;
+        for (const f of HEAVY_METADATA_FIELDS) {
+          if (metadata[f] != null) {
+            if (!cloned) { metadata = { ...metadata }; cloned = true; }
+            delete metadata[f];
+          }
+        }
+        return cloned ? { ...track, metadata } : track;
+      }),
+    })),
+  };
+}
+
 /**
  * Save a session to localStorage
  */
@@ -40,7 +79,7 @@ export function saveSession(projectName, state) {
     const sessionData = {
       projectName,
       timestamp: Date.now(),
-      state
+      state: stripHeavyTrackMetadata(state),
     };
 
     // Save session data
