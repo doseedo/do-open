@@ -189,7 +189,16 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
       initRmsDemucs().catch(() => {})
     ).catch(() => {});
 
-    console.log('[prewarm] studio opened — warming Modal backend + rmsDemucs model');
+    // Prewarm the sem4Decoder pipeline (distill_demucs_fp16 163 MB +
+    // sem_demucs_packed 5 MB + sem_decoder_fp16 21 MB). Without this
+    // prewarm the 190 MB download only starts on file drop, so the
+    // backend almost always wins the race and the preview never shows.
+    // Fire-and-forget — the service is idempotent and IndexedDB-cached.
+    import('../../services/sem4Decoder').then(({ initSem4Decoder }) =>
+      initSem4Decoder().catch(() => {})
+    ).catch(() => {});
+
+    console.log('[prewarm] studio opened — warming Modal backend + rmsDemucs + sem4Decoder');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const timelineContainerRef = useRef(null);
