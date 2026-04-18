@@ -265,6 +265,7 @@ export async function streamPreviewSeparation(flat, numFrames, opts = {}) {
 
   const { demucs, sem, decoder } = await initSem4Decoder();
   const ort = _ort;
+  const { ortWebGPURun } = await import('./webgpuOrtQueue');
 
   // Round chunk size to a multiple of FRAME_SAMPLES so latent T stays integer.
   const chunkSamples = Math.floor(_chunkSamples / FRAME_SAMPLES) * FRAME_SAMPLES;
@@ -283,7 +284,7 @@ export async function streamPreviewSeparation(flat, numFrames, opts = {}) {
     buf.set(cleanFlat.subarray(numFrames, 2 * numFrames), numFrames);
     return buf;
   })(), [1, 2, numFrames]);
-  const semOut = await sem.run({ waveform: semInput });
+  const semOut = await ortWebGPURun(() => sem.run({ waveform: semInput }));
   const embedding = semOut['embedding']?.data;
   if (!embedding || embedding.length !== N_STEMS * 128) {
     throw new Error('sem_demucs_packed did not return expected [1,4,128] embedding');
@@ -312,7 +313,7 @@ export async function streamPreviewSeparation(flat, numFrames, opts = {}) {
 
     // 1) distill_demucs on this chunk → stem_latents [1,4,64,T_chunk]
     const chunkTensor = buildChunkTensor(ort, cleanFlat, numFrames, startSample, useN);
-    const demucsOut = await demucs.run({ audio: chunkTensor });
+    const demucsOut = await ortWebGPURun(() => demucs.run({ audio: chunkTensor }));
     const stemLatents = demucsOut['stem_latents']?.data;     // Float32 length 1*4*64*T
     if (!stemLatents) throw new Error('distill_demucs returned no stem_latents');
     const Tchunk = useN / FRAME_SAMPLES;
@@ -344,7 +345,7 @@ export async function streamPreviewSeparation(flat, numFrames, opts = {}) {
         emb.set(embedding.subarray(s * 128, (s + 1) * 128));
         const embTensor = new ort.Tensor('float32', emb, [1, 128]);
 
-        const decOut = await decoder.run({ latent: latTensor, sem_emb: embTensor });
+        const decOut = await ortWebGPURun(() => decoder.run({ latent: latTensor, sem_emb: embTensor }));
         const audioChunkFlat = decOut['audio']?.data;   // [1, 2, 1920*Tchunk]
         if (!audioChunkFlat) throw new Error('sem_decoder returned no audio');
         const chunkN = 1920 * Tchunk;

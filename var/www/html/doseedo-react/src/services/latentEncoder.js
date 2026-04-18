@@ -170,6 +170,10 @@ export async function encodeToLatent(flat, numFrames, chunkSamples = 48000 * 30)
 }
 
 async function _encode(sess, ort, flat, numFrames, chunkSamples) {
+  // Global WebGPU ORT queue — see webgpuOrtQueue.js. ORT-web's WebGPU EP
+  // throws "Session mismatch" when two sessions overlap on the shared
+  // GPUDevice, so every latentEncoder call serializes with sem4Decoder.
+  const { ortWebGPURun } = await import('./webgpuOrtQueue');
   const outFrames = Math.floor(numFrames / FRAME_SAMPLES);
   if (outFrames <= 0) return new Float32Array(0);
 
@@ -190,7 +194,7 @@ async function _encode(sess, ort, flat, numFrames, chunkSamples) {
     chunkFlat.set(flat.subarray(numFrames + consumed, numFrames + consumed + useN), useN);
 
     const input = new ort.Tensor('float32', chunkFlat, [1, 2, useN]);
-    const res = await sess.run({ audio: input });
+    const res = await ortWebGPURun(() => sess.run({ audio: input }));
     const lat = res.latent || res[Object.keys(res)[0]];
     // lat.data is Float32Array length 1*64*T_chunk in [1, 64, T] layout.
     // Convert to time-major [T, 64] and append.
