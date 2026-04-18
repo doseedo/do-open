@@ -312,9 +312,13 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
         const { initLatentEncoder } = await import('../../services/latentEncoder');
         await initLatentEncoder();
       } catch (_) { /* non-fatal */ }
+      try {
+        const { initLatentPitch } = await import('../../services/latentPitch');
+        await initLatentPitch();
+      } catch (_) { /* non-fatal */ }
     })();
 
-    console.log('[prewarm] studio opened — warming Modal + rmsDemucs + sem4Decoder + latentEncoder');
+    console.log('[prewarm] studio opened — warming Modal + rmsDemucs + sem4Decoder + latentEncoder + latentPitch');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const timelineContainerRef = useRef(null);
@@ -1217,8 +1221,10 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                   // Runs in parallel with the mask preview below — neither
                   // blocks the other.
                   (async () => {
+                    console.log(`[latentPitch] starting extraction on ${stemNames.length} stems`);
                     try {
                       const { extractPitchFromLatent } = await import('../../services/latentPitch');
+                      console.log(`[latentPitch] module imported, beginning per-stem inference`);
                       const tempo = state.bpm || 120;
                       for (let i = 0; i < stemNames.length; i++) {
                         const stemName = stemNames[i];
@@ -1242,8 +1248,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                         });
                         console.log(`[latentPitch] applied ${notes.length} notes to ${stemName} track`);
                       }
+                      console.log(`[latentPitch] all stems done`);
                     } catch (pitchErr) {
-                      console.warn('[latentPitch] extraction failed (non-fatal):', pitchErr?.message || pitchErr);
+                      console.warn('[latentPitch] extraction failed (non-fatal):', pitchErr?.message || pitchErr, pitchErr?.stack);
                     }
                   })();
 
