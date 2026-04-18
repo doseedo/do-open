@@ -30,6 +30,7 @@ import {
 } from '../../services/latentDemucsV4';
 import { analyzeRms } from '../../services/rmsDemucs';
 import { streamPreviewSeparation, SEM4_STEM_NAMES, SEM4_ENVELOPE_FPS } from '../../services/sem4Decoder';
+import { stemAudiosFromMaskOverMaster, LATENT_MASK_STEM_NAMES } from '../../services/latentMask';
 
 // Compute a min/max peak envelope from an AudioBuffer at `fps`. Same layout
 // as rmsDemucs + sem4Decoder emit: Float32Array[2*T], first T are -peak,
@@ -234,16 +235,19 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
 
     // Prewarm ALL WebGPU ORT sessions serially so none of them lazy-loads
     // during a file drop — concurrent session creates on the same GPU
-    // invalidate in-flight inferences (symptom: rmsDemucs.run threw
-    // "Cannot read properties of null (reading 'Nd')" whenever
-    // latentEncoder init landed mid-run). Order smallest→largest:
-    //   rmsDemucs         577 KB
-    //   sem4Decoder       190 MB (distill_demucs + sem_demucs + sem_decoder)
-    //   latentEncoder     161 MB (oobleck_encoder)
+    // invalidate in-flight inferences. Order smallest→largest:
+    //   rmsDemucs         577 KB  WASM
+    //   latentMask        8 MB    WebGPU (master-STFT × mask playback)
+    //   sem4Decoder       190 MB  WebGPU (distill_demucs + sem_demucs + sem_decoder)
+    //   latentEncoder     161 MB  WebGPU (oobleck_encoder)
     (async () => {
       try {
         const { initRmsDemucs } = await import('../../services/rmsDemucs');
         await initRmsDemucs();
+      } catch (_) { /* non-fatal */ }
+      try {
+        const { initLatentMask } = await import('../../services/latentMask');
+        await initLatentMask();
       } catch (_) { /* non-fatal */ }
       try {
         const { initSem4Decoder } = await import('../../services/sem4Decoder');
@@ -255,7 +259,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
       } catch (_) { /* non-fatal */ }
     })();
 
-    console.log('[prewarm] studio opened — warming Modal backend + rmsDemucs + sem4Decoder + latentEncoder');
+    console.log('[prewarm] studio opened — warming Modal + rmsDemucs + latentMask + sem4Decoder + latentEncoder');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const timelineContainerRef = useRef(null);
@@ -1129,6 +1133,39 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                       },
                     },
                   });
+                },
+                // Once distill_demucs has finished producing 4-stem
+                // latents, run latent_mask_e2e against them + the
+                // master waveform. The result is 4 stereo WAVs that
+                // are the master passed through per-stem STFT soft
+                // masks — the real "playback source until backend
+                // returns". These overwrite the sem_decoder previews.
+                onAllLatentsReady: async ({ stemLatents }) => {
+                  try {
+                    const stems = await stemAudiosFromMaskOverMaster(
+                      stemLatents, src.flat, src.numFrames
+                    );
+                    for (const { stemName, wavUrl } of stems) {
+                      if (backendStemsWon.has(stemName)) {
+                        URL.revokeObjectURL(wavUrl);
+                        continue;
+                      }
+                      dispatch({
+                        type: 'UPDATE_TRACK',
+                        payload: {
+                          busId,
+                          trackId: `stem-${trackId}-${stemName}`,
+                          updates: {
+                            audioUrl: wavUrl,
+                            metadata: { previewSource: 'latent_mask_e2e', playbackReady: true },
+                          },
+                        },
+                      });
+                    }
+                    console.log('[latentMask] preview playback ready for 4 stems (master × mask)');
+                  } catch (e) {
+                    console.warn('[latentMask] preview playback failed (non-fatal):', e?.message || e);
+                  }
                 },
               });
             } catch (previewErr) {

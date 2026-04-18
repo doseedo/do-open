@@ -50,14 +50,15 @@ MODELS_EXPECTED = [
     ("/static/models/sem_demucs_packed.onnx",         5190993),
     ("/static/models/sem_decoder_fp16.onnx",          203676),
     ("/static/models/sem_decoder_fp16.onnx.data",     20921936),
+    ("/static/models/latent_mask_e2e.onnx",           8154529),
 ]
 BUNDLE_CODE_MARKERS = [
-    "[sem4Decoder] preview kicked off",
-    "[sem4Decoder] initSem4Decoder starting",
-    "[sem4Decoder] fetching 5 model files",
+    "[latentMask] ready on",
     "/static/models/distill_demucs_fp16.onnx",
     "/static/models/sem_demucs_packed.onnx",
     "/static/models/sem_decoder_fp16.onnx",
+    "/static/models/latent_mask_e2e.onnx",
+    "stemAudiosFromMaskOverMaster",
 ]
 
 # ─── colors ────────────────────────────────────────────────────────────────
@@ -265,6 +266,21 @@ def check_live_pipeline():
             fail(f"sem_decoder_fp16[{name}] silent (peak={peak:.2e})")
             continue
         print(green(f"sem_decoder_fp16[{name}]  peak={peak:.3f}  rms={rms:.4f}"))
+
+    # 4) latent_mask_e2e: stem_latents [1,4,64,T] → concat to [1,256,T] → mask_logits [1,4,1025,T]
+    mask_sess = ort.InferenceSession(str(paths["latent_mask_e2e.onnx"]), **kws)
+    latents_256 = stem_latents.reshape(1, 4 * 64, T).astype(np.float32)
+    mask_out = mask_sess.run(None, {"latents": latents_256})[0]
+    if mask_out.shape != (1, 4, 1025, T):
+        fail(f"latent_mask_e2e mask_logits shape {mask_out.shape} != (1,4,1025,{T})")
+        return
+    mask_range = (float(mask_out.min()), float(mask_out.max()))
+    # After sigmoid the mask should be in [0, 1]; the raw logits usually fall
+    # in a reasonable range (-20..20 ish) — flag only if everything is ~0.
+    if abs(mask_range[1] - mask_range[0]) < 1e-4:
+        fail(f"latent_mask_e2e logits collapsed (range {mask_range})")
+    else:
+        print(green(f"latent_mask_e2e      mask_logits {mask_out.shape} logit-range {mask_range[0]:.2f} .. {mask_range[1]:.2f}"))
 
 
 # ─── main ──────────────────────────────────────────────────────────────────
