@@ -27,17 +27,17 @@ function startNoiseAnimation(canvas, width, height, color, transitionFrameRef, c
   const maxBarHeight = height * 0.45;
 
   // Quiet, smooth per-bar sine oscillation. Baseline sits at ~8% of the
-  // bar's max height, amplitude is ±6% — the whole animation reads as a
-  // low murmur rather than a noisy storm. Each bar gets its own phase
-  // and a slightly different frequency (0.35–0.9 Hz) so they stay
-  // desynchronised and the motion looks organic.
+  // bar's max height, amplitude is ±6% — reads as a low murmur rather
+  // than a noisy storm. Each bar gets its own phase and frequency
+  // (0.8–1.8 Hz per bar) so motion looks organic and lively — slower
+  // than this made bars feel static.
   const baseline = maxBarHeight * 0.08;
   const wobble   = maxBarHeight * 0.06;
   const phases = new Float32Array(numBars);
   const freqs  = new Float32Array(numBars);
   for (let i = 0; i < numBars; i++) {
     phases[i] = Math.random() * Math.PI * 2;
-    freqs[i]  = 0.35 + Math.random() * 0.55;
+    freqs[i]  = 0.8 + Math.random() * 1.0;
   }
 
   // Maintain a live heights buffer so the subsequent envelope reveal
@@ -189,13 +189,16 @@ function startIdleWobble(ctx, targetHeights, width, height, color, transitionFra
   const numBars = targetHeights.length;
   const midY = height / 2;
   const maxBarHeight = height * 0.45;
-  const wobbleAmp = Math.max(1.2, maxBarHeight * 0.05);  // tiny, ~5% of max
+  // ~9% of maxBarHeight — visible enough to read as "still loading" while
+  // preserving the envelope shape under it. Previous 5% was too subtle
+  // for users to notice the preview-waiting state.
+  const wobbleAmp = Math.max(1.6, maxBarHeight * 0.09);
 
   const phases = new Float32Array(numBars);
   const freqs = new Float32Array(numBars);
   for (let i = 0; i < numBars; i++) {
     phases[i] = Math.random() * Math.PI * 2;
-    freqs[i] = 0.6 + Math.random() * 0.8;   // 0.6..1.4 Hz, per-bar
+    freqs[i] = 0.8 + Math.random() * 1.0;   // 0.8–1.8 Hz, per-bar
   }
 
   const live = currentHeightsRef && currentHeightsRef.current && currentHeightsRef.current.length === numBars

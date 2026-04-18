@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useTimeline } from '../../hooks/useTimeline';
 import { audioBufferCache } from '../../hooks/useWaveform';
@@ -77,18 +77,47 @@ const CompositeBusWaveform = React.memo(({
   }, [bus.tracks]);
 
   // The uploaded master track stays in bus.tracks (hidden from the UI)
-  // as the source of analysis metadata + mask-playback audio. We also
-  // use its decoded AudioBuffer here as the VISUAL REFERENCE shape:
-  // when all stems are at gain=1 the composite should look exactly
-  // like the pre-separation single-track view. Summing stem envelopes
-  // isn't a valid substitute because stems can cancel in the mix but
-  // add in the sum, so the shapes diverge.
+  // as the source of analysis metadata + mask-playback audio. We use
+  // its decoded AudioBuffer as the VISUAL REFERENCE shape: when all
+  // stems are at gain=1 the composite looks exactly like the pre-
+  // separation single-track view — the master doesn't visibly change
+  // as envelopes come in; only stem slider adjustments modulate it.
+  //
+  // Self-decode trigger: when the bus is expanded and stems exist,
+  // BusRow filters the uploaded track out of visibleTracks, so its
+  // OptimizedTrack never mounts and useWaveform never decodes its
+  // audioUrl into the cache. We do that here so the master-ref path
+  // is always available and the composite never has to fall through
+  // to its stem-sum fallback (which DID visibly change with envelopes).
+  const [masterDecodeTick, setMasterDecodeTick] = useState(0);
+  useEffect(() => {
+    const m = bus.tracks.find(t => t.metadata?.type === 'uploaded');
+    if (!m?.audioUrl || audioBufferCache.has(m.audioUrl)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { fetchAudioWithCache } = await import('../../services/audioCacheService');
+        const { blob } = await fetchAudioWithCache(m.audioUrl);
+        if (cancelled) return;
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const ab = await blob.arrayBuffer();
+        const buf = await ctx.decodeAudioData(ab);
+        if (cancelled) return;
+        audioBufferCache.set(m.audioUrl, buf);
+        setMasterDecodeTick((v) => v + 1);
+      } catch (e) {
+        console.warn('[composite] master decode failed:', e?.message || e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [bus.tracks]);
+
   const masterInput = useMemo(() => {
     const m = bus.tracks.find(t => t.metadata?.type === 'uploaded');
     if (!m?.audioUrl) return null;
     const buf = audioBufferCache.get(m.audioUrl);
     return buf ? { audioBuffer: buf } : null;
-  }, [bus.tracks]);
+  }, [bus.tracks, masterDecodeTick]);
 
   const busGain = bus.mute ? 0 : (bus.gain ?? 1.0);
 
