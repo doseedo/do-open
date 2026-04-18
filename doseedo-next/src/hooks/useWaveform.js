@@ -274,6 +274,15 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
   const audioPaintedRef = useRef(false);
   const lastEnvelopeRef = useRef(null);
   const transitionFrameRef = useRef(null);
+  // Mirror the latest envelopeData into a ref so the async loadAudio path can
+  // read the CURRENT value when it resolves, not the stale value captured at
+  // effect-run time. Otherwise the WAV-derived envelope painted by the
+  // envelopeData effect gets clobbered by the rms envelope that was valid
+  // when audioUrl first changed. Repro: expanded stem bus shows rms forever
+  // after backend WAV arrives — collapse+expand "fixes" it because remount
+  // re-captures fresh envelopeData.
+  const envelopeDataRef = useRef(envelopeData);
+  envelopeDataRef.current = envelopeData;
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [duration, setDuration] = React.useState(null);
   // Increments each time a real audio decode completes (NOT on envelope-only paint).
@@ -357,10 +366,13 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
           setDecodedAudioUrl(audioUrl);
 
           if (canvasRef.current) {
-            if (envelopeData) {
-              // Envelope wins — noise → envelope shape
-              const envT = envelopeData.length / 2;
-              paintBarAnimation(canvasRef.current, envelopeData, envT, width, height, color, gain, transitionFrameRef);
+            const currentEnv = envelopeDataRef.current;
+            if (currentEnv) {
+              // Envelope wins — noise → envelope shape. Use the latest
+              // envelope, not the one captured at effect-creation time.
+              const envT = currentEnv.length / 2;
+              paintBarAnimation(canvasRef.current, currentEnv, envT, width, height, color, gain, transitionFrameRef);
+              lastEnvelopeRef.current = currentEnv;
               envelopePaintedRef.current = true;
             } else if (!audioPaintedRef.current) {
               // First audio paint: noise → waveform bar animation
@@ -403,10 +415,14 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
         setDecodedAudioUrl(audioUrl);
 
         if (canvasRef.current) {
-          if (envelopeData) {
-            // Envelope wins — noise → envelope shape
-            const envT = envelopeData.length / 2;
-            paintBarAnimation(canvasRef.current, envelopeData, envT, width, height, color, gain, transitionFrameRef);
+          const currentEnv = envelopeDataRef.current;
+          if (currentEnv) {
+            // Envelope wins — noise → envelope shape. Read the latest
+            // env from the ref; closure-captured `envelopeData` may be
+            // stale by the time decodeAudioData resolves.
+            const envT = currentEnv.length / 2;
+            paintBarAnimation(canvasRef.current, currentEnv, envT, width, height, color, gain, transitionFrameRef);
+            lastEnvelopeRef.current = currentEnv;
             envelopePaintedRef.current = true;
           } else if (!audioPaintedRef.current) {
             // First audio paint: noise → waveform bar animation
