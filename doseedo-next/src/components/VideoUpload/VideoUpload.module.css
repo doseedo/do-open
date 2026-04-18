@@ -149,10 +149,15 @@
   align-items: center;
   justify-content: center;
   font-size: 2.5em;
+  line-height: 1;
   transition: all var(--transition-speed) ease;
   /* GPU acceleration */
   transform: translateZ(0);
   box-shadow: 0 3.2px 16px var(--color-primary-blue-30);
+}
+.uploadIcon::before {
+  display: block;
+  line-height: 1;
 }
 
 .glowContainer:hover .uploadIcon {
