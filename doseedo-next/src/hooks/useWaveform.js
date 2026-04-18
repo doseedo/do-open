@@ -17,8 +17,11 @@ function startNoiseAnimation(canvas, width, height, color, transitionFrameRef, c
   if (!canvas) return;
   if (transitionFrameRef.current) cancelAnimationFrame(transitionFrameRef.current);
 
-  canvas.width = width;
-  canvas.height = height;
+  // Only resize if dimensions changed — any canvas.width assignment clears
+  // the pixel buffer, which would blank an in-flight transition for a
+  // frame and cause a visible "snap".
+  if (canvas.width !== width)  canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
   const ctx = canvas.getContext('2d');
   const barSpacing = 2;
   const barWidth = 2;
@@ -125,8 +128,8 @@ function paintBarAnimationFromBuffer(canvas, audioBuffer, width, height, color, 
   // self, never "near silent with random stubs".
   const startHeights = new Float32Array(numBars);
 
-  canvas.width = width;
-  canvas.height = height;
+  if (canvas.width !== width)  canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
 
   // Shorter than the envelope morph (1200 ms) since this is a one-shot
   // rise-from-baseline — no need to linger. If it gets cut off by a
@@ -303,8 +306,13 @@ function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, 
   const live = new Float32Array(numBars);
   if (currentHeightsRef) currentHeightsRef.current = live;
 
-  canvas.width = width;
-  canvas.height = height;
+  // Only resize if dimensions changed. Setting canvas.width UNCONDITIONALLY
+  // clears the canvas — and we used to do that on every paintBarAnimation,
+  // which blanked the last wobble frame for the ~16 ms between
+  // cancelAnimationFrame and the first rAF tick. That blank-canvas flash
+  // IS the "snap" users see at rms → mask preview handoff.
+  if (canvas.width !== width)  canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
 
   // Longer + smoother than the old 550 ms ease-out. Silent-target bars
   // were "snapping" to baseline because ease-out spends most of its time
@@ -348,7 +356,13 @@ function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, 
       }
     }
   };
-  transitionFrameRef.current = requestAnimationFrame(tick);
+  // Run the first frame synchronously so there's no rAF gap between
+  // cancelling the previous animation (wobble) and the first animated
+  // frame of the morph. Without this, the canvas shows whatever was last
+  // drawn for one frame-time, which is fine visually BUT any future
+  // canvas.width reset would briefly flash — so keeping this sync also
+  // future-proofs the handoff.
+  tick(performance.now());
 }
 
 /**
@@ -475,8 +489,8 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
       } else {
         const canvas = canvasRef.current;
         if (canvas) {
-          canvas.width = width;
-          canvas.height = height;
+          if (canvas.width !== width)  canvas.width = width;
+          if (canvas.height !== height) canvas.height = height;
           renderEnvelope(canvas.getContext('2d'), envelopeData, T, width, height, color, gain, currentBarHeightsRef);
         }
       }
@@ -636,8 +650,8 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    canvas.width = width;
-    canvas.height = height;
+    if (canvas.width !== width)  canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
 
     // Prefer envelope paint for repaints while envelope is the live view.
     if (envelopeData && envelopePaintedRef.current) {
