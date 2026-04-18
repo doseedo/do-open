@@ -154,19 +154,19 @@
   color: white;
   width: 64px;
   height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  /* Text-baseline vertical centering: line-height == height. FA glyphs
+     render through the font's baseline metrics, so flex align-items:
+     center lands the glyph above the geometric middle. Matching
+     line-height to height puts the glyph's cap-box centered in the
+     line-box, which is what actually reads as centered. */
+  display: block;
+  text-align: center;
+  line-height: 64px;
   font-size: 2.5em;
-  line-height: 1;
   transition: all var(--transition-speed) ease;
   /* GPU acceleration */
   transform: translateZ(0);
   box-shadow: 0 3.2px 16px var(--color-primary-blue-30);
-}
-.uploadIcon::before {
-  display: block;
-  line-height: 1;
 }
 
 .glowContainer:hover .uploadIcon {
@@ -433,6 +433,7 @@
   .uploadIcon {
     width: 48px;
     height: 48px;
+    line-height: 48px;
     font-size: 2em;
   }
 }
@@ -450,6 +451,7 @@
   .uploadIcon {
     width: 40px;
     height: 40px;
+    line-height: 40px;
     font-size: 1.5em;
   }
 
