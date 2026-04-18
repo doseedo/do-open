@@ -186,21 +186,39 @@ const CompositeBusWaveform = React.memo(({
         s.cachedMasterPtp = null;
       }
 
+      // Reveal delay: hold the noise baseline for REVEAL_DELAY_MS after
+      // mount regardless of when the master buffer lands. Matches the
+      // stem-reveal behaviour so the master + stems feel consistent —
+      // user always sees noise first, then the real shape fades in.
+      const elapsed = now - s.animStartMs;
+      const REVEAL_DELAY_MS = 1000;
+      const forceNoise = elapsed < REVEAL_DELAY_MS;
+      const effectiveMasterPtp = forceNoise ? null : s.cachedMasterPtp;
+
       // Compute target bars for this frame.
       const newTarget = computeTarget({
         numBars,
         maxBarHeight,
-        masterPtp: s.cachedMasterPtp,
+        masterPtp: effectiveMasterPtp,
         stemInputs: s.stemInputs,
         busGain: s.busGain,
         envelopeFps: s.envelopeFps,
       });
       s.target = newTarget;
 
-      // Wobble visibility: on while the master isn't decoded yet (noise
-      // phase). Fades out once the real target takes over.
-      const loading = !s.cachedMasterPtp;
+      // Wobble visibility: on during the reveal-delay noise phase,
+      // off once the real target takes over. The wobble is initialised
+      // at full amp on the first tick so motion is visible from frame 1
+      // (a 500 ms fade-in would bury it if the master decodes quickly).
+      const loading = forceNoise || !s.cachedMasterPtp;
       const wobbleTargetAmp = loading ? Math.max(1.6, maxBarHeight * 0.09) : 0;
+      if (!s.wobbleInitialized) {
+        s.wobbleInitialized = true;
+        s.wobble.amp = wobbleTargetAmp;
+        s.wobble.targetAmp = wobbleTargetAmp;
+        s.wobble.fadeStartAmp = wobbleTargetAmp;
+        s.wobble.fadeStartMs = now;
+      }
       if (s.wobble.targetAmp !== wobbleTargetAmp) {
         s.wobble.fadeStartAmp = s.wobble.amp;
         s.wobble.targetAmp = wobbleTargetAmp;
