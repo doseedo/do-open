@@ -34,6 +34,11 @@ const SOLO_MIN_DB     = -30;  // dominant must be at least this loud
 let _ort     = null;
 let _session = null;
 let _promise = null;
+// ORT WASM sessions throw "Session already started" on concurrent
+// sess.run calls. The drop pipeline triggers analyzeRms from both the
+// preview path and the analyze/classify path in parallel, so every
+// call has to queue.
+let _runQueue = Promise.resolve();
 
 // ── Mel filterbank (built once, cached) ─────────────────────────────────────
 let _melFb = null;
@@ -247,7 +252,9 @@ export async function analyzeRms(flat, numFrames) {
 
   // ONNX input: [1, 1, N_MELS, T] — already in dB, no additional normalization
   const inp = new ort.Tensor('float32', logMel, [1, 1, N_MELS, T]);
-  const res = await sess.run({ logmel: inp });
+  const work = _runQueue.then(() => sess.run({ logmel: inp }));
+  _runQueue = work.catch(() => {});  // don't poison the queue on failure
+  const res = await work;
   const logits = res.logits.data;   // Float32Array [1, 4, T] flattened
 
   // Separate per-stem time-series (stored as [4, T] interleaved by ort)
