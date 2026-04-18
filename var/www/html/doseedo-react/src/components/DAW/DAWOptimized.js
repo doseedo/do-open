@@ -63,6 +63,68 @@ function _envelopeFromAudioBuffer(audioBuffer, fps) {
   return env;
 }
 
+// ── Temporary 4→6 stem split for rmsDemucs ────────────────────────────
+// rmsDemucs was trained to output 4 stems (drums/bass/vocals/other).
+// Backend htdemucs_6s returns 6 (adds guitar/piano). To give every stem
+// an instant visual on drop, we split the "other" envelope into 3
+// plausibly-related but visually distinct variants and label them
+// other/guitar/piano. Deterministic per-track (seeded from filename) so
+// re-drops of the same file produce the same shapes. Remove once a real
+// 6-stem rms model ships.
+function _hashString(s) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+function _mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+/** Smooth random multiplier of length T made of `nBumps` lerp anchor
+ *  points in [minV, maxV]. Higher nBumps → spikier / more attacks. */
+function _bumpMultiplier(T, nBumps, seed, minV, maxV) {
+  const rng = _mulberry32(seed);
+  const anchors = new Float32Array(nBumps);
+  for (let i = 0; i < nBumps; i++) anchors[i] = minV + (maxV - minV) * rng();
+  const out = new Float32Array(T);
+  if (nBumps === 1) { out.fill(anchors[0]); return out; }
+  for (let t = 0; t < T; t++) {
+    const p = (t / (T - 1)) * (nBumps - 1);
+    const i = Math.floor(p);
+    const f = p - i;
+    const a = anchors[i];
+    const b = anchors[Math.min(i + 1, nBumps - 1)];
+    out[t] = a + (b - a) * f;
+  }
+  return out;
+}
+/** Split the "other" amp envelope [T] into [otherAmp, guitarAmp, pianoAmp].
+ * Each is `otherAmp * multiplier_i` where the multipliers have different
+ * bandwidth/range so the three look plausibly-related but distinct. */
+function _splitOtherAmpIntoThree(otherAmp, seedStr) {
+  const base = _hashString(seedStr || '');
+  const T = otherAmp.length;
+  const profiles = [
+    { nBumps: 6,  min: 0.40, max: 1.00 },   // "other"  — mid variation
+    { nBumps: 18, min: 0.15, max: 1.30 },   // "guitar" — spikier attacks
+    { nBumps: 10, min: 0.55, max: 0.95 },   // "piano"  — smoother sustain
+  ];
+  return profiles.map((p, i) => {
+    const mod = _bumpMultiplier(T, p.nBumps, base + i * 7919, p.min, p.max);
+    const out = new Float32Array(T);
+    for (let t = 0; t < T; t++) out[t] = otherAmp[t] * mod[t];
+    return out;
+  });
+}
+
 let _envCtx = null;
 function _sharedAudioContext() {
   if (!_envCtx) {
@@ -1026,7 +1088,12 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
         // Background stem separation: rmsDemucs paints instant envelopes,
         // then server-side htdemucs_6s provides real WAV audio.
         (async () => {
-          const RMS_STEM_NAMES = ['drums', 'bass', 'vocals', 'other'];
+          // rmsDemucs outputs 4 stems (drums/bass/vocals/other) but the backend
+          // returns 6 (…plus guitar/piano). Paint 6 up-front so every stem has
+          // an instant visual, by splitting "other" into 3 deterministic
+          // distinct-looking variants. Temporary until a 6-stem rms model
+          // ships. See splitOtherAmpIntoThree below.
+          const RMS_STEM_NAMES = ['drums', 'bass', 'vocals', 'other', 'guitar', 'piano'];
 
           // -- INSTANT 4-STEM VISUAL via rmsDemucs (577 KB) ---------------
           // Paint stem envelopes immediately from the lightweight RMS model.
@@ -1046,8 +1113,14 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
             // sem4Decoder below so chunked decode updates only overwrite
             // the decoded time range — the non-decoded tail keeps the
             // rmsDemucs shape instead of going flat.
+            // rms model outputs 4 amps (drums/bass/vocals/other). Synthesize
+            // 6 by splitting "other" into 3 distinct-looking variants so
+            // guitar + piano have an instant visual too.
+            const rmsAmps = rmsResult.stemEnvelopes;     // length 4
+            const [otherA, guitarA, pianoA] = _splitOtherAmpIntoThree(rmsAmps[3], file.name);
+            const sixStemAmps = [rmsAmps[0], rmsAmps[1], rmsAmps[2], otherA, guitarA, pianoA];
             rmsStemEnvelopes = RMS_STEM_NAMES.map((_, idx) => {
-              const amp = rmsResult.stemEnvelopes[idx];
+              const amp = sixStemAmps[idx];
               const T = amp.length;
               const env = new Float32Array(2 * T);
               for (let t = 0; t < T; t++) { env[t] = -amp[t]; env[T + t] = amp[t]; }
