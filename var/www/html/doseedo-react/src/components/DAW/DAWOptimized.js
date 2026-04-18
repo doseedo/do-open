@@ -183,13 +183,14 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
     // Backend prewarm — fire and forget
     fetch('/health').catch(() => {});
 
-    // Prewarm ONNX models serially: rmsDemucs first (577 KB, ~1 s) so
-    // its WebGPU session lands cleanly, THEN the sem4Decoder pipeline
-    // (distill_demucs_fp16 163 MB + sem_demucs_packed 5 MB +
-    // sem_decoder_fp16 21 MB). Running both in parallel caused rms's
-    // WebGPU session to race the 3 sem4Decoder sessions — ORT's EP
-    // returned a null-backed session and analyzeRms crashed with
-    // "Cannot read properties of null (reading 'Nd')".
+    // Prewarm ALL WebGPU ORT sessions serially so none of them lazy-loads
+    // during a file drop — concurrent session creates on the same GPU
+    // invalidate in-flight inferences (symptom: rmsDemucs.run threw
+    // "Cannot read properties of null (reading 'Nd')" whenever
+    // latentEncoder init landed mid-run). Order smallest→largest:
+    //   rmsDemucs         577 KB
+    //   sem4Decoder       190 MB (distill_demucs + sem_demucs + sem_decoder)
+    //   latentEncoder     161 MB (oobleck_encoder)
     (async () => {
       try {
         const { initRmsDemucs } = await import('../../services/rmsDemucs');
@@ -199,9 +200,13 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
         const { initSem4Decoder } = await import('../../services/sem4Decoder');
         await initSem4Decoder();
       } catch (_) { /* non-fatal */ }
+      try {
+        const { initLatentEncoder } = await import('../../services/latentEncoder');
+        await initLatentEncoder();
+      } catch (_) { /* non-fatal */ }
     })();
 
-    console.log('[prewarm] studio opened — warming Modal backend + rmsDemucs + sem4Decoder');
+    console.log('[prewarm] studio opened — warming Modal backend + rmsDemucs + sem4Decoder + latentEncoder');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const timelineContainerRef = useRef(null);
