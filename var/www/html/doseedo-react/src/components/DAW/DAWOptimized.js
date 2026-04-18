@@ -30,6 +30,55 @@ import {
 } from '../../services/latentDemucsV4';
 import { analyzeRms } from '../../services/rmsDemucs';
 import { streamPreviewSeparation, SEM4_STEM_NAMES, SEM4_ENVELOPE_FPS } from '../../services/sem4Decoder';
+
+// Compute a min/max peak envelope from an AudioBuffer at `fps`. Same layout
+// as rmsDemucs + sem4Decoder emit: Float32Array[2*T], first T are -peak,
+// last T are +peak. Used to refresh a stem's envelope once the backend WAV
+// lands so the canvas animates from preview shape → real shape instead of
+// loading a brand-new waveform.
+function _envelopeFromAudioBuffer(audioBuffer, fps) {
+  const sr = audioBuffer.sampleRate;
+  const hop = Math.max(1, Math.round(sr / fps));
+  const N = audioBuffer.length;
+  const T = Math.floor(N / hop);
+  const nCh = audioBuffer.numberOfChannels;
+  const chans = [];
+  for (let c = 0; c < nCh; c++) chans.push(audioBuffer.getChannelData(c));
+  const env = new Float32Array(2 * T);
+  for (let t = 0; t < T; t++) {
+    const start = t * hop;
+    const end = start + hop;
+    let peak = 0;
+    for (let c = 0; c < nCh; c++) {
+      const data = chans[c];
+      for (let i = start; i < end; i++) {
+        const v = data[i];
+        const abs = v < 0 ? -v : v;
+        if (abs > peak) peak = abs;
+      }
+    }
+    env[t]     = -peak;
+    env[T + t] =  peak;
+  }
+  return env;
+}
+
+let _envCtx = null;
+function _sharedAudioContext() {
+  if (!_envCtx) {
+    _envCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return _envCtx;
+}
+
+async function envelopeFromWavUrl(url, fps = SEM4_ENVELOPE_FPS) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`wav fetch ${url} HTTP ${resp.status}`);
+  const ab = await resp.arrayBuffer();
+  // decodeAudioData on a shared AudioContext — avoids spawning a new one per stem
+  const buf = await _sharedAudioContext().decodeAudioData(ab);
+  return _envelopeFromAudioBuffer(buf, fps);
+}
 import { initLatentVisual, envelopeFromLatent, buildFakeBufferFromEnvelope } from '../../services/latentVisual';
 import { audioBufferCache } from '../../hooks/useWaveform';
 import ImportAudioModal from './ImportAudioModal';
@@ -1102,32 +1151,48 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               return;
             }
             if (rmsPainted) {
-              // Update existing rms stem tracks with real audio
+              // Update existing rms stem tracks with real audio. Keep
+              // envelopeData populated at every phase — useWaveform should
+              // never fall through to paintBarAnimationFromBuffer. Audio
+              // for playback rides on `audioUrl`, independent from the
+              // waveform canvas, which is always driven by envelopeData.
               for (const stemName of stemNames) {
                 const wavUrl = wavUrls[stemName];
                 if (!wavUrl) continue;
                 backendStemsWon.add(stemName);
-                // Null out envelopeData so useWaveform stops painting the
-                // rmsDemucs/sem4Decoder predicted envelope and draws the
-                // real waveform from the decoded WAV instead (see
-                // hooks/useWaveform.js:360-414 — envelopeData "wins" if
-                // present).
+                // 1) audioUrl wired in immediately so playback can start
                 dispatch({
                   type: 'UPDATE_TRACK',
                   payload: {
                     busId,
                     trackId: `stem-${trackId}-${stemName}`,
-                    updates: {
-                      audioUrl: wavUrl,
-                      metadata: { playbackReady: true, envelopeData: null, envelopeFps: null },
-                    },
+                    updates: { audioUrl: wavUrl, metadata: { playbackReady: true } },
                   },
                 });
+                // 2) compute envelope from the real WAV and swap it in —
+                //    triggers the noise→shape animation over the preview
+                //    envelope, never a fresh waveform load.
+                envelopeFromWavUrl(wavUrl, SEM4_ENVELOPE_FPS)
+                  .then((env) => dispatch({
+                    type: 'UPDATE_TRACK',
+                    payload: {
+                      busId,
+                      trackId: `stem-${trackId}-${stemName}`,
+                      updates: { metadata: { envelopeData: env, envelopeFps: SEM4_ENVELOPE_FPS } },
+                    },
+                  }))
+                  .catch((e) => console.warn(`[envelope] ${stemName} from WAV failed:`, e?.message || e));
               }
-              // Add any server stems not covered by rmsDemucs (guitar, piano)
+              // Add any server stems not covered by rmsDemucs (guitar,
+              // piano). Start with a flat placeholder envelope so the
+              // canvas is always driven by envelopeData (noise shape),
+              // then async compute the real envelope and swap it in —
+              // same noise→shape transition as the rms-covered stems.
               const rmsSet = new Set(RMS_STEM_NAMES.map(n => `stem-${trackId}-${n}`));
               for (const stemName of stemNames) {
                 if (rmsSet.has(`stem-${trackId}-${stemName}`)) continue;
+                const T = Math.max(1, Math.floor(duration * SEM4_ENVELOPE_FPS));
+                const placeholderEnv = new Float32Array(2 * T); // all zeros → noise shape
                 dispatch({
                   type: 'ADD_TRACK',
                   payload: {
@@ -1144,14 +1209,29 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                         type: 'stem', stemType: stemName, parentTrackId: trackId,
                         instrument: stemName, icon: iconForType(stemName),
                         playbackReady: true,
+                        envelopeData: placeholderEnv,
+                        envelopeFps: SEM4_ENVELOPE_FPS,
                       },
                     },
                   },
                 });
+                envelopeFromWavUrl(wavUrls[stemName], SEM4_ENVELOPE_FPS)
+                  .then((env) => dispatch({
+                    type: 'UPDATE_TRACK',
+                    payload: {
+                      busId,
+                      trackId: `stem-${trackId}-${stemName}`,
+                      updates: { metadata: { envelopeData: env, envelopeFps: SEM4_ENVELOPE_FPS } },
+                    },
+                  }))
+                  .catch((e) => console.warn(`[envelope] ${stemName} from WAV failed:`, e?.message || e));
               }
             } else {
-              // rmsDemucs failed -- add all stems fresh with WAV audio
+              // rmsDemucs failed -- add stems with a flat placeholder
+              // envelope so the canvas stays envelope-driven, then async
+              // swap in the real envelope computed from each WAV.
               stemNames.forEach((n) => backendStemsWon.add(n));
+              const T = Math.max(1, Math.floor(duration * SEM4_ENVELOPE_FPS));
               const tracks = stemNames.map((stemName) => ({
                 id: `stem-${trackId}-${stemName}`,
                 name: `${file.name.replace(/\.[^.]+$/, '')} -- ${stemName}`,
@@ -1164,10 +1244,25 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                   type: 'stem', stemType: stemName, parentTrackId: trackId,
                   instrument: stemName, icon: iconForType(stemName),
                   playbackReady: !!wavUrls[stemName],
+                  envelopeData: new Float32Array(2 * T),
+                  envelopeFps: SEM4_ENVELOPE_FPS,
                 },
               }));
               dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks } });
               dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: true } });
+              for (const stemName of stemNames) {
+                if (!wavUrls[stemName]) continue;
+                envelopeFromWavUrl(wavUrls[stemName], SEM4_ENVELOPE_FPS)
+                  .then((env) => dispatch({
+                    type: 'UPDATE_TRACK',
+                    payload: {
+                      busId,
+                      trackId: `stem-${trackId}-${stemName}`,
+                      updates: { metadata: { envelopeData: env, envelopeFps: SEM4_ENVELOPE_FPS } },
+                    },
+                  }))
+                  .catch((e) => console.warn(`[envelope] ${stemName} from WAV failed:`, e?.message || e));
+              }
             }
             console.log(`Separation done: ${stemNames.join(', ')} (${file.name})`);
           } catch (sepErr) {
