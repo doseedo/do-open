@@ -90,9 +90,13 @@ export async function initSem4Decoder(onProgress = null) {
     ]);
 
     async function makeSession(graphBuf, extPairs /* [{path, bytes}, ...] */) {
-      const backends = [];
-      if (ort.env?.webgpu) backends.push('webgpu');
-      backends.push('wasm');
+      // Pin to WASM. The WebGPU EP produces NaN/Inf for the fp16 sessions
+      // here — symptom is "all stems silent with random full-gain spikes"
+      // in the rendered envelope even though CPU ORT on identical weights
+      // outputs clean audio. Same pattern as rmsDemucs's pin (commit
+      // b1d3241). WASM is slower but deterministic; if the backend
+      // /separate-stems wins the race it aborts decode anyway.
+      const backends = ['wasm'];
       let lastErr = null;
       for (const ep of backends) {
         try {
