@@ -106,6 +106,11 @@ const nextConfig = {
       // saves us from configuring CORS on the R2 bucket.
       { source: '/static/models/oobleck_encoder.onnx',      destination: `${R2_CDN}/static/models/oobleck_encoder.onnx` },
       { source: '/static/models/oobleck_encoder.onnx.data', destination: `${R2_CDN}/static/models/oobleck_encoder.onnx.data` },
+      { source: '/static/models/distill_demucs_fp16.onnx',      destination: `${R2_CDN}/static/models/distill_demucs_fp16.onnx` },
+      { source: '/static/models/distill_demucs_fp16.onnx.data', destination: `${R2_CDN}/static/models/distill_demucs_fp16.onnx.data` },
+      { source: '/static/models/sem_demucs_packed.onnx',        destination: `${R2_CDN}/static/models/sem_demucs_packed.onnx` },
+      { source: '/static/models/sem_decoder_fp16.onnx',         destination: `${R2_CDN}/static/models/sem_decoder_fp16.onnx` },
+      { source: '/static/models/sem_decoder_fp16.onnx.data',    destination: `${R2_CDN}/static/models/sem_decoder_fp16.onnx.data` },
       { source: '/separate-stems',                  destination: `${MODAL}/separate-stems` },
       { source: '/separate-stems/:path*',           destination: `${MODAL}/separate-stems/:path*` },
       { source: '/api/encode-audio-latent',         destination: `${MODAL}/api/encode-audio-latent` },

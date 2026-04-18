@@ -29,6 +29,7 @@ import {
   STEM_NAMES_V4COND_6,
 } from '../../services/latentDemucsV4';
 import { analyzeRms } from '../../services/rmsDemucs';
+import { streamPreviewSeparation, SEM4_STEM_NAMES, SEM4_ENVELOPE_FPS } from '../../services/sem4Decoder';
 import { initLatentVisual, envelopeFromLatent, buildFakeBufferFromEnvelope } from '../../services/latentVisual';
 import { audioBufferCache } from '../../hooks/useWaveform';
 import ImportAudioModal from './ImportAudioModal';
@@ -968,8 +969,12 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
           // Paint stem envelopes immediately from the lightweight RMS model.
           // No backend wait -- this runs in < 500ms on any device.
           let rmsPainted = false;
+          // Hoisted so the sem4Decoder preview below can reuse the decoded
+          // PCM without re-running ctx.decodeAudioData.
+          let decodedSrc = null;
           try {
-            const { flat, numFrames } = await audioFileToStereo48k(file);
+            decodedSrc = await audioFileToStereo48k(file);
+            const { flat, numFrames } = decodedSrc;
             const rmsResult = await analyzeRms(flat, numFrames);
             // Convert amplitude[T] -> [2*T] (min, max) pairs for useWaveform
             const instantStems = RMS_STEM_NAMES.map((stemName, idx) => {
@@ -1001,11 +1006,74 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
             console.warn('[rmsDemucs] instant envelopes failed (non-fatal):', rmsErr?.message || rmsErr);
           }
 
+          // -- WEBGPU PREVIEW via distill_demucs + sem_decoder (10M params) -
+          // In parallel with the backend call: stream a 4-stem preview so the
+          // envelope animation moves with real decoded audio and the user can
+          // scrub/play placeholder stems before /separate-stems returns. When
+          // the backend resolves we abort the decoder (stem WAVs will overwrite
+          // the preview blob URLs) but keep distill_demucs running to produce
+          // the stem latents we'd otherwise have to encode separately.
+          const previewAbort = new AbortController();          // full kill
+          const previewDecodeAbort = new AbortController();    // decode only
+          // Stems the backend has already provided the real WAV for; the
+          // preview must not overwrite their audioUrl even if a late decode
+          // finishes after the abort is requested.
+          const backendStemsWon = new Set();
+          const previewPromise = (async () => {
+            try {
+              // decodedSrc is populated by the rms block; fall back to a fresh
+              // decode if rms threw before the call.
+              const src = decodedSrc || await audioFileToStereo48k(file);
+              await streamPreviewSeparation(src.flat, src.numFrames, {
+                abortSignal: previewAbort.signal,
+                decodeAbortSignal: previewDecodeAbort.signal,
+                onStemEnvelopeExtended: ({ stemIdx, envelope }) => {
+                  const stemName = SEM4_STEM_NAMES[stemIdx];
+                  dispatch({
+                    type: 'UPDATE_TRACK',
+                    payload: {
+                      busId,
+                      trackId: `stem-${trackId}-${stemName}`,
+                      updates: {
+                        metadata: {
+                          envelopeData: envelope,
+                          envelopeFps: SEM4_ENVELOPE_FPS,
+                        },
+                      },
+                    },
+                  });
+                },
+                onStemDecoded: ({ stemIdx, stemName, wavUrl }) => {
+                  if (backendStemsWon.has(stemName)) {
+                    URL.revokeObjectURL(wavUrl);
+                    return;
+                  }
+                  dispatch({
+                    type: 'UPDATE_TRACK',
+                    payload: {
+                      busId,
+                      trackId: `stem-${trackId}-${stemName}`,
+                      updates: {
+                        audioUrl: wavUrl,
+                        metadata: { previewSource: 'sem_decoder_fp16', playbackReady: true },
+                      },
+                    },
+                  });
+                },
+              });
+            } catch (previewErr) {
+              console.warn('[sem4Decoder] preview failed (non-fatal):', previewErr?.message || previewErr);
+            }
+          })();
+
           // -- SERVER-SIDE SEPARATION via /separate-stems ------------------
           // htdemucs_6s on Modal returns WAV download URLs; use these
           // directly for playback (no ONNX decoder needed in browser).
           try {
             const sep = await separateStemsAuto(file);
+            // Backend won — stop issuing decoder calls. distill_demucs keeps
+            // running so we still get stem latents for downstream features.
+            previewDecodeAbort.abort();
             const wavUrls = sep?.stems || {};
             const stemNames = Object.keys(wavUrls);
             if (stemNames.length === 0) {
@@ -1017,6 +1085,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               for (const stemName of stemNames) {
                 const wavUrl = wavUrls[stemName];
                 if (!wavUrl) continue;
+                backendStemsWon.add(stemName);
                 dispatch({
                   type: 'UPDATE_TRACK',
                   payload: {
@@ -1053,6 +1122,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               }
             } else {
               // rmsDemucs failed -- add all stems fresh with WAV audio
+              stemNames.forEach((n) => backendStemsWon.add(n));
               const tracks = stemNames.map((stemName) => ({
                 id: `stem-${trackId}-${stemName}`,
                 name: `${file.name.replace(/\.[^.]+$/, '')} -- ${stemName}`,
