@@ -1160,16 +1160,16 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
           // downstream features (drum sub-sep, regeneration) that send
           // latent to the backend instead of re-encoding audio.
           const previewAbort = new AbortController();
+          // Tracks whose backend WAV already won — latentMask output must
+          // not overwrite playback audio on these (backend has priority).
+          const backendWon = new Set();
           const latentPromise = (async () => {
             try {
               const src = decodedSrc || await audioFileToStereo48k(file);
               await streamPreviewSeparation(src.flat, src.numFrames, {
                 abortSignal: previewAbort.signal,
-                onAllLatentsReady: ({ stemLatents, stemNames, fps }) => {
-                  // Attach each stem's latent [64, T] to its track metadata.
-                  // Only the 4 rmsDemucs-covered stems (drums/bass/vocals/other)
-                  // have a matching track here; htdemucs_6s guitar/piano
-                  // stems don't exist yet when this fires.
+                onAllLatentsReady: async ({ stemLatents, stemNames, fps }) => {
+                  // 1) Attach each stem's latent [64, T] to its track metadata.
                   for (let i = 0; i < stemNames.length; i++) {
                     const stemName = stemNames[i];
                     dispatch({
@@ -1188,6 +1188,61 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                     });
                   }
                   console.log(`[sem4Decoder] cached ${stemNames.length} stem latents on track metadata`);
+
+                  // 2) Rough preview playback + envelope via latent_mask_e2e.
+                  // Model is 4-stem; htdemucs_6s is 6-stem. For the preview
+                  // window, piano + guitar + other all share the mask's
+                  // "other" output so the user can at least hear rough
+                  // separation before backend lands. Backend overwrites
+                  // everything on completion.
+                  try {
+                    const t0 = performance.now();
+                    const { stemAudiosFromMaskOverMaster, LATENT_MASK_ENV_FPS } =
+                      await import('../../services/latentMask');
+                    const maskStems = await stemAudiosFromMaskOverMaster(
+                      stemLatents, src.flat, src.numFrames
+                    );
+                    console.log(`[latentMask] preview ready in ${(performance.now()-t0).toFixed(0)}ms`);
+                    const byName = {};
+                    for (const s of maskStems) byName[s.stemName] = s;
+                    // Map each UI stem to a mask-preview source. drums/bass/
+                    // vocals use their matching mask stem; other/guitar/piano
+                    // all share the combined "other".
+                    const OTHER = byName['other'];
+                    const routing = {
+                      drums:  byName['drums'],
+                      bass:   byName['bass'],
+                      vocals: byName['vocals'],
+                      other:  OTHER,
+                      guitar: OTHER,
+                      piano:  OTHER,
+                    };
+                    for (const [uiName, preview] of Object.entries(routing)) {
+                      if (!preview) continue;
+                      if (backendWon.has(uiName)) {
+                        URL.revokeObjectURL(preview.wavUrl);
+                        continue;
+                      }
+                      dispatch({
+                        type: 'UPDATE_TRACK',
+                        payload: {
+                          busId,
+                          trackId: `stem-${trackId}-${uiName}`,
+                          updates: {
+                            audioUrl: preview.wavUrl,
+                            metadata: {
+                              envelopeData: preview.envelope,
+                              envelopeFps: LATENT_MASK_ENV_FPS,
+                              playbackReady: true,
+                              previewSource: 'latent_mask_e2e',
+                            },
+                          },
+                        },
+                      });
+                    }
+                  } catch (maskErr) {
+                    console.warn('[latentMask] preview failed (non-fatal):', maskErr?.message || maskErr);
+                  }
                 },
               });
             } catch (err) {
@@ -1237,6 +1292,10 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               }
             }
             const effectiveWavUrls = maskWavUrls || wavUrls;
+            // Backend audio wins over any late-arriving latentMask preview —
+            // mark all returned stems so the mask callback skips dispatching
+            // if it lands after this block.
+            for (const n of stemNames) backendWon.add(n);
             if (rmsPainted) {
               // Update existing rms stem tracks with real audio. Keep
               // envelopeData populated at every phase — useWaveform should

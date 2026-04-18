@@ -233,6 +233,33 @@ function _stereoToWavUrl(flat, numSamples) {
  * @param {number}         numFrames   sample count in master per channel
  * @returns {Promise<{stemName:string, wavUrl:string}[]>}
  */
+/**
+ * Envelope per stem computed directly from the mask × master-STFT magnitude.
+ * No iSTFT required — we just sum energy per frame. Format matches
+ * rmsDemucs/sem4Decoder: Float32Array[2*T] with first T = -peak, last T = +peak.
+ * Frame rate is the mask's 25 Hz (SR / HOP = 48000 / 1920).
+ */
+function _envelopeFromMaskAndMixMag(mask01, stemIdx, maskT, mixMag, stftT) {
+  const T = Math.min(maskT, stftT);
+  const maskBase = stemIdx * N_FREQ * maskT;
+  const out = new Float32Array(2 * T);
+  for (let t = 0; t < T; t++) {
+    let e = 0;
+    for (let f = 0; f < N_FREQ; f++) {
+      const m = mask01[maskBase + f * maskT + t];
+      const mag = mixMag[t * N_FREQ + f];
+      const v = m * mag;
+      e += v * v;
+    }
+    const amp = Math.sqrt(e / N_FREQ);
+    out[t]     = -amp;
+    out[T + t] =  amp;
+  }
+  return out;
+}
+
+export const LATENT_MASK_ENV_FPS = SR / HOP;   // 25 Hz
+
 export async function stemAudiosFromMaskOverMaster(stemLatents, masterFlat, numFrames) {
   const sess = await initLatentMask();
   const ort = _ort;
@@ -261,9 +288,25 @@ export async function stemAudiosFromMaskOverMaster(stemLatents, masterFlat, numF
   const XR = _stft(masterR);
   const stftT = Math.min(XL.T, maskT);
 
-  // --- 4. per-stem: apply mask to each channel, iSTFT, encode WAV
+  // Magnitude of the mono master spectrogram for envelope computation.
+  // Average of L and R magnitudes per bin — cheap, stereo-invariant.
+  const mixMag = new Float32Array(N_FREQ * stftT);
+  for (let t = 0; t < stftT; t++) {
+    for (let f = 0; f < N_FREQ; f++) {
+      const i = t * N_FREQ + f;
+      const magL = Math.hypot(XL.re[i], XL.im[i]);
+      const magR = Math.hypot(XR.re[i], XR.im[i]);
+      mixMag[i] = 0.5 * (magL + magR);
+    }
+  }
+
+  // --- 4. per-stem: envelope from mask×|mix| (cheap, no iSTFT), then
+  // iSTFT for the playback WAV.
   const stems = [];
   for (let s = 0; s < N_STEMS; s++) {
+    // envelope first — caller can dispatch it to the canvas immediately
+    const envelope = _envelopeFromMaskAndMixMag(maskLogits, s, maskT, mixMag, stftT);
+
     // mask slice for this stem: stride = N_FREQ * maskT
     const maskBase = s * N_FREQ * maskT;
 
@@ -291,7 +334,7 @@ export async function stemAudiosFromMaskOverMaster(stemLatents, masterFlat, numF
     flat.set(yL, 0);
     flat.set(yR, numFrames);
     const url = _stereoToWavUrl(flat, numFrames);
-    stems.push({ stemName: LATENT_MASK_STEM_NAMES[s], wavUrl: url });
+    stems.push({ stemName: LATENT_MASK_STEM_NAMES[s], wavUrl: url, envelope });
   }
   return stems;
 }
