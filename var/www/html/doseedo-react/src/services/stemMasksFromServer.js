@@ -234,15 +234,20 @@ export async function decodeStemMasks({ bundleUrl, masterAudioBuffer, headers = 
   }
   const masterSr = srcBuffer.sampleRate;
   const nFft = meta.nFft, hop = meta.hop, nBins = meta.nBins, nFrames = meta.nFrames;
-  const window = _hann(nFft);
+  // NOTE: do not name this local `window` — it shadows the global inside
+  // the same function block and causes a TDZ ReferenceError at
+  // `new window.OfflineAudioContext` above (minified as "Cannot access
+  // 'y' before initialization"). Hoisted block-scoped const is evaluated
+  // lazily, so any earlier read of `window` in the same block throws.
+  const hannWindow = _hann(nFft);
 
   // STFT master ONCE per channel — reused for every stem.
   const tStft0 = performance.now();
   const nCh = srcBuffer.numberOfChannels;
   const chL = srcBuffer.getChannelData(0);
   const chR = nCh > 1 ? srcBuffer.getChannelData(1) : chL;
-  const stftL = _stft(chL, nFft, hop, window, nFrames, nBins);
-  const stftR = _stft(chR, nFft, hop, window, nFrames, nBins);
+  const stftL = _stft(chL, nFft, hop, hannWindow, nFrames, nBins);
+  const stftR = _stft(chR, nFft, hop, hannWindow, nFrames, nBins);
   const tStft = performance.now() - tStft0;
 
   const outLen = Math.min(meta.nSamples, chL.length);
@@ -268,8 +273,8 @@ export async function decodeStemMasks({ bundleUrl, masterAudioBuffer, headers = 
         maskedImR[stBase + k] = stftR.im[stBase + k] * m;
       }
     }
-    const stemL = _istft(maskedReL, maskedImL, nFft, hop, window, nFrames, nBins, outLen);
-    const stemR = _istft(maskedReR, maskedImR, nFft, hop, window, nFrames, nBins, outLen);
+    const stemL = _istft(maskedReL, maskedImL, nFft, hop, hannWindow, nFrames, nBins, outLen);
+    const stemR = _istft(maskedReR, maskedImR, nFft, hop, hannWindow, nFrames, nBins, outLen);
     const wavUrl = _stereoToWavBlobUrl(stemL, stemR, meta.sr);
     stems.push({ stemName: meta.stemNames[s], wavUrl });
   }

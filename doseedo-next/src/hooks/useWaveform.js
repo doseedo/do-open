@@ -117,20 +117,27 @@ function paintBarAnimationFromBuffer(canvas, audioBuffer, width, height, color, 
       : Math.min(ptpValues[i] * normFactor * g, maxBarHeight);
   }
 
+  // Start from a flat baseline (bar height 0.5px). If the animation gets
+  // interrupted mid-flight — e.g. a bus auto-expands and unmounts this
+  // track a few hundred ms after drop — the on-screen state is a partial
+  // rise of the final shape, not random noise. That way the master
+  // pre-expand view is always a smaller, consistent version of its final
+  // self, never "near silent with random stubs".
   const startHeights = new Float32Array(numBars);
-  for (let i = 0; i < numBars; i++) {
-    startHeights[i] = (0.15 + Math.random() * 0.85) * maxBarHeight;
-  }
 
   canvas.width = width;
   canvas.height = height;
 
-  const DURATION = 550;
+  // Shorter than the envelope morph (1200 ms) since this is a one-shot
+  // rise-from-baseline — no need to linger. If it gets cut off by a
+  // track unmount, the fact it's monotone-growing keeps the intermediate
+  // state readable as "the real shape, just smaller".
+  const DURATION = 350;
   const animStart = performance.now();
 
   const tick = (now) => {
     const t = Math.min((now - animStart) / DURATION, 1);
-    const ease = 1 - Math.pow(1 - t, 2.5);
+    const ease = t * t * (3 - 2 * t);   // smoothstep
 
     ctx.clearRect(0, 0, width, height);
     ctx.strokeStyle = color;
