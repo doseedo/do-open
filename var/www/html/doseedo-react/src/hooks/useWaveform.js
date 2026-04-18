@@ -13,7 +13,7 @@ const MAX_CACHE_SIZE = 50; // Limit in-memory cache size
  * The loop runs until transitionFrameRef is cancelled (e.g. by
  * paintBarAnimationFromBuffer or paintBarAnimation when audio arrives).
  */
-function startNoiseAnimation(canvas, width, height, color, transitionFrameRef) {
+function startNoiseAnimation(canvas, width, height, color, transitionFrameRef, currentHeightsRef = null) {
   if (!canvas) return;
   if (transitionFrameRef.current) cancelAnimationFrame(transitionFrameRef.current);
 
@@ -26,40 +26,46 @@ function startNoiseAnimation(canvas, width, height, color, transitionFrameRef) {
   const midY = height / 2;
   const maxBarHeight = height * 0.45;
 
-  // Initialise bar heights randomly
-  const heights = new Float32Array(numBars);
-  const targets = new Float32Array(numBars);
+  // Quiet, smooth per-bar sine oscillation. Baseline sits at ~8% of the
+  // bar's max height, amplitude is ±6% — the whole animation reads as a
+  // low murmur rather than a noisy storm. Each bar gets its own phase
+  // and a slightly different frequency (0.35–0.9 Hz) so they stay
+  // desynchronised and the motion looks organic.
+  const baseline = maxBarHeight * 0.08;
+  const wobble   = maxBarHeight * 0.06;
+  const phases = new Float32Array(numBars);
+  const freqs  = new Float32Array(numBars);
   for (let i = 0; i < numBars; i++) {
-    heights[i] = (0.15 + Math.random() * 0.85) * maxBarHeight;
-    targets[i] = (0.15 + Math.random() * 0.85) * maxBarHeight;
+    phases[i] = Math.random() * Math.PI * 2;
+    freqs[i]  = 0.35 + Math.random() * 0.55;
   }
 
-  let frameCount = 0;
-  const tick = () => {
-    // Pick new random targets every ~20 frames so the noise feels alive
-    frameCount++;
-    if (frameCount % 20 === 0) {
-      for (let i = 0; i < numBars; i++) {
-        targets[i] = (0.15 + Math.random() * 0.85) * maxBarHeight;
-      }
-    }
+  // Maintain a live heights buffer so the subsequent envelope reveal
+  // starts its morph from the exact on-screen position — no snap.
+  const live = currentHeightsRef
+    ? (currentHeightsRef.current && currentHeightsRef.current.length === numBars
+        ? currentHeightsRef.current
+        : (currentHeightsRef.current = new Float32Array(numBars)))
+    : new Float32Array(numBars);
 
+  const start = performance.now();
+  const tick = (now) => {
+    const dt = (now - start) / 1000;
     ctx.clearRect(0, 0, width, height);
     ctx.strokeStyle = color;
     ctx.lineWidth = barWidth;
     ctx.lineCap = 'round';
     ctx.globalAlpha = 0.7;
-
     for (let i = 0; i < numBars; i++) {
-      heights[i] += (targets[i] - heights[i]) * 0.08;
+      const h = Math.max(0.5, baseline + wobble * Math.sin(2 * Math.PI * freqs[i] * dt + phases[i]));
+      live[i] = h;
       const x = i * (barWidth + barSpacing) + barWidth / 2;
       ctx.beginPath();
-      ctx.moveTo(x, midY - heights[i]);
-      ctx.lineTo(x, midY + heights[i]);
+      ctx.moveTo(x, midY - h);
+      ctx.lineTo(x, midY + h);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-
     transitionFrameRef.current = requestAnimationFrame(tick);
   };
   transitionFrameRef.current = requestAnimationFrame(tick);
@@ -282,12 +288,17 @@ function paintBarAnimation(canvas, envelopeData, T, width, height, color, gain, 
   canvas.width = width;
   canvas.height = height;
 
-  const DURATION = 550;
+  // Longer + smoother than the old 550 ms ease-out. Silent-target bars
+  // were "snapping" to baseline because ease-out spends most of its time
+  // near the end; smoothstep's symmetric S-curve keeps motion visible at
+  // both ends so fading to near-silence reads as a gentle descent.
+  const DURATION = 1200;
   const animStart = performance.now();
 
   const tick = (now) => {
     const t = Math.min((now - animStart) / DURATION, 1);
-    const ease = 1 - Math.pow(1 - t, 2.5); // ease-out
+    // smoothstep — 3t² − 2t³ — ease-in-out
+    const ease = t * t * (3 - 2 * t);
 
     ctx.clearRect(0, 0, width, height);
     ctx.strokeStyle = color;
@@ -419,7 +430,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     if (isNewEnvelope) {
       if (revealDelayMs > 0 && !revealedRef.current) {
         // Flat noise first — small random jitter, no shape yet.
-        startNoiseAnimation(canvasRef.current, width, height, color, transitionFrameRef);
+        startNoiseAnimation(canvasRef.current, width, height, color, transitionFrameRef, currentBarHeightsRef);
         if (revealTimeoutRef.current) clearTimeout(revealTimeoutRef.current);
         revealTimeoutRef.current = setTimeout(() => {
           revealedRef.current = true;
@@ -465,7 +476,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
   useEffect(() => {
     if (!showNoise || envelopePaintedRef.current || audioPaintedRef.current) return;
     if (canvasRef.current) {
-      startNoiseAnimation(canvasRef.current, width, height, color, transitionFrameRef);
+      startNoiseAnimation(canvasRef.current, width, height, color, transitionFrameRef, currentBarHeightsRef);
     }
   }, [showNoise, width, height, color]);
 
@@ -481,7 +492,7 @@ export function useWaveform(audioUrl, width = 800, height = 60, color = '#f5f5f5
     // Immediately show noise on the canvas while we wait for audio to download.
     // This ensures there's never a blank/grey gap between URL change and decode.
     if (!envelopePaintedRef.current && canvasRef.current) {
-      startNoiseAnimation(canvasRef.current, width, height, color, transitionFrameRef);
+      startNoiseAnimation(canvasRef.current, width, height, color, transitionFrameRef, currentBarHeightsRef);
     }
 
     if (!envelopePaintedRef.current && !audioBufferRef.current) {

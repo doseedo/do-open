@@ -1219,22 +1219,22 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                     };
                     for (const [uiName, preview] of Object.entries(routing)) {
                       if (!preview) continue;
-                      if (backendWon.has(uiName)) {
-                        URL.revokeObjectURL(preview.wavUrl);
-                        continue;
-                      }
+                      // Temp playback from the mask intermediate isn't
+                      // usable right now — revoke the blob URL and only
+                      // push the envelope (cheap, decent visual). Audio
+                      // becomes playable when the backend WAV lands.
+                      URL.revokeObjectURL(preview.wavUrl);
+                      if (backendWon.has(uiName)) continue;
                       dispatch({
                         type: 'UPDATE_TRACK',
                         payload: {
                           busId,
                           trackId: `stem-${trackId}-${uiName}`,
                           updates: {
-                            audioUrl: preview.wavUrl,
                             metadata: {
                               envelopeData: preview.envelope,
                               envelopeFps: LATENT_MASK_ENV_FPS,
-                              playbackReady: true,
-                              previewSource: 'latent_mask_e2e',
+                              previewSource: 'latent_mask_e2e_envelope_only',
                             },
                           },
                         },
