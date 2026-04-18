@@ -56,9 +56,11 @@ export async function initSem4Decoder(onProgress = null) {
   if (_sessions) return _sessions;
   if (_initPromise) return _initPromise;
 
+  console.log('[sem4Decoder] initSem4Decoder starting');
   _initPromise = (async () => {
     const ort = await import('onnxruntime-web');
     _ort = ort;
+    console.log('[sem4Decoder] ort loaded; webgpu?', !!ort.env?.webgpu);
 
     if (ort.env?.wasm) {
       ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/';
@@ -76,6 +78,7 @@ export async function initSem4Decoder(onProgress = null) {
     const subProg = (tag, base) => (p) => {
       if (onProgress) onProgress({ tag, ...p, base });
     };
+    console.log('[sem4Decoder] fetching 5 model files (first visit: ~190 MB)');
     const [
       demucsGraph, demucsWeights,
       semGraph,
@@ -87,6 +90,7 @@ export async function initSem4Decoder(onProgress = null) {
       fetchModelWithCache(MODELS.decoder,     subProg('decoder.onnx', 'decoder')),
       fetchModelWithCache(MODELS.decoderData, subProg('decoder.data', 'decoder')),
     ]);
+    console.log('[sem4Decoder] all model bytes loaded, building sessions');
 
     async function makeSession(graphBuf, extPairs /* [{path, bytes}, ...] */) {
       const backends = [];
