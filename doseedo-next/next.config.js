@@ -113,6 +113,7 @@ const nextConfig = {
       { source: '/static/models/sem_decoder_fp16.onnx.data',    destination: `${R2_CDN}/static/models/sem_decoder_fp16.onnx.data` },
       { source: '/static/models/latent_mask_e2e.onnx',          destination: `${R2_CDN}/static/models/latent_mask_e2e.onnx` },
       { source: '/static/models/latent_drumsep.onnx',           destination: `${R2_CDN}/static/models/latent_drumsep.onnx` },
+      { source: '/static/models/latent_pitch.onnx',             destination: `${R2_CDN}/static/models/latent_pitch.onnx` },
       { source: '/separate-stems',                  destination: `${MODAL}/separate-stems` },
       { source: '/separate-stems/:path*',           destination: `${MODAL}/separate-stems/:path*` },
       { source: '/api/encode-audio-latent',         destination: `${MODAL}/api/encode-audio-latent` },
