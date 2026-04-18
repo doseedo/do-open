@@ -103,18 +103,40 @@ export async function putCachedModel(url, bytes) {
  *
  * Returns the raw bytes as an ArrayBuffer.
  */
-/** Reject obviously-wrong cached payloads. A Next.js HTML fallback (served
- * before /static/models/* rewrites deployed) starts with `<` — if we cached
- * that once, every subsequent load hands ORT the HTML and `InferenceSession.
- * create` throws "protobuf parsing failed". Check the first byte before
- * trusting the cache, and on ONNX specifically also sniff the magic bytes. */
-function _looksLikeModelBytes(buf, url) {
-  if (!buf || buf.byteLength < 16) return false;
-  const u8 = new Uint8Array(buf, 0, Math.min(64, buf.byteLength));
-  // If the URL is an .onnx graph file (not a weights .data sibling), the
-  // first real byte should not be ASCII '<' (HTML fallback).
-  if (url.endsWith('.onnx') && u8[0] === 0x3C) return false;
-  return true;
+/** Expected byte-lengths for known model assets. Mirrors the list in
+ * scripts/verify_frontend_deploy.py. Used to reject truncated or
+ * HTML-poisoned payloads — including .onnx.data weight blobs, where a
+ * size mismatch passes InferenceSession.create silently (ORT just copies
+ * however many bytes exist into GPU buffers) and then produces NaN/Inf
+ * at inference: the "silent stems with random full-gain spikes" symptom
+ * on WebGPU. */
+const EXPECTED_SIZES = {
+  '/static/models/distill_demucs_fp16.onnx':      904066,
+  '/static/models/distill_demucs_fp16.onnx.data': 170106368,
+  '/static/models/sem_demucs_packed.onnx':        5190993,
+  '/static/models/sem_decoder_fp16.onnx':         203676,
+  '/static/models/sem_decoder_fp16.onnx.data':    20921936,
+  '/static/models/latent_mask_e2e.onnx':          8154529,
+};
+
+/** Validate a model payload, regardless of source. Returns a reason if
+ * the bytes are wrong so the caller can log/evict/throw consistently. */
+function _validateModelBytes(buf, url) {
+  if (!buf || buf.byteLength < 16) return 'empty or too small';
+  // HTML fallback starts with '<' — catches graphs AND weight (.data)
+  // blobs that were poisoned (served before a Vercel rewrite deployed,
+  // or via an edge error page). The previous check only gated .onnx
+  // graphs; poisoned .data blobs slipped through and produced silent
+  // garbage inference on WebGPU.
+  const firstByte = new Uint8Array(buf, 0, 1)[0];
+  if (firstByte === 0x3C) return `first byte 0x3C ('<') — looks like HTML`;
+  // Exact size match for known assets. Catches truncated chunked
+  // transfers through the Vercel → R2 proxy.
+  const expected = EXPECTED_SIZES[url];
+  if (expected != null && buf.byteLength !== expected) {
+    return `size ${buf.byteLength} != expected ${expected}`;
+  }
+  return null;   // ok
 }
 
 async function _deleteCachedModel(url) {
@@ -131,15 +153,15 @@ async function _deleteCachedModel(url) {
 
 export async function fetchModelWithCache(url, onProgress = null) {
   const cached = await getCachedModel(url);
-  if (cached && _looksLikeModelBytes(cached, url)) {
-    // Mimic a "100% loaded from cache" progress event so UI code that watches
-    // the callback doesn't hang.
-    if (onProgress) onProgress({ bytesLoaded: cached.byteLength, bytesTotal: cached.byteLength, fromCache: true });
-    return cached;
-  }
   if (cached) {
-    // Poisoned cache entry (HTML served before rewrite deployed). Evict.
-    console.warn(`[modelCache] evicting bad cached payload for ${url} (first byte 0x${new Uint8Array(cached, 0, 1)[0].toString(16)})`);
+    const badReason = _validateModelBytes(cached, url);
+    if (!badReason) {
+      // Mimic a "100% loaded from cache" progress event so UI code that watches
+      // the callback doesn't hang.
+      if (onProgress) onProgress({ bytesLoaded: cached.byteLength, bytesTotal: cached.byteLength, fromCache: true });
+      return cached;
+    }
+    console.warn(`[modelCache] evicting ${url}: ${badReason}`);
     await _deleteCachedModel(url);
   }
 
@@ -149,9 +171,8 @@ export async function fetchModelWithCache(url, onProgress = null) {
   // If we can't stream (no response.body reader available), fall back to .arrayBuffer().
   if (!resp.body || !resp.body.getReader || !onProgress) {
     const buf = await resp.arrayBuffer();
-    if (!_looksLikeModelBytes(buf, url)) {
-      throw new Error(`fetched ${url} doesn't look like a model (first byte 0x${new Uint8Array(buf, 0, 1)[0].toString(16)})`);
-    }
+    const badReason = _validateModelBytes(buf, url);
+    if (badReason) throw new Error(`fetched ${url} invalid: ${badReason}`);
     putCachedModel(url, buf);
     return buf;
   }
@@ -171,9 +192,8 @@ export async function fetchModelWithCache(url, onProgress = null) {
   let off = 0;
   for (const c of chunks) { merged.set(c, off); off += c.byteLength; }
   const buf = merged.buffer;
-  if (!_looksLikeModelBytes(buf, url)) {
-    throw new Error(`fetched ${url} doesn't look like a model (first byte 0x${new Uint8Array(buf, 0, 1)[0].toString(16)})`);
-  }
+  const badReason = _validateModelBytes(buf, url);
+  if (badReason) throw new Error(`fetched ${url} invalid: ${badReason}`);
   putCachedModel(url, buf);
   return buf;
 }
@@ -194,4 +214,12 @@ export async function clearModelCache() {
   } catch (e) {
     // ignore
   }
+}
+
+// Console affordance — lets the user nuke their model cache from devtools
+// without code spelunking. Useful when a prior CDN/proxy failure stashed a
+// truncated weight blob that slipped past earlier validation.
+if (typeof window !== 'undefined') {
+  window.__doseedo = window.__doseedo || {};
+  window.__doseedo.clearModelCache = clearModelCache;
 }
