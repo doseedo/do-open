@@ -992,29 +992,28 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
       const audio = new Audio();
       audio.src = audioUrl;
 
-      audio.addEventListener('loadedmetadata', async () => {
+      audio.addEventListener('loadedmetadata', () => {
         const duration = audio.duration;
 
-        // Pre-decode the master AudioBuffer and seed the shared
-        // audioBufferCache BEFORE we dispatch ADD_TRACK. When the
-        // track's OptimizedTrack mounts and calls useWaveform,
-        // audioBufferCache.has(audioUrl) will already be true → the
-        // buffer target is applied on the first animator frame, and
-        // the waveform appears at its full shape immediately rather
-        // than easing in from the noise baseline. This is the ONLY
-        // way to guarantee the uploaded waveform looks identical from
-        // first paint through every phase of extraction.
-        let preDecodedSrc = null;
-        try {
-          preDecodedSrc = await audioFileToStereo48k(file);
-          const ctxForCache = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-          const masterBuf = ctxForCache.createBuffer(2, preDecodedSrc.numFrames, 48000);
-          masterBuf.getChannelData(0).set(preDecodedSrc.flat.subarray(0, preDecodedSrc.numFrames));
-          masterBuf.getChannelData(1).set(preDecodedSrc.flat.subarray(preDecodedSrc.numFrames, 2 * preDecodedSrc.numFrames));
-          audioBufferCache.set(audioUrl, masterBuf);
-        } catch (preErr) {
-          console.warn('[drop] master pre-decode failed (non-fatal):', preErr?.message || preErr);
-        }
+        // Kick off the master decode in the background — the composite
+        // animator shows a wobbling noise baseline until the buffer
+        // lands in audioBufferCache, then smoothly morphs to the real
+        // waveform. We share the decoded src with rmsDemucs below via
+        // this promise so the file is decoded exactly once.
+        const decodePromise = (async () => {
+          try {
+            const src = await audioFileToStereo48k(file);
+            const ctxForCache = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+            const masterBuf = ctxForCache.createBuffer(2, src.numFrames, 48000);
+            masterBuf.getChannelData(0).set(src.flat.subarray(0, src.numFrames));
+            masterBuf.getChannelData(1).set(src.flat.subarray(src.numFrames, 2 * src.numFrames));
+            audioBufferCache.set(audioUrl, masterBuf);
+            return src;
+          } catch (e) {
+            console.warn('[drop] master decode failed (non-fatal):', e?.message || e);
+            return null;
+          }
+        })();
 
         // Create a new SFX bus for this track.
         // Start COLLAPSED: the bus row renders the uploaded track as
@@ -1120,9 +1119,10 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
           // Paint stem envelopes immediately from the lightweight RMS model.
           // No backend wait -- this runs in < 500ms on any device.
           let rmsPainted = false;
-          // preDecodedSrc was produced + cached above, before ADD_TRACK
-          // dispatch. Reuse it here — no second decode of the same file.
-          let decodedSrc = preDecodedSrc;
+          // Reuse the in-flight master decode kicked off above — the file
+          // is decoded exactly once. If the background decode failed, fall
+          // back to a fresh decode here.
+          let decodedSrc = await decodePromise;
           let rmsStemEnvelopes = null;
           try {
             if (!decodedSrc) decodedSrc = await audioFileToStereo48k(file);

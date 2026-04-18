@@ -1,25 +1,24 @@
-import React, { useEffect, useRef, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useTimeline } from '../../hooks/useTimeline';
 import { audioBufferCache } from '../../hooks/useWaveform';
 
 /**
- * CompositeBusWaveform - a single canvas rendering of a bus's "master"
- * waveform when the bus is collapsed, computed as the volume-weighted sum
- * of every stem's envelope (or decoded RMS). When any stem slider moves,
- * React re-renders this component with fresh per-stem gains and the canvas
- * repaints in real time.
+ * CompositeBusWaveform — single rAF-driven canvas that renders the master
+ * waveform in every phase of the lifecycle:
  *
- * Aggregation math (per-bar, time-aligned across stems):
- *   effGain(stem)  = isMuted ? 0
- *                  : (anySolo && !stem.isSolo) ? 0
- *                  : stem.gain
- *   masterPeak[t]  = (busMute ? 0 : busGain) * Σ effGain(stem) * stem.peak[t]
+ *   1. Drop → bus appears immediately with a wobbling noise baseline.
+ *   2. Master AudioBuffer lands in audioBufferCache (from background
+ *      decode) → bars ease from noise to the real ptp-per-bar shape.
+ *   3. Stems arrive (rms → backend WAV) → stem gains can modulate
+ *      per-bar amplitude via a ratio when the user touches a slider;
+ *      all-gains-=1 leaves the master shape unchanged.
  *
- * Stems contribute via `track.metadata.envelopeData` (from latent_visual) at
- * `envelopeFps`. If a stem has no envelope yet but its audio is decoded,
- * we fall back to the cached AudioBuffer RMS. If neither is available
- * (rare — pre-latent), the stem contributes 0 to the sum.
+ * Design rules (from user):
+ *   • There is NEVER an empty frame. If nothing is loaded, draw noise.
+ *   • Phase transitions always FADE via exponential easing — no snaps.
+ *   • Master shape is only modulated by user slider movement, not by
+ *     envelope refinements (rms → mask → WAV).
  */
 const CompositeBusWaveform = React.memo(({
   bus,
@@ -29,9 +28,10 @@ const CompositeBusWaveform = React.memo(({
 }) => {
   const { state } = useApp();
   const canvasRef = useRef(null);
+  const rafIdRef = useRef(null);
 
-  // Match OptimizedTrack's sizing exactly so the composite spans the same
-  // horizontal footprint a single expanded stem would occupy.
+  // Width sizing — match OptimizedTrack so a collapsed composite spans
+  // the same horizontal footprint as an expanded stem would.
   const { pixelsPerSecond } = useTimeline(
     state.totalDuration || 10,
     state.zoomLevel || 1.0,
@@ -47,14 +47,7 @@ const CompositeBusWaveform = React.memo(({
   }, [bus.tracks]);
   const width = Math.max(1, Math.floor(busDuration * pixelsPerSecond));
 
-  // Derive the reactive inputs (per-stem gain/mute/solo + peak source).
-  // This runs on every dispatch, which is exactly when we want a repaint.
-  // We explicitly take ONLY stems here — the original uploaded audio
-  // (metadata.type === 'uploaded') is kept in bus.tracks to preserve
-  // analysis data + mask-playback audio but MUST NOT contribute to the
-  // composite as a stem, or it would double-count on top of the stem sum.
-  // If no stems exist yet we fall back to any non-MIDI, non-placeholder
-  // track (the single-file case BEFORE separation completes).
+  // Reactive per-stem inputs — re-memoized on every bus.tracks dispatch.
   const stemInputs = useMemo(() => {
     const hasStems = bus.tracks.some(t => t.metadata?.type === 'stem');
     const anySolo = bus.tracks.some(t => t.isSolo);
@@ -76,193 +69,194 @@ const CompositeBusWaveform = React.memo(({
     });
   }, [bus.tracks]);
 
-  // The uploaded master track stays in bus.tracks (hidden from the UI)
-  // as the source of analysis metadata + mask-playback audio. We use
-  // its decoded AudioBuffer as the VISUAL REFERENCE shape: when all
-  // stems are at gain=1 the composite looks exactly like the pre-
-  // separation single-track view — the master doesn't visibly change
-  // as envelopes come in; only stem slider adjustments modulate it.
-  //
-  // Self-decode trigger: when the bus is expanded and stems exist,
-  // BusRow filters the uploaded track out of visibleTracks, so its
-  // OptimizedTrack never mounts and useWaveform never decodes its
-  // audioUrl into the cache. We do that here so the master-ref path
-  // is always available and the composite never has to fall through
-  // to its stem-sum fallback (which DID visibly change with envelopes).
-  const [masterDecodeTick, setMasterDecodeTick] = useState(0);
-  useEffect(() => {
+  // Master-track audioUrl — the key we use to probe audioBufferCache
+  // from inside the rAF loop (no re-render needed once the cache fills).
+  const masterAudioUrl = useMemo(() => {
     const m = bus.tracks.find(t => t.metadata?.type === 'uploaded');
-    if (!m?.audioUrl || audioBufferCache.has(m.audioUrl)) return;
+    return m?.audioUrl || null;
+  }, [bus.tracks]);
+
+  // Self-decode: if nothing else seeded the cache within the first ~50 ms
+  // of mount, decode the master ourselves. Happens in the background; the
+  // animator keeps rendering noise until the buffer lands.
+  useEffect(() => {
+    if (!masterAudioUrl || audioBufferCache.has(masterAudioUrl)) return;
     let cancelled = false;
     (async () => {
       try {
         const { fetchAudioWithCache } = await import('../../services/audioCacheService');
-        const { blob } = await fetchAudioWithCache(m.audioUrl);
+        const { blob } = await fetchAudioWithCache(masterAudioUrl);
         if (cancelled) return;
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const ab = await blob.arrayBuffer();
         const buf = await ctx.decodeAudioData(ab);
         if (cancelled) return;
-        audioBufferCache.set(m.audioUrl, buf);
-        setMasterDecodeTick((v) => v + 1);
+        audioBufferCache.set(masterAudioUrl, buf);
+        // No re-render trigger needed — the rAF loop polls the cache.
       } catch (e) {
         console.warn('[composite] master decode failed:', e?.message || e);
       }
     })();
     return () => { cancelled = true; };
-  }, [bus.tracks]);
-
-  const masterInput = useMemo(() => {
-    const m = bus.tracks.find(t => t.metadata?.type === 'uploaded');
-    if (!m?.audioUrl) return null;
-    const buf = audioBufferCache.get(m.audioUrl);
-    return buf ? { audioBuffer: buf } : null;
-  }, [bus.tracks, masterDecodeTick]);
+  }, [masterAudioUrl]);
 
   const busGain = bus.mute ? 0 : (bus.gain ?? 1.0);
 
-  // Paint whenever gain/envelope/width/height changes.
+  // ── Animator state ─────────────────────────────────────────────────
+  // Persisted across renders; the rAF tick reads from here each frame.
+  const stateRef = useRef(null);
+  if (!stateRef.current) {
+    stateRef.current = {
+      width, height, color, busGain,
+      stemInputs,
+      masterAudioUrl,
+      envelopeFps,
+      // Per-bar heights (pixels). current eases toward target.
+      current: null,
+      target: null,
+      lerpRate: 0.12,            // ≈265 ms to 86% convergence at 60 Hz
+      // Cached master ptp computation (only recomputed when buffer ref changes).
+      cachedMasterBuf: null,
+      cachedMasterPtp: null,
+      cachedNumBars: 0,
+      // Wobble overlay — active while we're showing the noise baseline.
+      wobble: {
+        amp: 0,
+        targetAmp: 0,
+        fadeStartMs: 0,
+        fadeStartAmp: 0,
+        phases: null,
+        freqs: null,
+      },
+      animStartMs: 0,
+    };
+  }
+  // Keep sync'd (cheap).
+  stateRef.current.width = width;
+  stateRef.current.height = height;
+  stateRef.current.color = color;
+  stateRef.current.busGain = busGain;
+  stateRef.current.stemInputs = stemInputs;
+  stateRef.current.masterAudioUrl = masterAudioUrl;
+  stateRef.current.envelopeFps = envelopeFps;
+
+  // ── Persistent rAF animator ────────────────────────────────────────
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, width, height);
+    stateRef.current.animStartMs = performance.now();
 
-    if (stemInputs.length === 0) return;
-
-    // Match the stem waveform style exactly (useWaveform.renderEnvelope):
-    // 2px bars, 2px spacing, rounded caps, alpha 0.7.
-    const barSpacing = 2;
-    const barWidth = 2;
-    const numBars = Math.floor(width / (barWidth + barSpacing));
-    if (numBars <= 0) return;
-    const midY = height / 2;
-    const maxBarHeight = height * 0.45;
-
-    // Per-stem peaks at native resolution (no gain applied). Envelope
-    // preferred; decoded RMS fallback; zero if neither.
-    const perStemBars = stemInputs.map(s => peakPerBar(s, numBars, envelopeFps));
-
-    // Baseline at all stems gain=1 — used both for master-based
-    // rendering (as the "full activity" reference at each bar) and
-    // as a fallback normalizer when no master buffer is available.
-    const baselineSummed = new Float32Array(numBars);
-    for (let s = 0; s < perStemBars.length; s++) {
-      const peaks = perStemBars[s];
-      if (!peaks) continue;
-      for (let i = 0; i < numBars; i++) baselineSummed[i] += peaks[i];
-    }
-
-    // Current-gain sum — the live mix amplitude at each bar.
-    const summed = new Float32Array(numBars);
-    for (let s = 0; s < perStemBars.length; s++) {
-      const peaks = perStemBars[s];
-      const g = stemInputs[s].gain;
-      if (!peaks || g === 0) continue;
-      for (let i = 0; i < numBars; i++) summed[i] += peaks[i] * g;
-    }
-
-    // Primary rendering path: use the uploaded master's decoded audio
-    // as the VISUAL REFERENCE shape. When all stems are at gain=1 this
-    // draws exactly the same ptp-per-bar plot that renderWaveform does
-    // for the pre-separation single-track view — i.e. the master
-    // waveform doesn't shift or resize when stems arrive.
-    //
-    // Stem gains modulate each bar by the per-bar ratio
-    //   ratio[i] = Σ (stem.peak[i] × stem.gain)   /   Σ stem.peak[i]
-    // so turning a stem down shrinks the master shape only at
-    // time-points where that stem had energy, leaving bars without its
-    // contribution unchanged. ratio = 1 when all gains are 1; ratio = 0
-    // when all gains are 0.
-    let masterPtp = null;
-    let maxMasterPtp = 0;
-    if (masterInput?.audioBuffer) {
-      masterPtp = ptpPerBarFromBuffer(masterInput.audioBuffer, numBars);
-      for (let i = 0; i < numBars; i++) {
-        if (masterPtp[i] > maxMasterPtp) maxMasterPtp = masterPtp[i];
+    const tick = (now) => {
+      const s = stateRef.current;
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        rafIdRef.current = requestAnimationFrame(tick);
+        return;
       }
-    }
 
-    ctx.strokeStyle = color;
-    ctx.lineWidth = barWidth;
-    ctx.lineCap = 'round';
-    ctx.globalAlpha = 0.7;
+      const barWidth = 2;
+      const barSpacing = 2;
+      const barStride = barWidth + barSpacing;
+      const numBars = Math.max(1, Math.floor(s.width / barStride));
+      const maxBarHeight = s.height * 0.45;
+      const midY = s.height / 2;
 
-    if (masterPtp && maxMasterPtp > 0.001) {
-      const norm = maxBarHeight / maxMasterPtp;
-      const noiseFloor = maxMasterPtp * 0.02;
+      // Resize canvas only on a real dimension change (canvas.width = x
+      // clears the pixel buffer, so gate it).
+      if (canvas.width !== s.width) canvas.width = s.width;
+      if (canvas.height !== s.height) canvas.height = s.height;
 
-      // Per-bar ratio modulation is ENVELOPE-dependent, so during
-      // extraction (where envelopes swap from rms → mask → backend WAV)
-      // the master shape would visibly change with every envelope
-      // update. User rule: master only moves when *they* pull a stem
-      // fader; it must not ride along with envelope refinements.
-      //
-      // Skip the ratio pipeline entirely when every stem is at default
-      // gain (1.0) AND not soloed/muted away. The moment a user touches
-      // a slider, ratio kicks in as before.
-      const anyUserModulation = stemInputs.some((s) => s.gain !== 1.0);
+      // Ensure wobble phase/freq arrays.
+      if (!s.wobble.phases || s.wobble.phases.length !== numBars) {
+        s.wobble.phases = new Float32Array(numBars);
+        s.wobble.freqs = new Float32Array(numBars);
+        for (let i = 0; i < numBars; i++) {
+          s.wobble.phases[i] = Math.random() * Math.PI * 2;
+          s.wobble.freqs[i] = 0.8 + Math.random() * 1.0;  // 0.8–1.8 Hz
+        }
+      }
 
+      // Compute the master's ptp-per-bar, cached by (buffer ref, numBars).
+      const masterBuf = s.masterAudioUrl ? audioBufferCache.get(s.masterAudioUrl) || null : null;
+      if (masterBuf && (masterBuf !== s.cachedMasterBuf || s.cachedNumBars !== numBars)) {
+        s.cachedMasterBuf = masterBuf;
+        s.cachedNumBars = numBars;
+        s.cachedMasterPtp = ptpPerBarFromBuffer(masterBuf, numBars);
+      }
+      if (!masterBuf) {
+        s.cachedMasterBuf = null;
+        s.cachedMasterPtp = null;
+      }
+
+      // Compute target bars for this frame.
+      const newTarget = computeTarget({
+        numBars,
+        maxBarHeight,
+        masterPtp: s.cachedMasterPtp,
+        stemInputs: s.stemInputs,
+        busGain: s.busGain,
+        envelopeFps: s.envelopeFps,
+      });
+      s.target = newTarget;
+
+      // Wobble visibility: on while the master isn't decoded yet (noise
+      // phase). Fades out once the real target takes over.
+      const loading = !s.cachedMasterPtp;
+      const wobbleTargetAmp = loading ? Math.max(1.6, maxBarHeight * 0.09) : 0;
+      if (s.wobble.targetAmp !== wobbleTargetAmp) {
+        s.wobble.fadeStartAmp = s.wobble.amp;
+        s.wobble.targetAmp = wobbleTargetAmp;
+        s.wobble.fadeStartMs = now;
+      }
+      const fadeDur = 500;
+      const wElapsed = now - s.wobble.fadeStartMs;
+      const wFrac = Math.min(Math.max(wElapsed / fadeDur, 0), 1);
+      const wEase = wFrac * wFrac * (3 - 2 * wFrac);
+      s.wobble.amp = s.wobble.fadeStartAmp
+        + (s.wobble.targetAmp - s.wobble.fadeStartAmp) * wEase;
+
+      // Ease current → target (per-bar exponential smoothing).
+      if (!s.current || s.current.length !== numBars) {
+        s.current = new Float32Array(newTarget);
+      }
+      const r = s.lerpRate;
       for (let i = 0; i < numBars; i++) {
-        const x = i * (barWidth + barSpacing);
-        const mv = masterPtp[i];
-        let ratio = 1;
-        if (anyUserModulation) {
-          const bs = baselineSummed[i];
-          ratio = bs > 1e-6 ? summed[i] / bs : 0;
+        s.current[i] += (newTarget[i] - s.current[i]) * r;
+      }
+
+      // Draw.
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, s.width, s.height);
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = barWidth;
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.7;
+      const wobbleActive = s.wobble.amp > 0.05;
+      const wobbleDt = (now - s.animStartMs) / 1000;
+      for (let i = 0; i < numBars; i++) {
+        let h = s.current[i];
+        if (wobbleActive) {
+          h += s.wobble.amp * Math.sin(2 * Math.PI * s.wobble.freqs[i] * wobbleDt + s.wobble.phases[i]);
         }
-        const v = mv * ratio;
-        if (mv < noiseFloor || busGain === 0 || ratio === 0) {
-          ctx.beginPath();
-          ctx.moveTo(x + barWidth / 2, midY - 0.5);
-          ctx.lineTo(x + barWidth / 2, midY + 0.5);
-          ctx.stroke();
-          continue;
-        }
-        const h = Math.min(v * norm * busGain, maxBarHeight);
+        h = Math.max(0.5, h);
+        const x = i * barStride + barWidth / 2;
         ctx.beginPath();
-        ctx.moveTo(x + barWidth / 2, midY - h);
-        ctx.lineTo(x + barWidth / 2, midY + h);
+        ctx.moveTo(x, midY - h);
+        ctx.lineTo(x, midY + h);
         ctx.stroke();
       }
-    } else {
-      // Fallback: master buffer not cached yet (stems arrived first).
-      // Normalize the stem sum to its baseline max. Visual shape may
-      // differ slightly from the master until the master decodes and
-      // the primary path kicks in, but this is a short window.
-      let baselineMax = 0;
-      for (let i = 0; i < numBars; i++) {
-        if (baselineSummed[i] > baselineMax) baselineMax = baselineSummed[i];
-      }
-      const norm = baselineMax > 0.001 ? maxBarHeight / baselineMax : 1.0;
-      const noiseFloor = baselineMax * 0.02;
+      ctx.globalAlpha = 1;
 
-      for (let i = 0; i < numBars; i++) {
-        const x = i * (barWidth + barSpacing);
-        const v = summed[i];
-        if (v < noiseFloor || busGain === 0) {
-          ctx.beginPath();
-          ctx.moveTo(x + barWidth / 2, midY - 0.5);
-          ctx.lineTo(x + barWidth / 2, midY + 0.5);
-          ctx.stroke();
-          continue;
-        }
-        const h = Math.min(v * norm * busGain, maxBarHeight);
-        ctx.beginPath();
-        ctx.moveTo(x + barWidth / 2, midY - h);
-        ctx.lineTo(x + barWidth / 2, midY + h);
-        ctx.stroke();
-      }
-    }
-    ctx.globalAlpha = 1.0;
-  }, [stemInputs, masterInput, busGain, width, height, envelopeFps, color]);
+      rafIdRef.current = requestAnimationFrame(tick);
+    };
 
-  // Render the canvas at EXACT pixel size (no CSS stretching) so the
-  // bar resolution matches individual stem waveforms 1:1. The width
-  // in pixels equals busDuration × pixelsPerSecond, same math that
-  // OptimizedTrack uses for stem tracks.
+    rafIdRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    };
+  // Animator is lifetime-bound. All dynamic state flows via stateRef.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <canvas
       ref={canvasRef}
@@ -277,11 +271,79 @@ const CompositeBusWaveform = React.memo(({
 
 CompositeBusWaveform.displayName = 'CompositeBusWaveform';
 
+// ── Target computation (pure) ────────────────────────────────────────
+
+function _noiseBars(numBars, maxBarHeight) {
+  const baseline = Math.max(1, maxBarHeight * 0.08);
+  const out = new Float32Array(numBars);
+  out.fill(baseline);
+  return out;
+}
+
 /**
- * Return a Float32Array[numBars] of peak-to-peak magnitudes for one stem,
- * time-aligned across the bar grid. Uses envelope if present, else
- * decoded AudioBuffer RMS, else an all-zero array.
+ * Compute the per-bar target heights based on the current inputs.
+ *   • No master buffer yet → noise baseline (wobble rides on top).
+ *   • Master buffer present → ptp-per-bar of the master, normalised to
+ *     maxBarHeight. Stem gains apply a per-bar ratio ONLY when the user
+ *     has moved at least one slider (anyUserModulation); otherwise the
+ *     master shape is untouched by envelope refinements.
  */
+function computeTarget({ numBars, maxBarHeight, masterPtp, stemInputs, busGain, envelopeFps }) {
+  if (!masterPtp) {
+    return _noiseBars(numBars, maxBarHeight);
+  }
+
+  let maxMasterPtp = 0;
+  for (let i = 0; i < numBars; i++) {
+    if (masterPtp[i] > maxMasterPtp) maxMasterPtp = masterPtp[i];
+  }
+  if (maxMasterPtp <= 0.001) {
+    return _noiseBars(numBars, maxBarHeight);
+  }
+
+  const norm = maxBarHeight / maxMasterPtp;
+  const noiseFloor = maxMasterPtp * 0.02;
+
+  // Stem-ratio modulation only engages when a slider has moved. Before
+  // then, the shape is pure master-ptp × norm — stable through every
+  // envelope refinement (rms → mask → WAV).
+  const anyUserModulation = stemInputs.some((s) => s.gain !== 1.0);
+
+  let baselineSummed = null;
+  let summed = null;
+  if (anyUserModulation) {
+    const perStemBars = stemInputs.map(s => peakPerBar(s, numBars, envelopeFps));
+    baselineSummed = new Float32Array(numBars);
+    summed = new Float32Array(numBars);
+    for (let s = 0; s < perStemBars.length; s++) {
+      const peaks = perStemBars[s];
+      if (!peaks) continue;
+      const g = stemInputs[s].gain;
+      for (let i = 0; i < numBars; i++) {
+        baselineSummed[i] += peaks[i];
+        if (g !== 0) summed[i] += peaks[i] * g;
+      }
+    }
+  }
+
+  const out = new Float32Array(numBars);
+  for (let i = 0; i < numBars; i++) {
+    const mv = masterPtp[i];
+    let ratio = 1;
+    if (anyUserModulation) {
+      const bs = baselineSummed[i];
+      ratio = bs > 1e-6 ? summed[i] / bs : 0;
+    }
+    if (mv < noiseFloor || busGain === 0 || ratio === 0) {
+      out[i] = 0.5;
+      continue;
+    }
+    out[i] = Math.min(mv * ratio * norm * busGain, maxBarHeight);
+  }
+  return out;
+}
+
+/** Per-stem ptp-per-bar — envelope preferred, decoded RMS fallback. */
 function peakPerBar(stem, numBars, envelopeFps) {
   const out = new Float32Array(numBars);
   if (stem.envelope && stem.envelope.length >= 2) {
@@ -309,19 +371,14 @@ function peakPerBar(stem, numBars, envelopeFps) {
       const s1 = Math.min(s0 + samplesPerBar, data.length);
       let sumSq = 0, n = 0;
       for (let j = s0; j < s1; j++) { sumSq += data[j] * data[j]; n++; }
-      out[i] = n > 0 ? Math.sqrt(sumSq / n) * 2 : 0; // ×2 to approximate ptp
+      out[i] = n > 0 ? Math.sqrt(sumSq / n) * 2 : 0;
     }
     return out;
   }
   return out;
 }
 
-/**
- * Compute peak-to-peak per bar directly from a decoded AudioBuffer.
- * Identical math to useWaveform.renderWaveform so the composite's
- * master-referenced output matches the pre-separation single-track
- * view bar-for-bar when all stems are at gain=1.
- */
+/** Direct ptp per bar from a decoded AudioBuffer (channel 0). */
 function ptpPerBarFromBuffer(buffer, numBars) {
   const out = new Float32Array(numBars);
   const data = buffer.getChannelData(0);
