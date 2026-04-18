@@ -290,8 +290,33 @@ export async function streamPreviewSeparation(flat, numFrames, opts = {}) {
     throw new Error('sem_demucs_packed did not return expected [1,4,128] embedding');
   }
 
-  // Per-stem accumulators
-  const envelopes = Array.from({ length: N_STEMS }, () => new Float32Array(2 * totalT));
+  // Per-stem envelope accumulators. Seed each with the rmsDemucs envelope
+  // passed in by the caller, so regions not yet touched by a decoded chunk
+  // keep the rms-predicted shape instead of going flat. Each chunk splices
+  // only its time range into the accumulator.
+  const seed = opts.seedEnvelopes;
+  const envelopes = Array.from({ length: N_STEMS }, (_, s) => {
+    const e = new Float32Array(2 * totalT);
+    if (seed && seed[s] && seed[s].length >= 2) {
+      // Source layout also [2*T_src] min/max; resample-by-copy to totalT.
+      // If lengths match exactly, straight copy.
+      const src = seed[s];
+      const srcT = src.length / 2;
+      if (srcT === totalT) {
+        e.set(src);
+      } else {
+        // Lengths differ (rms fps 93.75 vs sem4 env fps 93.75 should match,
+        // but be defensive). Stretch/shrink with nearest-neighbour on each
+        // half.
+        for (let t = 0; t < totalT; t++) {
+          const srcIdx = Math.min(srcT - 1, Math.floor(t * srcT / totalT));
+          e[t]          = src[srcIdx];             // min half
+          e[totalT + t] = src[srcT + srcIdx];      // max half
+        }
+      }
+    }
+    return e;
+  });
   const audioBufs = Array.from({ length: N_STEMS }, () => new Float32Array(2 * numFrames));
   const latentBufs = Array.from({ length: N_STEMS },
     () => new Float32Array(LATENT_CHANS * Math.floor(numFrames / FRAME_SAMPLES)));

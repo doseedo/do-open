@@ -103,21 +103,55 @@ export async function putCachedModel(url, bytes) {
  *
  * Returns the raw bytes as an ArrayBuffer.
  */
+/** Reject obviously-wrong cached payloads. A Next.js HTML fallback (served
+ * before /static/models/* rewrites deployed) starts with `<` — if we cached
+ * that once, every subsequent load hands ORT the HTML and `InferenceSession.
+ * create` throws "protobuf parsing failed". Check the first byte before
+ * trusting the cache, and on ONNX specifically also sniff the magic bytes. */
+function _looksLikeModelBytes(buf, url) {
+  if (!buf || buf.byteLength < 16) return false;
+  const u8 = new Uint8Array(buf, 0, Math.min(64, buf.byteLength));
+  // If the URL is an .onnx graph file (not a weights .data sibling), the
+  // first real byte should not be ASCII '<' (HTML fallback).
+  if (url.endsWith('.onnx') && u8[0] === 0x3C) return false;
+  return true;
+}
+
+async function _deleteCachedModel(url) {
+  try {
+    const db = await openDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(url);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (_) { /* ignore — benign */ }
+}
+
 export async function fetchModelWithCache(url, onProgress = null) {
   const cached = await getCachedModel(url);
-  if (cached) {
+  if (cached && _looksLikeModelBytes(cached, url)) {
     // Mimic a "100% loaded from cache" progress event so UI code that watches
     // the callback doesn't hang.
     if (onProgress) onProgress({ bytesLoaded: cached.byteLength, bytesTotal: cached.byteLength, fromCache: true });
     return cached;
   }
+  if (cached) {
+    // Poisoned cache entry (HTML served before rewrite deployed). Evict.
+    console.warn(`[modelCache] evicting bad cached payload for ${url} (first byte 0x${new Uint8Array(cached, 0, 1)[0].toString(16)})`);
+    await _deleteCachedModel(url);
+  }
 
-  const resp = await fetch(url, { cache: 'force-cache' });
+  const resp = await fetch(url, { cache: 'no-store' });
   if (!resp.ok) throw new Error(`model fetch ${url} HTTP ${resp.status}`);
 
   // If we can't stream (no response.body reader available), fall back to .arrayBuffer().
   if (!resp.body || !resp.body.getReader || !onProgress) {
     const buf = await resp.arrayBuffer();
+    if (!_looksLikeModelBytes(buf, url)) {
+      throw new Error(`fetched ${url} doesn't look like a model (first byte 0x${new Uint8Array(buf, 0, 1)[0].toString(16)})`);
+    }
     putCachedModel(url, buf);
     return buf;
   }
@@ -137,6 +171,9 @@ export async function fetchModelWithCache(url, onProgress = null) {
   let off = 0;
   for (const c of chunks) { merged.set(c, off); off += c.byteLength; }
   const buf = merged.buffer;
+  if (!_looksLikeModelBytes(buf, url)) {
+    throw new Error(`fetched ${url} doesn't look like a model (first byte 0x${new Uint8Array(buf, 0, 1)[0].toString(16)})`);
+  }
   putCachedModel(url, buf);
   return buf;
 }

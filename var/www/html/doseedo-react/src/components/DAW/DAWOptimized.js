@@ -1040,18 +1040,28 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
           // No backend wait -- this runs in < 500ms on any device.
           let rmsPainted = false;
           // Hoisted so the sem4Decoder preview below can reuse the decoded
-          // PCM without re-running ctx.decodeAudioData.
+          // PCM without re-running ctx.decodeAudioData, and so the per-stem
+          // rmsDemucs envelopes seed the chunked sem4Decoder accumulator.
           let decodedSrc = null;
+          let rmsStemEnvelopes = null;
           try {
             decodedSrc = await audioFileToStereo48k(file);
             const { flat, numFrames } = decodedSrc;
             const rmsResult = await analyzeRms(flat, numFrames);
             // Convert amplitude[T] -> [2*T] (min, max) pairs for useWaveform
-            const instantStems = RMS_STEM_NAMES.map((stemName, idx) => {
+            // Build per-stem envelopes once, keep a reference for seeding
+            // sem4Decoder below so chunked decode updates only overwrite
+            // the decoded time range — the non-decoded tail keeps the
+            // rmsDemucs shape instead of going flat.
+            rmsStemEnvelopes = RMS_STEM_NAMES.map((_, idx) => {
               const amp = rmsResult.stemEnvelopes[idx];
               const T = amp.length;
               const env = new Float32Array(2 * T);
               for (let t = 0; t < T; t++) { env[t] = -amp[t]; env[T + t] = amp[t]; }
+              return env;
+            });
+            const instantStems = RMS_STEM_NAMES.map((stemName, idx) => {
+              const env = rmsStemEnvelopes[idx];
               return {
                 id: `stem-${trackId}-${stemName}`,
                 name: `${file.name.replace(/\.[^.]+$/, '')} -- ${stemName}`,
@@ -1097,6 +1107,10 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               await streamPreviewSeparation(src.flat, src.numFrames, {
                 abortSignal: previewAbort.signal,
                 decodeAbortSignal: previewDecodeAbort.signal,
+                // Seed the per-stem envelope accumulator with the rmsDemucs
+                // shape so regions outside the decoded time range keep the
+                // predicted envelope instead of going flat.
+                seedEnvelopes: rmsStemEnvelopes,
                 onStemEnvelopeExtended: ({ stemIdx, envelope }) => {
                   const stemName = SEM4_STEM_NAMES[stemIdx];
                   // useWaveform compares envelopeData by reference (see
