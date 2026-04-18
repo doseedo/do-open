@@ -1209,6 +1209,44 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                   }
                   console.log(`[sem4Decoder] cached ${stemNames.length} stem latents on track metadata`);
 
+                  // 1.5) Pitch extraction — run latent_pitch on every stem
+                  // latent we just cached. Each stem gets its own MIDI note
+                  // list dropped into metadata.midiData, which is the same
+                  // shape MIDIChart reads for uploaded .mid files, so
+                  // clicking the track instantly shows the extracted notes.
+                  // Runs in parallel with the mask preview below — neither
+                  // blocks the other.
+                  (async () => {
+                    try {
+                      const { extractPitchFromLatent } = await import('../../services/latentPitch');
+                      const tempo = state.bpm || 120;
+                      for (let i = 0; i < stemNames.length; i++) {
+                        const stemName = stemNames[i];
+                        const lat = stemLatents[i];
+                        const T = Math.floor(lat.length / SEM4_LATENT_CHANS);
+                        const tP0 = performance.now();
+                        const { notes, duration } = await extractPitchFromLatent(lat, T);
+                        const ms = (performance.now() - tP0).toFixed(0);
+                        console.log(`[latentPitch] ${stemName}: ${notes.length} notes in ${ms}ms`);
+                        dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: {
+                            busId,
+                            trackId: `stem-${trackId}-${stemName}`,
+                            updates: {
+                              metadata: {
+                                midiData: { notes, duration, tempo },
+                              },
+                            },
+                          },
+                        });
+                        console.log(`[latentPitch] applied ${notes.length} notes to ${stemName} track`);
+                      }
+                    } catch (pitchErr) {
+                      console.warn('[latentPitch] extraction failed (non-fatal):', pitchErr?.message || pitchErr);
+                    }
+                  })();
+
                   // 2) Rough preview playback + envelope via latent_mask_e2e.
                   // Model is 4-stem; htdemucs_6s is 6-stem. For the preview
                   // window, piano + guitar + other all share the mask's
