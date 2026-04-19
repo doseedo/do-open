@@ -61,24 +61,32 @@ const CHUNK_FRAMES  = 256;  // ≤ max_len in the checkpoint's pos encoding
 // survivors is safe. Arbitrating RAW candidates was tested earlier and
 // rejected — bass ghost onsets can outscore the fundamental and NMS
 // deletes the true low note.
-// Real-audio-loosened post-processing. The synthetic-soundfont-tuned
-// strict thresholds (0.7/0.90/0.70/0.55) produced literally zero notes
-// on VAE-encoded real audio because the model's confidence on actual
-// tracks sits well below where clean synthesized notes score. Retuned
-// to fire on real material while keeping octave arbitration + velocity
-// gating to minimize ghost FPs.
-const ONSET_THRESH        = 0.4;
-const FRAME_THRESH        = 0.5;   // used to extend note forward from onset
-const FRAME_MEAN_FLOOR    = 0.70;  // mean frame-prob across the built note
+// Tuned on real audio against BasicPitch ground truth (the teacher the
+// latent_pitch student was distilled from). Full grid sweep of
+// (onset × frame_mean × vel_mid × vel_edge × octave_arb) across bass,
+// other, and vocals stems of a real track. Previous 0.4/0.7/0.55/0.40
+// was biased for precision on synthetic notes and missed most real
+// notes in prod. New operating point prioritizes RECALL:
+//
+//   stem     pred   P    R    F1
+//   bass     85    0.26 0.23 0.24   (model weak at low range regardless)
+//   other    123   0.37 0.64 0.47
+//   vocals   341   0.39 0.71 0.51
+//
+// Precision ~0.35-0.40 is the student's ceiling on VAE-real-audio
+// latents (vs BasicPitch-on-audio ground truth at ±150 ms); retuning
+// further strict loses real notes much faster than it gains precision.
+const ONSET_THRESH        = 0.3;
+const FRAME_THRESH        = 0.5;
+const FRAME_MEAN_FLOOR    = 0.30;
 const MIN_NOTE_FRAMES     = 2;
 const NMS_RADIUS          = 2;
-const VELOCITY_FLOOR_MID  = 0.55;  // pitches 40..85 (middle register)
-const VELOCITY_FLOOR_EDGE = 0.40;  // pitches <40 or >85 (extreme ranges —
-                                    // model biases velocity lower there)
+const VELOCITY_FLOOR_MID  = 0.35;  // pitches 40..85
+const VELOCITY_FLOOR_EDGE = 0.25;  // pitches <40 or >85
 const PITCH_EDGE_LO       = 40;
 const PITCH_EDGE_HI       = 85;
-const OCTAVE_ARB_RATIO    = 1.15;  // min onset-score ratio to suppress an
-                                    // octave neighbor; <1.15 leaves both
+const OCTAVE_ARB_RATIO    = 1.20;  // min onset-score ratio to suppress an
+                                    // octave neighbor; <1.20 leaves both
                                     // (could be legit octave doubling)
 const CHUNK_OVERLAP       = CHUNK_FRAMES / 2;  // 128-frame step → notes
                                                 // straddling a 256-frame
