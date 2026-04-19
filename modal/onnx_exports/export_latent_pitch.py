@@ -69,7 +69,7 @@ def export(ckpt_path: str,
            out_path: str,
            src_dir: str = _DEFAULT_SRC,
            opset: int = 17,
-           dummy_frames: int = 200,
+           dummy_frames: int = 256,
            device: str = "cpu"):
     sys.path.insert(0, src_dir)
     from latent_pitch.model import LatentBasicPitchStudent  # type: ignore
@@ -145,7 +145,11 @@ if __name__ == "__main__":
     ap.add_argument("--src",  default=_DEFAULT_SRC,
                     help="Path to a directory containing the `latent_pitch/` package.")
     ap.add_argument("--opset", type=int, default=17)
-    ap.add_argument("--dummy-frames", type=int, default=200)
+    ap.add_argument("--dummy-frames", type=int, default=256,
+                    help="Frames in the traced dummy input. The transformer's "
+                         "attention reshape gets baked to this value during "
+                         "export, so runtime calls must pass exactly this many "
+                         "frames (client pads the tail chunk).")
     ap.add_argument("--device", default="cpu")
     args = ap.parse_args()
     export(args.ckpt, args.out, src_dir=args.src,

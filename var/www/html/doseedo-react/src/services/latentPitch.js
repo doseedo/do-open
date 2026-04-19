@@ -83,15 +83,19 @@ export async function extractPitchFromLatent(latentCT, T) {
   for (let start = 0; start < T; start += CHUNK_FRAMES) {
     const end = Math.min(T, start + CHUNK_FRAMES);
     const Tc = end - start;
-    // Build [1, Tc, 64] TIME-MAJOR from channels-first [64, T] source.
-    const chunk = new Float32Array(Tc * LATENT_CHANS);
+    // Build [1, CHUNK_FRAMES, 64] TIME-MAJOR, zero-padded if the tail
+    // chunk is shorter. The ONNX graph has its attention reshape baked
+    // to CHUNK_FRAMES (ORT-web can't always propagate dynamic seq-len
+    // through the transformer export); passing a variable-length
+    // tensor trips the reshape. Pad now, trim outputs below.
+    const chunk = new Float32Array(CHUNK_FRAMES * LATENT_CHANS);
     for (let t = 0; t < Tc; t++) {
       const gt = start + t;
       for (let d = 0; d < LATENT_CHANS; d++) {
         chunk[t * LATENT_CHANS + d] = latentCT[d * T + gt];
       }
     }
-    const input = new ort.Tensor('float32', chunk, [1, Tc, LATENT_CHANS]);
+    const input = new ort.Tensor('float32', chunk, [1, CHUNK_FRAMES, LATENT_CHANS]);
     const out = await sess.run({ latent: input });
 
     const onLog = out.onset_logits.data;
