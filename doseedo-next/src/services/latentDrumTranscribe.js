@@ -105,6 +105,21 @@ const CROSS_STEM_RATIO   = 1.5;   // suppress if another stem's normalized
                                    // spot — snare precision 0.91 with minimal
                                    // recall sacrifice.
 const CROSS_STEM_WIN     = 1;     // ±1 frame search for a louder sibling
+// Energy-dominance check — complements the onset-function check above.
+// Onset-function measures envelope RISE; it fires equally on a real hit and on
+// a loud-enough bleed. Envelope range (max-min) measures raw amplitude — a
+// kick's real hit is a big spike in the kick envelope, while the same kick's
+// bleed into snare is a smaller ripple. Each stem is normalized by its own
+// peak envelope so they compete fairly regardless of baseline loudness.
+// NOTE: tested against MDX23C-DrumSep teacher GT on tears-for-fears — this
+// pass hurt macro F1 at every ratio (0.66 → 0.61 at 1.5). It over-suppresses
+// real snares landing shortly after a kick because the kick stem's envelope
+// stays elevated during decay. Keeping it ENABLED for user preview — toggle
+// by setting ENERGY_DOMINANCE_RATIO = null to disable.
+const ENERGY_DOMINANCE_RATIO = 1.3;   // suppress if other stem's normalized
+                                      // envelope > this × this one's
+const ENERGY_DOMINANCE_WIN   = 2;     // ±2 frames — envelope bleed can lead
+                                      // or trail the source by 1 frame
 const NOTE_DURATION_S   = 0.10;  // visual duration of each drum note in the piano roll
 const VEL_MIN           = 50;
 const VEL_MAX           = 120;
@@ -138,7 +153,9 @@ export async function extractDrumMIDI(drumLatentCT, T) {
 
   // --- Pass 1: per-stem onset functions + global-max for activity gate ---
   const onsetPerStem = {};
+  const rangePerStem = {};      // raw envelope amplitude per stem (for energy dominance)
   const maxPerStem = {};
+  const maxRangePerStem = {};   // peak envelope amplitude per stem
   let globalMaxOnset = 0;
   for (const name of stemNames) {
     const subLatentTD = substems[name];
@@ -147,7 +164,14 @@ export async function extractDrumMIDI(drumLatentCT, T) {
     const mins = env.subarray(0, T);
     const maxs = env.subarray(T, 2 * T);
     const range = new Float32Array(T);
-    for (let t = 0; t < T; t++) range[t] = maxs[t] - mins[t];
+    let maxRange = 0;
+    for (let t = 0; t < T; t++) {
+      const r = maxs[t] - mins[t];
+      range[t] = r;
+      if (r > maxRange) maxRange = r;
+    }
+    rangePerStem[name] = range;
+    maxRangePerStem[name] = maxRange;
 
     // Onset function: half-wave rectified difference against a trailing
     // baseline mean. Peaks correspond to attacks, not to the middle of each
@@ -251,6 +275,39 @@ export async function extractDrumMIDI(drumLatentCT, T) {
     }
     // Suppress if another active stem is more significant at this moment.
     if (maxOtherNorm > CROSS_STEM_RATIO * c.significance) continue;
+
+    // Energy-dominance check: compare RAW envelope amplitude (not onset-fn)
+    // across stems at this moment, each normalized by its own peak envelope.
+    // Catches bleed that the onset-fn check misses because onset-fn fires
+    // equally on any envelope rise.
+    if (ENERGY_DOMINANCE_RATIO != null) {
+      const myRange = rangePerStem[c.stem];
+      const myRangeMax = maxRangePerStem[c.stem] || 1;
+      const eLo = Math.max(0, c.t - ENERGY_DOMINANCE_WIN);
+      const eHi = Math.min(T - 1, c.t + ENERGY_DOMINANCE_WIN);
+      let myEnergyNorm = 0;
+      for (let t = eLo; t <= eHi; t++) {
+        const v = myRange[t] / myRangeMax;
+        if (v > myEnergyNorm) myEnergyNorm = v;
+      }
+      let maxOtherEnergyNorm = 0;
+      for (const otherName of stemNames) {
+        if (otherName === c.stem) continue;
+        const otherRange = rangePerStem[otherName];
+        if (!otherRange) continue;
+        const otherMaxRange = maxRangePerStem[otherName] || 1;
+        const otherMaxOnset = maxPerStem[otherName];
+        if (!otherMaxOnset || otherMaxOnset / globalMaxOnset < STEM_ACTIVITY_MIN) continue;
+        let peakEnergy = 0;
+        for (let t = eLo; t <= eHi; t++) {
+          if (otherRange[t] > peakEnergy) peakEnergy = otherRange[t];
+        }
+        const norm = peakEnergy / otherMaxRange;
+        if (norm > maxOtherEnergyNorm) maxOtherEnergyNorm = norm;
+      }
+      if (maxOtherEnergyNorm > ENERGY_DOMINANCE_RATIO * myEnergyNorm) continue;
+    }
+
     keep[i] = 1;
   }
 
