@@ -1223,17 +1223,21 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                   (async () => {
                     console.log(`[latentPitch] starting extraction on ${stemNames.length} stems`);
                     try {
-                      const { extractPitchFromLatent } = await import('../../services/latentPitch');
-                      console.log(`[latentPitch] module imported, beginning per-stem inference`);
+                      const { extractPitchFromLatentsBatch } = await import('../../services/latentPitch');
                       const tempo = state.bpm || 120;
+                      const T = Math.floor(stemLatents[0].length / SEM4_LATENT_CHANS);
+                      const tP0 = performance.now();
+                      // One ONNX call per chunk, all stems stacked along batch
+                      // dim. Much faster than looping per stem (WASM graph-
+                      // launch + JS↔wasm copy overhead is per-call, not per-
+                      // sample).
+                      const results = await extractPitchFromLatentsBatch(stemLatents, T);
+                      const ms = (performance.now() - tP0).toFixed(0);
+                      console.log(`[latentPitch] batched inference on ${stemNames.length} stems in ${ms}ms`);
                       for (let i = 0; i < stemNames.length; i++) {
                         const stemName = stemNames[i];
-                        const lat = stemLatents[i];
-                        const T = Math.floor(lat.length / SEM4_LATENT_CHANS);
-                        const tP0 = performance.now();
-                        const { notes, duration } = await extractPitchFromLatent(lat, T);
-                        const ms = (performance.now() - tP0).toFixed(0);
-                        console.log(`[latentPitch] ${stemName}: ${notes.length} notes in ${ms}ms`);
+                        const { notes, duration } = results[i];
+                        console.log(`[latentPitch] ${stemName}: ${notes.length} notes`);
                         dispatch({
                           type: 'UPDATE_TRACK',
                           payload: {
@@ -1246,9 +1250,8 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                             },
                           },
                         });
-                        console.log(`[latentPitch] applied ${notes.length} notes to ${stemName} track`);
                       }
-                      console.log(`[latentPitch] all stems done`);
+                      console.log(`[latentPitch] applied MIDI to all ${stemNames.length} stems`);
                     } catch (pitchErr) {
                       console.warn('[latentPitch] extraction failed (non-fatal):', pitchErr?.message || pitchErr, pitchErr?.stack);
                     }
