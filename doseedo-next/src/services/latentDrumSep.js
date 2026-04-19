@@ -4,9 +4,17 @@
  * Takes the drum stem latent from latent_demucs and splits into 6 sub-stems:
  * kick, snare, toms, hh, ride, crash.
  *
- * ONNX graph (inspected at runtime 2026-04-18):
- *   input  L_drum   float32 [1, 64, 64]        channels-first, FIXED T=64
- *   output L_stems  float32 [1, 6, 64, 64]     [B, N_stems, C, T] CT
+ * ONNX graph (inspected at runtime; matches pytorch source at
+ * doseedo-production:/do2/latent_drumsep/model.py):
+ *   input  L_drum   float32 [1, 64, 64]    [B, T, 64]  TIME-MAJOR
+ *   output L_stems  float32 [1, 6, 64, 64] [B, N_stems, T, 64] TIME-MAJOR
+ *
+ * Both dims are 64 in the fixed-size export so the shape is ambiguous
+ * from the tensor alone; the pytorch module's forward() confirms it's
+ * [B, T, C]. We briefly (and catastrophically) had this as channels-
+ * first — the transformer inside happily ran but tokens were channel-
+ * slices instead of frames, producing 6 near-identical outputs that
+ * looked like the full drum mix.
  *
  * The graph's time axis is static at 64 frames (2.56 s @ 25 Hz). For any
  * longer drum latent we run inference in 64-frame non-overlapping chunks
@@ -66,34 +74,32 @@ export async function splitDrumLatent(drumLatentTD, T) {
   for (let start = 0; start < T; start += CHUNK) {
     const Tc = Math.min(CHUNK, T - start);
 
-    // Build chunk input as channels-first [1, 64, CHUNK]. Frames past Tc
+    // Build chunk input as TIME-MAJOR [1, CHUNK, 64]. Frames past Tc
     // stay zero — silence padding the model was trained to tolerate.
-    const chunkCT = new Float32Array(LATENT_DIM * CHUNK);
-    for (let t = 0; t < Tc; t++) {
-      const srcRow = (start + t) * LATENT_DIM;
-      for (let d = 0; d < LATENT_DIM; d++) {
-        chunkCT[d * CHUNK + t] = drumLatentTD[srcRow + d];
-      }
-    }
-    const input = new ort.Tensor('float32', chunkCT, [1, LATENT_DIM, CHUNK]);
+    // drumLatentTD is already [T*64] time-major so we copy the slice
+    // straight in — no transpose needed.
+    const chunkTD = new Float32Array(CHUNK * LATENT_DIM);
+    chunkTD.set(drumLatentTD.subarray(start * LATENT_DIM, (start + Tc) * LATENT_DIM));
+    const input = new ort.Tensor('float32', chunkTD, [1, CHUNK, LATENT_DIM]);
     // Serialize against every other WebGPU ORT session on the page — ORT's
     // WebGPU EP shares one GPUDevice and throws "Session mismatch" on
     // overlapping .run() calls across sessions (latent_pitch, sem4Decoder,
     // latentEncoder all ride the same queue).
     const { ortWebGPURun } = await import('./webgpuOrtQueue');
     const results = await ortWebGPURun(() => session.run({ L_drum: input }));
-    const out = results.L_stems.data;   // Float32Array length 1*6*64*64, CT per stem
+    const out = results.L_stems.data;   // Float32Array length 1*6*64*64, TD per stem
+                                        // layout: [0, stem_i, t, d] = out[stem_i*CHUNK*64 + t*64 + d]
 
-    // Per sub-stem: read [64, CHUNK] CT → write back as [T_glob, 64] TD.
+    // Per sub-stem: each stem's slice is [CHUNK, 64] TIME-MAJOR; copy the
+    // valid Tc-frame region into the global TD output buffer.
     for (let i = 0; i < STEMS.length; i++) {
       const stemBase = i * stemStride;
       const dst = substems[STEMS[i]];
-      for (let t = 0; t < Tc; t++) {
-        const dstRow = (start + t) * LATENT_DIM;
-        for (let d = 0; d < LATENT_DIM; d++) {
-          dst[dstRow + d] = out[stemBase + d * CHUNK + t];
-        }
-      }
+      // out layout per stem is TIME-MAJOR [CHUNK, 64], so a whole frame
+      // row is contiguous in memory — copy Tc rows in one subarray hop.
+      const srcStart = stemBase;
+      const srcEnd = stemBase + Tc * LATENT_DIM;
+      dst.set(out.subarray(srcStart, srcEnd), start * LATENT_DIM);
     }
   }
 
