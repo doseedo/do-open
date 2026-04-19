@@ -114,6 +114,8 @@ const nextConfig = {
       { source: '/static/models/latent_mask_e2e.onnx',          destination: `${R2_CDN}/static/models/latent_mask_e2e.onnx` },
       { source: '/static/models/latent_drumsep.onnx',           destination: `${R2_CDN}/static/models/latent_drumsep.onnx` },
       { source: '/static/models/latent_pitch.onnx',             destination: `${R2_CDN}/static/models/latent_pitch.onnx` },
+      { source: '/static/models/latent_visual.onnx',            destination: `${R2_CDN}/static/models/latent_visual.onnx` },
+      { source: '/static/models/latent_visual.onnx.data',       destination: `${R2_CDN}/static/models/latent_visual.onnx.data` },
       { source: '/separate-stems',                  destination: `${MODAL}/separate-stems` },
       { source: '/separate-stems/:path*',           destination: `${MODAL}/separate-stems/:path*` },
       { source: '/api/encode-audio-latent',         destination: `${MODAL}/api/encode-audio-latent` },

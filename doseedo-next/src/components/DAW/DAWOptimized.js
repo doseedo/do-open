@@ -319,9 +319,13 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
       try {
         await initDrumSep();
       } catch (_) { /* non-fatal */ }
+      try {
+        const { initLatentVisual } = await import('../../services/latentVisual');
+        await initLatentVisual();
+      } catch (_) { /* non-fatal */ }
     })();
 
-    console.log('[prewarm] studio opened — warming Modal + rmsDemucs + sem4Decoder + latentEncoder + latentPitch + drumSep');
+    console.log('[prewarm] studio opened — warming Modal + rmsDemucs + sem4Decoder + latentEncoder + latentPitch + drumSep + latentVisual');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const timelineContainerRef = useRef(null);
