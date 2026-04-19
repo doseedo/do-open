@@ -2873,70 +2873,78 @@ def _run_drum_teacher(task_id, out_dir, drums_wav_path):
 
 
 def _run_vocals_lyrics(task_id, out_dir, vocals_wav_path):
-    """Run Whisper on vocals.wav → word-level timestamps, so the MIDI
-    window's lyric-mode view can align words to note positions.
+    """Run faster-whisper on vocals.wav → word-level timestamps, so the
+    MIDI window's lyric-mode view can align words to note positions.
 
     Populates DEMUCS_TASKS[task_id]:
       vocals_lyrics -> [{"word": str, "start": float, "end": float,
                          "probability": float}, ...]
 
-    Degrades gracefully if openai-whisper isn't installed or vocals.wav
+    Degrades gracefully if faster-whisper isn't installed or vocals.wav
     is missing. Runs in its own thread alongside BasicPitch and the
     drum teacher.
     """
     try:
-        import whisper
+        from faster_whisper import WhisperModel
     except ImportError as import_err:
-        logger.warning("[%s] whisper unavailable: %s", task_id, import_err)
+        logger.warning("[%s] faster-whisper unavailable: %s",
+                       task_id, import_err)
         return
     if not os.path.exists(vocals_wav_path):
         logger.warning("[%s] whisper skipped: vocals.wav missing (%s)",
                        task_id, vocals_wav_path)
         return
-    model_name = os.environ.get("WHISPER_MODEL", "small")
+    model_name   = os.environ.get("WHISPER_MODEL", "small")
+    lang_override = os.environ.get("WHISPER_LANGUAGE") or None
     t0 = time.time()
     try:
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        model = whisper.load_model(model_name, device=device)
-        result = model.transcribe(
+        compute_type = "float16" if device == "cuda" else "int8"
+        model = WhisperModel(
+            model_name, device=device, compute_type=compute_type,
+        )
+        segments, info = model.transcribe(
             vocals_wav_path,
             word_timestamps=True,
-            language=os.environ.get("WHISPER_LANGUAGE") or None,
-            fp16=(device == "cuda"),
+            language=lang_override,
+            vad_filter=True,
         )
     except Exception as w_err:
         logger.warning("[%s] whisper transcribe failed: %s", task_id, w_err)
         return
-    words = []
-    for seg in result.get("segments", []) or []:
-        for w in (seg.get("words") or []):
-            token = (w.get("word") or "").strip()
-            if not token:
-                continue
-            words.append({
-                "word":  token,
-                "start": round(float(w.get("start", 0.0)), 3),
-                "end":   round(float(w.get("end",   0.0)), 3),
-                "probability": round(float(w.get("probability", 0.0)), 3),
-            })
+
+    words, text_chunks = [], []
+    try:
+        for seg in segments:
+            text_chunks.append((seg.text or "").strip())
+            for w in (seg.words or []):
+                token = (w.word or "").strip()
+                if not token:
+                    continue
+                words.append({
+                    "word":  token,
+                    "start": round(float(w.start), 3),
+                    "end":   round(float(w.end),   3),
+                    "probability": round(float(getattr(w, "probability", 0.0)), 3),
+                })
+    except Exception as iter_err:
+        logger.warning("[%s] whisper segment iter failed: %s",
+                       task_id, iter_err)
+        return
+
+    full_text = " ".join(text_chunks).strip()
+    language  = getattr(info, "language", None)
     DEMUCS_TASKS[task_id]["vocals_lyrics"] = words
-    DEMUCS_TASKS[task_id]["vocals_lyrics_text"] = (result.get("text") or "").strip()
-    DEMUCS_TASKS[task_id]["vocals_lyrics_language"] = result.get("language")
-    # Also persist to disk so clients can refetch out of the DEMUCS_TASKS
-    # dict lifetime (matches how .mid files are kept).
+    DEMUCS_TASKS[task_id]["vocals_lyrics_text"] = full_text
+    DEMUCS_TASKS[task_id]["vocals_lyrics_language"] = language
     try:
         import json as _json
         with open(os.path.join(out_dir, "vocals_lyrics.json"), "w") as f:
-            _json.dump({
-                "language": result.get("language"),
-                "text":     result.get("text"),
-                "words":    words,
-            }, f)
+            _json.dump({"language": language, "text": full_text, "words": words}, f)
     except Exception as io_err:
         logger.warning("[%s] whisper disk write failed: %s", task_id, io_err)
-    logger.info("[%s] whisper (%s) done in %.2fs: %d words, lang=%s",
-                task_id, model_name, time.time() - t0,
-                len(words), result.get("language"))
+    logger.info("[%s] faster-whisper (%s) done in %.2fs: %d words, lang=%s",
+                task_id, model_name, time.time() - t0, len(words), language)
 
 
 def _run_demucs_separation(task_id, audio_path):

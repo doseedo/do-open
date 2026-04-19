@@ -264,12 +264,13 @@ image = (
     # the pinned numpy==1.26.4 (same rationale as the requirements block
     # above). All transitive deps are already in the frozen requirements.
     .pip_install("audio-separator==0.44.1", extra_options="--no-deps")
-    # openai-whisper — word-level vocal lyric transcription, runs server-side
+    # faster-whisper — word-level vocal lyric transcription, runs server-side
     # in parallel with BasicPitch + drum teacher after stems_ready. The
     # frontend attaches word timestamps to the vocals track for lyric-mode
-    # MIDI window alignment. Installs tiktoken + numba transitively; these
-    # don't conflict with the frozen numpy==1.26.4 pin.
-    .pip_install("openai-whisper==20240930")
+    # MIDI window alignment. Using faster-whisper (CTranslate2 backend) over
+    # openai-whisper because (1) precompiled wheel avoids the openai-whisper
+    # sdist build failure on pkg_resources, (2) ~4x faster on A100.
+    .pip_install("faster-whisper==1.1.0")
     # ACE-Step source — exclude the 14 GB checkpoints subdir (goes on volume)
     .add_local_dir(
         _p("/scratch/ACE-Step-1.5"),
