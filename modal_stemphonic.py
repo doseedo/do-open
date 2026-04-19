@@ -140,6 +140,19 @@ def _ignore_patterns(*extra):
         ".venv", "**/.venv", "**/.venv/**",
         ".pytest_cache", "**/.pytest_cache", "**/.pytest_cache/**",
         "*.log", "**/*.log",
+        # Claude Code keeps a live-updating scheduled_tasks.lock in .claude/;
+        # mounting it mid-Modal-upload causes "file modified during build".
+        ".claude", "**/.claude", "**/.claude/**",
+        ".agents", "**/.agents", "**/.agents/**",
+        # Frontend trees — Modal only runs the Python server, it doesn't
+        # need the React/Next.js source. Including them makes every
+        # sync.sh-on-commit an upload race: Vercel's pre-commit hook
+        # rewrites doseedo-next/src/ mid-Modal-upload → "file modified
+        # during build" error.
+        "doseedo-next", "**/doseedo-next", "**/doseedo-next/**",
+        "var/www", "**/var/www", "**/var/www/**",
+        "node_modules", "**/node_modules", "**/node_modules/**",
+        ".next", "**/.next", "**/.next/**",
     ]
     return base + list(extra)
 
@@ -242,6 +255,21 @@ image = (
         "demucs @ git+https://github.com/adefossez/demucs.git@b9ab48cad45976ba42b2ff17b229c071f0df9390",
         extra_options="--force-reinstall --no-deps",
     )
+    # audio-separator — MDX23C-DrumSep teacher for the drum-transcribe
+    # streaming task (runs server-side in parallel with BasicPitch once
+    # stems_ready). Re-added 2026-04-19 after the latent-only 2026-04-11
+    # removal; latent_drumsep student still produces the first-pass MIDI,
+    # and this teacher swaps in higher-precision onsets when ready.
+    # --no-deps because the package declares numpy>=2 but runs fine on
+    # the pinned numpy==1.26.4 (same rationale as the requirements block
+    # above). All transitive deps are already in the frozen requirements.
+    .pip_install("audio-separator==0.44.1", extra_options="--no-deps")
+    # openai-whisper — word-level vocal lyric transcription, runs server-side
+    # in parallel with BasicPitch + drum teacher after stems_ready. The
+    # frontend attaches word timestamps to the vocals track for lyric-mode
+    # MIDI window alignment. Installs tiktoken + numba transitively; these
+    # don't conflict with the frozen numpy==1.26.4 pin.
+    .pip_install("openai-whisper==20240930")
     # ACE-Step source — exclude the 14 GB checkpoints subdir (goes on volume)
     .add_local_dir(
         _p("/scratch/ACE-Step-1.5"),
@@ -428,8 +456,11 @@ class Stemphonic:
 
         # Other weight dirs on volume
         link("/scratch/piper_voices",           "/models/piper-voices")
-        # audio_separator_models removed 2026-04-11 — MDX23C-DrumSep
-        # replaced by latent_drumsep student baked into image.
+        # audio-separator model cache — MDX23C-DrumSep teacher for the
+        # streaming drum-transcribe task. Re-added 2026-04-19; latent
+        # student still ships the first-pass MIDI, teacher swaps in.
+        link("/scratch/audio_separator_models",
+             "/models/audio-separator-models")
         link("/scratch/latent_editor_ckpts",    "/models/latent-editor-ckpts")
         link("/scratch/latent_soundfonts",      "/models/latent-soundfonts")
         link("/scratch/onnx",                   "/models/onnx")

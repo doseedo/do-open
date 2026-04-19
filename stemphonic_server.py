@@ -2775,6 +2775,170 @@ def _compute_and_save_mask_bundle(task_id, out_dir, mix_path, sources, sr):
     }
 
 
+def _run_drum_teacher(task_id, out_dir, drums_wav_path):
+    """Run MDX23C-DrumSep teacher on drums.wav → 6 sub-stem wavs
+    (kick/snare/hh/toms/ride/crash) + librosa onsets per sub-stem.
+
+    Populates DEMUCS_TASKS[task_id]:
+      drum_substem_urls   -> {name: "/separate-stems/drum-substem/<id>/<name>.wav"}
+      drum_substem_onsets -> {name: [t_seconds, ...]}
+
+    Degrades gracefully (logs + returns) if audio_separator or the model
+    checkpoint are unavailable. Runs in its own thread so it overlaps the
+    BasicPitch loop.
+    """
+    try:
+        from audio_separator.separator import Separator
+        import librosa
+        import soundfile as sf  # noqa: F401
+        import shutil
+    except ImportError as import_err:
+        logger.warning("[%s] drum teacher unavailable: %s", task_id, import_err)
+        return
+    if not os.path.exists(drums_wav_path):
+        logger.warning("[%s] drum teacher skipped: drums.wav missing (%s)",
+                       task_id, drums_wav_path)
+        return
+    teacher_dir = os.environ.get(
+        "DRUM_TEACHER_DIR", "/scratch/audio_separator_models",
+    )
+    ckpt = os.path.join(teacher_dir, "MDX23C-DrumSep-aufr33-jarredou.ckpt")
+    if not os.path.exists(ckpt):
+        logger.warning(
+            "[%s] drum teacher skipped: ckpt not found at %s "
+            "(set DRUM_TEACHER_DIR or upload MDX23C ckpt to that dir)",
+            task_id, ckpt,
+        )
+        return
+
+    STEM_LABELS = ("kick", "snare", "toms", "hh", "ride", "crash")
+    t0 = time.time()
+    sub_dir = os.path.join(out_dir, "drum_substems")
+    os.makedirs(sub_dir, exist_ok=True)
+    try:
+        sep = Separator(
+            model_file_dir=teacher_dir, output_dir=sub_dir, log_level=30,
+        )
+        sep.load_model("MDX23C-DrumSep-aufr33-jarredou.ckpt")
+        stem_paths = sep.separate(drums_wav_path)
+    except Exception as sep_err:
+        logger.warning("[%s] drum teacher separation failed: %s",
+                       task_id, sep_err)
+        return
+
+    # Normalize output filenames → sub_dir/{stem_label}.wav
+    name_to_path = {}
+    for fn in stem_paths:
+        full = fn if os.path.isabs(fn) else os.path.join(sub_dir, fn)
+        low = os.path.basename(full).lower()
+        for s in STEM_LABELS:
+            if f"({s})" in low:
+                dst = os.path.join(sub_dir, f"{s}.wav")
+                if os.path.abspath(full) != os.path.abspath(dst):
+                    try: shutil.move(full, dst)
+                    except Exception: pass
+                name_to_path[s] = dst
+                break
+
+    drum_urls, drum_onsets = {}, {}
+    for s in STEM_LABELS:
+        p = name_to_path.get(s)
+        if p is None or not os.path.exists(p):
+            continue
+        drum_urls[s] = f"/separate-stems/drum-substem/{task_id}/{s}.wav"
+        try:
+            import numpy as _np
+            y, sr = librosa.load(p, sr=22050, mono=True)
+            if float(_np.abs(y).max()) < 0.02:
+                drum_onsets[s] = []
+            else:
+                times = librosa.onset.onset_detect(
+                    y=y, sr=sr, units="time",
+                    pre_max=3, post_max=3, pre_avg=3, post_avg=5,
+                    delta=0.07, wait=2,
+                )
+                drum_onsets[s] = [round(float(t), 3) for t in times.tolist()]
+        except Exception as onset_err:
+            logger.warning("[%s] drum teacher onset %s failed: %s",
+                           task_id, s, onset_err)
+            drum_onsets[s] = []
+
+    DEMUCS_TASKS[task_id]["drum_substem_urls"] = drum_urls
+    DEMUCS_TASKS[task_id]["drum_substem_onsets"] = drum_onsets
+    logger.info(
+        "[%s] drum teacher done in %.2fs: %s",
+        task_id, time.time() - t0,
+        {s: len(drum_onsets.get(s, [])) for s in STEM_LABELS},
+    )
+
+
+def _run_vocals_lyrics(task_id, out_dir, vocals_wav_path):
+    """Run Whisper on vocals.wav → word-level timestamps, so the MIDI
+    window's lyric-mode view can align words to note positions.
+
+    Populates DEMUCS_TASKS[task_id]:
+      vocals_lyrics -> [{"word": str, "start": float, "end": float,
+                         "probability": float}, ...]
+
+    Degrades gracefully if openai-whisper isn't installed or vocals.wav
+    is missing. Runs in its own thread alongside BasicPitch and the
+    drum teacher.
+    """
+    try:
+        import whisper
+    except ImportError as import_err:
+        logger.warning("[%s] whisper unavailable: %s", task_id, import_err)
+        return
+    if not os.path.exists(vocals_wav_path):
+        logger.warning("[%s] whisper skipped: vocals.wav missing (%s)",
+                       task_id, vocals_wav_path)
+        return
+    model_name = os.environ.get("WHISPER_MODEL", "small")
+    t0 = time.time()
+    try:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = whisper.load_model(model_name, device=device)
+        result = model.transcribe(
+            vocals_wav_path,
+            word_timestamps=True,
+            language=os.environ.get("WHISPER_LANGUAGE") or None,
+            fp16=(device == "cuda"),
+        )
+    except Exception as w_err:
+        logger.warning("[%s] whisper transcribe failed: %s", task_id, w_err)
+        return
+    words = []
+    for seg in result.get("segments", []) or []:
+        for w in (seg.get("words") or []):
+            token = (w.get("word") or "").strip()
+            if not token:
+                continue
+            words.append({
+                "word":  token,
+                "start": round(float(w.get("start", 0.0)), 3),
+                "end":   round(float(w.get("end",   0.0)), 3),
+                "probability": round(float(w.get("probability", 0.0)), 3),
+            })
+    DEMUCS_TASKS[task_id]["vocals_lyrics"] = words
+    DEMUCS_TASKS[task_id]["vocals_lyrics_text"] = (result.get("text") or "").strip()
+    DEMUCS_TASKS[task_id]["vocals_lyrics_language"] = result.get("language")
+    # Also persist to disk so clients can refetch out of the DEMUCS_TASKS
+    # dict lifetime (matches how .mid files are kept).
+    try:
+        import json as _json
+        with open(os.path.join(out_dir, "vocals_lyrics.json"), "w") as f:
+            _json.dump({
+                "language": result.get("language"),
+                "text":     result.get("text"),
+                "words":    words,
+            }, f)
+    except Exception as io_err:
+        logger.warning("[%s] whisper disk write failed: %s", task_id, io_err)
+    logger.info("[%s] whisper (%s) done in %.2fs: %d words, lang=%s",
+                task_id, model_name, time.time() - t0,
+                len(words), result.get("language"))
+
+
 def _run_demucs_separation(task_id, audio_path):
     """Worker: separate audio into 6 stems via htdemucs_6s, encode each
     stem to a VAE latent, and persist both WAVs and latent_ids.
@@ -2844,7 +3008,33 @@ def _run_demucs_separation(task_id, audio_path):
         logger.info("🎵 htdemucs_6s task %s stems_ready in %.2fs: %s",
                     task_id, time.time() - t_total, stem_names)
 
-        # ── Stage 2: BasicPitch on pitched stems (streaming) ──
+        # ── Stage 2a: MDX23C-DrumSep teacher (parallel with BasicPitch) ──
+        # Runs in its own thread so BasicPitch on pitched stems isn't blocked.
+        # When it finishes, the task dict gets `drum_substem_urls` +
+        # `drum_substem_onsets` so the frontend can swap in teacher-derived
+        # drum MIDI and cache the per-drum audio on the drum track.
+        drums_wav_path = os.path.join(out_dir, "drums.wav")
+        drum_teacher_thread = threading.Thread(
+            target=_run_drum_teacher,
+            args=(task_id, out_dir, drums_wav_path),
+            daemon=True,
+            name=f"drum-teacher-{task_id[:8]}",
+        )
+        drum_teacher_thread.start()
+
+        # ── Stage 2c: Whisper lyric transcription on vocals (parallel) ──
+        # Word-level timestamps let the MIDI window's lyric-mode view
+        # align each word to the nearest note onset on the vocals track.
+        vocals_wav_path = os.path.join(out_dir, "vocals.wav")
+        whisper_thread = threading.Thread(
+            target=_run_vocals_lyrics,
+            args=(task_id, out_dir, vocals_wav_path),
+            daemon=True,
+            name=f"whisper-{task_id[:8]}",
+        )
+        whisper_thread.start()
+
+        # ── Stage 2b: BasicPitch on pitched stems (streaming) ──
         PITCHED = {"bass", "other", "vocals", "guitar", "piano"}
         t_bp = time.time()
         try:
@@ -2874,8 +3064,20 @@ def _run_demucs_separation(task_id, audio_path):
             logger.warning("[%s] BasicPitch unavailable: %s", task_id, import_err)
         logger.info("[%s] BasicPitch stage done in %.2fs", task_id, time.time() - t_bp)
 
+        # Wait for the parallel drum-teacher and whisper threads (started
+        # right after stems_ready). Bounded joins so a hung worker can't
+        # strand the task.
+        drum_teacher_thread.join(timeout=180)
+        if drum_teacher_thread.is_alive():
+            logger.warning("[%s] drum teacher still running after 180s — "
+                           "marking completed anyway", task_id)
+        whisper_thread.join(timeout=300)
+        if whisper_thread.is_alive():
+            logger.warning("[%s] whisper still running after 300s — "
+                           "marking completed anyway", task_id)
+
         DEMUCS_TASKS[task_id]["status"] = "completed"
-        logger.info("✅ htdemucs_6s+BasicPitch task %s done in %.2fs total",
+        logger.info("✅ htdemucs_6s+BasicPitch+drumTeacher+whisper task %s done in %.2fs total",
                     task_id, time.time() - t_total)
     except Exception as e:
         traceback.print_exc()
@@ -2947,6 +3149,10 @@ def separate_stems_status(task_id):
         "mask_bundle": task.get("mask_bundle"),
         "midi_urls": task.get("midi_urls"),   # live-updated as BasicPitch
                                               # finishes each pitched stem
+        "drum_substem_urls":    task.get("drum_substem_urls"),
+        "drum_substem_onsets":  task.get("drum_substem_onsets"),
+        "vocals_lyrics":          task.get("vocals_lyrics"),
+        "vocals_lyrics_language": task.get("vocals_lyrics_language"),
         "error": task.get("error"),
     })
 
@@ -2969,6 +3175,20 @@ def separate_stems_midi(task_id, filename):
     if not os.path.exists(fpath):
         return jsonify({"error": "midi not found (may still be running)"}), 404
     return send_file(fpath, mimetype="audio/midi", as_attachment=False,
+                     download_name=filename)
+
+
+@app.route("/separate-stems/drum-substem/<task_id>/<filename>", methods=["GET"])
+def separate_stems_drum_substem(task_id, filename):
+    """Serve MDX23C-DrumSep teacher sub-stem wavs (kick/snare/hh/toms/
+    ride/crash). Frontend caches these on the drum track rather than
+    loading them as individual timeline tracks."""
+    if not filename.endswith(".wav"):
+        return jsonify({"error": "not a WAV filename"}), 400
+    fpath = os.path.join(DEMUCS_OUTPUT_DIR, task_id, "drum_substems", filename)
+    if not os.path.exists(fpath):
+        return jsonify({"error": "drum substem not found (may still be running)"}), 404
+    return send_file(fpath, mimetype="audio/wav", as_attachment=False,
                      download_name=filename)
 
 

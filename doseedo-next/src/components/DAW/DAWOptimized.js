@@ -1412,7 +1412,73 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                 }
               }
             };
-            const sep = await separateStemsAuto(file, { onMidiReady: swapInBasicPitch });
+            // Drum teacher (MDX23C-DrumSep) runs server-side in parallel
+            // with BasicPitch after stems_ready. When its results arrive we
+            // (a) cache the 6 sub-stem WAV URLs on the drum track's metadata
+            // (not loaded as separate tracks), and (b) build a drum MIDI
+            // roll from the teacher's per-stem onsets and replace the
+            // latent_drumsep placeholder on the drum track.
+            const GM_DRUM_NOTE = { kick: 36, snare: 38, hh: 42, toms: 45, ride: 51, crash: 49 };
+            const onDrumTeacher = ({ drum_substem_urls = {}, drum_substem_onsets = {} }) => {
+              try {
+                const notes = [];
+                let duration = 0;
+                for (const [stem, times] of Object.entries(drum_substem_onsets)) {
+                  const midiNote = GM_DRUM_NOTE[stem];
+                  if (midiNote == null || !Array.isArray(times)) continue;
+                  for (const t of times) {
+                    notes.push({ note: midiNote, time: t, duration: 0.10, velocity: 100 });
+                    if (t + 0.10 > duration) duration = t + 0.10;
+                  }
+                }
+                notes.sort((a, b) => a.time - b.time);
+                console.log(`[drumTeacher] ${notes.length} hits across ${Object.keys(drum_substem_onsets).length} sub-stems — replacing latent_drumsep placeholder`);
+                dispatch({
+                  type: 'UPDATE_TRACK',
+                  payload: {
+                    busId,
+                    trackId: `stem-${trackId}-drums`,
+                    updates: {
+                      metadata: {
+                        midiData: { notes, duration, tempo },
+                        drumSubstemUrls:   drum_substem_urls,
+                        drumSubstemOnsets: drum_substem_onsets,
+                      },
+                    },
+                  },
+                });
+              } catch (e) {
+                console.warn('[drumTeacher] apply failed:', e?.message || e);
+              }
+            };
+            // Whisper lyric transcription on the vocals stem — word-level
+            // timestamps attached to the vocals track so the MIDI window's
+            // lyric mode can align each word to its nearest note onset.
+            const onLyrics = ({ vocals_lyrics = [], vocals_lyrics_language }) => {
+              try {
+                console.log(`[whisper] ${vocals_lyrics.length} words (lang=${vocals_lyrics_language || '?'}) → vocals track`);
+                dispatch({
+                  type: 'UPDATE_TRACK',
+                  payload: {
+                    busId,
+                    trackId: `stem-${trackId}-vocals`,
+                    updates: {
+                      metadata: {
+                        lyrics: vocals_lyrics,
+                        lyricsLanguage: vocals_lyrics_language || null,
+                      },
+                    },
+                  },
+                });
+              } catch (e) {
+                console.warn('[whisper] apply failed:', e?.message || e);
+              }
+            };
+            const sep = await separateStemsAuto(file, {
+              onMidiReady: swapInBasicPitch,
+              onDrumTeacher,
+              onLyrics,
+            });
             console.log(`[separate-stems] stems ready in ${(performance.now() - tSep0).toFixed(0)}ms (BasicPitch continues in background)`);
             const wavUrls = sep?.stems || {};
             const stemNames = Object.keys(wavUrls);
