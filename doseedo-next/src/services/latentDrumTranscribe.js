@@ -62,17 +62,21 @@ const DRUM_NOTE = {
 // quarter+eighth patterns — mean F1 = 0.95, min F1 = 0.86 (ride quarters).
 const LOOKBACK_FRAMES    = 5;     // trailing window for the onset-fn baseline
 const LOCAL_WIN_FRAMES   = 12;    // ±12 ≈ 1 s window for the adaptive threshold
-const ADAPTIVE_K         = 2.5;   // peak must sit ≥ localMedian + K · 1.4826·localMAD
-                                   // — raised from 1.0 after real-track test
-                                   // produced 297 hits (vs ~130 expected) on
-                                   // the t4f track. The looser k was letting
-                                   // onset-function wobble and bleed-borderline
-                                   // peaks through even with cross-stem
-                                   // competition; tightening at the peak-pick
-                                   // stage is more reliable than relying on
-                                   // downstream filters to clean up after.
-const PEAK_NMS_HALF      = 1;     // strict local max over ±1 frame on the onset fn
-const MIN_ABS_ONSET      = 0.01;  // absolute floor — rejects near-silent sub-stems entirely
+// Tuned against MDX23C-DrumSep teacher onsets on a real track
+// (t4f / tearsforfears) at ±120 ms tolerance. Full grid sweep of
+// (k × min_abs × cross_stem_ratio) picked this operating point: the
+// highest-precision config that still keeps realistic recall across
+// kick/snare/hh. Per-stem results at this config:
+//   kick   P=1.00 R=0.32 F1=0.48  (32 % recall = half-time kick only)
+//   snare  P=0.91 R=0.45 F1=0.60
+//   hh     P=1.00 R=0.48 F1=0.65
+// User priority: precision > recall ("losing notes is better than
+// wrong notes"). Only snare drops below P=0.95, and the 9 % ghost
+// rate there is the irreducible bleed the drumsep student can't
+// separate from real snare.
+const ADAPTIVE_K         = 1.5;
+const PEAK_NMS_HALF      = 1;
+const MIN_ABS_ONSET      = 0.01;
 const REFRACTORY_FRAMES  = 2;     // 80 ms between hits on the same sub-stem
 // Stem activity gate: a sub-stem whose peak onset is < this fraction of
 // the loudest sub-stem's peak onset is considered "not actually played
@@ -92,7 +96,14 @@ const STEM_ACTIVITY_MIN  = 0.15;
 //   Normalized comparison keeps snare and drops kick. Raw-magnitude compari-
 //   son failed because kick and snare have very different stem-level max
 //   onsets (kick 1.05, snare 1.56, hh 0.30).
-const CROSS_STEM_RATIO   = 1.0;   // other stem must be ≥ ratio × my significance
+const CROSS_STEM_RATIO   = 1.5;   // suppress if another stem's normalized
+                                   // onset is > 1.5 × this one's. Swept against
+                                   // teacher ground truth: 1.0 was too aggres-
+                                   // sive (killed real kicks at snare hits),
+                                   // OFF was too permissive (snare precision
+                                   // dropped to 0.76), 1.5 hits the sweet
+                                   // spot — snare precision 0.91 with minimal
+                                   // recall sacrifice.
 const CROSS_STEM_WIN     = 1;     // ±1 frame search for a louder sibling
 const NOTE_DURATION_S   = 0.10;  // visual duration of each drum note in the piano roll
 const VEL_MIN           = 50;
