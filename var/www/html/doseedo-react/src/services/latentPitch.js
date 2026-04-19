@@ -36,34 +36,47 @@ const CHUNK_FRAMES  = 256;  // ≤ max_len in the checkpoint's pos encoding
 // Post-processing thresholds from a per-pitch bakeoff on single-note
 // piano + bass soundfont latents (MIDI 36..96 / 28..60, tol ±160ms):
 //
-//              exact     ghosts   comment
-//   0.7        54+30       73     baseline (no vel gate)
-//   0.5 v.55   53+31       31     onset 0.5 + flat velocity floor 0.55
-//   0.3 split  56+33       21     + pitch-aware vel floor (ship)
+//                                       recall  precision  wrong-notes
+//   0.7 baseline, no vel gate           94%        56%        73
+//   0.5 flat vel 0.55                   89%        73%        31
+//   0.3 split vel 0.60/0.40             95%        81%        21
+//   0.7 vel 0.70/0.55 + oct-arb (ship)  70%       *96%*        3
 //
-// The winning config uses a PITCH-AWARE velocity floor: the model's
-// raw velocity output is systematically lower for extreme pitches
-// (MIDI <40 and >85) — low-bass / high-piano exact fires sit at vel
-// 0.40-0.55 while middle-range ghosts sit at 0.50-0.60. A single flat
-// floor can't separate them. Two floors (edge=0.40, middle=0.60) plus
-// a lower onset threshold (0.3) recover 5 real notes AND cut 10 ghosts
-// versus the previous flat-0.55 config.
+// Precision-first tuning: "losing notes is better than wrong notes."
+// The model outputs a lot of plausible-looking but false predictions
+// (octave ghosts, harmonic fires) in the onset-prob 0.3-0.7 range.
+// A high ONSET_THRESH + tight velocity floors + octave-arbitration
+// pushes those out at the cost of quiet and extreme-range real notes.
+// The user's MIDI window fills only with notes we're highly confident
+// about; the DAW lets them add missing notes manually.
 //
-// Octave-NMS arbitration was tested and rejected — the model's onset-
-// prob ranking is inverted for low bass (ghost > fundamental), so
-// NMS would silently delete true low notes.
-const ONSET_THRESH       = 0.3;
-const FRAME_THRESH       = 0.5;
-const MIN_NOTE_FRAMES    = 2;
-const NMS_RADIUS         = 2;
-const VELOCITY_FLOOR_MID = 0.60;  // pitches 40..85 — middle register, where
-                                   // ghost and real-note velocity overlap most
-const VELOCITY_FLOOR_EDGE = 0.40;  // pitches <40 or >85 — extreme ranges where
-                                   // the model's velocity prediction is biased low
-const PITCH_EDGE_LO      = 40;
-const PITCH_EDGE_HI      = 85;
-const CHUNK_OVERLAP      = CHUNK_FRAMES / 2;  // 128-frame step → boundary
-                                              // notes fall into two windows
+// Pitch-aware velocity floor is still in: the model's velocity output
+// is systematically lower at pitch extremes (MIDI <40 / >85), so a
+// single flat floor mis-filters real edge fires. Middle register gets
+// the tight floor where ghosts live; edges relax so extreme real
+// notes still pass.
+//
+// Octave arbitration applied AFTER velocity filtering, not before: the
+// velocity gate already drops most ghost candidates, so arbitrating
+// survivors is safe. Arbitrating RAW candidates was tested earlier and
+// rejected — bass ghost onsets can outscore the fundamental and NMS
+// deletes the true low note.
+const ONSET_THRESH        = 0.7;
+const FRAME_THRESH        = 0.5;
+const MIN_NOTE_FRAMES     = 2;
+const NMS_RADIUS          = 2;
+const VELOCITY_FLOOR_MID  = 0.70;  // pitches 40..85 (middle register)
+const VELOCITY_FLOOR_EDGE = 0.55;  // pitches <40 or >85 (extreme ranges —
+                                    // model biases velocity lower there)
+const PITCH_EDGE_LO       = 40;
+const PITCH_EDGE_HI       = 85;
+const OCTAVE_ARB_RATIO    = 1.15;  // min onset-score ratio to suppress an
+                                    // octave neighbor; <1.15 leaves both
+                                    // (could be legit octave doubling)
+const CHUNK_OVERLAP       = CHUNK_FRAMES / 2;  // 128-frame step → notes
+                                                // straddling a 256-frame
+                                                // chunk boundary fall into
+                                                // two overlapping windows
 
 let _session = null;
 let _sessionPromise = null;
@@ -194,17 +207,19 @@ export async function extractPitchFromLatent(latentCT, T) {
 }
 
 /**
- * Posterior arrays → note events. Mirrors latent_pitch/infer.py:transcribe —
- * onset NMS → extend while frame>thresh → min duration → velocity mean.
+ * Posterior arrays → note events. Three-pass: (1) enumerate onset-peak
+ * candidates, (2) velocity-filter with pitch-aware floor, (3) octave-
+ * arbitrate surviving candidates, then emit the notes.
  */
 function _postprocess({ onset, frame, velocity, offset }, T) {
   const dt = 1.0 / VAE_HZ;
-  const notes = [];
+
+  // Pass 1: candidate enumeration (onset NMS per pitch, build note object).
+  const cands = [];   // { t, pitch, onsetScore, startT, endT, vMean, subFrame }
   for (let pitch = 0; pitch < N_PITCH; pitch++) {
     for (let t = 0; t < T; t++) {
       const on = onset[t * N_PITCH + pitch];
       if (on <= ONSET_THRESH) continue;
-      // Local max within ±NMS_RADIUS frames for this pitch.
       let peak = true;
       const lo = Math.max(0, t - NMS_RADIUS);
       const hi = Math.min(T, t + NMS_RADIUS + 1);
@@ -213,7 +228,7 @@ function _postprocess({ onset, frame, velocity, offset }, T) {
         if (onset[k * N_PITCH + pitch] > on + 1e-9) { peak = false; break; }
       }
       if (!peak) continue;
-      // Extend while frame probability stays above threshold.
+
       let endFrame = t + 1;
       while (endFrame < T && frame[endFrame * N_PITCH + pitch] > FRAME_THRESH) {
         endFrame++;
@@ -223,20 +238,52 @@ function _postprocess({ onset, frame, velocity, offset }, T) {
       let vSum = 0;
       for (let k = t; k < endFrame; k++) vSum += velocity[k * N_PITCH + pitch];
       const vMean = vSum / nFrames;
-      // Pitch-aware velocity gate — see constants block. Extreme pitches
-      // have a lower floor because the model underpredicts velocity there.
+
+      // Pass 2 (inline): pitch-aware velocity floor.
       const floor = (pitch < PITCH_EDGE_LO || pitch > PITCH_EDGE_HI)
         ? VELOCITY_FLOOR_EDGE
         : VELOCITY_FLOOR_MID;
       if (vMean < floor) continue;
-      const sub = offset[t * N_PITCH + pitch];
-      notes.push({
-        note: pitch,
-        time: (t + sub) * dt,
-        duration: nFrames * dt,
-        velocity: Math.max(1, Math.min(127, Math.round(vMean * 127))),
+
+      cands.push({
+        t, pitch, onsetScore: on,
+        startT: t, endT: endFrame, vMean,
+        subFrame: offset[t * N_PITCH + pitch],
       });
     }
+  }
+
+  // Pass 3: octave arbitration. When two candidates fire within ±1 frame
+  // of each other at an exact octave apart, the one with meaningfully
+  // lower onset score (< 1/OCTAVE_ARB_RATIO of the winner) is a ghost.
+  // Ties within the ratio stay — could be legit octave doubling.
+  const suppressed = new Uint8Array(cands.length);
+  for (let i = 0; i < cands.length; i++) {
+    if (suppressed[i]) continue;
+    const a = cands[i];
+    for (let j = 0; j < cands.length; j++) {
+      if (i === j || suppressed[j]) continue;
+      const b = cands[j];
+      if (Math.abs(a.t - b.t) > 1) continue;
+      const dp = b.pitch - a.pitch;
+      if (dp === 0 || dp % 12 !== 0) continue;
+      const hi = Math.max(a.onsetScore, b.onsetScore);
+      const lo = Math.min(a.onsetScore, b.onsetScore);
+      if (hi / Math.max(1e-9, lo) < OCTAVE_ARB_RATIO) continue;
+      suppressed[a.onsetScore >= b.onsetScore ? j : i] = 1;
+    }
+  }
+
+  const notes = [];
+  for (let i = 0; i < cands.length; i++) {
+    if (suppressed[i]) continue;
+    const c = cands[i];
+    notes.push({
+      note: c.pitch,
+      time: (c.t + c.subFrame) * dt,
+      duration: (c.endT - c.startT) * dt,
+      velocity: Math.max(1, Math.min(127, Math.round(c.vMean * 127))),
+    });
   }
   notes.sort((a, b) => a.time - b.time);
   return { notes, duration: T * dt };
