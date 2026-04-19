@@ -1371,8 +1371,49 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
           // directly for playback (no ONNX decoder needed in browser).
           try {
             const tSep0 = performance.now();
-            const sep = await separateStemsAuto(file);
-            console.log(`[separate-stems] job complete in ${(performance.now() - tSep0).toFixed(0)}ms`);
+            // Streaming callback: BasicPitch runs server-side *after* stems
+            // are ready and finishes each pitched stem independently. When a
+            // stem's MIDI arrives, swap it in to replace the latent_pitch
+            // placeholder on that track.
+            const tempo = state.bpm || 120;
+            const swapInBasicPitch = async ({ midi_urls }) => {
+              for (const [stemName, midiUrl] of Object.entries(midi_urls || {})) {
+                try {
+                  const r = await fetch(midiUrl);
+                  if (!r.ok) { console.warn(`[basicPitch] ${stemName} fetch ${r.status}`); continue; }
+                  const ab = await r.arrayBuffer();
+                  const { Midi } = await import('@tonejs/midi');
+                  const midi = new Midi(ab);
+                  const notes = [];
+                  let duration = 0;
+                  for (const tr of midi.tracks) {
+                    for (const n of tr.notes) {
+                      notes.push({
+                        note: n.midi,
+                        time: n.time,
+                        duration: n.duration,
+                        velocity: Math.max(1, Math.min(127, Math.round((n.velocity ?? 0.7) * 127))),
+                      });
+                      duration = Math.max(duration, n.time + n.duration);
+                    }
+                  }
+                  notes.sort((a, b) => a.time - b.time);
+                  console.log(`[basicPitch] ${stemName}: ${notes.length} notes (replacing latent_pitch placeholder)`);
+                  dispatch({
+                    type: 'UPDATE_TRACK',
+                    payload: {
+                      busId,
+                      trackId: `stem-${trackId}-${stemName}`,
+                      updates: { metadata: { midiData: { notes, duration, tempo } } },
+                    },
+                  });
+                } catch (e) {
+                  console.warn(`[basicPitch] ${stemName} parse failed:`, e?.message || e);
+                }
+              }
+            };
+            const sep = await separateStemsAuto(file, { onMidiReady: swapInBasicPitch });
+            console.log(`[separate-stems] stems ready in ${(performance.now() - tSep0).toFixed(0)}ms (BasicPitch continues in background)`);
             const wavUrls = sep?.stems || {};
             const stemNames = Object.keys(wavUrls);
             if (stemNames.length === 0) {

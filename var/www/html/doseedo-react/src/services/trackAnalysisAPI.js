@@ -105,14 +105,22 @@ export async function repaintMeter({ stems, srcMeter, tgtMeter, srcBpm, tgtBpm, 
   return r.json();
 }
 
-export async function separateStemsAuto(audioFile) {
-  // Calls /separate-stems (background task), polls until done, returns
-  // { task_id, stems: { drums, bass, other, vocals, guitar, piano } }
-  // /separate-stems is in the gated-routes list so the Modal
-  // before_request hook calls auth/internal/generation/consume, which
-  // requires the user JWT. Forwarding Authorization here — the prior
-  // version relied on cookies which don't reach Modal, so every call
-  // from the latentDemucs-failed fallback path was 401-ing.
+export async function separateStemsAuto(audioFile, opts = {}) {
+  // Calls /separate-stems (background task), polls until stems are ready
+  // (`status === 'stems_ready'`), returns immediately so the DAW can load
+  // audio + placeholder (latent_pitch) MIDI, then continues polling in the
+  // background for per-stem BasicPitch MIDI as each finishes and fires
+  // `opts.onMidiReady({ taskId, midi_urls })` whenever new URLs arrive.
+  //
+  //   const res = await separateStemsAuto(file, {
+  //     onMidiReady: ({ midi_urls }) => { ...replace per-stem MIDI... },
+  //   });
+  //
+  // Returns { task_id, stems, stem_latents, mask_bundle } (no blocking
+  // on BasicPitch). Old callers that just awaited the result still work —
+  // they'll get stems_ready payload + the final `status === 'completed'`
+  // is still reachable via polling status if they need it.
+  const { onMidiReady } = opts;
   const token = localStorage.getItem('token');
   const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
   const compressed = await compressAudioForUpload(audioFile);
@@ -121,31 +129,57 @@ export async function separateStemsAuto(audioFile) {
   const r = await fetch('/separate-stems', { method: 'POST', body: fd, headers: authHeaders });
   if (!r.ok) throw new Error(`separate-stems HTTP ${r.status}`);
   const start = await r.json();
-  // Capture the task_id ONCE — the status endpoint doesn't echo it back,
-  // so re-reading from `result` after the first poll would give undefined
-  // and we'd start polling /status/undefined.
   const taskId = start.task_id;
   let result = start;
+
+  // Phase 1: wait for stems.
   if (result.status === 'processing' && taskId) {
     for (let i = 0; i < 90; i++) {
       await new Promise((res) => setTimeout(res, 2000));
-      // Cache-bust the GET so Cloudflare/CDN doesn't serve a stale
-      // "processing" response for the entire poll loop.
       const sr = await fetch(`/separate-stems/status/${taskId}?t=${Date.now()}`, {
         cache: 'no-store',
         headers: authHeaders,
       });
       if (!sr.ok) continue;
       result = await sr.json();
-      if (result.status === 'completed') {
-        // Status payload doesn't echo task_id; merge it back so callers
-        // (and downstream metadata) can reference the task.
+      if (result.status === 'stems_ready' || result.status === 'completed') {
         result.task_id = taskId;
         break;
       }
       if (result.status === 'failed') throw new Error(result.error || 'separation failed');
     }
   }
+
+  // Phase 2: background-poll for BasicPitch MIDI (non-blocking).
+  if (onMidiReady && taskId && (result.status === 'stems_ready' || result.status === 'completed')) {
+    (async () => {
+      const seen = new Set(Object.keys(result.midi_urls || {}));
+      // Fire for anything already present at stems_ready (rare — BasicPitch
+      // usually starts after, so this is mostly a no-op first-pass).
+      if (seen.size) onMidiReady({ task_id: taskId, midi_urls: { ...result.midi_urls } });
+      for (let i = 0; i < 180; i++) {    // up to ~6 minutes of MIDI polling
+        await new Promise((res) => setTimeout(res, 2000));
+        let poll;
+        try {
+          const sr = await fetch(`/separate-stems/status/${taskId}?t=${Date.now()}`, {
+            cache: 'no-store', headers: authHeaders,
+          });
+          if (!sr.ok) continue;
+          poll = await sr.json();
+        } catch (_) { continue; }
+        const urls = poll?.midi_urls || {};
+        const added = {};
+        for (const [stem, url] of Object.entries(urls)) {
+          if (!seen.has(stem)) { seen.add(stem); added[stem] = url; }
+        }
+        if (Object.keys(added).length) {
+          onMidiReady({ task_id: taskId, midi_urls: added });
+        }
+        if (poll?.status === 'completed' || poll?.status === 'failed') break;
+      }
+    })().catch(() => {});   // swallow background errors — main path already returned
+  }
+
   return result;
 }
 

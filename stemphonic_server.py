@@ -2835,9 +2835,48 @@ def _run_demucs_separation(task_id, audio_path):
         DEMUCS_TASKS[task_id]["stems"] = stem_urls
         DEMUCS_TASKS[task_id]["stem_latents"] = stem_latents
         DEMUCS_TASKS[task_id]["separator"] = "htdemucs_6s"
-        DEMUCS_TASKS[task_id]["status"] = "completed"
-        logger.info("✅ htdemucs_6s task %s done in %.2fs total: %s",
+        # Stage 1 complete — frontend can now load stems and show the
+        # latent_pitch MIDI as a placeholder. Stage 2 (BasicPitch on each
+        # pitched stem) runs below; `midi_urls` accumulates as each stem
+        # finishes so the frontend can swap placeholders in one at a time.
+        DEMUCS_TASKS[task_id]["midi_urls"] = {}
+        DEMUCS_TASKS[task_id]["status"] = "stems_ready"
+        logger.info("🎵 htdemucs_6s task %s stems_ready in %.2fs: %s",
                     task_id, time.time() - t_total, stem_names)
+
+        # ── Stage 2: BasicPitch on pitched stems (streaming) ──
+        PITCHED = {"bass", "other", "vocals", "guitar", "piano"}
+        t_bp = time.time()
+        try:
+            from basic_pitch.inference import predict as bp_predict
+            from basic_pitch import ICASSP_2022_MODEL_PATH
+            bp_model = str(ICASSP_2022_MODEL_PATH)
+            for stem_name in stem_names:
+                if stem_name not in PITCHED:
+                    continue
+                stem_wav = os.path.join(out_dir, f"{stem_name}.wav")
+                if not os.path.exists(stem_wav):
+                    continue
+                try:
+                    t_stem = time.time()
+                    _, pm, _ = bp_predict(stem_wav, bp_model)
+                    mid_path = os.path.join(out_dir, f"{stem_name}.mid")
+                    pm.write(mid_path)
+                    n_notes = sum(len(inst.notes) for inst in pm.instruments)
+                    DEMUCS_TASKS[task_id]["midi_urls"][stem_name] = \
+                        f"/separate-stems/midi/{task_id}/{stem_name}.mid"
+                    logger.info("[%s] BasicPitch %s → %d notes (%.1fs)",
+                                task_id, stem_name, n_notes, time.time() - t_stem)
+                except Exception as bp_err:
+                    logger.warning("[%s] BasicPitch %s failed: %s",
+                                   task_id, stem_name, bp_err)
+        except Exception as import_err:
+            logger.warning("[%s] BasicPitch unavailable: %s", task_id, import_err)
+        logger.info("[%s] BasicPitch stage done in %.2fs", task_id, time.time() - t_bp)
+
+        DEMUCS_TASKS[task_id]["status"] = "completed"
+        logger.info("✅ htdemucs_6s+BasicPitch task %s done in %.2fs total",
+                    task_id, time.time() - t_total)
     except Exception as e:
         traceback.print_exc()
         DEMUCS_TASKS[task_id]["status"] = "failed"
@@ -2906,6 +2945,8 @@ def separate_stems_status(task_id):
         "stem_latents": task.get("stem_latents"),
         "drum_substem_latents": task.get("drum_substem_latents"),
         "mask_bundle": task.get("mask_bundle"),
+        "midi_urls": task.get("midi_urls"),   # live-updated as BasicPitch
+                                              # finishes each pitched stem
         "error": task.get("error"),
     })
 
@@ -2916,6 +2957,18 @@ def separate_stems_download(task_id, filename):
     if not os.path.exists(fpath):
         return jsonify({"error": "stem not found"}), 404
     return send_file(fpath, mimetype="audio/wav", as_attachment=False,
+                     download_name=filename)
+
+
+@app.route("/separate-stems/midi/<task_id>/<filename>", methods=["GET"])
+def separate_stems_midi(task_id, filename):
+    """Serve a BasicPitch-generated .mid for a pitched stem in a task."""
+    if not filename.endswith(".mid"):
+        return jsonify({"error": "not a MIDI filename"}), 400
+    fpath = os.path.join(DEMUCS_OUTPUT_DIR, task_id, filename)
+    if not os.path.exists(fpath):
+        return jsonify({"error": "midi not found (may still be running)"}), 404
+    return send_file(fpath, mimetype="audio/midi", as_attachment=False,
                      download_name=filename)
 
 
