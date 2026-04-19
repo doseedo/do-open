@@ -13,29 +13,21 @@
 
 import * as ort from 'onnxruntime-web';
 
-const MODEL_URL = '/models/latent_drumsep.onnx';
-const MODEL_DATA_URL = '/models/latent_drumsep.onnx.data';
+// latent_drumsep.onnx is a self-contained 57 MB graph on R2 — no external
+// .data sidecar exists. Served via the /static/models/* rewrite in
+// next.config.js (same path convention as the other ONNX models).
+const MODEL_URL = '/static/models/latent_drumsep.onnx';
 const STEMS = ['kick', 'snare', 'toms', 'hh', 'ride', 'crash'];
 const LATENT_DIM = 64;
 
 let session = null;
 
-/**
- * Load the drum sub-separator ONNX model.
- * Fetches the external .onnx.data weights file and passes it
- * via the externalData option.
- */
+/** Load the drum sub-separator ONNX model. */
 export async function initDrumSep() {
   if (session) return;
   try {
-    const dataResp = await fetch(MODEL_DATA_URL);
-    if (!dataResp.ok) throw new Error(`latent_drumsep.onnx.data HTTP ${dataResp.status}`);
-    const dataBytes = new Uint8Array(await dataResp.arrayBuffer());
-    const externalData = [{ path: 'latent_drumsep.onnx.data', data: dataBytes.buffer }];
-
     session = await ort.InferenceSession.create(MODEL_URL, {
       executionProviders: ['webgpu', 'wasm'],
-      externalData,
     });
     console.log('[drumSep] ready');
   } catch (err) {
