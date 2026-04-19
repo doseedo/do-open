@@ -62,23 +62,30 @@ const DRUM_NOTE = {
 // quarter+eighth patterns — mean F1 = 0.95, min F1 = 0.86 (ride quarters).
 const LOOKBACK_FRAMES    = 5;     // trailing window for the onset-fn baseline
 const LOCAL_WIN_FRAMES   = 12;    // ±12 ≈ 1 s window for the adaptive threshold
-const ADAPTIVE_K         = 1.5;   // peak must sit ≥ localMedian + K · 1.4826·localMAD
-                                   // (was 1.0 — raised after seeing bleed in
-                                   // snare sub-stem get peak-picked as snare
-                                   // hits on real tracks. Tighter threshold
-                                   // per active stem + activity gate below
-                                   // handles what cross-stem competition was
-                                   // killing real kicks for.)
+const ADAPTIVE_K         = 1.0;   // peak must sit ≥ localMedian + K · 1.4826·localMAD
 const PEAK_NMS_HALF      = 1;     // strict local max over ±1 frame on the onset fn
-const MIN_ABS_ONSET      = 0.005; // absolute floor — rejects near-silent sub-stems entirely
+const MIN_ABS_ONSET      = 0.003; // absolute floor — rejects near-silent sub-stems entirely
 const REFRACTORY_FRAMES  = 2;     // 80 ms between hits on the same sub-stem
 // Stem activity gate: a sub-stem whose peak onset is < this fraction of
 // the loudest sub-stem's peak onset is considered "not actually played
 // in this track" — all its candidates get suppressed. Cleanly kills
 // toms/ride/crash bleed firings on pop/rock tracks that don't play
-// those drums, without affecting active sub-stems where real kick/snare
-// co-occur with louder instruments.
+// those drums.
 const STEM_ACTIVITY_MIN  = 0.15;
+// Normalized cross-stem competition. After per-stem peak-picking, for each
+// candidate in stem X at frame t we compute its "significance" = onset[X][t]
+// / max_onset[X]  (0..1, how much of X's loudest hit is this). If any other
+// active stem has a MORE significant peak within ±WIN frames, X's firing
+// is bleed-from-Y rather than a real hit on X — suppress it. Ties (equal
+// significance) survive, so real simultaneous hits pass.
+//   Without this: kick sub-stem's peak of a bled-in snare (raw onset 0.5)
+//   looks "moderate for kick" (0.5 / 1.05 = 0.48) but the snare sub-stem's
+//   same-frame real snare is "near-peak for snare" (1.5 / 1.56 = 0.96).
+//   Normalized comparison keeps snare and drops kick. Raw-magnitude compari-
+//   son failed because kick and snare have very different stem-level max
+//   onsets (kick 1.05, snare 1.56, hh 0.30).
+const CROSS_STEM_RATIO   = 1.0;   // other stem must be ≥ ratio × my significance
+const CROSS_STEM_WIN     = 1;     // ±1 frame search for a louder sibling
 const NOTE_DURATION_S   = 0.10;  // visual duration of each drum note in the piano roll
 const VEL_MIN           = 50;
 const VEL_MAX           = 120;
@@ -146,34 +153,26 @@ export async function extractDrumMIDI(drumLatentCT, T) {
   }
   if (globalMaxOnset < MIN_ABS_ONSET) return { notes: [], duration: T * DT };
 
-  // --- Pass 2: stem-activity gate + peak-pick ---
-  const notes = [];
+  // --- Pass 2: stem-activity gate + peak-pick → candidates per active stem ---
+  // Candidate layout: { stem, t, onsetValue, significance, midiNote }
+  const candidates = [];
+  const scratch = new Float32Array(2 * LOCAL_WIN_FRAMES + 1);
   for (const name of stemNames) {
     const onsetFn = onsetPerStem[name];
     if (!onsetFn) continue;
-    const midiNote = DRUM_NOTE[name];
     const maxOnset = maxPerStem[name];
 
-    // Activity gate: if this stem's peak onset is too small relative to
-    // the loudest stem in the track, it's picking up bleed, not real hits.
-    // Skip it entirely — every candidate here would be a false positive.
+    // Activity gate — cheap kill for sub-stems not actually played.
     if (maxOnset / globalMaxOnset < STEM_ACTIVITY_MIN) continue;
     if (maxOnset < MIN_ABS_ONSET) continue;
 
-    // Peak-pick the onset function with a LOCAL robust threshold.
-    // For each candidate frame t:
-    //   * compute localMedian and localMAD of onsetFn over ±LOCAL_WIN_FRAMES
-    //   * require onsetFn[t] ≥ localMedian + K · 1.4826·localMAD
-    //   * require onsetFn[t] to be a strict local max over ±PEAK_NMS_HALF
-    // Threshold adapts to track dynamics; median+MAD stay stable even when
-    // the window is dominated by peak clusters.
+    const midiNote = DRUM_NOTE[name];
     let lastOnset = -Infinity;
-    const scratch = new Float32Array(2 * LOCAL_WIN_FRAMES + 1);
     for (let t = 1; t < T - 1; t++) {
       const o = onsetFn[t];
       if (o < MIN_ABS_ONSET) continue;
 
-      // Collect window → sort → median.
+      // Local median + MAD adaptive threshold.
       const wlo = Math.max(0, t - LOCAL_WIN_FRAMES);
       const whi = Math.min(T, t + LOCAL_WIN_FRAMES + 1);
       const n = whi - wlo;
@@ -181,7 +180,6 @@ export async function extractDrumMIDI(drumLatentCT, T) {
       const win = scratch.subarray(0, n);
       win.sort();
       const median = n & 1 ? win[(n - 1) >> 1] : 0.5 * (win[n / 2 - 1] + win[n / 2]);
-      // MAD = median(|x - median|). Reuse scratch.
       for (let i = 0; i < n; i++) scratch[i] = Math.abs(onsetFn[wlo + i] - median);
       const devs = scratch.subarray(0, n);
       devs.sort();
@@ -201,18 +199,55 @@ export async function extractDrumMIDI(drumLatentCT, T) {
 
       if (t - lastOnset < REFRACTORY_FRAMES) continue;
       lastOnset = t;
-
-      const vNorm = Math.min(1, o / (maxOnset + 1e-9));
-      const velocity = Math.round(VEL_MIN + vNorm * (VEL_MAX - VEL_MIN));
-      notes.push({
-        note: midiNote,
-        time: t * DT,
-        duration: NOTE_DURATION_S,
-        velocity,
+      candidates.push({
+        stem: name, t, onsetValue: o,
+        significance: o / maxOnset,
+        midiNote,
       });
     }
   }
 
+  // --- Pass 3: normalized cross-stem competition ---
+  // For each candidate, compute the max normalized onset across OTHER active
+  // stems in frames [t-WIN, t+WIN]. If that competitor's normalized value
+  // exceeds ours by the ratio, we're picking up bleed from it. Suppress.
+  const keep = new Uint8Array(candidates.length);
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    let maxOtherNorm = 0;
+    const lo = Math.max(0, c.t - CROSS_STEM_WIN);
+    const hi = Math.min(T - 1, c.t + CROSS_STEM_WIN);
+    for (const otherName of stemNames) {
+      if (otherName === c.stem) continue;
+      const otherFn = onsetPerStem[otherName];
+      if (!otherFn) continue;
+      const otherMax = maxPerStem[otherName];
+      if (!otherMax || otherMax / globalMaxOnset < STEM_ACTIVITY_MIN) continue;
+      let peak = 0;
+      for (let t = lo; t <= hi; t++) {
+        if (otherFn[t] > peak) peak = otherFn[t];
+      }
+      const norm = peak / otherMax;
+      if (norm > maxOtherNorm) maxOtherNorm = norm;
+    }
+    // Suppress if another active stem is more significant at this moment.
+    if (maxOtherNorm > CROSS_STEM_RATIO * c.significance) continue;
+    keep[i] = 1;
+  }
+
+  // --- Emit surviving candidates as notes ---
+  const notes = [];
+  for (let i = 0; i < candidates.length; i++) {
+    if (!keep[i]) continue;
+    const c = candidates[i];
+    const velocity = Math.round(VEL_MIN + c.significance * (VEL_MAX - VEL_MIN));
+    notes.push({
+      note: c.midiNote,
+      time: c.t * DT,
+      duration: NOTE_DURATION_S,
+      velocity,
+    });
+  }
   notes.sort((a, b) => a.time - b.time);
   return { notes, duration: T * DT };
 }
