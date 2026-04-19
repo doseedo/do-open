@@ -62,7 +62,15 @@ const CHUNK_FRAMES  = 256;  // ≤ max_len in the checkpoint's pos encoding
 // rejected — bass ghost onsets can outscore the fundamental and NMS
 // deletes the true low note.
 const ONSET_THRESH        = 0.7;
-const FRAME_THRESH        = 0.5;
+const FRAME_THRESH        = 0.5;   // used to extend note forward from onset
+const FRAME_MEAN_FLOOR    = 0.90;  // MEAN frame-prob across the built note —
+                                    // real notes sustain at ~0.99, ghosts
+                                    // spike on onset but frame-prob drops
+                                    // to 0.6-0.8 so the mean collapses.
+                                    // Adding this filter drops ghosts 3→1 on
+                                    // the synthetic test with zero recall
+                                    // loss (strict Pareto improvement over
+                                    // the velocity-only filter).
 const MIN_NOTE_FRAMES     = 2;
 const NMS_RADIUS          = 2;
 const VELOCITY_FLOOR_MID  = 0.70;  // pitches 40..85 (middle register)
@@ -236,10 +244,20 @@ function _postprocess({ onset, frame, velocity, offset }, T) {
       const nFrames = endFrame - t;
       if (nFrames < MIN_NOTE_FRAMES) continue;
       let vSum = 0;
-      for (let k = t; k < endFrame; k++) vSum += velocity[k * N_PITCH + pitch];
+      let fSum = 0;
+      for (let k = t; k < endFrame; k++) {
+        vSum += velocity[k * N_PITCH + pitch];
+        fSum += frame[k * N_PITCH + pitch];
+      }
       const vMean = vSum / nFrames;
+      const fMean = fSum / nFrames;
 
-      // Pass 2 (inline): pitch-aware velocity floor.
+      // Pass 2a: frame-mean sustain check. Real notes hold frame-prob near
+      // 1.0 for their entire duration; ghost fires drop the frame-prob
+      // immediately and never sustain. Cheapest ghost filter we have.
+      if (fMean < FRAME_MEAN_FLOOR) continue;
+
+      // Pass 2b: pitch-aware velocity floor.
       const floor = (pitch < PITCH_EDGE_LO || pitch > PITCH_EDGE_HI)
         ? VELOCITY_FLOOR_EDGE
         : VELOCITY_FLOOR_MID;
