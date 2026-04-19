@@ -62,9 +62,17 @@ const DRUM_NOTE = {
 // quarter+eighth patterns — mean F1 = 0.95, min F1 = 0.86 (ride quarters).
 const LOOKBACK_FRAMES    = 5;     // trailing window for the onset-fn baseline
 const LOCAL_WIN_FRAMES   = 12;    // ±12 ≈ 1 s window for the adaptive threshold
-const ADAPTIVE_K         = 1.0;   // peak must sit ≥ localMedian + K · 1.4826·localMAD
+const ADAPTIVE_K         = 2.5;   // peak must sit ≥ localMedian + K · 1.4826·localMAD
+                                   // — raised from 1.0 after real-track test
+                                   // produced 297 hits (vs ~130 expected) on
+                                   // the t4f track. The looser k was letting
+                                   // onset-function wobble and bleed-borderline
+                                   // peaks through even with cross-stem
+                                   // competition; tightening at the peak-pick
+                                   // stage is more reliable than relying on
+                                   // downstream filters to clean up after.
 const PEAK_NMS_HALF      = 1;     // strict local max over ±1 frame on the onset fn
-const MIN_ABS_ONSET      = 0.003; // absolute floor — rejects near-silent sub-stems entirely
+const MIN_ABS_ONSET      = 0.01;  // absolute floor — rejects near-silent sub-stems entirely
 const REFRACTORY_FRAMES  = 2;     // 80 ms between hits on the same sub-stem
 // Stem activity gate: a sub-stem whose peak onset is < this fraction of
 // the loudest sub-stem's peak onset is considered "not actually played

@@ -61,20 +61,19 @@ const CHUNK_FRAMES  = 256;  // ≤ max_len in the checkpoint's pos encoding
 // survivors is safe. Arbitrating RAW candidates was tested earlier and
 // rejected — bass ghost onsets can outscore the fundamental and NMS
 // deletes the true low note.
-const ONSET_THRESH        = 0.7;
+// Real-audio-loosened post-processing. The synthetic-soundfont-tuned
+// strict thresholds (0.7/0.90/0.70/0.55) produced literally zero notes
+// on VAE-encoded real audio because the model's confidence on actual
+// tracks sits well below where clean synthesized notes score. Retuned
+// to fire on real material while keeping octave arbitration + velocity
+// gating to minimize ghost FPs.
+const ONSET_THRESH        = 0.4;
 const FRAME_THRESH        = 0.5;   // used to extend note forward from onset
-const FRAME_MEAN_FLOOR    = 0.90;  // MEAN frame-prob across the built note —
-                                    // real notes sustain at ~0.99, ghosts
-                                    // spike on onset but frame-prob drops
-                                    // to 0.6-0.8 so the mean collapses.
-                                    // Adding this filter drops ghosts 3→1 on
-                                    // the synthetic test with zero recall
-                                    // loss (strict Pareto improvement over
-                                    // the velocity-only filter).
+const FRAME_MEAN_FLOOR    = 0.70;  // mean frame-prob across the built note
 const MIN_NOTE_FRAMES     = 2;
 const NMS_RADIUS          = 2;
-const VELOCITY_FLOOR_MID  = 0.70;  // pitches 40..85 (middle register)
-const VELOCITY_FLOOR_EDGE = 0.55;  // pitches <40 or >85 (extreme ranges —
+const VELOCITY_FLOOR_MID  = 0.55;  // pitches 40..85 (middle register)
+const VELOCITY_FLOOR_EDGE = 0.40;  // pitches <40 or >85 (extreme ranges —
                                     // model biases velocity lower there)
 const PITCH_EDGE_LO       = 40;
 const PITCH_EDGE_HI       = 85;
