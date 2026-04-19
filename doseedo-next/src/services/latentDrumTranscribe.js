@@ -60,12 +60,25 @@ const DRUM_NOTE = {
 // (kick/snare/hh/toms/ride/crash) at three tempos (half / quarter /
 // eighth-notes at 120 BPM); picked to maximize MIN F1 over realistic
 // quarter+eighth patterns — mean F1 = 0.95, min F1 = 0.86 (ride quarters).
-const LOOKBACK_FRAMES   = 5;     // trailing window for the onset-fn baseline
-const LOCAL_WIN_FRAMES  = 12;    // ±12 ≈ 1 s window for the adaptive threshold
-const ADAPTIVE_K        = 1.0;   // peak must sit ≥ localMedian + K · 1.4826·localMAD
-const PEAK_NMS_HALF     = 1;     // strict local max over ±1 frame on the onset fn
-const MIN_ABS_ONSET     = 0.003; // absolute floor — rejects near-silent sub-stems entirely
-const REFRACTORY_FRAMES = 2;     // 80 ms between hits on the same sub-stem
+const LOOKBACK_FRAMES    = 5;     // trailing window for the onset-fn baseline
+const LOCAL_WIN_FRAMES   = 12;    // ±12 ≈ 1 s window for the adaptive threshold
+const ADAPTIVE_K         = 1.5;   // peak must sit ≥ localMedian + K · 1.4826·localMAD
+                                   // (was 1.0 — raised after seeing bleed in
+                                   // snare sub-stem get peak-picked as snare
+                                   // hits on real tracks. Tighter threshold
+                                   // per active stem + activity gate below
+                                   // handles what cross-stem competition was
+                                   // killing real kicks for.)
+const PEAK_NMS_HALF      = 1;     // strict local max over ±1 frame on the onset fn
+const MIN_ABS_ONSET      = 0.005; // absolute floor — rejects near-silent sub-stems entirely
+const REFRACTORY_FRAMES  = 2;     // 80 ms between hits on the same sub-stem
+// Stem activity gate: a sub-stem whose peak onset is < this fraction of
+// the loudest sub-stem's peak onset is considered "not actually played
+// in this track" — all its candidates get suppressed. Cleanly kills
+// toms/ride/crash bleed firings on pop/rock tracks that don't play
+// those drums, without affecting active sub-stems where real kick/snare
+// co-occur with louder instruments.
+const STEM_ACTIVITY_MIN  = 0.15;
 const NOTE_DURATION_S   = 0.10;  // visual duration of each drum note in the piano roll
 const VEL_MIN           = 50;
 const VEL_MAX           = 120;
@@ -97,20 +110,16 @@ export async function extractDrumMIDI(drumLatentCT, T) {
   const substems = await splitDrumLatent(drumLatentTD, T);
   const stemNames = getDrumStemNames();
 
-  const notes = [];
+  // --- Pass 1: per-stem onset functions + global-max for activity gate ---
+  const onsetPerStem = {};
+  const maxPerStem = {};
+  let globalMaxOnset = 0;
   for (const name of stemNames) {
-    const subLatentTD = substems[name];   // time-major [T*64]
-    if (!subLatentTD) continue;
-    const midiNote = DRUM_NOTE[name];
-    if (midiNote == null) continue;
-
-    // latent_visual envelope: [2*T] = T mins followed by T maxes.
+    const subLatentTD = substems[name];
+    if (!subLatentTD || DRUM_NOTE[name] == null) continue;
     const env = await envelopeFromLatent(subLatentTD, T);
     const mins = env.subarray(0, T);
     const maxs = env.subarray(T, 2 * T);
-
-    // Range = max − min per frame is the waveform peak-to-peak amplitude.
-    // Transients light up, silence collapses to ~0.
     const range = new Float32Array(T);
     for (let t = 0; t < T; t++) range[t] = maxs[t] - mins[t];
 
@@ -131,6 +140,24 @@ export async function extractDrumMIDI(drumLatentCT, T) {
       onsetFn[t] = v;
       if (v > maxOnset) maxOnset = v;
     }
+    onsetPerStem[name] = onsetFn;
+    maxPerStem[name] = maxOnset;
+    if (maxOnset > globalMaxOnset) globalMaxOnset = maxOnset;
+  }
+  if (globalMaxOnset < MIN_ABS_ONSET) return { notes: [], duration: T * DT };
+
+  // --- Pass 2: stem-activity gate + peak-pick ---
+  const notes = [];
+  for (const name of stemNames) {
+    const onsetFn = onsetPerStem[name];
+    if (!onsetFn) continue;
+    const midiNote = DRUM_NOTE[name];
+    const maxOnset = maxPerStem[name];
+
+    // Activity gate: if this stem's peak onset is too small relative to
+    // the loudest stem in the track, it's picking up bleed, not real hits.
+    // Skip it entirely — every candidate here would be a false positive.
+    if (maxOnset / globalMaxOnset < STEM_ACTIVITY_MIN) continue;
     if (maxOnset < MIN_ABS_ONSET) continue;
 
     // Peak-pick the onset function with a LOCAL robust threshold.
