@@ -316,9 +316,12 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
         const { initLatentPitch } = await import('../../services/latentPitch');
         await initLatentPitch();
       } catch (_) { /* non-fatal */ }
+      try {
+        await initDrumSep();
+      } catch (_) { /* non-fatal */ }
     })();
 
-    console.log('[prewarm] studio opened — warming Modal + rmsDemucs + sem4Decoder + latentEncoder + latentPitch');
+    console.log('[prewarm] studio opened — warming Modal + rmsDemucs + sem4Decoder + latentEncoder + latentPitch + drumSep');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const timelineContainerRef = useRef(null);
@@ -1223,34 +1226,75 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                   (async () => {
                     console.log(`[latentPitch] starting extraction on ${stemNames.length} stems`);
                     try {
-                      const { extractPitchFromLatentsBatch } = await import('../../services/latentPitch');
                       const tempo = state.bpm || 120;
                       const T = Math.floor(stemLatents[0].length / SEM4_LATENT_CHANS);
-                      const tP0 = performance.now();
-                      // One ONNX call per chunk, all stems stacked along batch
-                      // dim. Much faster than looping per stem (WASM graph-
-                      // launch + JS↔wasm copy overhead is per-call, not per-
-                      // sample).
-                      const results = await extractPitchFromLatentsBatch(stemLatents, T);
-                      const ms = (performance.now() - tP0).toFixed(0);
-                      console.log(`[latentPitch] batched inference on ${stemNames.length} stems in ${ms}ms`);
+
+                      // Partition stems: drums → drum-roll transcription
+                      // (onset detection on kick/snare/toms/hh/ride/crash
+                      // sub-stems), everything else → pitched transcription
+                      // via latent_pitch. Both run in parallel.
+                      const pitchedIdx = [];
+                      const pitchedLatents = [];
                       for (let i = 0; i < stemNames.length; i++) {
+                        if (stemNames[i] !== 'drums') {
+                          pitchedIdx.push(i);
+                          pitchedLatents.push(stemLatents[i]);
+                        }
+                      }
+
+                      const pitchedPromise = (async () => {
+                        if (pitchedLatents.length === 0) return [];
+                        const { extractPitchFromLatentsBatch } = await import('../../services/latentPitch');
+                        const t0 = performance.now();
+                        const results = await extractPitchFromLatentsBatch(pitchedLatents, T);
+                        console.log(`[latentPitch] batched ${pitchedLatents.length} pitched stems in ${(performance.now()-t0).toFixed(0)}ms`);
+                        return results;
+                      })();
+
+                      const drumsIdx = stemNames.indexOf('drums');
+                      const drumsPromise = (async () => {
+                        if (drumsIdx < 0) return null;
+                        const { extractDrumMIDI } = await import('../../services/latentDrumTranscribe');
+                        const t0 = performance.now();
+                        const out = await extractDrumMIDI(stemLatents[drumsIdx], T);
+                        console.log(`[latentDrumTranscribe] drums: ${out.notes.length} hits in ${(performance.now()-t0).toFixed(0)}ms`);
+                        return out;
+                      })();
+
+                      const [pitchedResults, drumResult] = await Promise.all([pitchedPromise, drumsPromise]);
+
+                      // Apply pitched results.
+                      for (let k = 0; k < pitchedIdx.length; k++) {
+                        const i = pitchedIdx[k];
                         const stemName = stemNames[i];
-                        const { notes, duration } = results[i];
+                        const { notes, duration } = pitchedResults[k];
                         console.log(`[latentPitch] ${stemName}: ${notes.length} notes`);
                         dispatch({
                           type: 'UPDATE_TRACK',
                           payload: {
                             busId,
                             trackId: `stem-${trackId}-${stemName}`,
+                            updates: { metadata: { midiData: { notes, duration, tempo } } },
+                          },
+                        });
+                      }
+
+                      // Apply drum result.
+                      if (drumResult && drumsIdx >= 0) {
+                        dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: {
+                            busId,
+                            trackId: `stem-${trackId}-drums`,
                             updates: {
                               metadata: {
-                                midiData: { notes, duration, tempo },
+                                midiData: { notes: drumResult.notes, duration: drumResult.duration, tempo },
                               },
                             },
                           },
                         });
                       }
+
                       console.log(`[latentPitch] applied MIDI to all ${stemNames.length} stems`);
                     } catch (pitchErr) {
                       console.warn('[latentPitch] extraction failed (non-fatal):', pitchErr?.message || pitchErr, pitchErr?.stack);
