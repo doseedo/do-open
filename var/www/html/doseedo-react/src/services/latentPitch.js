@@ -36,27 +36,34 @@ const CHUNK_FRAMES  = 256;  // ≤ max_len in the checkpoint's pos encoding
 // Post-processing thresholds from a per-pitch bakeoff on single-note
 // piano + bass soundfont latents (MIDI 36..96 / 28..60, tol ±160ms):
 //
-//            exact   ghosts   octave    comment
-//   0.7      54+30    36+37    22+27    baseline (previous ship)
-//   0.5+     54+32    21+28     7+16    onset 0.5 recovers 2 bass notes
-//                                        (0.7 was too strict for low range)
-//   0.5+v55  53+31    14+17     5+10    add velocity ≥ 0.55 floor — cuts
-//                                        ghosts 60% for 1pp recall loss
+//              exact     ghosts   comment
+//   0.7        54+30       73     baseline (no vel gate)
+//   0.5 v.55   53+31       31     onset 0.5 + flat velocity floor 0.55
+//   0.3 split  56+33       21     + pitch-aware vel floor (ship)
 //
-// vel ≥ 0.55: model assigns median velocity ~0.69 to exact notes and
-// ~0.52 to ghosts, with a clean valley between — floor drops most ghost
-// fires with negligible real-note loss. Cross-pitch octave NMS was
-// tested and rejected: the model's onset-prob ranking for low bass is
-// *inverted* (the octave-up ghost has higher confidence than the
-// fundamental) so NMS would suppress the true note.
-const ONSET_THRESH    = 0.5;
-const FRAME_THRESH    = 0.5;
-const MIN_NOTE_FRAMES = 2;
-const NMS_RADIUS      = 2;
-const VELOCITY_FLOOR  = 0.55;    // drop notes whose mean raw velocity < this
-const CHUNK_OVERLAP   = CHUNK_FRAMES / 2;  // 128-frame step → notes at chunk
-                                           // boundaries can no longer fall
-                                           // between the two graph windows
+// The winning config uses a PITCH-AWARE velocity floor: the model's
+// raw velocity output is systematically lower for extreme pitches
+// (MIDI <40 and >85) — low-bass / high-piano exact fires sit at vel
+// 0.40-0.55 while middle-range ghosts sit at 0.50-0.60. A single flat
+// floor can't separate them. Two floors (edge=0.40, middle=0.60) plus
+// a lower onset threshold (0.3) recover 5 real notes AND cut 10 ghosts
+// versus the previous flat-0.55 config.
+//
+// Octave-NMS arbitration was tested and rejected — the model's onset-
+// prob ranking is inverted for low bass (ghost > fundamental), so
+// NMS would silently delete true low notes.
+const ONSET_THRESH       = 0.3;
+const FRAME_THRESH       = 0.5;
+const MIN_NOTE_FRAMES    = 2;
+const NMS_RADIUS         = 2;
+const VELOCITY_FLOOR_MID = 0.60;  // pitches 40..85 — middle register, where
+                                   // ghost and real-note velocity overlap most
+const VELOCITY_FLOOR_EDGE = 0.40;  // pitches <40 or >85 — extreme ranges where
+                                   // the model's velocity prediction is biased low
+const PITCH_EDGE_LO      = 40;
+const PITCH_EDGE_HI      = 85;
+const CHUNK_OVERLAP      = CHUNK_FRAMES / 2;  // 128-frame step → boundary
+                                              // notes fall into two windows
 
 let _session = null;
 let _sessionPromise = null;
@@ -216,10 +223,12 @@ function _postprocess({ onset, frame, velocity, offset }, T) {
       let vSum = 0;
       for (let k = t; k < endFrame; k++) vSum += velocity[k * N_PITCH + pitch];
       const vMean = vSum / nFrames;
-      // Velocity gate — most ghost notes ride velocity ≈ 0.45-0.55 while
-      // real notes median ≈ 0.69. A floor at 0.55 cuts the majority of
-      // ghost fires while sacrificing only the quietest real notes.
-      if (vMean < VELOCITY_FLOOR) continue;
+      // Pitch-aware velocity gate — see constants block. Extreme pitches
+      // have a lower floor because the model underpredicts velocity there.
+      const floor = (pitch < PITCH_EDGE_LO || pitch > PITCH_EDGE_HI)
+        ? VELOCITY_FLOOR_EDGE
+        : VELOCITY_FLOOR_MID;
+      if (vMean < floor) continue;
       const sub = offset[t * N_PITCH + pitch];
       notes.push({
         note: pitch,
