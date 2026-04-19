@@ -33,18 +33,30 @@ const LATENT_CHANS  = 64;
 const VAE_HZ        = 25;
 const N_PITCH       = 128;
 const CHUNK_FRAMES  = 256;  // ≤ max_len in the checkpoint's pos encoding
-// Per-pitch single-note accuracy sweep (piano MIDI 36..96, bass 28..60):
-//   0.5  → piano 54/61 exact, 32 extra fires, 17 octave ghosts
-//   0.7  → piano 53/61 exact, 23 extra fires, 15 octave ghosts
-// One-note recall delta is 1pp; ghost-note count drops 28%. Octave
-// ghosts can't be NMS'd reliably either (suppressing them often kills
-// the true pitch when the model's confidence is inverted, especially
-// for bass). Prefer the cleaner MIDI window — user can always correct
-// a missing quiet note but can't easily delete ghost duplicates.
-const ONSET_THRESH  = 0.7;
-const FRAME_THRESH  = 0.5;
+// Post-processing thresholds from a per-pitch bakeoff on single-note
+// piano + bass soundfont latents (MIDI 36..96 / 28..60, tol ±160ms):
+//
+//            exact   ghosts   octave    comment
+//   0.7      54+30    36+37    22+27    baseline (previous ship)
+//   0.5+     54+32    21+28     7+16    onset 0.5 recovers 2 bass notes
+//                                        (0.7 was too strict for low range)
+//   0.5+v55  53+31    14+17     5+10    add velocity ≥ 0.55 floor — cuts
+//                                        ghosts 60% for 1pp recall loss
+//
+// vel ≥ 0.55: model assigns median velocity ~0.69 to exact notes and
+// ~0.52 to ghosts, with a clean valley between — floor drops most ghost
+// fires with negligible real-note loss. Cross-pitch octave NMS was
+// tested and rejected: the model's onset-prob ranking for low bass is
+// *inverted* (the octave-up ghost has higher confidence than the
+// fundamental) so NMS would suppress the true note.
+const ONSET_THRESH    = 0.5;
+const FRAME_THRESH    = 0.5;
 const MIN_NOTE_FRAMES = 2;
-const NMS_RADIUS    = 2;
+const NMS_RADIUS      = 2;
+const VELOCITY_FLOOR  = 0.55;    // drop notes whose mean raw velocity < this
+const CHUNK_OVERLAP   = CHUNK_FRAMES / 2;  // 128-frame step → notes at chunk
+                                           // boundaries can no longer fall
+                                           // between the two graph windows
 
 let _session = null;
 let _sessionPromise = null;
@@ -103,9 +115,16 @@ export async function extractPitchFromLatentsBatch(stemLatentsCT, T) {
     offset:   new Float32Array(T * N_PITCH),
   }));
 
-  for (let start = 0; start < T; start += CHUNK_FRAMES) {
+  // Overlapped chunking: step by CHUNK_OVERLAP so every frame is covered
+  // by two graph windows (except the first/last OVERLAP/2 frames). When a
+  // frame appears in two runs we take the MAX-onset prediction's full
+  // tuple, so the winning onset's velocity and sub-frame offset stay
+  // consistent with its own onset evidence. Frame-prob is max'd
+  // independently — it measures sustain, not which run fired.
+  for (let start = 0; start < T; start += CHUNK_OVERLAP) {
     const end = Math.min(T, start + CHUNK_FRAMES);
     const Tc = end - start;
+    if (Tc <= 0) break;
     // Build [S, CHUNK_FRAMES, 64] — each stem's slice occupies its own
     // batch row. Tail chunks shorter than CHUNK_FRAMES are zero-padded
     // (the ONNX graph was traced at T=256; the attention reshape trips
@@ -140,10 +159,16 @@ export async function extractPitchFromLatentsBatch(stemLatentsCT, T) {
         const dst = (start + t) * N_PITCH;
         const src = srcBase + t * N_PITCH;
         for (let p = 0; p < N_PITCH; p++) {
-          a.onset[dst + p]    = _sigmoid(onLog[src + p]);
-          a.frame[dst + p]    = _sigmoid(frLog[src + p]);
-          a.velocity[dst + p] = vel[src + p];
-          a.offset[dst + p]   = off[src + p];
+          const newOnset = _sigmoid(onLog[src + p]);
+          if (newOnset > a.onset[dst + p]) {
+            a.onset[dst + p]    = newOnset;
+            a.velocity[dst + p] = vel[src + p];
+            a.offset[dst + p]   = off[src + p];
+          }
+          const newFrame = _sigmoid(frLog[src + p]);
+          if (newFrame > a.frame[dst + p]) {
+            a.frame[dst + p] = newFrame;
+          }
         }
       }
     }
@@ -191,6 +216,10 @@ function _postprocess({ onset, frame, velocity, offset }, T) {
       let vSum = 0;
       for (let k = t; k < endFrame; k++) vSum += velocity[k * N_PITCH + pitch];
       const vMean = vSum / nFrames;
+      // Velocity gate — most ghost notes ride velocity ≈ 0.45-0.55 while
+      // real notes median ≈ 0.69. A floor at 0.55 cuts the majority of
+      // ghost fires while sacrificing only the quietest real notes.
+      if (vMean < VELOCITY_FLOOR) continue;
       const sub = offset[t * N_PITCH + pitch];
       notes.push({
         note: pitch,
