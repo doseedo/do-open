@@ -115,7 +115,10 @@ export async function extractPitchFromLatentsBatch(stemLatentsCT, T) {
       }
     }
     const input = new ort.Tensor('float32', batched, [S, CHUNK_FRAMES, LATENT_CHANS]);
-    const out = await sess.run({ latent: input });
+    // Serialize against every other WebGPU ORT session — ORT's WebGPU EP
+    // shares one GPUDevice and throws "Session mismatch" on overlapping runs.
+    const { ortWebGPURun } = await import('./webgpuOrtQueue');
+    const out = await ortWebGPURun(() => sess.run({ latent: input }));
 
     const onLog = out.onset_logits.data;     // [S, CHUNK_FRAMES, 128]
     const frLog = out.frame_logits.data;

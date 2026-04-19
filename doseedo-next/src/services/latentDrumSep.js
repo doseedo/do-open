@@ -76,7 +76,12 @@ export async function splitDrumLatent(drumLatentTD, T) {
       }
     }
     const input = new ort.Tensor('float32', chunkCT, [1, LATENT_DIM, CHUNK]);
-    const results = await session.run({ L_drum: input });
+    // Serialize against every other WebGPU ORT session on the page — ORT's
+    // WebGPU EP shares one GPUDevice and throws "Session mismatch" on
+    // overlapping .run() calls across sessions (latent_pitch, sem4Decoder,
+    // latentEncoder all ride the same queue).
+    const { ortWebGPURun } = await import('./webgpuOrtQueue');
+    const results = await ortWebGPURun(() => session.run({ L_drum: input }));
     const out = results.L_stems.data;   // Float32Array length 1*6*64*64, CT per stem
 
     // Per sub-stem: read [64, CHUNK] CT → write back as [T_glob, 64] TD.
