@@ -33,7 +33,11 @@ const LATENT_CHANS  = 64;
 const VAE_HZ        = 25;
 const N_PITCH       = 128;
 const CHUNK_FRAMES  = 256;  // ≤ max_len in the checkpoint's pos encoding
-const ONSET_THRESH  = 0.7;
+// 0.5 matches BasicPitch's reference default. The previous 0.7 was
+// missing soft/held notes because it demanded very confident onsets;
+// at 0.5 we recover those at the cost of a few ghost alarms, which the
+// NMS + min-duration gates still filter out in practice.
+const ONSET_THRESH  = 0.5;
 const FRAME_THRESH  = 0.5;
 const MIN_NOTE_FRAMES = 2;
 const NMS_RADIUS    = 2;

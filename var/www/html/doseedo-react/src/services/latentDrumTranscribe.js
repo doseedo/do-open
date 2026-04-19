@@ -39,10 +39,25 @@ const DRUM_NOTE = {
   crash: 49,
 };
 
-// Onset-detection params — tuned on the synthetic-drum test harness.
-// thresh=0.3 on the range envelope hit F1≥0.78 on every scenario tested.
-const THRESH_RATIO      = 0.30;  // peak ≥ this fraction of the sub-stem's max envelope range
-const MIN_ABS_ENVELOPE  = 0.01;  // absolute floor — rejects near-silent sub-stems
+// Onset-detection params.
+//
+// Bello-style onset detection on the amplitude envelope produced by
+// latent_visual: onset fn = half-wave rectified first difference
+// (env[t] − env[t−1], clamped ≥0), peak-picked against a LOCAL robust
+// threshold (median + K · 1.4826·MAD over a ±LOCAL_WIN window). Two wins
+// over the previous global-max peak-pick:
+//   1. Peaks align to attacks, not the middle of sustain plateaus.
+//   2. One loud hit on the timeline no longer raises the detection
+//      threshold for every softer hit — quiet passages stay sensitive.
+// Median/MAD are robust to the peaks themselves; mean/std get dragged up
+// by dense peak trains and end up suppressing every peak in the cluster.
+// Params chosen by hyperparameter sweep on three synthetic scenarios
+// (isolated kicks / rock kick+snare / 16th-note hats); min-F1 across all
+// three peaks at w=12, k=0.8, nms=1.
+const LOCAL_WIN_FRAMES  = 12;    // ±12 ≈ 1 s window for the adaptive threshold
+const ADAPTIVE_K        = 0.8;   // peak must sit ≥ localMedian + K · 1.4826·localMAD
+const PEAK_NMS_HALF     = 1;     // strict local max over ±1 frame on the onset fn
+const MIN_ABS_ONSET     = 0.002; // absolute floor — rejects near-silent sub-stems entirely
 const REFRACTORY_FRAMES = 2;     // 80 ms between hits on the same sub-stem
 const NOTE_DURATION_S   = 0.10;  // visual duration of each drum note in the piano roll
 const VEL_MIN           = 50;
@@ -87,29 +102,66 @@ export async function extractDrumMIDI(drumLatentCT, T) {
     const mins = env.subarray(0, T);
     const maxs = env.subarray(T, 2 * T);
 
-    // Peak range per frame = waveform amplitude. Transients light up,
-    // silence collapses to ~0.
+    // Range = max − min per frame is the waveform peak-to-peak amplitude.
+    // Transients light up, silence collapses to ~0.
     const range = new Float32Array(T);
-    let maxR = 0;
-    for (let t = 0; t < T; t++) {
-      const r = maxs[t] - mins[t];
-      range[t] = r;
-      if (r > maxR) maxR = r;
+    for (let t = 0; t < T; t++) range[t] = maxs[t] - mins[t];
+
+    // Onset function: half-wave rectified first difference. Peaks
+    // correspond to attacks, not to the middle of each hit's decay plateau.
+    const onsetFn = new Float32Array(T);
+    let maxOnset = 0;
+    for (let t = 1; t < T; t++) {
+      const d = range[t] - range[t - 1];
+      const v = d > 0 ? d : 0;
+      onsetFn[t] = v;
+      if (v > maxOnset) maxOnset = v;
     }
-    if (maxR < MIN_ABS_ENVELOPE) continue;
+    if (maxOnset < MIN_ABS_ONSET) continue;
 
-    const thresh = Math.max(MIN_ABS_ENVELOPE, maxR * THRESH_RATIO);
-
-    // Peak-pick: strict local max above threshold, respecting refractory.
+    // Peak-pick the onset function with a LOCAL robust threshold.
+    // For each candidate frame t:
+    //   * compute localMedian and localMAD of onsetFn over ±LOCAL_WIN_FRAMES
+    //   * require onsetFn[t] ≥ localMedian + K · 1.4826·localMAD
+    //   * require onsetFn[t] to be a strict local max over ±PEAK_NMS_HALF
+    // Threshold adapts to track dynamics; median+MAD stay stable even when
+    // the window is dominated by peak clusters.
     let lastOnset = -Infinity;
+    const scratch = new Float32Array(2 * LOCAL_WIN_FRAMES + 1);
     for (let t = 1; t < T - 1; t++) {
-      const r = range[t];
-      if (r < thresh) continue;
-      if (r <= range[t - 1] || r <= range[t + 1]) continue;
+      const o = onsetFn[t];
+      if (o < MIN_ABS_ONSET) continue;
+
+      // Collect window → sort → median.
+      const wlo = Math.max(0, t - LOCAL_WIN_FRAMES);
+      const whi = Math.min(T, t + LOCAL_WIN_FRAMES + 1);
+      const n = whi - wlo;
+      for (let i = 0; i < n; i++) scratch[i] = onsetFn[wlo + i];
+      const win = scratch.subarray(0, n);
+      win.sort();
+      const median = n & 1 ? win[(n - 1) >> 1] : 0.5 * (win[n / 2 - 1] + win[n / 2]);
+      // MAD = median(|x - median|). Reuse scratch.
+      for (let i = 0; i < n; i++) scratch[i] = Math.abs(onsetFn[wlo + i] - median);
+      const devs = scratch.subarray(0, n);
+      devs.sort();
+      const mad = n & 1 ? devs[(n - 1) >> 1] : 0.5 * (devs[n / 2 - 1] + devs[n / 2]);
+      const adaptiveThresh = median + ADAPTIVE_K * 1.4826 * mad + MIN_ABS_ONSET;
+      if (o < adaptiveThresh) continue;
+
+      // Strict local max over ±PEAK_NMS_HALF.
+      const nlo = Math.max(0, t - PEAK_NMS_HALF);
+      const nhi = Math.min(T, t + PEAK_NMS_HALF + 1);
+      let isPeak = true;
+      for (let k = nlo; k < nhi; k++) {
+        if (k === t) continue;
+        if (onsetFn[k] > o) { isPeak = false; break; }
+      }
+      if (!isPeak) continue;
+
       if (t - lastOnset < REFRACTORY_FRAMES) continue;
       lastOnset = t;
 
-      const vNorm = Math.min(1, (r - thresh) / (maxR - thresh + 1e-9));
+      const vNorm = Math.min(1, o / (maxOnset + 1e-9));
       const velocity = Math.round(VEL_MIN + vNorm * (VEL_MAX - VEL_MIN));
       notes.push({
         note: midiNote,
