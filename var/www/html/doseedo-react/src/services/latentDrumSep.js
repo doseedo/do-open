@@ -1,24 +1,33 @@
 /**
  * Latent drum sub-separator — runs entirely in WebGPU via ONNX Runtime.
  *
- * Takes the drum stem latent from latentDemucs and splits into
- * 6 sub-stems: kick, snare, toms, hh, ride, crash.
+ * Takes the drum stem latent from latent_demucs and splits into 6 sub-stems:
+ * kick, snare, toms, hh, ride, crash.
+ *
+ * ONNX graph (inspected at runtime 2026-04-18):
+ *   input  L_drum   float32 [1, 64, 64]        channels-first, FIXED T=64
+ *   output L_stems  float32 [1, 6, 64, 64]     [B, N_stems, C, T] CT
+ *
+ * The graph's time axis is static at 64 frames (2.56 s @ 25 Hz). For any
+ * longer drum latent we run inference in 64-frame non-overlapping chunks
+ * and stitch the per-sub-stem outputs back together. Tail shorter than 64
+ * is zero-padded and the pad is discarded on the read-back.
  *
  * Usage:
  *   import { initDrumSep, splitDrumLatent } from './latentDrumSep';
  *   await initDrumSep();
- *   const substems = await splitDrumLatent(drumLatentFloat32, T);
- *   // substems = { kick: Float32Array, snare: Float32Array, ... }
+ *   const substems = await splitDrumLatent(drumLatentTD, T);
+ *   // substems = { kick: Float32Array[T*64], snare: ..., ... }  // time-major
  */
 
 import * as ort from 'onnxruntime-web';
 
 // latent_drumsep.onnx is a self-contained 57 MB graph on R2 — no external
-// .data sidecar exists. Served via the /static/models/* rewrite in
-// next.config.js (same path convention as the other ONNX models).
+// .data sidecar. Served via the /static/models/* rewrite in next.config.js.
 const MODEL_URL = '/static/models/latent_drumsep.onnx';
 const STEMS = ['kick', 'snare', 'toms', 'hh', 'ride', 'crash'];
 const LATENT_DIM = 64;
+const CHUNK = 64;             // graph's hard-coded T dimension
 
 let session = null;
 
@@ -36,35 +45,57 @@ export async function initDrumSep() {
 }
 
 /**
- * Split a drum latent into 6 sub-stem latents.
+ * Split a drum latent into 6 sub-stem latents via chunked inference.
  *
- * @param {Float32Array} drumLatent - [T * 64] flattened drum latent
- * @param {number} T - number of latent frames
- * @returns {Object} { kick: Float32Array, snare: ..., toms: ..., hh: ..., ride: ..., crash: ... }
- *          Each value is [T * 64] flattened latent for that sub-stem.
+ * @param {Float32Array} drumLatentTD  [T * 64] time-major drum stem latent
+ *                                     (layout used by latentDrumTranscribe)
+ * @param {number} T                   number of latent frames
+ * @returns {Promise<Object>}          { kick, snare, toms, hh, ride, crash }
+ *                                     each a Float32Array[T*64] time-major
  */
-export async function splitDrumLatent(drumLatent, T) {
+export async function splitDrumLatent(drumLatentTD, T) {
   if (!session) await initDrumSep();
   if (!session) throw new Error('drumSep not initialized');
 
-  // Input: [1, T, 64]
-  const input = new ort.Tensor('float32', drumLatent, [1, T, LATENT_DIM]);
-  const results = await session.run({ drum_latent: input });
-  const output = results.substem_latents; // [1, 6, T, 64]
-
-  // Split into per-stem arrays
+  // Allocate per-stem time-major output buffers.
   const substems = {};
-  const stride = T * LATENT_DIM;
-  for (let i = 0; i < STEMS.length; i++) {
-    substems[STEMS[i]] = output.data.slice(i * stride, (i + 1) * stride);
+  for (const name of STEMS) substems[name] = new Float32Array(T * LATENT_DIM);
+
+  const stemStride = LATENT_DIM * CHUNK;   // floats per sub-stem in the graph output
+
+  for (let start = 0; start < T; start += CHUNK) {
+    const Tc = Math.min(CHUNK, T - start);
+
+    // Build chunk input as channels-first [1, 64, CHUNK]. Frames past Tc
+    // stay zero — silence padding the model was trained to tolerate.
+    const chunkCT = new Float32Array(LATENT_DIM * CHUNK);
+    for (let t = 0; t < Tc; t++) {
+      const srcRow = (start + t) * LATENT_DIM;
+      for (let d = 0; d < LATENT_DIM; d++) {
+        chunkCT[d * CHUNK + t] = drumLatentTD[srcRow + d];
+      }
+    }
+    const input = new ort.Tensor('float32', chunkCT, [1, LATENT_DIM, CHUNK]);
+    const results = await session.run({ L_drum: input });
+    const out = results.L_stems.data;   // Float32Array length 1*6*64*64, CT per stem
+
+    // Per sub-stem: read [64, CHUNK] CT → write back as [T_glob, 64] TD.
+    for (let i = 0; i < STEMS.length; i++) {
+      const stemBase = i * stemStride;
+      const dst = substems[STEMS[i]];
+      for (let t = 0; t < Tc; t++) {
+        const dstRow = (start + t) * LATENT_DIM;
+        for (let d = 0; d < LATENT_DIM; d++) {
+          dst[dstRow + d] = out[stemBase + d * CHUNK + t];
+        }
+      }
+    }
   }
 
   return substems;
 }
 
-/**
- * Get the list of sub-stem names.
- */
+/** Get the list of sub-stem names. */
 export function getDrumStemNames() {
   return [...STEMS];
 }
