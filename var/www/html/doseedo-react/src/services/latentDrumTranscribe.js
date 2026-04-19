@@ -42,22 +42,29 @@ const DRUM_NOTE = {
 // Onset-detection params.
 //
 // Bello-style onset detection on the amplitude envelope produced by
-// latent_visual: onset fn = half-wave rectified first difference
-// (env[t] − env[t−1], clamped ≥0), peak-picked against a LOCAL robust
-// threshold (median + K · 1.4826·MAD over a ±LOCAL_WIN window). Two wins
-// over the previous global-max peak-pick:
+// latent_visual: onset fn = half-wave rectified difference against a
+// trailing baseline mean (env[t] − mean(env[t-LB..t-1]), clamped ≥0),
+// peak-picked against a LOCAL robust threshold (median + K · 1.4826·MAD
+// over a ±LOCAL_WIN window). Three wins over the previous global-max
+// peak-pick:
 //   1. Peaks align to attacks, not the middle of sustain plateaus.
 //   2. One loud hit on the timeline no longer raises the detection
 //      threshold for every softer hit — quiet passages stay sensitive.
+//   3. The trailing baseline includes the recent hit's ringing, which
+//      naturally suppresses false "attacks on sustain" for cymbals
+//      (ride/crash). A pure 1-frame diff fires constantly on cymbal
+//      decay wobble — F1 0.4 before, 0.95 after on ride quarter+eighth.
 // Median/MAD are robust to the peaks themselves; mean/std get dragged up
 // by dense peak trains and end up suppressing every peak in the cluster.
-// Params chosen by hyperparameter sweep on three synthetic scenarios
-// (isolated kicks / rock kick+snare / 16th-note hats); min-F1 across all
-// three peaks at w=12, k=0.8, nms=1.
+// Params from a per-sub-stem hyperparameter sweep across all 6 GM drums
+// (kick/snare/hh/toms/ride/crash) at three tempos (half / quarter /
+// eighth-notes at 120 BPM); picked to maximize MIN F1 over realistic
+// quarter+eighth patterns — mean F1 = 0.95, min F1 = 0.86 (ride quarters).
+const LOOKBACK_FRAMES   = 5;     // trailing window for the onset-fn baseline
 const LOCAL_WIN_FRAMES  = 12;    // ±12 ≈ 1 s window for the adaptive threshold
-const ADAPTIVE_K        = 0.8;   // peak must sit ≥ localMedian + K · 1.4826·localMAD
+const ADAPTIVE_K        = 1.0;   // peak must sit ≥ localMedian + K · 1.4826·localMAD
 const PEAK_NMS_HALF     = 1;     // strict local max over ±1 frame on the onset fn
-const MIN_ABS_ONSET     = 0.002; // absolute floor — rejects near-silent sub-stems entirely
+const MIN_ABS_ONSET     = 0.003; // absolute floor — rejects near-silent sub-stems entirely
 const REFRACTORY_FRAMES = 2;     // 80 ms between hits on the same sub-stem
 const NOTE_DURATION_S   = 0.10;  // visual duration of each drum note in the piano roll
 const VEL_MIN           = 50;
@@ -107,12 +114,19 @@ export async function extractDrumMIDI(drumLatentCT, T) {
     const range = new Float32Array(T);
     for (let t = 0; t < T; t++) range[t] = maxs[t] - mins[t];
 
-    // Onset function: half-wave rectified first difference. Peaks
-    // correspond to attacks, not to the middle of each hit's decay plateau.
+    // Onset function: half-wave rectified difference against a trailing
+    // baseline mean. Peaks correspond to attacks, not to the middle of each
+    // hit's decay plateau. Trailing-baseline (as opposed to 1-frame diff)
+    // is critical for cymbals: the baseline eats the previous hit's ringing
+    // so we don't re-fire on decay wobble.
     const onsetFn = new Float32Array(T);
     let maxOnset = 0;
     for (let t = 1; t < T; t++) {
-      const d = range[t] - range[t - 1];
+      const lo = Math.max(0, t - LOOKBACK_FRAMES);
+      let sum = 0;
+      for (let k = lo; k < t; k++) sum += range[k];
+      const baseline = sum / (t - lo);
+      const d = range[t] - baseline;
       const v = d > 0 ? d : 0;
       onsetFn[t] = v;
       if (v > maxOnset) maxOnset = v;

@@ -33,11 +33,15 @@ const LATENT_CHANS  = 64;
 const VAE_HZ        = 25;
 const N_PITCH       = 128;
 const CHUNK_FRAMES  = 256;  // ≤ max_len in the checkpoint's pos encoding
-// 0.5 matches BasicPitch's reference default. The previous 0.7 was
-// missing soft/held notes because it demanded very confident onsets;
-// at 0.5 we recover those at the cost of a few ghost alarms, which the
-// NMS + min-duration gates still filter out in practice.
-const ONSET_THRESH  = 0.5;
+// Per-pitch single-note accuracy sweep (piano MIDI 36..96, bass 28..60):
+//   0.5  → piano 54/61 exact, 32 extra fires, 17 octave ghosts
+//   0.7  → piano 53/61 exact, 23 extra fires, 15 octave ghosts
+// One-note recall delta is 1pp; ghost-note count drops 28%. Octave
+// ghosts can't be NMS'd reliably either (suppressing them often kills
+// the true pitch when the model's confidence is inverted, especially
+// for bass). Prefer the cleaner MIDI window — user can always correct
+// a missing quiet note but can't easily delete ghost duplicates.
+const ONSET_THRESH  = 0.7;
 const FRAME_THRESH  = 0.5;
 const MIN_NOTE_FRAMES = 2;
 const NMS_RADIUS    = 2;
