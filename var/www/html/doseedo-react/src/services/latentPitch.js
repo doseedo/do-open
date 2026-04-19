@@ -23,7 +23,12 @@
 
 import * as ort from 'onnxruntime-web';
 
-const MODEL_URL     = '/static/models/latent_pitch.onnx';
+// ?v=2 cache-busts the first-released ONNX, which was traced at T=200
+// and so blew up the attention reshape at runtime. The bytes from R2
+// are different but the length is identical, so the IndexedDB model
+// cache wouldn't evict on size mismatch. Bumping the query string
+// gives a fresh cache key.
+const MODEL_URL     = '/static/models/latent_pitch.onnx?v=2';
 const LATENT_CHANS  = 64;
 const VAE_HZ        = 25;
 const N_PITCH       = 128;
