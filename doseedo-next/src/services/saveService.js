@@ -37,6 +37,38 @@ let cloudSaveInFlight = false;
 const _projectSessionRowId = new Map();
 const _projectSessionId = new Map();
 
+// Dirty-check fingerprint of the last state that was successfully
+// pushed to R2. The 8s autosave was uploading even when nothing
+// changed — the user was watching "Uploading 2 files to R2…" scroll
+// every 8s while sitting idle. We hash a stripped copy of the state
+// and skip the cloud export when the hash matches the last one we
+// sent for the same project. Buffer/latent/onset data is already
+// stripped by sessionService's allowlist, so the hash stays stable
+// across in-flight analysis writes that don't change user-visible
+// content.
+const _lastCloudSaveHash = new Map();
+
+function _fingerprintForCloud(state) {
+  try {
+    // Only hash what would actually get uploaded. Using the same
+    // allowlisted shape that sessionService.saveSession uses keeps the
+    // hash stable across analysis metadata churn.
+    const stripped = sessionService._stripForCloud
+      ? sessionService._stripForCloud(state)
+      : state;
+    const s = JSON.stringify(stripped);
+    // FNV-1a 32-bit — fast, good enough for equality checks.
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return `${s.length}:${h.toString(16)}`;
+  } catch (_) {
+    return null;
+  }
+}
+
 /**
  * Subscribe to save status changes
  */
@@ -113,6 +145,16 @@ export async function saveToCloud(projectName, state, options = {}) {
     if (cloudSaveInFlight) {
       return { success: false, skipped: 'cloud-save-in-flight' };
     }
+
+    // Dirty check: bail out silently when the serialized-for-cloud
+    // fingerprint matches the last successful push for this project.
+    // Explicit user saves (Cmd+S through quickSave → saveToCloud) still
+    // flow through because options.force=true.
+    const fp = _fingerprintForCloud(state);
+    if (fp && !options.force && _lastCloudSaveHash.get(projectName) === fp) {
+      return { success: true, skipped: 'unchanged' };
+    }
+
     cloudSaveInFlight = true;
 
     updateSaveStatus(SaveStatus.SAVING);
@@ -186,6 +228,9 @@ export async function saveToCloud(projectName, state, options = {}) {
       if (exportResult.sessionId) _projectSessionId.set(projectName, exportResult.sessionId);
       console.log(`✅ Created cloud session: ${projectName}`);
     }
+
+    // Remember the fingerprint so identical-state autosaves can skip.
+    if (fp) _lastCloudSaveHash.set(projectName, fp);
 
     const now = new Date();
     updateSaveStatus(SaveStatus.SAVED, null, now);

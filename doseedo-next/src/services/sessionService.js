@@ -108,6 +108,10 @@ function _pickSafeMetadata(metadata) {
   return out;
 }
 
+// Exposed for saveService's cloud-save dirty-check fingerprint so the
+// hash is computed against the exact shape that actually goes to R2.
+export function _stripForCloud(state) { return stripHeavyTrackMetadata(state); }
+
 function stripHeavyTrackMetadata(state) {
   // Allowlist-based prune: we pull only the fields needed to restore
   // the project UI. The rest regenerates from audioUrl + cloud state
