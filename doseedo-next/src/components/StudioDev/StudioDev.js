@@ -409,10 +409,12 @@ export default function StudioDev() {
   //   3. When analyze returns, patch the parent track's metadata.
   //   4. When stem-sep returns, bulk-add stem child tracks under the same bus
   //      and collapse the bus (so timeline stays tidy).
-  const onFilePick = useCallback(async (e) => {
-    const file = e.target.files?.[0];
+  // ingestFile runs the full /studio upload pipeline (create bus + parent
+  // track, then analyze + stem-separate in parallel). Called from both the
+  // hidden <input type=file> change handler AND the timeline drag-drop
+  // zone so both entry points do exactly the same thing.
+  const ingestFile = useCallback((file) => {
     if (!file) return;
-    e.target.value = '';
     const busId = `bus-${Date.now()}`;
     const trackId = `t-${Date.now()}`;
     const baseName = file.name.replace(/\.[^.]+$/, '');
@@ -434,7 +436,6 @@ export default function StudioDev() {
       },
     });
 
-    // — Analysis pipeline (MIDI + classification + latent encode) —
     analyzeAudio(file).then((res) => {
       const cls = res.classification;
       const midi = res.midi;
@@ -459,10 +460,8 @@ export default function StudioDev() {
           },
         },
       });
-      console.log(`🎯 analysis done: ${instType}, midi=${midi?.n_notes}n, latent=${latent?.n_frames}f`);
     }).catch((err) => console.warn('analyze failed:', err?.message || err));
 
-    // — Stem separation (demucs + drum teacher + whisper lyrics) —
     separateStemsAuto(file, {
       onDrumTeacher: ({ drum_substem_urls }) => {
         console.log('[studio-dev] drum teacher ready:', Object.keys(drum_substem_urls || {}));
@@ -485,11 +484,40 @@ export default function StudioDev() {
         },
       }));
       dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: stemTracks } });
-      // Auto-collapse the parent bus so the timeline stays tidy (same as /studio).
       dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: false } });
-      console.log(`🎚️ auto-separated → ${Object.keys(sep.stems).length} stems, bus collapsed`);
     }).catch((err) => console.warn('stem-sep failed:', err?.message || err));
   }, [dispatch]);
+
+  const onFilePick = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    ingestFile(file);
+  }, [ingestFile]);
+
+  // Drag-and-drop on the timeline (empty state or over existing lanes).
+  // Matches the original /studio behavior — drop an audio file anywhere
+  // on the DAW and it gets ingested + auto-separated.
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const onTimelineDragOver = useCallback((e) => {
+    if (!e.dataTransfer?.types?.includes('Files')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(true);
+  }, []);
+  const onTimelineDragLeave = useCallback((e) => {
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setIsDraggingFile(false);
+  }, []);
+  const onTimelineDrop = useCallback((e) => {
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+    const file = e.dataTransfer.files[0];
+    if (!file.type.startsWith('audio/') && !/\.(mid|midi|wav|mp3|ogg|flac|aac|m4a)$/i.test(file.name)) return;
+    ingestFile(file);
+  }, [ingestFile]);
 
   const addInstrumentTrack = useCallback((inst) => {
     const busId = `bus-${Date.now()}`;
@@ -1541,7 +1569,13 @@ export default function StudioDev() {
               </button>
             </div>
 
-            <div className="sd-timeline" style={{ '--row-h': `${Math.round(38 * laneRowZoom)}px` }}>
+            <div
+              className={`sd-timeline ${isDraggingFile ? 'sd-drag-over' : ''}`}
+              style={{ '--row-h': `${Math.round(38 * laneRowZoom)}px` }}
+              onDragOver={onTimelineDragOver}
+              onDragLeave={onTimelineDragLeave}
+              onDrop={onTimelineDrop}
+            >
               <div className="sd-tracks-col">
                 <div className="sd-tracks-header">Buses · Tracks</div>
                 {timelineBuses.map((bus) => (
@@ -1678,6 +1712,25 @@ export default function StudioDev() {
                     </div>
                   ))}
                 </div>
+                {timelineBuses.length === 0 && (
+                  <div className="sd-empty-upload">
+                    <div className="sd-empty-upload-inner">
+                      <div className="sd-empty-upload-title">Drop an audio file here</div>
+                      <div className="sd-empty-upload-body">
+                        WAV · MP3 · MIDI · FLAC · M4A. Dropping a file creates a
+                        new bus, analyzes the audio, and auto-separates stems.
+                      </div>
+                      <div className="sd-empty-upload-actions">
+                        <button className="wb-btn wb-btn--primary" onClick={triggerUpload}>
+                          &gt; Load file
+                        </button>
+                        <button className="wb-btn" onClick={addEmptyTrack}>
+                          &gt; New MIDI track
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {timelineBuses.map((bus, bi) => {
                   const rows = [];
                   // Bus-level lane — empty when expanded (the tracks below

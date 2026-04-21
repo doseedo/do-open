@@ -1066,6 +1066,53 @@
   display: flex; align-items: flex-end; padding-bottom: 3px;
   background: var(--wb-bg);
 }
+
+/* Empty-state upload field. Shown inside .sd-lanes when the project has
+ * no buses. Drag-drop on the whole timeline is wired separately; this
+ * is just a visible affordance so users know they can upload. */
+.sd-empty-upload {
+  position: absolute;
+  top: 22px; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+  padding: 24px;
+}
+.sd-empty-upload-inner {
+  pointer-events: auto;
+  max-width: 520px; width: 100%;
+  background: var(--wb-surface);
+  border: 1.5px dashed var(--wb-rule-strong);
+  border-radius: var(--wb-radius-lg);
+  padding: 32px 28px;
+  text-align: center;
+  font-family: var(--wb-font-mono);
+}
+.sd-empty-upload-title {
+  font-size: 13px; font-weight: 600;
+  color: var(--wb-ink);
+  text-transform: uppercase; letter-spacing: var(--wb-tracking-caps);
+  margin-bottom: 8px;
+}
+.sd-empty-upload-body {
+  font-size: 11px; color: var(--wb-ink-soft);
+  line-height: 1.55;
+  margin-bottom: 18px;
+}
+.sd-empty-upload-actions {
+  display: flex; gap: 10px; justify-content: center;
+}
+
+/* Drag-over visual. Whole timeline gets a dashed inset outline while the
+ * user is dragging a file over it. */
+.sd-timeline.sd-drag-over {
+  outline: 2px dashed var(--wb-accent);
+  outline-offset: -6px;
+  background: var(--wb-accent-soft);
+}
+.sd-timeline.sd-drag-over .sd-empty-upload-inner {
+  border-color: var(--wb-accent);
+  background: var(--wb-bg);
+}
 .sd-ruler .sd-tick {
   flex: 1; padding-left: 3px;
   font-family: var(--wb-font-mono);
