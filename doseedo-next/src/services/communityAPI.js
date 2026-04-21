@@ -49,16 +49,9 @@ async function fetchJSON(url, opts = {}) {
 
 // ── Creations CRUD ──
 
-export async function listCreations(params = {}) {
-  // Feed endpoint isn't live on Fly yet. Instead of throwing (which lights
-  // up the dashboard with red error cards), return an empty result so the
-  // UI renders its "no creations yet" empty state.
+export function listCreations(params = {}) {
   const qs = new URLSearchParams(params).toString();
-  const url = `${BASE}${qs ? '?' + qs : ''}`;
-  const res = await fetch(url, { credentials: 'include' });
-  if (res.status === 404) return { creations: [], total: 0 };
-  if (!res.ok) throw new Error((await res.text()) || res.statusText);
-  return res.json();
+  return fetchJSON(`${BASE}${qs ? '?' + qs : ''}`);
 }
 
 export function getCreation(id) {
