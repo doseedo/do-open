@@ -15,6 +15,10 @@ const TimelineGrid = React.memo(({
   bpm = 120,
   sceneTempos = [],
   sceneChanges = [],
+  sceneMeters = [],        // optional: [[n,d], ...] matching sceneTempos
+                           // so bar math uses per-scene local meter when tempoMap
+                           // carries in-song meter changes. Falls back to the
+                           // global state meter when unspecified.
   buses = [],
   trackHeight = 64,
   onSeek = null
@@ -23,6 +27,16 @@ const TimelineGrid = React.memo(({
   const beatsPerBar = state.beatsPerBar || 4;
   const meterDenominator = state.meterDenominator || 4;
   const beatUnitFactor = meterDenominator === 8 ? 0.5 : 1;
+  // Per-scene meter helper. When sceneMeters is populated from tempoMap,
+  // each scene uses its own [n,d]. Otherwise fall back to globals.
+  const meterForScene = (sceneIdx) => {
+    const m = sceneMeters[sceneIdx];
+    if (Array.isArray(m) && m.length === 2) {
+      const [n, d] = m;
+      return { n: n || beatsPerBar, d: d || meterDenominator, factor: d === 8 ? 0.5 : 1 };
+    }
+    return { n: beatsPerBar, d: meterDenominator, factor: beatUnitFactor };
+  };
   // Calculate pixels per second
   const pixelsPerSecond = useMemo(() => {
     const width = containerWidth * zoomLevel;
@@ -85,12 +99,15 @@ const TimelineGrid = React.memo(({
         const sceneBPM = sceneTempos[sceneIdx];
         const sceneStart = sceneChanges[sceneIdx];
         const sceneEnd = sceneChanges[sceneIdx + 1] || totalDuration;
-        const secondsPerBeat = (60 / sceneBPM) * beatUnitFactor;
-        const secondsPerBar = secondsPerBeat * beatsPerBar;
+        // Per-scene meter: picks up [n,d] from sceneMeters when a tempoMap
+        // supplies it, else falls back to the project globals.
+        const sm = meterForScene(sceneIdx);
+        const secondsPerBeat = (60 / sceneBPM) * sm.factor;
+        const secondsPerBar = secondsPerBeat * sm.n;
 
         // Calculate where the next bar should start based on accumulated beats
-        const beatsIntoFirstBar = accumulatedBeats % beatsPerBar;
-        const beatsUntilNextBar = beatsIntoFirstBar === 0 ? 0 : (beatsPerBar - beatsIntoFirstBar);
+        const beatsIntoFirstBar = accumulatedBeats % sm.n;
+        const beatsUntilNextBar = beatsIntoFirstBar === 0 ? 0 : (sm.n - beatsIntoFirstBar);
         const firstBarTime = sceneStart + (beatsUntilNextBar * secondsPerBeat);
 
         // Render bars starting from first bar boundary in this scene
@@ -114,7 +131,7 @@ const TimelineGrid = React.memo(({
 
               // Add beat and sub-beat subdivisions (only when not skipping)
               if (barSkip === 1) {
-                const totalSubdivisions = beatsPerBar * subdivisionLevel;
+                const totalSubdivisions = sm.n * subdivisionLevel;
                 for (let sub = 1; sub < totalSubdivisions; sub++) {
                   const subTime = barTime + (sub * secondsPerBeat / subdivisionLevel);
                   if (subTime >= sceneEnd || subTime > totalDuration) break;

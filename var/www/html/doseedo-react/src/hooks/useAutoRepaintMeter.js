@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { repaintMeter } from '../services/trackAnalysisAPI';
 
+// Flip to true to re-enable the backend stemphonic repaint path. Virtual-
+// edit playback in useAudioPlayback.js handles meter change instantly
+// against the original source buffer with zero pitch shift. The backend
+// repaint is only useful as a diffusion-smoothed sweetener.
+const ENABLE_BACKEND_REPAINT = false;
+
 /**
  * useAutoRepaintMeter — when bpm / time-signature changes, re-stemphonic
  * every track that has a cached VAE latent, then swap its audioUrl once
@@ -12,7 +18,8 @@ import { repaintMeter } from '../services/trackAnalysisAPI';
  * UPDATE_TRACK per completed task — no caller input needed.
  *
  * Both /studio (TempoControls.js) and /studio-dev (StudioDev.js) call this
- * hook so the two routes stay in lockstep.
+ * hook so the two routes stay in lockstep. When ENABLE_BACKEND_REPAINT is
+ * false the hook is inert — virtual-edit playback owns the meter change.
  */
 export default function useAutoRepaintMeter() {
   const { state, dispatch } = useApp();
@@ -26,6 +33,7 @@ export default function useAutoRepaintMeter() {
   const [applying, setApplying] = useState(false);
 
   useEffect(() => {
+    if (!ENABLE_BACKEND_REPAINT) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const snap = snapRef.current;
     if (bpm === snap.bpm && beatsPerBar === snap.beatsPerBar && meterDen === snap.meterDen) return;

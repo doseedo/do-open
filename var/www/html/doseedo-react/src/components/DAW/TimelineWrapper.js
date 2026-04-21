@@ -65,7 +65,10 @@ const TimelineWrapper = React.memo(() => {
     state.totalDuration || 10,
     state.playheadPosition || 0,
     state.bpm || 120,
-    state.masterGain || 0.8  // Master gain (default 80% to prevent clipping)
+    state.masterGain || 0.8,  // Master gain (default 80% to prevent clipping)
+    state.beatsPerBar || 4,
+    state.meterDenominator || 4,
+    state.tempoMap || null,
   );
 
   // Handle timeline click to seek - use actual width

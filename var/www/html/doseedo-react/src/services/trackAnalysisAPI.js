@@ -64,6 +64,34 @@ export async function detectChordsAndTempo(audioFile) {
   return data;
 }
 
+/**
+ * Rich per-bar tempo/meter analysis. Returns:
+ *   {
+ *     bpm, beatsPerBar, meterDenominator, grouping,
+ *     downbeat_offset,
+ *     beat_map: [{t, pos}, ...],
+ *     tempoMap: [{bar, t, bpm, meter: [n,d], grouping?}, ...],
+ *     duration,
+ *   }
+ *
+ * Populated by the backend /api/analyze-rhythm endpoint using beat_this +
+ * librosa. Supports in-song tempo and meter changes — each entry in
+ * tempoMap represents a run of bars sharing local tempo+meter.
+ *
+ * Independent of /api/detect-chords (which is currently gated off for
+ * chord extraction). Safe to call on every audio upload.
+ */
+export async function analyzeRhythm(audioFile) {
+  const compressed = await compressAudioForUpload(audioFile);
+  const fd = new FormData();
+  fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
+  const r = await fetch('/api/analyze-rhythm', { method: 'POST', body: fd });
+  if (!r.ok) throw new Error(`analyze-rhythm HTTP ${r.status}`);
+  const data = await r.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
 export async function encodeLatentsBulk(urls) {
   // Client-side only — fetches each stem WAV, encodes in-browser, uploads latent.
   // Throws (fail-closed) if encoder is unavailable. Per-URL errors are logged and skipped.
@@ -120,13 +148,19 @@ export async function separateStemsAuto(audioFile, opts = {}) {
   // on BasicPitch). Old callers that just awaited the result still work —
   // they'll get stems_ready payload + the final `status === 'completed'`
   // is still reachable via polling status if they need it.
-  const { onMidiReady } = opts;
-  const token = localStorage.getItem('token');
+  // Auth: prefer a fresh Clerk JWT when available (AppShell.tsx installs
+  // window.__clerkGetToken), fall back to the cached clerk_token that
+  // ClerkTokenBridge snapshots, then the legacy 'token' key for back-compat.
+  // Previous code only checked the legacy key → 401 for Clerk-authed users.
+  const token = (typeof window !== 'undefined' && typeof window.__clerkGetToken === 'function'
+      ? await window.__clerkGetToken().catch(() => null) : null)
+    || (typeof window !== 'undefined' && window.localStorage?.getItem('clerk_token'))
+    || localStorage.getItem('token');
   const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
   const compressed = await compressAudioForUpload(audioFile);
   const fd = new FormData();
   fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
-  const r = await fetch('/separate-stems', { method: 'POST', body: fd, headers: authHeaders });
+  const r = await fetch('/separate-stems', { method: 'POST', body: fd, headers: authHeaders, credentials: 'include' });
   if (!r.ok) throw new Error(`separate-stems HTTP ${r.status}`);
   const start = await r.json();
   const taskId = start.task_id;
@@ -150,14 +184,36 @@ export async function separateStemsAuto(audioFile, opts = {}) {
     }
   }
 
-  // Phase 2: background-poll for BasicPitch MIDI (non-blocking).
-  if (onMidiReady && taskId && (result.status === 'stems_ready' || result.status === 'completed')) {
+  // Phase 2: background-poll for BasicPitch MIDI + drum-teacher substems
+  // (non-blocking). Both arrive after `stems_ready` on their own threads;
+  // we surface them via callbacks and also accumulate into `result` so a
+  // caller that passed no callback can still read them via the resolved
+  // promise once polling has caught up.
+  const { onMidiReady, onDrumTeacher, onLyrics } = opts;
+  const wantsBackground = (onMidiReady || onDrumTeacher || onLyrics)
+    && taskId && (result.status === 'stems_ready' || result.status === 'completed');
+  if (wantsBackground) {
     (async () => {
-      const seen = new Set(Object.keys(result.midi_urls || {}));
-      // Fire for anything already present at stems_ready (rare — BasicPitch
-      // usually starts after, so this is mostly a no-op first-pass).
-      if (seen.size) onMidiReady({ task_id: taskId, midi_urls: { ...result.midi_urls } });
-      for (let i = 0; i < 180; i++) {    // up to ~6 minutes of MIDI polling
+      const seenMidi = new Set(Object.keys(result.midi_urls || {}));
+      let drumDelivered = !!result.drum_substem_urls && Object.keys(result.drum_substem_urls).length > 0;
+      let lyricsDelivered = !!result.vocals_lyrics;
+      if (seenMidi.size && onMidiReady) onMidiReady({ task_id: taskId, midi_urls: { ...result.midi_urls } });
+      if (drumDelivered && onDrumTeacher) {
+        onDrumTeacher({
+          task_id: taskId,
+          drum_substem_urls: { ...result.drum_substem_urls },
+          drum_substem_onsets: { ...(result.drum_substem_onsets || {}) },
+          drum_substem_onset_strengths: { ...(result.drum_substem_onset_strengths || {}) },
+        });
+      }
+      if (lyricsDelivered && onLyrics) {
+        onLyrics({
+          task_id: taskId,
+          vocals_lyrics: result.vocals_lyrics,
+          vocals_lyrics_language: result.vocals_lyrics_language,
+        });
+      }
+      for (let i = 0; i < 180; i++) {    // up to ~6 minutes of polling
         await new Promise((res) => setTimeout(res, 2000));
         let poll;
         try {
@@ -167,14 +223,51 @@ export async function separateStemsAuto(audioFile, opts = {}) {
           if (!sr.ok) continue;
           poll = await sr.json();
         } catch (_) { continue; }
-        const urls = poll?.midi_urls || {};
-        const added = {};
-        for (const [stem, url] of Object.entries(urls)) {
-          if (!seen.has(stem)) { seen.add(stem); added[stem] = url; }
+
+        // BasicPitch MIDI — incremental, fire per new stem.
+        if (onMidiReady) {
+          const urls = poll?.midi_urls || {};
+          const added = {};
+          for (const [stem, url] of Object.entries(urls)) {
+            if (!seenMidi.has(stem)) { seenMidi.add(stem); added[stem] = url; }
+          }
+          if (Object.keys(added).length) {
+            onMidiReady({ task_id: taskId, midi_urls: added });
+          }
         }
-        if (Object.keys(added).length) {
-          onMidiReady({ task_id: taskId, midi_urls: added });
+
+        // Drum teacher (MDX23C-DrumSep) — kick/snare/hh/toms/ride/crash WAVs
+        // + librosa onsets per substem. Arrives in one shot once the
+        // separator finishes; fire the callback exactly once.
+        if (!drumDelivered && poll?.drum_substem_urls && Object.keys(poll.drum_substem_urls).length > 0) {
+          drumDelivered = true;
+          result.drum_substem_urls = { ...poll.drum_substem_urls };
+          result.drum_substem_onsets = { ...(poll.drum_substem_onsets || {}) };
+          result.drum_substem_onset_strengths = { ...(poll.drum_substem_onset_strengths || {}) };
+          if (onDrumTeacher) {
+            onDrumTeacher({
+              task_id: taskId,
+              drum_substem_urls: result.drum_substem_urls,
+              drum_substem_onsets: result.drum_substem_onsets,
+              drum_substem_onset_strengths: result.drum_substem_onset_strengths,
+            });
+          }
         }
+
+        // Whisper lyrics — fire once when present.
+        if (!lyricsDelivered && poll?.vocals_lyrics) {
+          lyricsDelivered = true;
+          result.vocals_lyrics = poll.vocals_lyrics;
+          result.vocals_lyrics_language = poll.vocals_lyrics_language;
+          if (onLyrics) {
+            onLyrics({
+              task_id: taskId,
+              vocals_lyrics: result.vocals_lyrics,
+              vocals_lyrics_language: result.vocals_lyrics_language,
+            });
+          }
+        }
+
         if (poll?.status === 'completed' || poll?.status === 'failed') break;
       }
     })().catch(() => {});   // swallow background errors — main path already returned

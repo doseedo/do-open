@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import useAutoRepaintMeter from '../../hooks/useAutoRepaintMeter';
+import { entryAtTime } from '../../services/tempoMap';
 import styles from './TempoControls.module.css';
 
 /**
@@ -9,18 +10,24 @@ import styles from './TempoControls.module.css';
  * Layout (left → right):
  *   [metronome] [BPM input] [Meter select] [repaint spinner]
  *
- * The timeline now defaults to bars/beats mode (no toggle button).
- *
- * BPM/meter changes auto-trigger a stemphonic repaint of every track
- * with a cached VAE latent, after a 1.2s debounce so the user can
- * scrub the BPM input without firing 100 jobs.
+ * When state.tempoMap is populated (by /api/analyze-rhythm on upload),
+ * the BPM and meter fields DISPLAY the LOCAL value at the current
+ * playhead position — i.e., tempo/meter follow the song as it plays
+ * through an in-song change. User edits still dispatch the usual
+ * UPDATE_BPM / SET_METER actions (which are interpreted as overrides
+ * for the current bar and forward until the next map entry).
  */
 function TempoControls() {
   const { state, dispatch } = useApp();
 
-  const bpm = state.bpm;
-  const beatsPerBar = state.beatsPerBar || 4;
-  const meterDen = state.meterDenominator || 4;
+  // Local-at-playhead lookup. When no tempoMap, fall back to the project
+  // globals (this is the legacy path — constant tempo/meter everywhere).
+  const activeEntry = state.tempoMap
+    ? entryAtTime(state.tempoMap, state.playheadPosition || 0)
+    : null;
+  const bpm = activeEntry ? Math.round(activeEntry.bpm) : state.bpm;
+  const beatsPerBar = (activeEntry && activeEntry.meter?.[0]) || state.beatsPerBar || 4;
+  const meterDen = (activeEntry && activeEntry.meter?.[1]) || state.meterDenominator || 4;
   const meterStr = `${beatsPerBar}/${meterDen}`;
   const isMetronomeOn = state.isMetronomeOn;
 

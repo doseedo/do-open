@@ -2840,7 +2840,7 @@ def _run_drum_teacher(task_id, out_dir, drums_wav_path):
                 name_to_path[s] = dst
                 break
 
-    drum_urls, drum_onsets = {}, {}
+    drum_urls, drum_onsets, drum_strengths = {}, {}, {}
     for s in STEM_LABELS:
         p = name_to_path.get(s)
         if p is None or not os.path.exists(p):
@@ -2851,20 +2851,38 @@ def _run_drum_teacher(task_id, out_dir, drums_wav_path):
             y, sr = librosa.load(p, sr=22050, mono=True)
             if float(_np.abs(y).max()) < 0.02:
                 drum_onsets[s] = []
+                drum_strengths[s] = []
             else:
+                # Onset times + per-onset strength so the frontend can
+                # distinguish accents from ghost notes (kick "boom" vs
+                # snare backbeat vs hh tick). Strength is the value of the
+                # onset envelope at the picked frame, normalized 0–1 per
+                # substem so each kit voice is comparable to itself.
+                onset_env = librosa.onset.onset_strength(y=y, sr=sr)
                 times = librosa.onset.onset_detect(
-                    y=y, sr=sr, units="time",
+                    y=y, sr=sr, units="time", onset_envelope=onset_env,
                     pre_max=3, post_max=3, pre_avg=3, post_avg=5,
                     delta=0.07, wait=2,
                 )
+                # Map each onset time back to its envelope frame index +
+                # value. Frames are 512-sample hops at 22.05 kHz (~23ms).
+                hop = 512
+                frames = (_np.asarray(times) * sr / hop).astype(int)
+                frames = _np.clip(frames, 0, len(onset_env) - 1)
+                strengths_raw = onset_env[frames]
+                peak = float(strengths_raw.max()) if strengths_raw.size else 1.0
+                norm = (strengths_raw / peak) if peak > 1e-6 else strengths_raw
                 drum_onsets[s] = [round(float(t), 3) for t in times.tolist()]
+                drum_strengths[s] = [round(float(v), 3) for v in norm.tolist()]
         except Exception as onset_err:
             logger.warning("[%s] drum teacher onset %s failed: %s",
                            task_id, s, onset_err)
             drum_onsets[s] = []
+            drum_strengths[s] = []
 
     DEMUCS_TASKS[task_id]["drum_substem_urls"] = drum_urls
     DEMUCS_TASKS[task_id]["drum_substem_onsets"] = drum_onsets
+    DEMUCS_TASKS[task_id]["drum_substem_onset_strengths"] = drum_strengths
     logger.info(
         "[%s] drum teacher done in %.2fs: %s",
         task_id, time.time() - t0,
@@ -3012,6 +3030,46 @@ def _run_demucs_separation(task_id, audio_path):
         # pitched stem) runs below; `midi_urls` accumulates as each stem
         # finishes so the frontend can swap placeholders in one at a time.
         DEMUCS_TASKS[task_id]["midi_urls"] = {}
+
+        # ── Per-stem onsets (non-drum) for melodic-protected meter edit ──
+        # librosa.onset.onset_detect on each pitched stem so the client-
+        # side virtualTrackEdit can gate bar drops/duplicates around
+        # sustained notes (buildMelodicProtectedSchedule reads this).
+        # Drum onsets come from the MDX23C path in _run_drum_teacher, not
+        # here. Vocals have whisper word-timing instead, but we compute
+        # vocals onsets too as a fallback when whisper isn't available.
+        try:
+            import librosa as _lib
+            import numpy as _np
+            stem_onsets = {}
+            for stem_name in stem_names:
+                if stem_name in ("drums", "drum_kit", "percussion"):
+                    continue
+                swav = os.path.join(out_dir, f"{stem_name}.wav")
+                if not os.path.exists(swav):
+                    continue
+                try:
+                    y, sr_s = _lib.load(swav, sr=22050, mono=True)
+                    if float(_np.abs(y).max()) < 0.02:
+                        stem_onsets[stem_name] = []
+                        continue
+                    times = _lib.onset.onset_detect(
+                        y=y, sr=sr_s, units="time",
+                        pre_max=3, post_max=3, pre_avg=3, post_avg=5,
+                        delta=0.07, wait=2,
+                    )
+                    stem_onsets[stem_name] = [round(float(t), 3) for t in times.tolist()]
+                except Exception as oe:
+                    logger.warning("[%s] stem onset %s failed: %s",
+                                   task_id, stem_name, oe)
+                    stem_onsets[stem_name] = []
+            DEMUCS_TASKS[task_id]["stem_onsets"] = stem_onsets
+            logger.info("[%s] stem onsets computed: %s",
+                        task_id,
+                        {k: len(v) for k, v in stem_onsets.items()})
+        except ImportError:
+            logger.warning("[%s] librosa unavailable — skipping stem onsets", task_id)
+
         DEMUCS_TASKS[task_id]["status"] = "stems_ready"
         logger.info("🎵 htdemucs_6s task %s stems_ready in %.2fs: %s",
                     task_id, time.time() - t_total, stem_names)
@@ -3157,8 +3215,10 @@ def separate_stems_status(task_id):
         "mask_bundle": task.get("mask_bundle"),
         "midi_urls": task.get("midi_urls"),   # live-updated as BasicPitch
                                               # finishes each pitched stem
-        "drum_substem_urls":    task.get("drum_substem_urls"),
-        "drum_substem_onsets":  task.get("drum_substem_onsets"),
+        "drum_substem_urls":            task.get("drum_substem_urls"),
+        "drum_substem_onsets":          task.get("drum_substem_onsets"),
+        "drum_substem_onset_strengths": task.get("drum_substem_onset_strengths"),
+        "stem_onsets":                  task.get("stem_onsets"),
         "vocals_lyrics":          task.get("vocals_lyrics"),
         "vocals_lyrics_language": task.get("vocals_lyrics_language"),
         "error": task.get("error"),
@@ -3734,6 +3794,64 @@ def detect_chords():
         downbeat_idx = np.where(beat_pos == 1)[0]
         downbeat_offset = float(beat_times[downbeat_idx[0]]) if len(downbeat_idx) else float(beat_times[0])
 
+        # ── Meter denominator detection ────────────────────────────────
+        # beat_this returns numerator (beats_per_bar). Modern songs in
+        # asymmetric meters are almost always /8; 6 is ambiguous (3/4 vs
+        # 6/8 — same eighth count, different feel) so default /4 unless
+        # the BPM range strongly suggests compound feel.
+        if beats_per_bar in (3, 4, 5):
+            meter_denominator = 4
+        elif beats_per_bar in (7, 9, 11):
+            meter_denominator = 8
+        elif beats_per_bar == 6:
+            # 6/8 is typically dotted-quarter pulse 60–110 BPM
+            # (effective dotted-quarter = bpm/3 for compound duple);
+            # 3/4 sits 70–180 BPM at the quarter. If the detected BPM
+            # is high (>140), it's almost certainly 3/4 felt at the
+            # quarter; if low (<80) and clean, lean 6/8.
+            meter_denominator = 8 if bpm < 80 else 4
+        else:
+            meter_denominator = 4
+
+        # ── Asymmetric grouping detection (5/8, 7/8, 5/4) ──────────────
+        # Test which beat-position the snare-equivalent backbeat lands
+        # on by looking at the per-beat onset strength profile of the
+        # downmix. The strongest beat AFTER the downbeat tells us the
+        # grouping: 7/8 strong on beat 5 → 4+3, strong on beat 4 → 3+4.
+        # 5/4 strong on beat 4 → 3+2, strong on beat 3 → 2+3.
+        grouping = None
+        try:
+            import librosa as _lib
+            y_g, sr_g = _lib.load(audio_path, sr=22050, mono=True, duration=30.0)
+            onset_env_g = _lib.onset.onset_strength(y=y_g, sr=sr_g)
+            hop_sec = 512.0 / sr_g
+            # Aggregate onset strength per beat-position-in-bar.
+            agg = np.zeros(beats_per_bar, dtype=float)
+            cnt = np.zeros(beats_per_bar, dtype=int)
+            for i, t in enumerate(beat_times):
+                if t > 30.0: break
+                pos = int(beat_pos[i]) - 1
+                if pos < 0 or pos >= beats_per_bar: continue
+                # Sum onset envelope in a 100ms window around the beat.
+                f0 = max(0, int((t - 0.05) / hop_sec))
+                f1 = min(len(onset_env_g), int((t + 0.05) / hop_sec) + 1)
+                if f1 > f0:
+                    agg[pos] += float(onset_env_g[f0:f1].sum())
+                    cnt[pos] += 1
+            avg = np.divide(agg, np.maximum(cnt, 1))
+            if beats_per_bar == 7 and meter_denominator == 8:
+                grouping = '4+3' if avg[4] > avg[3] else '3+4'
+            elif beats_per_bar == 5:
+                # 5/4 (or 5/8): 3+2 means strong beat 4 (start of the 2);
+                # 2+3 means strong beat 3 (start of the 3).
+                grouping = '3+2' if avg[3] > avg[2] else '2+3'
+            elif beats_per_bar == 9 and meter_denominator == 8:
+                # Most common 9/8 grouping is 2+2+2+3 → strong beat 7.
+                # Alternative 3+3+3 → strong beats 4 & 7.
+                grouping = '2+2+2+3' if avg[6] > avg[3] else '3+3+3'
+        except Exception as ge:
+            logger.warning("grouping detection failed: %s", ge)
+
         # ------------------------------------------------------------------
         # 2. LatentPitch → MIDI → symbolic chord detection
         #    The 'mode' query param (master/stems) is legacy — chord
@@ -3767,6 +3885,8 @@ def detect_chords():
         return jsonify({
             "bpm": round(bpm, 2),
             "beats_per_bar": beats_per_bar,
+            "meter_denominator": meter_denominator,
+            "grouping": grouping,
             "downbeat_offset": downbeat_offset,
             "mode": mode,
             "chords": chords_out,
@@ -3792,6 +3912,258 @@ def detect_chords():
 
 EXTRACT_MIDI_DIR = "/scratch/cache/extract_midi"
 os.makedirs(EXTRACT_MIDI_DIR, exist_ok=True)
+
+
+# ─── Tempo/meter map extraction ──────────────────────────────────────
+#
+# Standalone endpoint (independent of the gated-off /api/detect-chords
+# chord-detection path). Runs beat_this + librosa on the uploaded audio
+# and returns a PER-BAR tempo/meter map so the frontend timeline can
+# render real bar lines and the meter-edit engine can honor in-song
+# tempo/meter changes.
+#
+# Output shape:
+#   {
+#     "bpm":               median song BPM,
+#     "beatsPerBar":       dominant meter numerator,
+#     "meterDenominator":  4 or 8, inferred from numerator + BPM range,
+#     "grouping":          '4+3' / '3+4' for 7/8, '3+2' / '2+3' for 5/4, etc.,
+#     "downbeat_offset":   seconds before bar 1 (pickup),
+#     "beat_map":          [{t, pos}, ...] — per-beat time + bar position,
+#     "tempoMap":          [{bar, t, bpm, meter, grouping?}, ...] — one
+#                          entry per run of bars sharing local tempo+meter.
+#     "duration":          audio duration in seconds,
+#   }
+#
+# Clusters consecutive bars with same meter AND BPM within ±2 into one
+# entry so constant-tempo songs produce a single tempoMap entry.
+
+@app.route("/api/analyze-rhythm", methods=["POST"])
+def analyze_rhythm():
+    import numpy as np
+    f = request.files.get("audioFile") or request.files.get("file")
+    if f is None:
+        return jsonify({"error": "No audioFile in request"}), 400
+
+    tmp_dir = "/scratch/cache/analyze_rhythm_tmp"
+    os.makedirs(tmp_dir, exist_ok=True)
+    audio_path = os.path.join(tmp_dir, f"in_{uuid.uuid4().hex[:8]}_{f.filename or 'audio.wav'}")
+    f.save(audio_path)
+
+    try:
+        # Beat tracking: prefer beat_this (neural, SOTA) when available;
+        # fall back to librosa (onset autocorrelation). beat_this has
+        # broken numpy 2.0 deps on some environments so we keep this
+        # endpoint independent of it when the import fails.
+        beat_times = None
+        downbeat_times = None
+        try:
+            from beat_this.inference import File2Beats
+            f2b = File2Beats(checkpoint_path="final0", dbn=True)
+            beat_arr, downbeat_arr = f2b(audio_path)
+            if len(beat_arr) >= 2 and len(downbeat_arr) >= 2:
+                beat_times = np.asarray(beat_arr, dtype=float)
+                downbeat_times = np.asarray(downbeat_arr, dtype=float)
+                logger.info("[analyze-rhythm] using beat_this (%d beats, %d downbeats)",
+                            len(beat_times), len(downbeat_times))
+        except Exception as bt_err:
+            logger.info("[analyze-rhythm] beat_this unavailable, falling back to librosa: %s", bt_err)
+
+        if beat_times is None:
+            # Librosa fallback — onset-autocorrelation beat tracker. No
+            # native downbeat detection, so we synthesize downbeats
+            # assuming a constant 4/4 meter (true for the vast majority
+            # of pop/rock uploads). In-song meter changes won't be
+            # detected on this path, but tempo + beat grid + chord row
+            # all work.
+            import librosa
+            y_bt, sr_bt = librosa.load(audio_path, sr=22050, mono=True)
+            tempo_val, beat_frames = librosa.beat.beat_track(y=y_bt, sr=sr_bt, units='frames')
+            beat_arr = librosa.frames_to_time(beat_frames, sr=sr_bt)
+            if len(beat_arr) < 2:
+                return jsonify({"error": "Not enough beats detected"}), 400
+            beat_times = np.asarray(beat_arr, dtype=float)
+            # Assume 4/4: every 4th beat is a downbeat. Phase-align the
+            # downbeat by picking the beat whose onset envelope value is
+            # highest in the first 8 beats.
+            try:
+                onset_env_db = librosa.onset.onset_strength(y=y_bt, sr=sr_bt)
+                hop_sec_db = 512.0 / sr_bt
+                first_eight = beat_times[: min(8, len(beat_times))]
+                strengths = []
+                for bt in first_eight:
+                    fi = int(bt / hop_sec_db)
+                    if 0 <= fi < len(onset_env_db):
+                        strengths.append(float(onset_env_db[fi]))
+                    else:
+                        strengths.append(0.0)
+                phase = int(np.argmax(strengths)) % 4
+            except Exception:
+                phase = 0
+            downbeat_times = beat_times[phase::4]
+            if len(downbeat_times) < 2:
+                downbeat_times = beat_times[::4] if len(beat_times) >= 2 else beat_times[:1]
+            downbeat_times = np.asarray(downbeat_times, dtype=float)
+            logger.info("[analyze-rhythm] using librosa (%d beats → %d downbeats, 4/4 assumed)",
+                        len(beat_times), len(downbeat_times))
+
+        # 2. Duration.
+        import soundfile as _sf
+        info = _sf.info(audio_path)
+        duration = float(info.frames / info.samplerate)
+
+        # 3. Per-bar beats_per_bar from downbeat spacing in BEAT INDICES.
+        #    This catches in-song meter changes: a song that goes 4/4 for
+        #    8 bars then 7/8 for 2 bars will have db_idx spacings of
+        #    [4,4,4,4,4,4,4,4,7,7].
+        db_idx = [int(np.argmin(np.abs(beat_times - t))) for t in downbeat_times]
+        per_bar_beats = np.diff(db_idx).astype(int).tolist()
+        if not per_bar_beats:
+            per_bar_beats = [4]
+        # Guard: clamp nonsensical spacings.
+        per_bar_beats = [b if 2 <= b <= 12 else 4 for b in per_bar_beats]
+
+        # 4. Per-bar LOCAL BPM from inter-downbeat interval.
+        per_bar_bpm = []
+        for i in range(len(downbeat_times) - 1):
+            bar_dur = downbeat_times[i + 1] - downbeat_times[i]
+            n_beats = max(1, per_bar_beats[i])
+            if bar_dur > 0:
+                per_bar_bpm.append(60.0 * n_beats / bar_dur)
+            else:
+                per_bar_bpm.append(120.0)
+
+        # 5. Global BPM = median of per-bar BPM (robust to outlier bars).
+        global_bpm = float(np.median(per_bar_bpm)) if per_bar_bpm else 120.0
+        # Librosa cross-check (same 70–140 in-range preference as detect-chords).
+        try:
+            import librosa
+            y, sr = librosa.load(audio_path, sr=22050, mono=True, duration=60.0)
+            lib_bpm, _ = librosa.beat.beat_track(y=y, sr=sr)
+            lib_bpm = float(lib_bpm)
+            cands = [global_bpm, global_bpm / 2, global_bpm * 2, global_bpm * 2/3, global_bpm * 3/2, lib_bpm]
+            in_range = [c for c in cands if 70 <= c <= 140]
+            if in_range:
+                global_bpm = min(in_range, key=lambda c: abs(c - lib_bpm))
+        except Exception as e:
+            logger.warning("librosa tempo crosscheck failed in analyze-rhythm: %s", e)
+
+        # 6. Meter denominator inference per dominant numerator.
+        dominant_n = int(np.bincount(np.array(per_bar_beats)).argmax()) if per_bar_beats else 4
+        def infer_den(n, bpm):
+            if n in (3, 4, 5): return 4
+            if n in (7, 9, 11): return 8
+            if n == 6: return 8 if bpm < 80 else 4
+            return 4
+        dominant_d = infer_den(dominant_n, global_bpm)
+
+        # 7. Grouping detection for asymmetric/compound meters.
+        grouping = None
+        try:
+            import librosa as _lib
+            y_g, sr_g = _lib.load(audio_path, sr=22050, mono=True, duration=30.0)
+            onset_env = _lib.onset.onset_strength(y=y_g, sr=sr_g)
+            hop_sec = 512.0 / sr_g
+            agg = np.zeros(max(dominant_n, 1), dtype=float)
+            cnt = np.zeros(max(dominant_n, 1), dtype=int)
+            # Re-build beat_pos array from db_idx so we know each beat's bar position.
+            beat_pos = np.zeros(len(beat_times), dtype=int)
+            cur_db = 0
+            for i in range(len(beat_times)):
+                if cur_db + 1 < len(db_idx) and i >= db_idx[cur_db + 1]:
+                    cur_db += 1
+                pos_in_bar = i - db_idx[cur_db] + 1 if cur_db < len(db_idx) else 1
+                if pos_in_bar < 1: pos_in_bar = 1
+                bpbar = per_bar_beats[cur_db] if cur_db < len(per_bar_beats) else dominant_n
+                beat_pos[i] = ((pos_in_bar - 1) % bpbar) + 1
+            for i, t in enumerate(beat_times):
+                if t > 30.0: break
+                pos = int(beat_pos[i]) - 1
+                if pos < 0 or pos >= dominant_n: continue
+                f0 = max(0, int((t - 0.05) / hop_sec))
+                f1 = min(len(onset_env), int((t + 0.05) / hop_sec) + 1)
+                if f1 > f0:
+                    agg[pos] += float(onset_env[f0:f1].sum())
+                    cnt[pos] += 1
+            avg = np.divide(agg, np.maximum(cnt, 1))
+            if dominant_n == 7 and dominant_d == 8:
+                grouping = '4+3' if avg[4] > avg[3] else '3+4'
+            elif dominant_n == 5:
+                grouping = '3+2' if avg[3] > avg[2] else '2+3'
+            elif dominant_n == 9 and dominant_d == 8:
+                if len(avg) >= 7:
+                    grouping = '2+2+2+3' if avg[6] > avg[3] else '3+3+3'
+        except Exception as ge:
+            logger.warning("grouping detection failed in analyze-rhythm: %s", ge)
+
+        # 8. Cluster consecutive bars sharing same meter AND BPM (±2) into
+        # tempoMap entries. Produces ONE entry for a constant-tempo song;
+        # multiple for tempo/meter changes mid-song.
+        tempo_map = []
+        if per_bar_beats:
+            cur_n = per_bar_beats[0]
+            cur_bpm = per_bar_bpm[0] if per_bar_bpm else global_bpm
+            tempo_map.append({
+                "bar": 1,
+                "t": float(downbeat_times[0]),
+                "bpm": round(cur_bpm, 2),
+                "meter": [int(cur_n), infer_den(cur_n, cur_bpm)],
+            })
+            for i in range(1, len(per_bar_beats)):
+                bpm_i = per_bar_bpm[i] if i < len(per_bar_bpm) else cur_bpm
+                if per_bar_beats[i] != cur_n or abs(bpm_i - cur_bpm) > 2.0:
+                    cur_n = per_bar_beats[i]
+                    cur_bpm = bpm_i
+                    t_here = float(downbeat_times[i]) if i < len(downbeat_times) else None
+                    tempo_map.append({
+                        "bar": i + 1,
+                        "t": t_here if t_here is not None else 0.0,
+                        "bpm": round(cur_bpm, 2),
+                        "meter": [int(cur_n), infer_den(cur_n, cur_bpm)],
+                    })
+            # Stamp grouping on the dominant-meter entry.
+            if grouping:
+                for entry in tempo_map:
+                    if entry["meter"][0] == dominant_n and entry["meter"][1] == dominant_d:
+                        entry["grouping"] = grouping
+
+        # 9. beat_map same shape as legacy detect-chords.
+        beat_pos_out = []
+        cur_db = 0
+        for i, t in enumerate(beat_times):
+            if cur_db + 1 < len(db_idx) and i >= db_idx[cur_db + 1]:
+                cur_db += 1
+            bpbar = per_bar_beats[cur_db] if cur_db < len(per_bar_beats) else dominant_n
+            pos_in_bar = i - db_idx[cur_db] + 1 if cur_db < len(db_idx) else i + 1
+            pos = ((pos_in_bar - 1) % max(1, bpbar)) + 1
+            beat_pos_out.append({"t": float(t), "pos": int(pos)})
+
+        downbeat_offset = float(downbeat_times[0]) if len(downbeat_times) else 0.0
+        logger.info(
+            "analyze-rhythm %s: %.1f BPM, %d/%d (dominant), %d tempoMap entries, %d bars, %.2fs",
+            Path(audio_path).name, global_bpm, dominant_n, dominant_d,
+            len(tempo_map), len(per_bar_beats), duration,
+        )
+
+        return jsonify({
+            "bpm": round(global_bpm, 2),
+            "beatsPerBar": int(dominant_n),
+            "meterDenominator": int(dominant_d),
+            "grouping": grouping,
+            "downbeat_offset": downbeat_offset,
+            "beat_map": beat_pos_out,
+            "tempoMap": tempo_map,
+            "duration": duration,
+        })
+    except ImportError as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Missing dependency: {e}"}), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: os.remove(audio_path)
+        except Exception: pass
 
 
 @app.route("/api/extract-midi", methods=["POST"])

@@ -96,19 +96,19 @@ const initialState = {
   // Where present, all timeline/chord/metronome renderers should use
   // these times directly rather than assuming a constant BPM.
   beatMap: null,
+  // Detected per-bar tempo + meter map: [{ bar, t, bpm, meter: [n,d], grouping? }, ...]
+  // Populated from /api/analyze-rhythm at audio upload. Each entry holds
+  // the LOCAL tempo and meter for bars starting at `bar` (1-indexed) or
+  // `t` seconds. In-song tempo/meter changes show up as multiple entries.
+  // Consumed by Timeline, Transport, Metronome, and virtualTrackEdit —
+  // never displayed via automation (user requirement).
+  tempoMap: null,
   // Pre-roll seconds before bar 1 (the "pickup"). When an audio import
   // is detected to start with silence + a downbeat at t=N seconds, set
   // timelineOffset = N so bar 1 lands on the actual downbeat.
   timelineOffset: 0,
-  // Demo tempo automation - internal tempo changes by time (in seconds at base 120 BPM)
-  // Bars at 120 BPM: 1 bar = 2 seconds
-  // Bar 11 = 20s, Bar 13 = 24s, Bar 17 = 32s, Bar 21 = 42s
-  tempoAutomation: [
-    { time: 0, bpm: 120 },      // Bars 1-10: 120 BPM
-    { time: 20, bpm: 125 },     // Bars 11-12: 125 BPM
-    { time: 24, bpm: 130 },     // Bars 13-16: 130 BPM
-    { time: 32, bpm: 130, rampTo: 145, rampEnd: 42 }  // Bars 17-21: ramp 130->145 BPM
-  ],
+  // (tempoAutomation demo removed — tempoMap above is the source of truth
+  // for in-song tempo/meter changes, populated by /api/analyze-rhythm.)
   isBPMMode: true,
   isMetronomeOn: false,
   subdivisionLevel: 1,  // 1 = quarter notes, 2 = 8th notes, 4 = 16th notes
@@ -1276,6 +1276,12 @@ function appReducer(state, action) {
       return { ...state, beatsPerBar: Math.max(1, parseInt(action.payload, 10) || 4) };
     case 'SET_BEAT_MAP':
       return { ...state, beatMap: action.payload || null };
+    case 'SET_PROJECT_TEMPO_MAP':
+      // Project-level tempo/meter map — [{bar, t, bpm, meter: [n,d], grouping?}].
+      // Populated when an uploaded file is analyzed; consumed by Timeline,
+      // Transport, Metronome, and virtualTrackEdit to drive per-bar local
+      // tempo + meter. Independent of automation (user requirement).
+      return { ...state, tempoMap: action.payload || null };
     case 'SET_METER': {
       // payload: "N/D" string e.g. "7/8"
       const [n, d] = String(action.payload).split('/').map((x) => parseInt(x, 10));
