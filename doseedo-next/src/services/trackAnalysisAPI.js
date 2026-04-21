@@ -168,6 +168,7 @@ export async function separateStemsAuto(audioFile, opts = {}) {
           task_id: taskId,
           drum_substem_urls: { ...result.drum_substem_urls },
           drum_substem_onsets: { ...(result.drum_substem_onsets || {}) },
+          drum_substem_onset_strengths: { ...(result.drum_substem_onset_strengths || {}) },
         });
       }
       if (lyricsDelivered && onLyrics) {
@@ -207,11 +208,13 @@ export async function separateStemsAuto(audioFile, opts = {}) {
           drumDelivered = true;
           result.drum_substem_urls = { ...poll.drum_substem_urls };
           result.drum_substem_onsets = { ...(poll.drum_substem_onsets || {}) };
+          result.drum_substem_onset_strengths = { ...(poll.drum_substem_onset_strengths || {}) };
           if (onDrumTeacher) {
             onDrumTeacher({
               task_id: taskId,
               drum_substem_urls: result.drum_substem_urls,
               drum_substem_onsets: result.drum_substem_onsets,
+              drum_substem_onset_strengths: result.drum_substem_onset_strengths,
             });
           }
         }

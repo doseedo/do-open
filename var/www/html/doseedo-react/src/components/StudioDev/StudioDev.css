@@ -686,43 +686,26 @@
 .sd-sidebar .sd-inst-palette-head > .sd-label {
   padding-right: 64px;   /* room for the toggle */
 }
-.sd-sidebar .sd-inst-palette-head .sd-palette-toggle,
-.sd-sidebar .sd-inst-palette-head .sd-palette-src {
+.sd-sidebar .sd-inst-palette-head .sd-palette-toggle {
   position: absolute;
   right: 8px; top: 50%;
   transform: translateY(-50%);
 }
 
-/* Live / Custom source tabs — pair of pill buttons in the palette head. */
-.sd-palette-src {
-  display: flex; gap: 0;
-  border: 1px solid var(--wb-rule);
-  border-radius: var(--wb-radius);
-  background: var(--wb-bg);
-  overflow: hidden;
-}
-.sd-palette-src-tab {
-  padding: 3px 10px;
-  background: transparent;
-  border: 0; border-radius: 0;
-  color: var(--wb-ink-mute);
-  font-family: var(--wb-font-mono);
-  font-size: 9px;
-  letter-spacing: var(--wb-tracking-caps);
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.sd-palette-src-tab:hover { color: var(--wb-ink); }
-.sd-palette-src-tab.on {
-  background: var(--wb-ink);
-  color: var(--wb-bg);
+/* Palette source tabs — sit immediately above the instrument list,
+ * reuse .sd-tabs / .sd-tab styling from the top category row so the
+ * two tab strips feel like siblings. Small top margin to separate
+ * them from the Sources tile row above. */
+.sd-palette-src-tabs {
+  margin-top: 10px;
+  margin-bottom: 6px;
 }
 
 /* Empty-state for the Custom source tab. */
 .sd-palette-empty {
-  padding: 18px 14px 20px;
+  padding: 22px 14px 20px;
   display: flex; flex-direction: column;
-  align-items: center; gap: 10px;
+  align-items: center; gap: 12px;
   text-align: center;
 }
 .sd-palette-empty-body {

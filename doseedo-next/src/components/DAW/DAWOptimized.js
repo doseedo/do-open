@@ -834,8 +834,14 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
   const applyDetection = useCallback(async (file, trackId, busId) => {
     try {
       const det = await detectChordsAndTempo(file);
+      const detDen = det.meter_denominator || 4;          // detector now reports /4 vs /8
       if (det.bpm) dispatch({ type: 'UPDATE_BPM', payload: Math.round(det.bpm) });
       if (det.beats_per_bar) dispatch({ type: 'SET_BEATS_PER_BAR', payload: det.beats_per_bar });
+      // Project meter follows the detected denominator so virtual-edit
+      // playback knows whether 6 means 6/4 or 6/8.
+      if (det.meter_denominator) {
+        dispatch({ type: 'SET_METER', payload: `${det.beats_per_bar || 4}/${det.meter_denominator}` });
+      }
       if (det.beat_map) dispatch({ type: 'SET_BEAT_MAP', payload: det.beat_map });
       // Detection-driven changes are NOT user meter changes — they
       // establish the baseline. Bump the repaint snapshot so the debounced
@@ -844,7 +850,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
       repaintLastRef.current = {
         bpm: det.bpm ? Math.round(det.bpm) : repaintLastRef.current.bpm,
         beatsPerBar: det.beats_per_bar || repaintLastRef.current.beatsPerBar,
-        meterDen: repaintLastRef.current.meterDen || 4,
+        meterDen: detDen,
       };
       if (typeof det.downbeat_offset === 'number') {
         dispatch({ type: 'SET_TIMELINE_OFFSET', payload: det.downbeat_offset });
@@ -855,9 +861,8 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
         Object.entries(det.chords).forEach(([k, v]) => { chordsNum[parseInt(k, 10)] = v; });
         dispatch({ type: 'SET_CHORDS', payload: chordsNum });
       }
-      // Stash the source BPM on the track metadata so the repaint flow
-      // uses the actual song BPM (not the timeline default) when
-      // computing latent bar boundaries.
+      // Stash detected meter on the track so virtual-edit playback knows
+      // both numerator and denominator + grouping (3+2 vs 2+3 etc.).
       dispatch({
         type: 'UPDATE_TRACK',
         payload: {
@@ -866,13 +871,15 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
             metadata: {
               detectedBpm: det.bpm,
               detectedMeter: det.beats_per_bar,
+              detectedMeterDenominator: detDen,
+              detectedGrouping: det.grouping || null,
               downbeatOffset: det.downbeat_offset,
               detected: true,
             },
           },
         },
       });
-      console.log(`🎵 detected: ${Math.round(det.bpm)} BPM, ${det.beats_per_bar}/4, downbeat at ${det.downbeat_offset?.toFixed(2)}s`);
+      console.log(`🎵 detected: ${Math.round(det.bpm)} BPM, ${det.beats_per_bar}/${detDen}${det.grouping ? ' (' + det.grouping + ')' : ''}, downbeat at ${det.downbeat_offset?.toFixed(2)}s`);
     } catch (err) {
       console.warn('detection failed:', err.message);
     }
@@ -1427,7 +1434,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
             // per-substem beat-snap (kick/snare/toms) on meter change
             // instead of bar-level rearrange across the full drum mix.
             // mixed via one shared per-track gain so solo/mute keeps working.
-            const onDrumTeacher = ({ drum_substem_urls, drum_substem_onsets }) => {
+            const onDrumTeacher = ({ drum_substem_urls, drum_substem_onsets, drum_substem_onset_strengths }) => {
               const names = Object.keys(drum_substem_urls || {});
               if (!names.length) return;
               console.log('[separate-stems] drum teacher ready:', names);
@@ -1438,6 +1445,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                   updates: { metadata: {
                     drumSubstems: drum_substem_urls,
                     drumSubstemOnsets: drum_substem_onsets || {},
+                    drumSubstemOnsetStrengths: drum_substem_onset_strengths || {},
                   } },
                 },
               });

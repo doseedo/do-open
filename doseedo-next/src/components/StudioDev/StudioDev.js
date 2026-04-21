@@ -522,15 +522,13 @@ export default function StudioDev() {
     }).catch((err) => console.warn('analyze failed:', err?.message || err));
 
     separateStemsAuto(file, {
-      onDrumTeacher: ({ drum_substem_urls, drum_substem_onsets }) => {
-        // Attach the per-substem WAV URLs (kick/snare/hh/toms/ride/crash)
-        // and onset times to the drums STEM TRACK's metadata. The virtual-
-        // edit playback path checks for `metadata.drumSubstems` and, when
-        // present, schedules each substem independently — percussive ones
-        // (kick/snare/toms) get hit-snap to the new meter grid; sustain
-        // ones (hh/ride/crash) stay on the bar-rearrange path. They mix
-        // through one shared per-track gain so solo/mute on the drums
-        // track keeps working.
+      onDrumTeacher: ({ drum_substem_urls, drum_substem_onsets, drum_substem_onset_strengths }) => {
+        // Attach per-substem WAV URLs + onset times + per-onset strengths
+        // to the drums STEM TRACK's metadata. virtualTrackEdit uses the
+        // strengths to weight accent vs ghost when re-quantizing triplets,
+        // and the onsets to do per-substem hit-snap on the new meter grid.
+        // Sustain substems (hh/ride/crash) stay on bar-rearrange. All mix
+        // through one shared per-track gain so solo/mute keeps working.
         const names = Object.keys(drum_substem_urls || {});
         if (!names.length) return;
         console.log('[studio-dev] drum teacher ready:', names);
@@ -541,6 +539,7 @@ export default function StudioDev() {
             updates: { metadata: {
               drumSubstems: drum_substem_urls,
               drumSubstemOnsets: drum_substem_onsets || {},
+              drumSubstemOnsetStrengths: drum_substem_onset_strengths || {},
             } },
           },
         });
@@ -1488,20 +1487,20 @@ export default function StudioDev() {
                      style={{ display: 'none' }} onChange={onFilePick} />
 
               <div className="sd-inst-palette sd-inst-list">
-                <div className="sd-inst-palette-head">
-                  <div className="sd-label" data-count={
-                    paletteSource === 'live' ? (
-                      activeTab === 'Instruments' ? INSTRUMENT_GROUPS.length
-                      : activeTab === 'Drums'     ? DRUM_GROUPS.length
-                      : VOCAL_GROUPS.length
-                    ) : 0
-                  }><span>{activeTab}</span></div>
-                  <div className="sd-palette-src" role="tablist" aria-label="Palette source">
-                    <button className={`sd-palette-src-tab ${paletteSource === 'live' ? 'on' : ''}`}
-                            role="tab" onClick={() => setPaletteSource('live')}>Live</button>
-                    <button className={`sd-palette-src-tab ${paletteSource === 'custom' ? 'on' : ''}`}
-                            role="tab" onClick={() => setPaletteSource('custom')}>Custom</button>
-                  </div>
+                {/* Source sub-tabs — Live = built-in instrument list,
+                 * Custom = user-curated collection (empty placeholder). */}
+                <div className="sd-tabs sd-palette-src-tabs" role="tablist" aria-label="Palette source">
+                  {[
+                    { key: 'live',   label: 'Live' },
+                    { key: 'custom', label: 'Custom' },
+                  ].map((t) => (
+                    <button key={t.key}
+                            role="tab"
+                            className={`sd-tab ${paletteSource === t.key ? 'active' : ''}`}
+                            onClick={() => setPaletteSource(t.key)}>
+                      {t.label}
+                    </button>
+                  ))}
                 </div>
 
                 {paletteSource === 'custom' && (
