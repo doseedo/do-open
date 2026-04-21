@@ -171,13 +171,18 @@ export default function StudioDevMidi() {
   }, [notes]);
 
   // ---- Reactive canvas sizing ----
+  // Observe the canvas ELEMENT (not the wrap) — that way the size we
+  // read is the exact same number getBoundingClientRect returns to
+  // mouse handlers. Observing the wrap meant a CSS-sized canvas could
+  // disagree with the `size` state during layout changes, which caused
+  // draws + hit tests to use different coordinate spaces (notes landed
+  // above the cursor, hover cell was offset, canvas looked squished).
   useEffect(() => {
-    const el = wrapRef.current; if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setSize({ w: el.clientWidth, h: el.clientHeight });
-    });
-    ro.observe(el);
-    setSize({ w: el.clientWidth, h: el.clientHeight });
+    const c = canvasRef.current; if (!c) return;
+    const measure = () => setSize({ w: c.clientWidth, h: c.clientHeight });
+    const ro = new ResizeObserver(measure);
+    ro.observe(c);
+    measure();
     return () => ro.disconnect();
   }, []);
 
@@ -402,24 +407,26 @@ export default function StudioDevMidi() {
   useEffect(() => {
     const c = canvasRef.current; if (!c) return;
     const dpr = window.devicePixelRatio || 1;
-    // Only set the bitmap resolution; the visible dimensions come from
-    // CSS (.sd-midi-canvas: width/height: 100%). Previously JS set both
-    // style and bitmap from the measured wrap size, but the measurement
-    // sometimes lagged after a timeline-drag resize, leaving the canvas
-    // narrower than the wrap until the next resize tick. CSS-driven
-    // visible size always matches the parent.
-    c.width  = Math.max(1, size.w) * dpr;
-    c.height = Math.max(1, size.h) * dpr;
+    // Measure the canvas directly at paint time. CSS sets the visible
+    // dimensions to 100% of the wrap, so clientWidth/clientHeight is
+    // the authoritative source — mouse handlers use the same values
+    // via getBoundingClientRect, so there's zero chance of coord
+    // space drift between where the user clicks and where we draw.
+    const W = c.clientWidth;
+    const H = c.clientHeight;
+    if (W <= 0 || H <= 0) return;
+    c.width  = W * dpr;
+    c.height = H * dpr;
     const ctx = c.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Background
     ctx.fillStyle = C.bg;
-    ctx.fillRect(0, 0, size.w, size.h);
+    ctx.fillRect(0, 0, W, H);
 
     // Visible pitch range (with scroll)
     const firstPitchRow = Math.floor(scrollY / rowH);          // rows from top
-    const lastPitchRow  = Math.ceil((scrollY + size.h - RULER_H) / rowH);
+    const lastPitchRow  = Math.ceil((scrollY + H - RULER_H) / rowH);
     const nPitches = maxPitch - minPitch + 1;
 
     // Lane backgrounds (zebra by white/black key)
@@ -432,14 +439,14 @@ export default function StudioDevMidi() {
       } else {
         ctx.fillStyle = isBlackKey(pitch) ? C.surf2 : C.surf;
       }
-      ctx.fillRect(KEYS_W, y, size.w - KEYS_W, rowH);
+      ctx.fillRect(KEYS_W, y, W - KEYS_W, rowH);
       // Lane divider
       ctx.fillStyle = C.rule;
-      ctx.fillRect(KEYS_W, y + rowH - 0.5, size.w - KEYS_W, 0.5);
+      ctx.fillRect(KEYS_W, y + rowH - 0.5, W - KEYS_W, 0.5);
       // Octave C highlight
       if (!isDrum && (pitch % 12) === 0) {
         ctx.fillStyle = C.ruleStrong;
-        ctx.fillRect(KEYS_W, y, size.w - KEYS_W, 1);
+        ctx.fillRect(KEYS_W, y, W - KEYS_W, 1);
       }
     }
 
@@ -448,26 +455,26 @@ export default function StudioDevMidi() {
     const beatSec = 60 / bpm;
     const barSec  = beatSec * 4;
     const startSec = scrollX;
-    const endSec = scrollX + (size.w - KEYS_W) / pxPerSec;
+    const endSec = scrollX + (W - KEYS_W) / pxPerSec;
     // Bar lines
     for (let b = Math.floor(startSec / barSec); b * barSec < endSec; b++) {
       const x = KEYS_W + (b * barSec - scrollX) * pxPerSec;
       ctx.fillStyle = C.ruleStrong;
-      ctx.fillRect(x, RULER_H, 1, size.h - RULER_H);
+      ctx.fillRect(x, RULER_H, 1, H - RULER_H);
     }
     // Beat lines
     ctx.fillStyle = C.rule;
     for (let i = Math.floor(startSec / beatSec); i * beatSec < endSec; i++) {
       if ((i * beatSec) % barSec < 1e-6) continue;
       const x = KEYS_W + (i * beatSec - scrollX) * pxPerSec;
-      ctx.fillRect(x, RULER_H, 1, size.h - RULER_H);
+      ctx.fillRect(x, RULER_H, 1, H - RULER_H);
     }
 
     // Ruler
     ctx.fillStyle = C.surf;
-    ctx.fillRect(0, 0, size.w, RULER_H);
+    ctx.fillRect(0, 0, W, RULER_H);
     ctx.fillStyle = C.rule;
-    ctx.fillRect(0, RULER_H - 1, size.w, 1);
+    ctx.fillRect(0, RULER_H - 1, W, 1);
     ctx.font = '10px "JetBrains Mono", ui-monospace, monospace';
     ctx.fillStyle = C.inkSoft;
     for (let b = Math.floor(startSec / barSec); b * barSec < endSec; b++) {
@@ -477,9 +484,9 @@ export default function StudioDevMidi() {
 
     // Keyboard rail
     ctx.fillStyle = C.surf;
-    ctx.fillRect(0, RULER_H, KEYS_W, size.h - RULER_H);
+    ctx.fillRect(0, RULER_H, KEYS_W, H - RULER_H);
     ctx.fillStyle = C.rule;
-    ctx.fillRect(KEYS_W - 1, RULER_H, 1, size.h - RULER_H);
+    ctx.fillRect(KEYS_W - 1, RULER_H, 1, H - RULER_H);
     ctx.font = '10px "JetBrains Mono", ui-monospace, monospace';
     for (let row = firstPitchRow; row <= lastPitchRow; row++) {
       if (row < 0 || row >= nPitches) continue;
@@ -504,7 +511,7 @@ export default function StudioDevMidi() {
       const hx = KEYS_W + (hoverCell.beatIdx * cellSec - scrollX) * pxPerSec;
       const hy = RULER_H + hoverCell.row * rowH - scrollY;
       const hw = Math.max(2, cellSec * pxPerSec);
-      if (hx + hw > KEYS_W && hx < size.w && hy + rowH > RULER_H && hy < size.h) {
+      if (hx + hw > KEYS_W && hx < W && hy + rowH > RULER_H && hy < H) {
         ctx.fillStyle = C.ink + '14';  // ~8% alpha
         ctx.fillRect(Math.max(KEYS_W, hx), hy, hw, rowH);
       }
@@ -517,7 +524,7 @@ export default function StudioDevMidi() {
       const y = RULER_H + (maxPitch - n.note) * rowH - scrollY;
       const w = Math.max(3, n.duration * pxPerSec);
       const h = rowH - 2;
-      if (x + w < KEYS_W || x > size.w || y + h < RULER_H || y > size.h) continue;
+      if (x + w < KEYS_W || x > W || y + h < RULER_H || y > H) continue;
       const alpha = 0.6 + (n.velocity / 127) * 0.4;
       ctx.fillStyle = trackColor + Math.floor(alpha * 255).toString(16).padStart(2, '0');
       ctx.beginPath();
@@ -537,9 +544,9 @@ export default function StudioDevMidi() {
 
     // Playhead
     const px = KEYS_W + ((state.playheadPosition || 0) - scrollX) * pxPerSec;
-    if (px >= KEYS_W && px < size.w) {
+    if (px >= KEYS_W && px < W) {
       ctx.fillStyle = C.accent;
-      ctx.fillRect(px, 0, 1, size.h);
+      ctx.fillRect(px, 0, 1, H);
     }
   }, [size, notes, selected, trackColor, isDrum, pxPerSec, rowH, scrollX, scrollY, maxPitch, minPitch, state.bpm, state.playheadPosition, hoverCell, drag]);
 
