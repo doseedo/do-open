@@ -761,6 +761,20 @@ export default function StudioDev() {
         },
       }));
       dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: stemTracks } });
+      // Promote the parent uploaded-mix track to the bus MASTER: it
+      // keeps all its audio + analysis metadata (lyrics, latents, MIDI)
+      // so playback + regen still have it, but the render code filters
+      // isBusMaster tracks out of the per-track list — so users see 6
+      // stems under the bus header instead of 6+1. The master's
+      // waveform already lives in the bus summary lane (driven by the
+      // stems composite), matching user intent.
+      dispatch({
+        type: 'UPDATE_TRACK',
+        payload: {
+          busId, trackId,
+          updates: { metadata: { isBusMaster: true } },
+        },
+      });
       dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: false } });
 
       // -- WEBGPU LATENT EXTRACTION + MIDI TRANSCRIPTION --------------
@@ -1531,18 +1545,24 @@ export default function StudioDev() {
       color, expanded: bus.expanded !== false,
       mute: !!bus.mute, solo: !!bus.solo,
       gain: bus.gain ?? 1,
-      tracks: (bus.tracks || []).map((t) => {
-        const type = (t.metadata?.stemType || t.metadata?.instrument || t.name || '').toLowerCase();
-        return {
-          _real: { ...t, _busId: bus.id },
-          name: t.name || t.metadata?.stemType || t.id,
-          color: colorFor(type),
-          clips: [{
-            s: t.startPosition || 0,
-            e: Math.max((t.startPosition || 0) + 1, (t.startPosition || 0) + (t.duration || 4)),
-          }],
-        };
-      }),
+      tracks: (bus.tracks || [])
+        // Hide the original uploaded mix once stems have been extracted
+        // (metadata.isBusMaster flagged in ingestFile). It stays in
+        // state for playback / regen but the timeline shows only the
+        // 6 stems so the tracklist doesn't double-count.
+        .filter((t) => !t.metadata?.isBusMaster)
+        .map((t) => {
+          const type = (t.metadata?.stemType || t.metadata?.instrument || t.name || '').toLowerCase();
+          return {
+            _real: { ...t, _busId: bus.id },
+            name: t.name || t.metadata?.stemType || t.id,
+            color: colorFor(type),
+            clips: [{
+              s: t.startPosition || 0,
+              e: Math.max((t.startPosition || 0) + 1, (t.startPosition || 0) + (t.duration || 4)),
+            }],
+          };
+        }),
     };
   });
 
@@ -1721,6 +1741,17 @@ export default function StudioDev() {
                                 metadata: { type: 'stem', stemType: stemName, parentTrackId: trackId, instrument: stemName, icon: iconForType(stemName) },
                               }));
                               dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: stemTracks } });
+                              // Promote the recorded master to isBusMaster
+                              // (hidden from the per-track list, stays in
+                              // bus.tracks for playback). Same rationale
+                              // as the upload flow.
+                              dispatch({
+                                type: 'UPDATE_TRACK',
+                                payload: {
+                                  busId, trackId,
+                                  updates: { metadata: { isBusMaster: true } },
+                                },
+                              });
                               dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: false } });
                             }).catch(() => {});
                           } else {
