@@ -122,16 +122,27 @@ function SummedWaveform({
   const range = Math.max(0.0001, busEnd - busStart);
   // Cap bars at 600 so a very long / zoomed-in bus doesn't generate
   // thousands of SVG rects — visually indistinguishable past this point.
-  const bars = Math.max(20, Math.min(width100, 600));
-  // For each bar position within the bus window, sum the BAR_SIG amplitude
-  // of every track that is active at that position.
+  // Snap to multiples of 10 so tiny drag movements don't change the bar
+  // count and trigger a full SVG rebuild each frame.
+  const rawBars = Math.max(20, Math.min(width100, 600));
+  const bars = Math.max(20, Math.round(rawBars / 10) * 10);
+
+  // Sample by absolute TIME, not bar index. Each bar b maps to tSec;
+  // amplitude = BAR_SIG[(seed + floor(tSec × density)) % len]. This
+  // means when a clip drags, its coverage at tSec changes (bar flips
+  // from "covered" to "uncovered" or vice versa) but the amplitude of
+  // any already-covered bar stays the same. Without this, shifting
+  // busStart re-phased every sample index by δ and the whole waveform
+  // flickered every mousemove.
+  const SAMPLE_DENSITY = 5;   // samples per second — matches CLIP_BARS_PER_SEC
   const sums = new Array(bars).fill(0);
   for (const t of tracks) {
-    const seed = (t.seed || 0) % (BAR_SIG.length - bars);
+    const seed = (t.seed || 0);
     for (let b = 0; b < bars; b++) {
       const tSec = busStart + (b / bars) * range;
       if (tSec < t.start || tSec > t.end) continue;
-      sums[b] += BAR_SIG[(seed + b) % BAR_SIG.length];
+      const idx = ((Math.floor(tSec * SAMPLE_DENSITY) + seed) % BAR_SIG.length + BAR_SIG.length) % BAR_SIG.length;
+      sums[b] += BAR_SIG[idx];
     }
   }
   const peak = Math.max(...sums, 0.0001);
@@ -146,6 +157,11 @@ function SummedWaveform({
     </svg>
   );
 }
+// Memoize so identical prop sets don't re-render. React.memo compares
+// shallowly, so `tracks` (the envelopes array) still triggers a re-render
+// when its identity changes. Callers should pass a useMemo'd envelopes
+// array keyed on track ids + starts/ends.
+const SummedWaveformMemo = React.memo(SummedWaveform);
 
 /* ---------- Sidebar palette ----------
  * Matches the production GenerationPanel: each tab has top-level GROUPS;
@@ -1921,7 +1937,7 @@ export default function StudioDev() {
                         <div className="sd-clip-label" style={{ color: bus.color }}>
                           {bus.name} · {bus.tracks.length} track{bus.tracks.length === 1 ? '' : 's'}
                         </div>
-                        <SummedWaveform
+                        <SummedWaveformMemo
                           tracks={trackEnvelopes}
                           busStart={busStart} busEnd={busEnd}
                           width100={Math.max(40, Math.floor((busEnd - busStart) * CLIP_BARS_PER_SEC * timelineZoom))}
