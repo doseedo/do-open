@@ -45,6 +45,16 @@ const HEAVY_METADATA_FIELDS = [
   'waveformBuffer',   // pre-decoded stereo PCM
   'midiBuffer',       // ArrayBuffer of a MIDI file
   'audioBuffer',      // AudioBuffer / ArrayBuffer
+
+  // Analysis outputs — all recomputable from the source audio on re-open.
+  // Keeping them in localStorage blows past the 5 MB quota on multi-stem
+  // sessions (typical offender: midiData.notes for a 30s song across 4
+  // pitched stems = ~2-5 MB of JSON).
+  'midiData',                  // {notes, duration, tempo} per stem — rebuild via latentPitch
+  'stemOnsets',                // librosa onsets array per stem
+  'drumSubstemOnsets',         // per-substem onset times
+  'drumSubstemOnsetStrengths', // per-substem per-onset strengths (weights accent vs ghost)
+  'vocalsLyrics',              // whisper word-level timing
 ];
 
 function stripHeavyTrackMetadata(state) {

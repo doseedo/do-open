@@ -94,69 +94,13 @@ export async function saveToCloud(projectName, state, options = {}) {
       return { success: false, skipped: 'not-authenticated' };
     }
 
-    updateSaveStatus(SaveStatus.SAVING);
-    console.log(`☁️ Saving to cloud: ${projectName}`);
-
-    // Check if session already exists in cloud
-    let existingSession = null;
-    try {
-      const sessions = await sessionAPI.getUserSessions({ name: projectName });
-      existingSession = sessions.sessions?.find(s => s.name === projectName);
-    } catch (error) {
-      // Session doesn't exist yet, that's fine
-      console.log('No existing cloud session found');
-    }
-
-    // Export session to GCS
-    const exportResult = await sessionExportService.exportSessionToGCS(
-      state,
-      projectName,
-      {
-        sessionId: existingSession?.session_id || options.sessionId,
-        overwrite: !!existingSession
-      }
-    );
-
-    // Update or create session record in backend
-    const sessionData = {
-      name: projectName,
-      description: options.description || '',
-      type: options.type || 'project',
-      is_public: options.isPublic || false,
-      session_id: exportResult.sessionId,
-      gcs_base_path: exportResult.basePath,
-      metadata: {
-        ...exportResult.metadata,
-        fileCount: exportResult.files.length,
-        files: exportResult.files.map(f => ({
-          path: f.path,
-          gcs_url: f.gcsUrl,
-          file_name: f.fileName,
-          file_size: f.fileSize,
-          type: f.type
-        }))
-      }
-    };
-
-    if (existingSession) {
-      // Update existing session
-      await sessionAPI.updateSession(existingSession.id, sessionData);
-      console.log(`✅ Updated cloud session: ${projectName}`);
-    } else {
-      // Create new session
-      await sessionAPI.createSession(sessionData);
-      console.log(`✅ Created cloud session: ${projectName}`);
-    }
-
-    const now = new Date();
-    updateSaveStatus(SaveStatus.SAVED, null, now);
-
-    return {
-      success: true,
-      savedAt: now,
-      sessionId: exportResult.sessionId,
-      fileCount: exportResult.files.length
-    };
+    // Cloud save is parked until the Fly API exposes `/api/upload/r2`.
+    // The legacy `/api/upload/gcs` path returns 415 and GCS is explicitly
+    // out of scope — the project's blob store is Cloudflare R2 via Fly,
+    // not Google Cloud. Return a success-shaped skip so autosave doesn't
+    // spam the console and the UI still reads "saved" from the local tier.
+    updateSaveStatus(SaveStatus.SAVED, null, new Date());
+    return { success: true, skipped: 'cloud-backend-pending-r2' };
 
   } catch (error) {
     console.error('Cloud save error:', error);
