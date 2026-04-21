@@ -310,7 +310,10 @@ function Slide7_Generate(props: {
                 width,
                 height,
                 position: "relative",
-                background: "#050508",
+                // Cream workbench canvas — matches shared.tsx SlideFrame so
+                // slide2 (which rolls its own frame) doesn't read as a dark
+                // hole in the slideshow.
+                background: "#e8e6e1",
                 fontFamily:
                     "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
                 userSelect: "none",

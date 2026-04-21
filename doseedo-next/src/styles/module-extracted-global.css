@@ -56,7 +56,7 @@
 .react-slideshow-container {
   border-radius: var(--wb-radius-xl);
   overflow: hidden;
-  background: #050508;
+  background: var(--wb-bg);
 }
 
 .react-slideshow-container .nav {

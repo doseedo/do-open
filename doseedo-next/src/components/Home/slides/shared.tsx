@@ -490,7 +490,10 @@ export function SlideFrame({
                 height,
                 position: "relative",
                 overflow: "hidden",
-                background: "#050508",
+                // Cream workbench canvas (matches --wb-bg in theme-workbench.css).
+                // The inner animation elements keep their own cool-toned
+                // backgrounds; only the outer frame flips to cream.
+                background: "#e8e6e1",
                 fontFamily:
                     "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
                 userSelect: "none",
