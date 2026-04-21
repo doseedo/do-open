@@ -89,24 +89,238 @@ function synthBarStarts(duration, bpm, srcMeter, downbeatOffset = 0) {
   return starts;
 }
 
+/* ------------------------------------------------------------------
+ * METER_RULES — single source of truth for every meter conversion.
+ *
+ * Each rule is a list of `sections` walked in order, expressed in
+ * src-eighth and tgt-eighth coordinates. Both interpreters consume it:
+ *
+ *   • barRearrangeFromRule (no-onset path) emits keep/drop/duplicate
+ *     segments per section to build a rate-1 bar-rearrange schedule.
+ *   • placementsForSrcEighth (per-substem snap path) maps a single
+ *     onset's src-eighth position to one or more tgt-eighth positions
+ *     based on the section it lands in.
+ *
+ * Section types:
+ *   { keep: [srcEighthA, srcEighthB] }
+ *     Play that src window straight (identity). Per-onset: identity.
+ *   { drop: [srcEighthA, srcEighthB] }
+ *     Discard that src range. Per-onset: dropped.
+ *   { warp: { srcRange, tgtRange }, snareSnap?: tgtEighthFloat }
+ *     Asymmetric remap (the 4+3 grouping case). Bar-rearrange converts
+ *     to "keep first min(src,tgt) + drop OR duplicate the difference".
+ *     Per-onset: snare snaps to snareSnap if given (musical placement),
+ *     other substems use proportional remap into the tgt window.
+ *   { duplicate: { srcRange, tgtRange }, snareSnap?: tgtEighthFloat }
+ *     Explicit duplicate (covers tgt eighths beyond src). Per-onset:
+ *     onsets in srcRange ALSO fire at the proportional tgt position
+ *     (or snareSnap for snare). Combined with a `keep` section over
+ *     the same src eighths, this produces "onset fires at identity AND
+ *     at the duplicated position" — e.g. snare on beat 3 of 3/4 also
+ *     fires on the new beat 4 of 4/4.
+ *
+ * Snare snap targets reflect standard backbeat placement in the new
+ * meter (e.g. tgt eighth 5.5 in 7/8 = start of the second 1.5-group of
+ * a 4+3 grouping; tgt eighth 7 in 4/4-extended = the new beat 4 down).
+ * ------------------------------------------------------------------ */
+const METER_RULES = {
+  '4/4->7/8': { srcEighths: 8, tgtEighths: 7, sections: [
+    { keep: [0, 4] },
+    { warp: { srcRange: [4, 8], tgtRange: [4, 7] }, snareSnap: 5.5 },
+  ]},
+  '7/8->4/4': { srcEighths: 7, tgtEighths: 8, sections: [
+    { keep: [0, 4] },
+    { warp: { srcRange: [4, 7], tgtRange: [4, 8] }, snareSnap: 6 },
+  ]},
+  '4/4->6/8': { srcEighths: 8, tgtEighths: 6, sections: [
+    { keep: [0, 6] }, { drop: [6, 8] },
+  ]},
+  '6/8->4/4': { srcEighths: 6, tgtEighths: 8, sections: [
+    { keep: [0, 6] },
+    { duplicate: { srcRange: [4, 6], tgtRange: [6, 8] }, snareSnap: 7 },
+  ]},
+  '4/4->3/4': { srcEighths: 8, tgtEighths: 6, sections: [
+    { keep: [0, 6] }, { drop: [6, 8] },
+  ]},
+  '3/4->4/4': { srcEighths: 6, tgtEighths: 8, sections: [
+    { keep: [0, 6] },
+    { duplicate: { srcRange: [4, 6], tgtRange: [6, 8] }, snareSnap: 7 },
+  ]},
+  '4/4->5/4': { srcEighths: 8, tgtEighths: 10, sections: [
+    { keep: [0, 8] },
+    { duplicate: { srcRange: [6, 8], tgtRange: [8, 10] }, snareSnap: 9 },
+  ]},
+  '5/4->4/4': { srcEighths: 10, tgtEighths: 8, sections: [
+    { keep: [0, 8] }, { drop: [8, 10] },
+  ]},
+  '3/4->7/8': { srcEighths: 6, tgtEighths: 7, sections: [
+    { keep: [0, 4] },
+    { warp: { srcRange: [4, 6], tgtRange: [4, 7] }, snareSnap: 5.5 },
+  ]},
+  '7/8->3/4': { srcEighths: 7, tgtEighths: 6, sections: [
+    { keep: [0, 6] }, { drop: [6, 7] },
+  ]},
+  '5/4->7/8': { srcEighths: 10, tgtEighths: 7, sections: [
+    { keep: [0, 4] },
+    { warp: { srcRange: [4, 10], tgtRange: [4, 7] }, snareSnap: 5.5 },
+  ]},
+  '7/8->5/4': { srcEighths: 7, tgtEighths: 10, sections: [
+    { keep: [0, 4] },
+    { warp: { srcRange: [4, 7], tgtRange: [4, 10] }, snareSnap: 7 },
+  ]},
+  '5/4->3/4': { srcEighths: 10, tgtEighths: 6, sections: [
+    { keep: [0, 6] }, { drop: [6, 10] },
+  ]},
+  '3/4->5/4': { srcEighths: 6, tgtEighths: 10, sections: [
+    { keep: [0, 6] },
+    { duplicate: { srcRange: [2, 6], tgtRange: [6, 10] }, snareSnap: 7 },
+  ]},
+  '5/4->6/8': { srcEighths: 10, tgtEighths: 6, sections: [
+    { keep: [0, 6] }, { drop: [6, 10] },
+  ]},
+  '6/8->5/4': { srcEighths: 6, tgtEighths: 10, sections: [
+    { keep: [0, 6] },
+    { duplicate: { srcRange: [2, 6], tgtRange: [6, 10] }, snareSnap: 7 },
+  ]},
+  '6/8->3/4': { srcEighths: 6, tgtEighths: 6, sections: [{ keep: [0, 6] }] },
+  '3/4->6/8': { srcEighths: 6, tgtEighths: 6, sections: [{ keep: [0, 6] }] },
+  '6/8->7/8': { srcEighths: 6, tgtEighths: 7, sections: [
+    { keep: [0, 6] },
+    { duplicate: { srcRange: [5, 6], tgtRange: [6, 7] } },
+  ]},
+  '7/8->6/8': { srcEighths: 7, tgtEighths: 6, sections: [
+    { keep: [0, 6] }, { drop: [6, 7] },
+  ]},
+  '5/4->5/4': { srcEighths: 10, tgtEighths: 10, sections: [{ keep: [0, 10] }] },
+};
+
+function ruleFor(srcMeter, tgtMeter) {
+  return METER_RULES[`${srcMeter[0]}/${srcMeter[1]}->${tgtMeter[0]}/${tgtMeter[1]}`] || null;
+}
+
+/**
+ * Per-onset placement: src-eighth (fractional) → list of tgt-eighth
+ * positions for this substem. Walks the rule sections in order and
+ * collects every section that the onset lands in.
+ *
+ * For a substem's onset to fire in dst, AT LEAST ONE section must
+ * accept it. Empty list = dropped (intentional silence at that hit).
+ */
+function placementsForSrcEighth(srcEighthFloat, rule, substemName) {
+  const out = [];
+  for (const sec of rule.sections) {
+    if (sec.keep) {
+      const [a, b] = sec.keep;
+      if (srcEighthFloat >= a - EPS && srcEighthFloat < b - EPS) {
+        out.push(srcEighthFloat);
+      }
+    } else if (sec.drop) {
+      // dropped — no entry
+    } else if (sec.warp) {
+      const [sa, sb] = sec.warp.srcRange;
+      const [ta, tb] = sec.warp.tgtRange;
+      if (srcEighthFloat >= sa - EPS && srcEighthFloat < sb - EPS) {
+        if (substemName === 'snare' && typeof sec.snareSnap === 'number') {
+          out.push(sec.snareSnap);
+        } else {
+          const tgt = ta + ((srcEighthFloat - sa) / (sb - sa)) * (tb - ta);
+          out.push(tgt);
+        }
+      }
+    } else if (sec.duplicate) {
+      const [sa, sb] = sec.duplicate.srcRange;
+      const [ta, tb] = sec.duplicate.tgtRange;
+      if (srcEighthFloat >= sa - EPS && srcEighthFloat < sb - EPS) {
+        if (substemName === 'snare' && typeof sec.snareSnap === 'number') {
+          out.push(sec.snareSnap);
+        } else {
+          const tgt = ta + ((srcEighthFloat - sa) / (sb - sa)) * (tb - ta);
+          out.push(tgt);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Bar-rearrange interpreter: walks rule sections in order, emits one
+ * rate-1 segment per non-drop section.
+ *
+ * warp section: converted to keep+drop (when src window > tgt window)
+ *   or keep+duplicate (when src window < tgt window) so the resulting
+ *   schedule is rate-1 throughout. The substem snap path uses warp
+ *   directly via proportional placement; this path collapses warp into
+ *   simpler rearrange ops because there are no per-onset positions to
+ *   place — we just have to fill the dst window with src content.
+ */
+function barRearrangeFromRule(rule, srcBarStart, srcEighthLen, dstCursor) {
+  const segs = [];
+  let cursor = dstCursor;
+
+  const emit = (kind, srcOffEighths, lenEighths) => {
+    const len = lenEighths * srcEighthLen;
+    segs.push({
+      srcStart: srcBarStart + srcOffEighths * srcEighthLen,
+      srcEnd:   srcBarStart + srcOffEighths * srcEighthLen + len,
+      dstStart: cursor,
+      dstEnd:   cursor + len,
+      rate: 1, fadeIn: 0, fadeOut: 0, kind,
+    });
+    cursor += len;
+  };
+
+  for (const sec of rule.sections) {
+    if (sec.keep) {
+      emit('keep', sec.keep[0], sec.keep[1] - sec.keep[0]);
+    } else if (sec.drop) {
+      // No segment, no cursor advance.
+    } else if (sec.warp) {
+      const [sa, sb] = sec.warp.srcRange;
+      const [ta, tb] = sec.warp.tgtRange;
+      const srcWin = sb - sa;
+      const tgtWin = tb - ta;
+      if (tgtWin <= srcWin) {
+        // Drop tail: keep the first `tgtWin` src eighths in this window.
+        emit('keep', sa, tgtWin);
+      } else {
+        // Keep all + duplicate the last (tgtWin - srcWin) src eighths.
+        emit('keep', sa, srcWin);
+        const dupEighths = tgtWin - srcWin;
+        emit('duplicate', sb - dupEighths, dupEighths);
+      }
+    } else if (sec.duplicate) {
+      // Explicit duplicate ALWAYS appears alongside a sibling keep
+      // section that covers the source identity. Here we only emit
+      // the duplicate placement at the dup tgt range.
+      const [sa, sb] = sec.duplicate.srcRange;
+      emit('duplicate', sa, sb - sa);
+    }
+  }
+
+  // 3ms fades on every segment edge.
+  const FADE = 0.003;
+  for (const s of segs) { s.fadeIn = FADE; s.fadeOut = FADE; }
+  return { segs, dstAdvance: cursor - dstCursor };
+}
+
 /**
  * Remap one source bar to rearrange-only segments in the target meter.
  *
- * Every segment plays at rate 1 — no pitch shift, ever. Meter changes are
- * expressed as keep/drop/duplicate of whole eighth-note slices, so every
- * bit of output audio is real source content at its original pitch.
+ * Looks up METER_RULES first; falls back to generic proportional drop/
+ * duplicate when an explicit rule isn't defined.
  *
- * Returns { segs: Segment[], dstAdvance: number }.
+ * Every segment plays at rate 1 — no pitch shift, ever.
  */
 function remapBar({ srcBarStart, srcBarEnd, srcMeter, tgtMeter, dstCursor }) {
   const [sn, sd] = srcMeter;
   const [tn, td] = tgtMeter;
-  const srcSig = `${sn}/${sd}`;
-  const tgtSig = `${tn}/${td}`;
+  const sSig = `${sn}/${sd}`;
+  const tSig = `${tn}/${td}`;
   const barLen = srcBarEnd - srcBarStart;
 
   // No change: identity passthrough.
-  if (srcSig === tgtSig) {
+  if (sSig === tSig) {
     return {
       segs: [{
         srcStart: srcBarStart, srcEnd: srcBarEnd,
@@ -117,109 +331,34 @@ function remapBar({ srcBarStart, srcBarEnd, srcMeter, tgtMeter, dstCursor }) {
     };
   }
 
-  // Convenience: src bar length expressed in its own eighth-notes.
+  const rule = ruleFor(srcMeter, tgtMeter);
+  if (rule) {
+    const srcEighthLen = barLen / rule.srcEighths;
+    return barRearrangeFromRule(rule, srcBarStart, srcEighthLen, dstCursor);
+  }
+
+  // Generic fallback for combos not in the rules table.
   const srcEighthsPerBar = sn * (sd === 4 ? 2 : 1);
   const tgtEighthsPerBar = tn * (td === 4 ? 2 : 1);
   const eighth = barLen / srcEighthsPerBar;
-
-  // "keep" = play a contiguous src slice at rate 1.
-  // "duplicate" = same as keep, but conceptually re-reads a slice already
-  // used (so the engine can tag a stronger fade-in). Both are rate 1.
-  const slice = (kind, fromSrcOff, lenSrc) => ({
-    srcStart: srcBarStart + fromSrcOff,
-    srcEnd:   srcBarStart + fromSrcOff + lenSrc,
-    dstStart: dstCursor,   // caller patches before returning
-    dstEnd:   dstCursor,
-    rate: 1,
-    fadeIn: 0, fadeOut: 0,
-    kind,
-  });
-  const keep = (off, len) => slice('keep', off, len);
-  const dup  = (off, len) => slice('duplicate', off, len);
-
-  let segs;
-
-  // 4/4 -> 7/8: drop the last eighth ("and" of 4). 7 src eighths kept, 1
-  // dropped. Preserves the downbeat of every bar; the "and"-of-4 goes away
-  // instead of being compressed. Reads as a truncated 4/4 bar, no pitch shift.
-  if (srcSig === '4/4' && tgtSig === '7/8') {
-    segs = [keep(0, eighth * 7)];
-  }
-  // 7/8 -> 4/4: 7 src eighths play straight, then the last eighth plays
-  // once more to fill beat 4-and.
-  else if (srcSig === '7/8' && tgtSig === '4/4') {
-    segs = [keep(0, eighth * 7), dup(eighth * 6, eighth * 1)];
-  }
-  // 4/4 -> 6/8: drop the last 2 eighths (beat 4).
-  else if (srcSig === '4/4' && tgtSig === '6/8') {
-    segs = [keep(0, eighth * 6)];
-  }
-  // 6/8 -> 4/4: duplicate the last 2 eighths to fill beat 4.
-  else if (srcSig === '6/8' && tgtSig === '4/4') {
-    segs = [keep(0, eighth * 6), dup(eighth * 4, eighth * 2)];
-  }
-  // 4/4 -> 3/4: drop beat 4 (last 2 eighths).
-  else if (srcSig === '4/4' && tgtSig === '3/4') {
-    segs = [keep(0, eighth * 6)];
-  }
-  // 3/4 -> 4/4: play whole bar (6 eighths), then duplicate beat 3 as the
-  // new beat 4.
-  else if (srcSig === '3/4' && tgtSig === '4/4') {
-    segs = [keep(0, barLen), dup(eighth * 4, eighth * 2)];
-  }
-  // 4/4 -> 5/4: play whole bar, then duplicate beat 4 as the new beat 5.
-  else if (srcSig === '4/4' && tgtSig === '5/4') {
-    segs = [keep(0, barLen), dup(eighth * 6, eighth * 2)];
-  }
-  // 5/4 -> 4/4: drop beat 5.
-  else if (srcSig === '5/4' && tgtSig === '4/4') {
-    segs = [keep(0, eighth * 8)];
-  }
-  // 3/4 -> 7/8: 6 src eighths, need 7. Duplicate the last eighth.
-  else if (srcSig === '3/4' && tgtSig === '7/8') {
-    segs = [keep(0, eighth * 6), dup(eighth * 5, eighth * 1)];
-  }
-  // 7/8 -> 3/4: 7 src eighths, need 6. Drop the last eighth.
-  else if (srcSig === '7/8' && tgtSig === '3/4') {
-    segs = [keep(0, eighth * 6)];
-  }
-  // Generic rearrange fallback.
-  //   - tgt has FEWER eighths than src → drop the tail diff.
-  //   - tgt has MORE eighths than src → play whole bar, then duplicate the
-  //     last (diff) eighths to fill.
-  // No stretch segment is ever emitted — every output eighth is real source
-  // audio at rate 1.
-  else {
-    const diff = tgtEighthsPerBar - srcEighthsPerBar;
-    if (diff === 0) {
-      segs = [keep(0, barLen)];
-    } else if (diff < 0) {
-      segs = [keep(0, eighth * tgtEighthsPerBar)];
-    } else {
-      const fromOff = Math.max(0, eighth * (srcEighthsPerBar - diff));
-      segs = [keep(0, barLen), dup(fromOff, eighth * diff)];
-    }
-  }
-
-  // Patch dst coords + short fades at every cut to hide clicks and the
-  // transient discontinuity at a duplicate's attack. 3ms is inaudible on
-  // its own but kills splice clicks. Fades are gain ramps applied by the
-  // engine — they do NOT introduce silence, just a brief slope.
   const FADE = 0.003;
+  const segs = [];
   let cursor = dstCursor;
-  for (let i = 0; i < segs.length; i++) {
-    const s = segs[i];
-    if (s.rate !== 1) {
-      console.warn('[virtualTrackEdit] rearrange rule emitted rate !== 1 — bug:', s);
-    }
-    const dstLen = s.srcEnd - s.srcStart; // rate is 1
-    s.dstStart = cursor;
-    s.dstEnd = cursor + dstLen;
-    s.fadeIn  = (i === 0) ? FADE : FADE;
-    s.fadeOut = (i === segs.length - 1) ? FADE : FADE;
-    cursor = s.dstEnd;
+  const push = (off, len, kind) => {
+    segs.push({
+      srcStart: srcBarStart + off, srcEnd: srcBarStart + off + len,
+      dstStart: cursor, dstEnd: cursor + len,
+      rate: 1, fadeIn: FADE, fadeOut: FADE, kind,
+    });
+    cursor += len;
+  };
+  const diff = tgtEighthsPerBar - srcEighthsPerBar;
+  if (diff === 0) push(0, barLen, 'keep');
+  else if (diff < 0) push(0, eighth * tgtEighthsPerBar, 'keep');
+  else {
+    push(0, barLen, 'keep');
+    push(eighth * Math.max(0, srcEighthsPerBar - diff), eighth * diff, 'duplicate');
   }
-
   return { segs, dstAdvance: cursor - dstCursor };
 }
 
@@ -319,7 +458,10 @@ export function getTrackSchedule(track, project) {
 
   const meta = track.metadata || {};
   const srcBpm = meta.detectedBpm || project.bpm || 120;
-  const srcMeter = [meta.detectedMeter || project.beatsPerBar || 4, 4];
+  const srcMeter = [
+    meta.detectedMeter || project.beatsPerBar || 4,
+    meta.detectedMeterDenominator || 4,
+  ];
   const tgtMeter = [project.beatsPerBar || 4, project.meterDenominator || 4];
   const downbeatOffset = typeof meta.downbeatOffset === 'number' ? meta.downbeatOffset : 0;
 
@@ -375,124 +517,10 @@ const PERCUSSIVE_SUBSTEMS = new Set(['kick', 'snare', 'toms']);
 const SUSTAIN_SUBSTEMS    = new Set(['hh', 'ride', 'crash']);
 
 /**
- * Substem-aware musical snap: given a src eighth position (fractional)
- * and the meter conversion + substem name, return the list of tgt eighth
- * positions where this hit should land. Empty list = drop the hit.
- *
- * Returns FRACTIONAL eighth positions (e.g. 5.5 means the snare lands at
- * the boundary of the two dotted-eighths in 7/8's "3" group). The caller
- * multiplies by tgt-eighth length to get dst seconds.
- *
- * Mirrors the musical intent of time-sig-editor's _requantize_stem (4+3
- * grouping etc.) but emits rate-1 placements instead of time-stretches.
- */
-function snapEighthInBar(srcEighthFloat, srcMeter, tgtMeter, substemName) {
-  const [sn, sd] = srcMeter;
-  const [tn, td] = tgtMeter;
-  const sSig = `${sn}/${sd}`;
-  const tSig = `${tn}/${td}`;
-  if (sSig === tSig) return [srcEighthFloat];
-
-  const srcEighths = sn * (sd === 4 ? 2 : 1);
-  const tgtEighths = tn * (td === 4 ? 2 : 1);
-
-  // 4/4 → 7/8: 4+3 grouping, with substem-aware placement in the 3-group.
-  if (sSig === '4/4' && tSig === '7/8') {
-    if (srcEighthFloat < 4) return [srcEighthFloat];           // first half identity
-    if (substemName === 'snare') return [5.5];                 // start of 2nd 1.5-group
-    return [4 + (srcEighthFloat - 4) * 3 / 4];                 // proportional in 3-group
-  }
-  // 7/8 → 4/4: first half identity, 3-eighth tail → 4-eighth tail.
-  if (sSig === '7/8' && tSig === '4/4') {
-    if (srcEighthFloat < 4) return [srcEighthFloat];
-    if (substemName === 'snare') return [6];                   // beat 4 snare
-    return [4 + (srcEighthFloat - 4) * 4 / 3];
-  }
-  // 4/4 → 6/8: drop last 2 eighths (beat 4); 6/8 felt as 3+3.
-  if (sSig === '4/4' && tSig === '6/8') {
-    if (srcEighthFloat < 6) return [srcEighthFloat];
-    return [];
-  }
-  // 6/8 → 4/4: keep first 6 eighths identity, append a duplicate of
-  // beat-3 (eighths 4-5) onto eighths 6-7 to give the new beat 4.
-  if (sSig === '6/8' && tSig === '4/4') {
-    if (srcEighthFloat < 6) return [srcEighthFloat];
-    return [];                                                 // shouldn't happen — src has only 6
-  }
-  // 4/4 → 3/4: drop beat 4 (last 2 eighths).
-  if (sSig === '4/4' && tSig === '3/4') {
-    if (srcEighthFloat < 6) return [srcEighthFloat];
-    return [];
-  }
-  // 3/4 → 4/4: identity for 6 eighths; the duplicate covering eighths 6-7
-  // is emitted by the per-bar duplicate pass below (snapHitInBar can
-  // return identity here; the duplicate insertion happens in the bar
-  // loop, which adds a second hit at e_t = e_s + 2 for src e_s in [4,6)).
-  if (sSig === '3/4' && tSig === '4/4') {
-    return [srcEighthFloat];                                   // identity in src window
-  }
-  // 4/4 → 5/4: identity for 8 eighths; the duplicate covering eighths 8-9
-  // is emitted by the per-bar duplicate pass.
-  if (sSig === '4/4' && tSig === '5/4') {
-    return [srcEighthFloat];
-  }
-  // 5/4 → 4/4: drop beat 5.
-  if (sSig === '5/4' && tSig === '4/4') {
-    if (srcEighthFloat < 8) return [srcEighthFloat];
-    return [];
-  }
-  // 3/4 → 7/8: 3+3+1 — keep first 4 eighths, then last 2 src eighths
-  // map proportionally into 3 tgt eighths (snare on the new beat).
-  if (sSig === '3/4' && tSig === '7/8') {
-    if (srcEighthFloat < 4) return [srcEighthFloat];
-    if (substemName === 'snare') return [5.5];
-    return [4 + (srcEighthFloat - 4) * 3 / 2];
-  }
-  // 7/8 → 3/4: drop last eighth.
-  if (sSig === '7/8' && tSig === '3/4') {
-    if (srcEighthFloat < 6) return [srcEighthFloat];
-    return [];
-  }
-
-  // Generic proportional fallback: scale to tgt. Hits past tgt are dropped.
-  const tgt = srcEighthFloat * tgtEighths / srcEighths;
-  if (tgt >= tgtEighths - EPS) return [];
-  return [tgt];
-}
-
-/**
- * Per-bar "duplicate insertion" pass: for tgt eighths beyond src eighths
- * (when extending the meter), figure out which src eighths to duplicate.
- *
- * For 3/4 → 4/4: duplicate the LAST BEAT (src eighths 4-5) at tgt 6-7.
- *   So a hit at src e=4 fires twice in dst: at tgt 4 (identity) and tgt 6 (dup).
- *   A hit at src e=5 fires at tgt 5 and tgt 7.
- * For 4/4 → 5/4: duplicate beat 4 (src eighths 6-7) at tgt 8-9.
- *
- * Returns extra tgt eighth positions a src hit should also fire at.
- */
-function duplicatedTgtsForSrcEighth(srcEighthFloat, srcMeter, tgtMeter) {
-  const [sn, sd] = srcMeter;
-  const [tn, td] = tgtMeter;
-  const sSig = `${sn}/${sd}`;
-  const tSig = `${tn}/${td}`;
-  if (sSig === '3/4' && tSig === '4/4') {
-    if (srcEighthFloat >= 4 && srcEighthFloat < 6) return [srcEighthFloat + 2];
-    return [];
-  }
-  if (sSig === '4/4' && tSig === '5/4') {
-    if (srcEighthFloat >= 6 && srcEighthFloat < 8) return [srcEighthFloat + 2];
-    return [];
-  }
-  return [];
-}
-
-/**
- * Detect approximate hits-per-beat from an onset list within a window
- * (mirrors time-sig-editor's _detect_drum_pattern but onset-based, since
- * we already have librosa onsets cached). Used to flag triplets that
- * won't fit the target meter (they'd want re-quantization to 16ths —
- * follow-up work; for now we just log).
+ * Detect approximate hits-per-beat from an onset list (onset-based
+ * triplet detector). Mirrors the intent of time-sig-editor's
+ * _detect_drum_pattern but uses cached librosa onsets, not ACF.
+ * Returns 0 if no confident match.
  */
 function detectHitsPerBeat(onsets, durSec, bpm) {
   if (!onsets || onsets.length < 4 || durSec <= 0 || bpm <= 0) return 0;
@@ -505,12 +533,10 @@ function detectHitsPerBeat(onsets, durSec, bpm) {
     const err = Math.abs(hpb - c) / c;
     if (err < bestErr) { bestErr = err; best = c; }
   }
-  return bestErr < 0.25 ? best : 0;     // require reasonable confidence
+  return bestErr < 0.25 ? best : 0;
 }
 
-/**
- * Pattern fits target meter? Triplets in 7/8, 5/4, 3/4 don't groove.
- */
+/** Triplet content fits target meter? Triplets in /8, 5/4, 3/4 do not. */
 function patternFitsTargetMeter(hpb, tgtMeter) {
   if (hpb !== 3) return true;
   const [tn, td] = tgtMeter;
@@ -520,42 +546,32 @@ function patternFitsTargetMeter(hpb, tgtMeter) {
 }
 
 /**
- * Per-substem schedule builder: musical-aware hit snap with rate-1
- * keep + duplicate slices.
- *
- * Per src bar:
- *   1. Find onsets in [bar_start, bar_end].
- *   2. For each onset, compute fractional src eighth.
- *   3. snapEighthInBar(srcE, src, tgt, substemName) → list of tgt eighth
- *      positions to place this hit at.
- *   4. duplicatedTgtsForSrcEighth(srcE, src, tgt) → extra tgt positions
- *      for the duplicate-tail rules (3/4→4/4, 4/4→5/4).
- *   5. Each placement emits a rate-1 segment with HIT_PRE/HIT_MAX window
- *      and short fades. Sub-eighth offset is preserved (groove).
- *
- * Segments may overlap on dst (a duplicated hit, or a long tail running
- * into the next hit). The engine schedules each as its own
- * AudioBufferSourceNode → segGain → trackGain so they sum naturally.
+ * Choose target subdivision when re-quantizing triplets:
+ * 16ths under 135 BPM (more energy), 8ths above (avoid clutter).
+ * Returns subdivisions PER tgt eighth (so 16ths = 2/eighth, 8ths = 1/eighth).
  */
-function buildPercussiveSubstemSchedule({
-  duration, onsets, srcMeter, tgtMeter, bpm, substemName,
+function chooseTargetSubdivPerEighth(bpm) {
+  return bpm < 135 ? 2 : 1;
+}
+
+/**
+ * Triplet re-quantize: when src has triplet hits (hpb=3) and the target
+ * meter doesn't fit triplets (7/8, 5/4, 3/4), replace the triplet pattern
+ * with a steady 16th- or 8th-note pattern in the new bar — pluck the
+ * closest src onset's audio window onto each tgt subdivision position.
+ *
+ * Mirrors time-sig-editor's _requantize_stem ("8 src triplet hits → 8
+ * sixteenths in 4 eighths") but uses rate-1 placement instead of
+ * time-stretch. Each tgt subdivision plays a real src hit (closest in
+ * time within the bar) so dynamics are preserved.
+ */
+function buildTripletReQuantizeSchedule({
+  duration, onsets, srcMeter, tgtMeter, bpm,
   downbeatOffset = 0, cropStart = 0, barStarts,
 }) {
-  if (!(duration > 0)) return [];
-  if (srcMeter[0] === tgtMeter[0] && srcMeter[1] === tgtMeter[1]) {
-    return identitySchedule(duration, cropStart);
-  }
   const HIT_PRE  = 0.005;
-  const HIT_MAX  = 0.5;
-  const FADE_IN  = 0.002;
-  const FADE_OUT = 0.020;
-
-  // Triplet flag — if src has triplets and tgt doesn't fit them, log.
-  // Proper re-quantize-to-16ths is a follow-up (needs sample synthesis).
-  const hpb = detectHitsPerBeat(onsets, duration, bpm);
-  if (hpb === 3 && !patternFitsTargetMeter(hpb, tgtMeter)) {
-    console.warn(`[virtualTrackEdit] ${substemName}: triplet pattern detected, target meter ${tgtMeter[0]}/${tgtMeter[1]} doesn't fit triplets — using proportional snap (re-quantize-to-16ths is a follow-up)`);
-  }
+  const FADE_IN  = 0.001;
+  const FADE_OUT = 0.015;
 
   const starts = (barStarts && barStarts.length >= 2)
     ? barStarts
@@ -565,12 +581,12 @@ function buildPercussiveSubstemSchedule({
   const [tn, td] = tgtMeter;
   const srcEighths = sn * (sd === 4 ? 2 : 1);
   const tgtEighths = tn * (td === 4 ? 2 : 1);
+  const subdivPerEighth = chooseTargetSubdivPerEighth(bpm);
+  const tgtSubdivPerBar = tgtEighths * subdivPerEighth;
 
   const segs = [];
   let dstCursor = 0;
 
-  // Pre-roll: copy through (drum substem during pickup is usually below
-  // noise floor; if there's a pickup hit we'd rather hear it than chop it).
   if (starts[0] > EPS) {
     const preLen = starts[0];
     segs.push({
@@ -587,7 +603,125 @@ function buildPercussiveSubstemSchedule({
     const srcBarLen = sbe - sbs;
     if (srcBarLen <= EPS) continue;
     const srcEighthLen = srcBarLen / srcEighths;
-    const tgtEighthLen = srcEighthLen;                // rate 1
+    const tgtBarLen = srcEighthLen * tgtEighths;             // rate 1
+    const tgtSubdivLen = tgtBarLen / tgtSubdivPerBar;
+
+    const inBar = (Array.isArray(onsets) ? onsets : [])
+      .filter((o) => o >= sbs && o < sbe)
+      .sort((a, b) => a - b);
+
+    if (inBar.length === 0) {
+      dstCursor += tgtBarLen;
+      continue;
+    }
+
+    for (let k = 0; k < tgtSubdivPerBar; k++) {
+      // Map this tgt subdivision back into src time at proportional
+      // position within the src bar — finds the equivalent triplet hit.
+      const relPos = k / tgtSubdivPerBar;
+      const srcTimeApprox = sbs + relPos * srcBarLen;
+      let best = inBar[0], bestDist = Math.abs(inBar[0] - srcTimeApprox);
+      for (const o of inBar) {
+        const d = Math.abs(o - srcTimeApprox);
+        if (d < bestDist) { bestDist = d; best = o; }
+      }
+      const idx = inBar.indexOf(best);
+      const next = (idx + 1 < inBar.length) ? inBar[idx + 1] : sbe;
+      const winSrc = Math.min(next - best + HIT_PRE, tgtSubdivLen + HIT_PRE);
+      const srcStart = cropStart + Math.max(sbs, best - HIT_PRE);
+      const srcEnd = srcStart + winSrc;
+      const dstHitStart = dstCursor + k * tgtSubdivLen;
+      segs.push({
+        srcStart, srcEnd,
+        dstStart: dstHitStart,
+        dstEnd: dstHitStart + winSrc,
+        rate: 1, fadeIn: FADE_IN, fadeOut: FADE_OUT, kind: 'tripletQuant',
+      });
+    }
+
+    dstCursor += tgtBarLen;
+  }
+
+  segs.sort((a, b) => a.dstStart - b.dstStart);
+  return segs;
+}
+
+/**
+ * Per-substem schedule builder: rules-table-driven musical snap with
+ * rate-1 keep + duplicate slices. Supports every meter combo in
+ * METER_RULES with substem-aware snare placement.
+ *
+ * Triplet flow: if onset density indicates triplets and the target meter
+ * doesn't fit triplets, hand off to buildTripletReQuantizeSchedule which
+ * pluck-and-places src triplet hits onto the new 16th/8th grid.
+ *
+ * Otherwise per src bar:
+ *   1. Find onsets in [bar_start, bar_end).
+ *   2. For each onset, compute fractional src eighth.
+ *   3. placementsForSrcEighth(srcE, rule, substemName) → list of tgt eighth
+ *      positions (handles keep / warp / duplicate / drop sections + snare
+ *      snap musical placement in one pass).
+ *   4. Each placement emits a rate-1 segment with HIT_PRE/HIT_MAX window
+ *      and 2/20ms fades. Sub-eighth offset preserved (groove).
+ *
+ * Segments may overlap on dst (a duplicated hit fires multiple times,
+ * a long tail can extend past the next hit). The engine schedules each
+ * as its own AudioBufferSourceNode → segGain → trackGain, mixing naturally.
+ */
+function buildPercussiveSubstemSchedule({
+  duration, onsets, srcMeter, tgtMeter, bpm, substemName,
+  downbeatOffset = 0, cropStart = 0, barStarts,
+}) {
+  if (!(duration > 0)) return [];
+  if (srcMeter[0] === tgtMeter[0] && srcMeter[1] === tgtMeter[1]) {
+    return identitySchedule(duration, cropStart);
+  }
+
+  // Triplet check: route to re-quantize if src is triplet and tgt doesn't fit.
+  const hpb = detectHitsPerBeat(onsets, duration, bpm);
+  if (hpb === 3 && !patternFitsTargetMeter(hpb, tgtMeter)) {
+    console.log(`[virtualTrackEdit] ${substemName}: triplets detected → re-quantize to ${chooseTargetSubdivPerEighth(bpm) === 2 ? '16ths' : '8ths'}`);
+    return buildTripletReQuantizeSchedule({
+      duration, onsets, srcMeter, tgtMeter, bpm,
+      downbeatOffset, cropStart, barStarts,
+    });
+  }
+
+  const HIT_PRE  = 0.005;
+  const HIT_MAX  = 0.5;
+  const FADE_IN  = 0.002;
+  const FADE_OUT = 0.020;
+
+  const starts = (barStarts && barStarts.length >= 2)
+    ? barStarts
+    : synthBarStarts(duration, bpm, srcMeter, downbeatOffset);
+
+  const rule = ruleFor(srcMeter, tgtMeter);
+  const [sn, sd] = srcMeter;
+  const [tn, td] = tgtMeter;
+  const srcEighths = sn * (sd === 4 ? 2 : 1);
+  const tgtEighths = tn * (td === 4 ? 2 : 1);
+
+  const segs = [];
+  let dstCursor = 0;
+
+  if (starts[0] > EPS) {
+    const preLen = starts[0];
+    segs.push({
+      srcStart: cropStart, srcEnd: cropStart + preLen,
+      dstStart: 0, dstEnd: preLen,
+      rate: 1, fadeIn: 0, fadeOut: 0, kind: 'preroll',
+    });
+    dstCursor = preLen;
+  }
+
+  for (let b = 0; b < starts.length - 1; b++) {
+    const sbs = starts[b];
+    const sbe = starts[b + 1];
+    const srcBarLen = sbe - sbs;
+    if (srcBarLen <= EPS) continue;
+    const srcEighthLen = srcBarLen / srcEighths;
+    const tgtEighthLen = srcEighthLen;                       // rate 1
     const tgtBarLen = tgtEighthLen * tgtEighths;
 
     const inBar = (Array.isArray(onsets) ? onsets : [])
@@ -597,9 +731,13 @@ function buildPercussiveSubstemSchedule({
     for (let i = 0; i < inBar.length; i++) {
       const onset = inBar[i];
       const srcEighthFloat = (onset - sbs) / srcEighthLen;
-      const primary = snapEighthInBar(srcEighthFloat, srcMeter, tgtMeter, substemName);
-      const dups = duplicatedTgtsForSrcEighth(srcEighthFloat, srcMeter, tgtMeter);
-      const tgts = [...primary, ...dups];
+      const tgts = rule
+        ? placementsForSrcEighth(srcEighthFloat, rule, substemName)
+        // No rule → generic proportional snap. Keep hits inside tgt only.
+        : (() => {
+            const t = srcEighthFloat * tgtEighths / srcEighths;
+            return t < tgtEighths - EPS ? [t] : [];
+          })();
       if (tgts.length === 0) continue;
 
       const next = (i + 1 < inBar.length) ? inBar[i + 1] : sbe;
@@ -652,7 +790,14 @@ export function getTrackSubstemSchedules(track, project) {
   const cropStart = track.cropStart || 0;
 
   const srcBpm = meta.detectedBpm || project.bpm || 120;
-  const srcMeter = [meta.detectedMeter || project.beatsPerBar || 4, 4];
+  // detectedMeterDenominator defaults to 4 since the current
+  // `detectChordsAndTempo` only returns `beats_per_bar` (numerator).
+  // Once the detector reports denominator, set it on the track metadata
+  // and per-/8 source conversions slot in for free.
+  const srcMeter = [
+    meta.detectedMeter || project.beatsPerBar || 4,
+    meta.detectedMeterDenominator || 4,
+  ];
   const tgtMeter = [project.beatsPerBar || 4, project.meterDenominator || 4];
   const downbeatOffset = typeof meta.downbeatOffset === 'number' ? meta.downbeatOffset : 0;
   const identity = srcMeter[0] === tgtMeter[0] && srcMeter[1] === tgtMeter[1];

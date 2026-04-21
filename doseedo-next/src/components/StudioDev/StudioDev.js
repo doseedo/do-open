@@ -309,6 +309,10 @@ export default function StudioDev() {
   const [activeTab, setActiveTab] = useState('Instruments');
   // For the Instruments tab: null → show group tiles, group-id → show its subgroups.
   const [activeInstGroup, setActiveInstGroup] = useState(null);
+  // Palette source tab: 'live' shows the default instrument / drum / vocal
+  // tree; 'custom' is a user-curated collection (empty placeholder for now
+  // — 'Create new' button is wired to nothing).
+  const [paletteSource, setPaletteSource] = useState('live');
   // Palette layout: 'list' (workbench-style dense rows) | 'grid' (icon tiles).
   const [activeMode, setActiveMode] = useState('midi');
   // Which content is showing in the 300px left panel.
@@ -1486,14 +1490,32 @@ export default function StudioDev() {
               <div className="sd-inst-palette sd-inst-list">
                 <div className="sd-inst-palette-head">
                   <div className="sd-label" data-count={
-                    activeTab === 'Instruments' ? INSTRUMENT_GROUPS.length
-                    : activeTab === 'Drums'     ? DRUM_GROUPS.length
-                    : VOCAL_GROUPS.length
+                    paletteSource === 'live' ? (
+                      activeTab === 'Instruments' ? INSTRUMENT_GROUPS.length
+                      : activeTab === 'Drums'     ? DRUM_GROUPS.length
+                      : VOCAL_GROUPS.length
+                    ) : 0
                   }><span>{activeTab}</span></div>
+                  <div className="sd-palette-src" role="tablist" aria-label="Palette source">
+                    <button className={`sd-palette-src-tab ${paletteSource === 'live' ? 'on' : ''}`}
+                            role="tab" onClick={() => setPaletteSource('live')}>Live</button>
+                    <button className={`sd-palette-src-tab ${paletteSource === 'custom' ? 'on' : ''}`}
+                            role="tab" onClick={() => setPaletteSource('custom')}>Custom</button>
+                  </div>
                 </div>
 
-                {/* Workbench-style list palette (only view now). */}
-                <>
+                {paletteSource === 'custom' && (
+                  <div className="sd-palette-empty">
+                    <div className="sd-palette-empty-body">No custom instruments yet.</div>
+                    <button className="wb-btn wb-btn--primary sd-palette-create"
+                            onClick={() => { /* no-op placeholder */ }}>
+                      &gt; Create new
+                    </button>
+                  </div>
+                )}
+
+                {/* Workbench-style list palette — Live source. */}
+                {paletteSource === 'live' && <>
 
                 {/* ---- Instruments: expandable group → subgroup tree ---- */}
                 {activeTab === 'Instruments' && INSTRUMENT_GROUPS.map((g, idx) => {
@@ -1554,7 +1576,7 @@ export default function StudioDev() {
                     <span className="sd-inst-row-name">{g.label}</span>
                   </button>
                 ))}
-                </>
+                </>}
               </div>
 
               {/* Generate form — visible below the palette in every tab
