@@ -421,7 +421,14 @@ export default function StudioDevMidi() {
         // Only zoom when cursor is over the grid region.
         if (mx < KEYS_W || my < RULER_H) return;
 
-        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        // Zoom factor scales exponentially with deltaY magnitude so a
+        // trackpad pinch (deltaY ±1..5 per tick) feels continuous while
+        // a mouse-wheel notch (±100) still gives a proper step. 0.0015
+        // tunes a wheel click to ≈1.16× and a trackpad tick to ≈1.005×.
+        // Clamp factor per event so a runaway deltaY can't bottom/top
+        // out the zoom range in a single tick.
+        const raw = Math.exp(-e.deltaY * 0.0015);
+        const factor = Math.max(0.5, Math.min(2, raw));
         const newPxPerSec = Math.max(20, Math.min(800, pxPerSec * factor));
         // Derive the new cellSec + rowH the same way the render body does.
         let newSub = 1;
