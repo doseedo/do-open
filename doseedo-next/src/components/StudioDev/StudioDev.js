@@ -585,49 +585,6 @@ export default function StudioDev() {
   // one, so both routes stay in lockstep.
   useAutoRepaintMeter();
 
-  // Seed the demo buses into the real reducer on first load so the user
-  // can interact with them immediately (drag, collapse, edit names, M/S).
-  // They stay around until the user deletes them or uploads a real track.
-  const demoSeededRef = useRef(false);
-  useEffect(() => {
-    if (demoSeededRef.current) return;
-    if ((state.buses || []).length > 0) { demoSeededRef.current = true; return; }
-    demoSeededRef.current = true;
-    // Workbench template tracks (T01..T05). Names mirror the workbench
-    // Workbench.jsx TRACKS array so the timeline reads like the reference.
-    const seed = [
-      { id: 'demo-vocals', type: 'VO',    name: 'VOX',     expanded: true,
-        tracks: [
-          { name: 'VOX.LEAD',   start: 4, end: 18, type: 'vocals' },
-        ] },
-      { id: 'demo-music',  type: 'MUSIC', name: 'BAND',    expanded: true,
-        tracks: [
-          { name: 'KEY.RHODES', start: 2, end: 22, type: 'keys' },
-          { name: 'BASS.UPR',   start: 0, end: 24, type: 'bass' },
-          { name: 'STR.PAD',    start: 8, end: 24, type: 'strings' },
-        ] },
-      { id: 'demo-drums',  type: 'DRUMS', name: 'DRUMS',   expanded: true,
-        tracks: [
-          { name: 'DRM.BRUSH',  start: 0, end: 24, type: 'drums' },
-        ] },
-    ];
-    for (const bus of seed) {
-      dispatch({ type: 'CREATE_BUS', payload: {
-        id: bus.id, type: bus.type, name: bus.name, expanded: bus.expanded,
-      } });
-      const tracks = bus.tracks.map((t, i) => ({
-        id: `${bus.id}-t-${i}`,
-        name: t.name,
-        startPosition: t.start,
-        duration: t.end - t.start,
-        gain: 1.0, isMuted: false, isSolo: false, pan: 0,
-        fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
-        metadata: { type: 'placeholder', instrument: t.type, isDemo: true },
-      }));
-      dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId: bus.id, tracks } });
-    }
-  }, [state.buses, dispatch]);
-
   // Autosave loop: quickSave every 8 s. We read state out of a ref so the
   // interval is installed once and doesn't get torn down on every mutation
   // (which would prevent it from ever firing).
