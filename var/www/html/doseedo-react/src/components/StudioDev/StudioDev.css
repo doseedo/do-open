@@ -1695,6 +1695,28 @@
   color: #e07556; font-family: var(--hifi-mono); font-size: 11px;
   padding: 8px 10px; border: 1px solid rgba(224,117,86,0.4); border-radius: 4px;
 }
+.sd-gen-input-info {
+  margin-top: 10px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-left: 2px solid var(--wb-accent);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  color: var(--wb-ink-soft);
+}
+.sd-gen-input-info span {
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+  color: var(--wb-ink-mute);
+}
+.sd-gen-input-info strong {
+  color: var(--wb-ink);
+  font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 /* Generate CTA — workbench primary button, full-width within the sidebar. */
 .sd-gen-actions { display: flex; margin-top: 14px; }
 .sd-gen-submit {
