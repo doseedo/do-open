@@ -543,3 +543,229 @@ input:checked + .slider:before {
     justify-content: center;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ * Active only when <body> has the workbench-theme class (applied on
+ * workbench routes by App.js). Legacy routes keep the dark styles
+ * above. See src/styles/theme-workbench.css for token reference.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .userInfoContainer {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .userInfoTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .userInfoSubtitle {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .profileCard,
+:global(body.workbench-theme) .settingsCard {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .avatarLarge {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .avatarLargeImg {
+  border-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .changeAvatarBtn {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .changeAvatarBtn:hover {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .detailRow label {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .detailValue {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .planBadge {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-accent);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .statusBadge {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .upgradeLink {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .upgradeLink:hover {
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .sectionTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .settingRow {
+  border-bottom: 1px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .settingInfo h3 {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .settingInfo p {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .slider {
+  background-color: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) input:checked + .slider {
+  background: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .actionsSection {
+  border-top: 1px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .logoutBtn {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius-lg);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .logoutBtn:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .inputField,
+:global(body.workbench-theme) .textareaField {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .inputField:focus,
+:global(body.workbench-theme) .textareaField:focus {
+  border-color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .inputField::placeholder,
+:global(body.workbench-theme) .textareaField::placeholder {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .socialField label {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .viewProfileLink {
+  border: var(--wb-border);
+  color: var(--wb-accent);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .viewProfileLink:hover {
+  color: var(--wb-accent-warm);
+  border-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .saveBtn {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  border-radius: var(--wb-radius-lg);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .saveBtn:hover {
+  background: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .libraryTab {
+  border: var(--wb-border);
+  background: var(--wb-surface);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .libraryTab:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .libraryTab.libraryTabActive,
+:global(body.workbench-theme) .libraryTabActive,
+:global(body.workbench-theme) .libraryTabActive:hover {
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+  color: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .libraryCard {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .libraryCard:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .libraryThumb {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .libraryThumbPlaceholder {
+  background: var(--wb-surface-2);
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .libraryCardInfo h3 {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .libraryCardInfo p {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .libraryEmpty {
+  color: var(--wb-ink-mute);
+}

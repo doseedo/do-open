@@ -130,3 +130,60 @@
     font-size: 20px;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ * Active only when <body> has the workbench-theme class (applied on
+ * workbench routes by App.js). Legacy routes keep the dark styles
+ * above. See src/styles/theme-workbench.css for token reference.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .whatsNewContainer {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .title {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .subtitle {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .updateCard {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .updateCard:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .updateTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .version {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-accent);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .date {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .feature {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .feature i {
+  color: var(--wb-accent);
+}

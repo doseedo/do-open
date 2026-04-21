@@ -290,3 +290,111 @@
     flex-direction: column;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ * Active only when <body> has the workbench-theme class (applied on
+ * workbench routes by App.js). Legacy routes keep the dark styles
+ * above. See src/styles/theme-workbench.css for token reference.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .container {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .backLink {
+  color: var(--wb-accent);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .backLink:hover {
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .waveformPlaceholder {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .dawBadge {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .title {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .author {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .author:hover {
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .authorAvatar {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .description {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .tag {
+  color: var(--wb-accent);
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .stats {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .forkNote {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .forkNote a {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .actionPrimary {
+  background: var(--wb-ink);
+  border: 1px solid var(--wb-ink);
+  color: var(--wb-bg);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .actionPrimary:hover {
+  background: var(--wb-accent);
+  border-color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .errorCard h2 {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .errorCard p {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .backBtn {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  color: var(--wb-accent);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .skeleton {
+  background: var(--wb-surface-2);
+}

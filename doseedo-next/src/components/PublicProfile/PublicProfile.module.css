@@ -284,3 +284,146 @@
 .favBtn:hover {
   color: #fbbf24;
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ * Active only when <body> has the workbench-theme class (applied on
+ * workbench routes by App.js). Legacy routes keep the dark styles
+ * above. See src/styles/theme-workbench.css for token reference.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .container {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .loading,
+:global(body.workbench-theme) .error {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .backBtn {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .backBtn:hover {
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .profileHeader {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .avatar {
+  border: 2px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .avatarPlaceholder {
+  background: var(--wb-surface-2);
+  color: var(--wb-accent);
+  border: 2px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .displayName {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .username {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .bio {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .stat {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .stat strong {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .socialLink {
+  color: var(--wb-accent);
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .socialLink:hover {
+  color: var(--wb-accent-warm);
+  background: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .editBtn {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-accent);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .editBtn:hover {
+  background: var(--wb-bg);
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .sectionTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .empty {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .card {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .card:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .cardThumb {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .cardThumbPlaceholder {
+  background: var(--wb-surface-2);
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .cardName {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .cardDesc {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .cardStat {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .likeBtn,
+:global(body.workbench-theme) .favBtn {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .likeBtn:hover {
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .favBtn:hover {
+  color: var(--wb-accent);
+}

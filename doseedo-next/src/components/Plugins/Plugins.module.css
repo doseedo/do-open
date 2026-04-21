@@ -1111,3 +1111,430 @@
 .modalTerms a:hover {
   text-decoration: underline;
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ * Active only when <body> has the workbench-theme class (applied on
+ * workbench routes by App.js). Legacy routes keep the dark styles
+ * above. See src/styles/theme-workbench.css for token reference.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .plugins {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .title,
+:global(body.workbench-theme) .detailTitle,
+:global(body.workbench-theme) .downloadTitle,
+:global(body.workbench-theme) .myPluginsTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .searchBarWrapper > i {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .pluginSearchInput {
+  background: var(--wb-surface);
+  border: 1.5px solid var(--wb-rule);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius-lg);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .pluginSearchInput:focus {
+  border-color: var(--wb-accent);
+  background: var(--wb-surface);
+}
+
+:global(body.workbench-theme) .pluginSearchInput::placeholder {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .clearSearchBtn {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .clearSearchBtn:hover {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .filterChip {
+  background: var(--wb-surface);
+  border: 1.5px solid var(--wb-rule);
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .filterChip:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .filterChipActive,
+:global(body.workbench-theme) .filterChipActive:hover {
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+  color: var(--wb-bg);
+  box-shadow: none;
+}
+
+:global(body.workbench-theme) .filterChipActive i {
+  color: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .noResults {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .productCard {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .productCard:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .productIcon {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .productIcon i,
+:global(body.workbench-theme) .detailIcon i,
+:global(body.workbench-theme) .myPluginIcon i {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .productName {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .productDesc,
+:global(body.workbench-theme) .detailDesc {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .productPrice,
+:global(body.workbench-theme) .detailPrice {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .backBtn {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .backBtn:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .mediaPlaceholder {
+  background: var(--wb-surface);
+  border: 1.5px dashed var(--wb-rule);
+  color: var(--wb-ink-mute);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .detailHeader {
+  border-bottom: 1px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .detailIcon {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .tryFreeNote {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .tryFreeNote a,
+:global(body.workbench-theme) .tryFreeLink {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .tryFreeNote a:hover,
+:global(body.workbench-theme) .tryFreeLink:hover {
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .features h3 {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .featureList li {
+  color: var(--wb-ink);
+  border-bottom: 1px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .featureList li i {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .buySection {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .buyBtn {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .buyBtn:hover {
+  background: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .guestNote {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .freeVersionLink {
+  background: var(--wb-surface-2);
+  border: 1.5px solid var(--wb-rule);
+  color: var(--wb-accent);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .freeVersionLink:hover {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .downloadFreeBtn,
+:global(body.workbench-theme) .downloadBtn {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .downloadFreeBtn:hover,
+:global(body.workbench-theme) .downloadBtn:hover {
+  background: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .downloadIcon {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .downloadIcon i {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .downloadIcon.error {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .downloadIcon.error i {
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .downloadSubtitle {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .errorText {
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .errorDetail {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .loadingState {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .legalNote {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .legalNote a {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .legalNote a:hover {
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .myPluginsSection {
+  border-top: 1px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .createPluginBtn,
+:global(body.workbench-theme) .loadPluginBtn {
+  background: var(--wb-surface);
+  border: 1.5px solid var(--wb-rule);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .loadPluginBtn:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .comingSoonBadge {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink-mute);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .myPluginsBox {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .myPluginsEmpty {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .myPluginCard {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .myPluginCard:hover {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .myPluginIcon {
+  background: var(--wb-surface);
+}
+
+:global(body.workbench-theme) .myPluginName {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .mainTabs {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .mainTab {
+  background: transparent;
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .mainTab:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .mainTab.mainTabActive,
+:global(body.workbench-theme) .mainTabActive,
+:global(body.workbench-theme) .mainTabActive:hover {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .modalContent {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .modalClose {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .modalClose:hover {
+  color: var(--wb-ink);
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .modalTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .modalSubtitle {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .modalInput {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .modalInput:focus {
+  border-color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .modalInput::placeholder {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .modalEmailDisplay {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .modalSubmitBtn {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .modalSubmitBtn:hover {
+  background: var(--wb-accent);
+  opacity: 1;
+}
+
+:global(body.workbench-theme) .modalBackBtn {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .modalBackBtn:hover {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .modalError {
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .modalDivider hr {
+  background: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .modalDivider span {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .modalTerms {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .modalTerms a {
+  color: var(--wb-accent);
+}

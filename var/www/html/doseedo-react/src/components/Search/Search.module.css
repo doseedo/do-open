@@ -316,3 +316,145 @@
     width: 100%;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ * Active only when <body> has the workbench-theme class (applied on
+ * workbench routes by App.js). Legacy routes keep the dark styles
+ * above. See src/styles/theme-workbench.css for token reference.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .searchContainer {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .searchTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .searchSubtitle {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .searchInputWrapper i {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .searchInput {
+  background: var(--wb-surface);
+  border: 1.5px solid var(--wb-rule);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius-lg);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .searchInput:focus {
+  border-color: var(--wb-accent);
+  background: var(--wb-surface);
+}
+
+:global(body.workbench-theme) .searchInput::placeholder {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .searchButton {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  border-radius: var(--wb-radius-lg);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .searchButton:hover {
+  background: var(--wb-accent);
+  box-shadow: var(--wb-shadow);
+}
+
+:global(body.workbench-theme) .categoryBox {
+  background: var(--wb-surface);
+  border: 1.5px solid var(--wb-rule);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .categoryBox:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .categoryBox.active,
+:global(body.workbench-theme) .categoryBox.active:hover {
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+  color: var(--wb-bg);
+  box-shadow: var(--wb-shadow);
+}
+
+:global(body.workbench-theme) .categoryBox.active i {
+  color: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .resultsTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .resultCard {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .resultCard:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .resultIcon {
+  background: var(--wb-surface-2);
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .resultName {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .resultDescription {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .resultMeta {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .resultType {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .resultAuthor {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .resultDate {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .actionButton {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .actionButton:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .noResults {
+  color: var(--wb-ink-mute);
+}

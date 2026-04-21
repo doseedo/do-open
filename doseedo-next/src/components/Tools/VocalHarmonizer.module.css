@@ -568,3 +568,264 @@
     padding: 32px 20px;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ * Active only when <body> has the workbench-theme class (applied on
+ * workbench routes by App.js). Legacy routes keep the dark styles
+ * above. See src/styles/theme-workbench.css for token reference.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .container {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .backButton {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .backButton:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .title {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .title i {
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .subtitle {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .settingsPanel,
+:global(body.workbench-theme) .mainPanel {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .sectionTitle {
+  color: var(--wb-ink);
+  border-bottom: 1px solid var(--wb-rule);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .label,
+:global(body.workbench-theme) .toggleText {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .description,
+:global(body.workbench-theme) .sliderLabels,
+:global(body.workbench-theme) .supportedFormats,
+:global(body.workbench-theme) .uploadHint {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .optionButton {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .optionButton:hover {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .optionButton.active,
+:global(body.workbench-theme) .optionButton.active:hover {
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+  color: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .select {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .select:focus {
+  border-color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .select option {
+  background: var(--wb-surface);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .slider {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .slider::-webkit-slider-thumb {
+  background: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .betaTag {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-accent-warm);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .uploadArea {
+  border: 2px dashed var(--wb-rule);
+  background: var(--wb-surface-2);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .uploadArea:hover {
+  border-color: var(--wb-accent);
+  background: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .uploadArea.hasFile {
+  border-color: var(--wb-accent);
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .uploadPrompt i {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .uploadPrompt span {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .fileInfo i {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .fileName {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .fileSize {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .audioPlayer label,
+:global(body.workbench-theme) .lyricsSection label {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .generateButton {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  border-radius: var(--wb-radius-lg);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .generateButton:hover:not(:disabled) {
+  background: var(--wb-accent-warm);
+  box-shadow: var(--wb-shadow);
+}
+
+:global(body.workbench-theme) .clearButton {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius-lg);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .clearButton:hover {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .progress {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .error {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-accent-warm);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .results {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .resultsTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .lyricsText {
+  background: var(--wb-surface);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .harmonyPlayer {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .harmonyLabel {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .downloadLink {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .downloadLink:hover {
+  background: var(--wb-bg);
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .aceStepSection {
+  border-top: 1px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .aceStepSection h4 {
+  color: var(--wb-accent-warm);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .midiButton {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-accent);
+  border-radius: var(--wb-radius-lg);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .midiButton:hover {
+  background: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .stats {
+  border-top: 1px solid var(--wb-rule);
+  color: var(--wb-ink-mute);
+}

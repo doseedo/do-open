@@ -1508,3 +1508,455 @@
     font-size: 16px;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ * Active only when <body> has the workbench-theme class (applied on
+ * workbench routes by App.js). Legacy routes keep the dark styles
+ * above. See src/styles/theme-workbench.css for token reference.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .toolsContainer {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .toolsTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .toolsSubtitle {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .toolCard {
+  background: var(--wb-surface);
+  border: 1.5px solid var(--wb-rule);
+  border-radius: var(--wb-radius-lg);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .toolCard:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule);
+  box-shadow: var(--wb-shadow);
+}
+
+:global(body.workbench-theme) .toolIcon {
+  background: var(--wb-surface-2);
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .toolCard:hover .toolIcon {
+  background: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .toolName {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .toolDescription {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .toolBadge {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-accent);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .toolCard:hover .toolBadge {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .toolBarContainer {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .toolBarItem {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .toolBarItem:hover {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .toolBarItemActive,
+:global(body.workbench-theme) .toolBarItemActive:hover {
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+  color: var(--wb-bg);
+  box-shadow: none;
+}
+
+:global(body.workbench-theme) .toolBarArrow {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .toolBarArrow:hover:not(:disabled) {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .toolGeneratorContainer {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .toolGeneratorTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .toolGeneratorDescription {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .toolInputLabel,
+:global(body.workbench-theme) .toolWaveformLabel,
+:global(body.workbench-theme) .settingLabel,
+:global(body.workbench-theme) .paramLabel,
+:global(body.workbench-theme) .toolCheckbox {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .toolTextarea,
+:global(body.workbench-theme) .toolTextInput,
+:global(body.workbench-theme) .toolNumberInput,
+:global(body.workbench-theme) .toolSelect,
+:global(body.workbench-theme) .bpmValue {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .toolTextarea:focus,
+:global(body.workbench-theme) .toolTextInput:focus,
+:global(body.workbench-theme) .toolSelect:focus {
+  border-color: var(--wb-accent);
+  box-shadow: none;
+}
+
+:global(body.workbench-theme) .toolTextarea::placeholder,
+:global(body.workbench-theme) .toolTextInput::placeholder {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .toolFileUpload {
+  background: var(--wb-surface-2);
+  border: 2px dashed var(--wb-rule);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .toolFileUpload:hover {
+  border-color: var(--wb-accent);
+  background: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .toolFileUpload i {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .toolFileUpload span {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .uploadHint {
+  color: var(--wb-ink-mute) !important;
+}
+
+:global(body.workbench-theme) .uploadedFileInfo {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .uploadedFileInfo i {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .uploadedFileInfo span {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .removeFileBtn {
+  background: var(--wb-surface);
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .removeFileBtn:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-accent-warm);
+}
+
+:global(body.workbench-theme) .toolActionBtn {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .toolActionBtn:hover {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .toolWaveformWrapper {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .waveformLoading,
+:global(body.workbench-theme) .waveformEmpty,
+:global(body.workbench-theme) .waveformDuration {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .toolControlSection {
+  border-top: 1px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .toolControlBtnSecondary {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius-lg);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .toolControlBtnSecondary:hover:not(:disabled) {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .toolControlBtnPrimary {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  border-radius: var(--wb-radius-lg);
+  box-shadow: var(--wb-shadow);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .toolControlBtnPrimary:hover:not(:disabled) {
+  background: var(--wb-accent);
+  box-shadow: var(--wb-shadow-lg);
+}
+
+:global(body.workbench-theme) .instrumentGroupBtn,
+:global(body.workbench-theme) .instrumentSubgroupBtn,
+:global(body.workbench-theme) .stemCard,
+:global(body.workbench-theme) .generationTypeBtn,
+:global(body.workbench-theme) .patternBtn,
+:global(body.workbench-theme) .harmonyCountBtn,
+:global(body.workbench-theme) .bpmBtn,
+:global(body.workbench-theme) .seedRandomBtn {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .instrumentGroupBtn:hover,
+:global(body.workbench-theme) .instrumentSubgroupBtn:hover,
+:global(body.workbench-theme) .stemCard:hover:not(.disabled),
+:global(body.workbench-theme) .generationTypeBtn:hover,
+:global(body.workbench-theme) .patternBtn:hover,
+:global(body.workbench-theme) .harmonyCountBtn:hover,
+:global(body.workbench-theme) .bpmBtn:hover,
+:global(body.workbench-theme) .seedRandomBtn:hover {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .instrumentGroupBtn.active,
+:global(body.workbench-theme) .instrumentGroupBtn.active:hover,
+:global(body.workbench-theme) .instrumentSubgroupBtn.active,
+:global(body.workbench-theme) .instrumentSubgroupBtn.active:hover,
+:global(body.workbench-theme) .stemCard.active,
+:global(body.workbench-theme) .stemCard.active:hover,
+:global(body.workbench-theme) .generationTypeBtn.active,
+:global(body.workbench-theme) .generationTypeBtn.active:hover,
+:global(body.workbench-theme) .patternBtn.active,
+:global(body.workbench-theme) .patternBtn.active:hover,
+:global(body.workbench-theme) .harmonyCountBtn.active,
+:global(body.workbench-theme) .harmonyCountBtn.active:hover {
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+  color: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .instrumentIcon {
+  filter: none;
+}
+
+:global(body.workbench-theme) .stemCard span,
+:global(body.workbench-theme) .generationTypeBtn span {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .stemCard.active span,
+:global(body.workbench-theme) .generationTypeBtn.active span {
+  color: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .stemDownloadBtn {
+  background: var(--wb-surface);
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .stemDownloadBtn:hover {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .typeDescription {
+  color: var(--wb-ink-mute) !important;
+}
+
+:global(body.workbench-theme) .statusMessage {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .progressContainer {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .progressBar {
+  background: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .toolSlider {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .toolSlider::-webkit-slider-thumb {
+  background: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .sliderLabels,
+:global(body.workbench-theme) .lyricStats,
+:global(body.workbench-theme) .sceneInfo {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .parameterRow {
+  border-bottom: 1px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .languageSelect i {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .sceneTimeline {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .sceneMarker {
+  background: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .generationTypeBtn i {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .drumKitInfo {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .drumKitInfo i {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .availableBadge {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .harmonizerSettings {
+  background: var(--wb-surface-2);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .settingHint {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .harmonyTrack {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .harmonyTrackLabel {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .harmonyTrackLabel i {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .downloadBtn {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .downloadBtn:hover {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .lyricsDisplay {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .recordedFileInfo {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .recordedFileInfo i {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .recordedFileInfo span {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .orDivider {
+  color: var(--wb-ink-mute);
+}

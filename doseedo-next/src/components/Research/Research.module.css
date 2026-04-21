@@ -334,3 +334,126 @@
     gap: 8px;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ * Active only when <body> has the workbench-theme class (applied on
+ * workbench routes by App.js). Legacy routes keep the dark styles
+ * above. See src/styles/theme-workbench.css for token reference.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .research {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .title {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .sessionsHeader {
+  border-bottom: 1px solid var(--wb-rule);
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .sessionRow {
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .sessionRow:hover {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .sessionNumber {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .paperIcon {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .paperIcon i {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .sessionName {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .paperDesc {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .sessionDate {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .statusBadge {
+  background: var(--wb-surface-2);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .backBtn {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .backBtn:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .paperHeader {
+  border-bottom: 1px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .paperTitle {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .paperSubtitle {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .paperAuthors {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .paperDate {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .paperAbstract h2,
+:global(body.workbench-theme) .paperSection h2 {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .paperAbstract p,
+:global(body.workbench-theme) .paperSection p {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .paperAbstract {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .loadingState {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .errorState {
+  color: var(--wb-accent-warm);
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
