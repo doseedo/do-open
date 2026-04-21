@@ -532,7 +532,6 @@ export default function StudioDev() {
       if (typeof ra.downbeat_offset === 'number') {
         dispatch({ type: 'SET_TIMELINE_OFFSET', payload: ra.downbeat_offset });
       }
-      const first = ra.tempoMap[0];
       if (ra.bpm) dispatch({ type: 'UPDATE_BPM', payload: Math.round(ra.bpm) });
       if (first?.meter) dispatch({ type: 'SET_METER', payload: `${first.meter[0]}/${first.meter[1]}` });
       dispatch({
