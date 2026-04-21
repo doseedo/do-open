@@ -219,8 +219,10 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
       type: 'application/json'
     });
 
-    // Step 4: Upload all files to GCS
-    console.log(`📤 Uploading ${trackFiles.length + 1} files to GCS...`);
+    // Step 4: Upload all files to R2 (endpoint path kept as /api/upload/gcs
+    // for URL back-compat — app/storage.py in the Fly auth service has
+    // been R2-only for a while now).
+    console.log(`📤 Uploading ${trackFiles.length + 1} files to R2…`);
 
     const uploadPromises = [];
 

@@ -71,46 +71,62 @@ const HEAVY_TOPLEVEL_TRACK_FIELDS = [
   'audioBuffer',
 ];
 
+// Identity + routing + UI state that's cheap to serialize. Anything else
+// — envelopes, latents, midi note arrays, onsets, whisper lyrics, cached
+// audio buffers, waveform peaks — we rebuild on re-open from the
+// source audio URL (which IS persisted). This allowlist is what keeps
+// localStorage from drifting back into the multi-MB range the moment
+// someone adds a new analysis field to track.metadata.
+const SAFE_TRACK_FIELDS = new Set([
+  'id', 'name', 'type', 'audioUrl', 'midiUrl',
+  'duration', 'startPosition', 'cropStart', 'cropEnd',
+  'gain', 'pan', 'isMuted', 'isSolo',
+  'fx', 'color', 'icon',
+]);
+const SAFE_METADATA_FIELDS = new Set([
+  'type', 'stemType', 'parentTrackId', 'isBusMaster',
+  'instrument', 'instrumentGroup', 'instrumentSubgroup',
+  'instrumentLabel', 'icon', 'originalFilename',
+  'midi', 'latent', 'latentId',  // URL refs only; raw data stripped below
+  'currentVersionIndex', 'feedback', 'customColor',
+  'inputFiles',                  // small reference URLs
+  'detectedBpm', 'detectedMeter', 'detectedMeterDenominator', 'detectedGrouping',
+  'tempoMap', 'barStarts',       // per-bar number arrays — small
+]);
+
+function _pickSafeMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') return metadata;
+  const out = {};
+  for (const k of Object.keys(metadata)) {
+    if (!SAFE_METADATA_FIELDS.has(k)) continue;
+    const v = metadata[k];
+    // Drop URL fields that happen to be objects (latent raw data) —
+    // only keep them when they're strings / simple ref shapes.
+    if (k === 'latent' && v != null && typeof v !== 'string') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
 function stripHeavyTrackMetadata(state) {
-  // Shallow-clone the buses spine; deep-clone only the parts that carry
-  // the heavy fields. Cheaper than structuredClone on the full tree.
+  // Allowlist-based prune: we pull only the fields needed to restore
+  // the project UI. The rest regenerates from audioUrl + cloud state
+  // on next open, so localStorage stays predictably small.
   if (!state || !Array.isArray(state.buses)) return state;
   return {
     ...state,
-    buses: state.buses.map((bus) => ({
-      ...bus,
-      tracks: (bus.tracks || []).map((track) => {
+    buses: state.buses.map((bus) => {
+      const tracks = (bus.tracks || []).map((track) => {
         if (!track) return track;
-        let out = track;
-        let cloned = false;
-
-        // Strip top-level heavy fields on the track itself.
-        for (const f of HEAVY_TOPLEVEL_TRACK_FIELDS) {
-          if (out[f] != null) {
-            if (!cloned) { out = { ...out }; cloned = true; }
-            delete out[f];
-          }
+        const out = {};
+        for (const k of Object.keys(track)) {
+          if (SAFE_TRACK_FIELDS.has(k)) out[k] = track[k];
         }
-
-        // Strip heavy fields inside track.metadata.
-        if (out.metadata) {
-          let metadata = out.metadata;
-          let metaCloned = false;
-          for (const f of HEAVY_METADATA_FIELDS) {
-            if (metadata[f] != null) {
-              if (!metaCloned) { metadata = { ...metadata }; metaCloned = true; }
-              delete metadata[f];
-            }
-          }
-          if (metaCloned) {
-            if (!cloned) { out = { ...out }; cloned = true; }
-            out.metadata = metadata;
-          }
-        }
-
+        if (track.metadata) out.metadata = _pickSafeMetadata(track.metadata);
         return out;
-      }),
-    })),
+      });
+      return { ...bus, tracks };
+    }),
   };
 }
 
@@ -144,11 +160,17 @@ export function saveSession(projectName, state) {
     if (serialized.length > LOCAL_SESSION_SOFT_MAX_BYTES) {
       if (!_sawOversizeSession) {
         _sawOversizeSession = true;
+        // Top-level key sizes so the leak source is obvious at a glance.
+        const sizes = Object.entries(sessionData.state || {})
+          .map(([k, v]) => [k, JSON.stringify(v || null).length])
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 6)
+          .map(([k, n]) => `${k}=${(n / 1e3).toFixed(0)}kB`)
+          .join(', ');
         console.warn(
           `[session] skipping localStorage save — ${(serialized.length / 1e6).toFixed(1)} MB ` +
           `exceeds ${(LOCAL_SESSION_SOFT_MAX_BYTES / 1e6).toFixed(1)} MB soft cap. ` +
-          `Cloud save (R2) continues. Likely cause: a new heavy field on track/metadata ` +
-          `that isn't in HEAVY_TOPLEVEL_TRACK_FIELDS or HEAVY_METADATA_FIELDS.`
+          `Cloud save (R2) continues. Top state keys: ${sizes}.`
         );
       }
       return false;
