@@ -153,35 +153,16 @@ export default function StudioDevMidi() {
   const isDrum = type.includes('drum') || type.includes('kick')
                || type.includes('snare') || type.includes('hat') || type.includes('perc');
 
-  // Pitch viewport — computed ONCE per track and frozen.
-  //
-  // Previously this memo depended on `notes`, so every time the user
-  // added or moved a note the minPitch/maxPitch window re-fit to the
-  // new extent and the whole canvas shifted by the change in min.
-  // (User-reported 'midi window shifts when I input a note' was this
-  // recomputation re-anchoring the coord space mid-edit.) The viewport
-  // should be stable while editing a track; only picking a new track
-  // re-fits. The viewport is stored in a ref keyed by track id so
-  // re-selecting an old track gets its original fit.
-  const pitchViewportRef = useRef(null);
-  const pitchViewportTrackRef = useRef(null);
-  if (selectedTrack?.id !== pitchViewportTrackRef.current) {
-    pitchViewportTrackRef.current = selectedTrack?.id || null;
-    if (isDrum) {
-      pitchViewportRef.current = { minPitch: DRUM_PITCH_MIN, maxPitch: DRUM_PITCH_MAX };
-    } else if (!notes.length) {
-      pitchViewportRef.current = { minPitch: 36, maxPitch: 84 };
-    } else {
-      let lo = Infinity, hi = -Infinity;
-      for (const n of notes) { if (n.note < lo) lo = n.note; if (n.note > hi) hi = n.note; }
-      const pad = 4;
-      pitchViewportRef.current = {
-        minPitch: Math.max(0, lo - pad),
-        maxPitch: Math.min(127, hi + pad),
-      };
-    }
-  }
-  const { minPitch, maxPitch } = pitchViewportRef.current || { minPitch: 36, maxPitch: 84 };
+  // Pitch viewport — HARD-LOCKED to the full keyboard range (or the GM
+  // drum range for drum tracks). Previously we tried to "fit" the view
+  // to the note extent, but every commit mutated the extent, which
+  // shifted minPitch/maxPitch and translated the whole canvas. The
+  // coord space now depends ONLY on isDrum, which depends on the
+  // track's metadata — not on the notes array — so adding/moving notes
+  // can never shift the window. Users who want a tighter view can
+  // Alt-scroll to change rowH.
+  const minPitch = isDrum ? DRUM_PITCH_MIN : 21;   // A0, bottom of 88-key
+  const maxPitch = isDrum ? DRUM_PITCH_MAX : 108;  // C8, top of 88-key
 
   const totalSec = useMemo(() => {
     if (!notes.length) return 8;

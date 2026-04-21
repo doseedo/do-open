@@ -148,12 +148,19 @@ export async function separateStemsAuto(audioFile, opts = {}) {
   // on BasicPitch). Old callers that just awaited the result still work —
   // they'll get stems_ready payload + the final `status === 'completed'`
   // is still reachable via polling status if they need it.
-  const token = localStorage.getItem('token');
+  // Auth: prefer a fresh Clerk JWT when available (AppShell.tsx installs
+  // window.__clerkGetToken), fall back to the cached clerk_token that
+  // ClerkTokenBridge snapshots, then the legacy 'token' key for back-compat.
+  // Previous code only checked the legacy key → 401 for Clerk-authed users.
+  const token = (typeof window !== 'undefined' && typeof window.__clerkGetToken === 'function'
+      ? await window.__clerkGetToken().catch(() => null) : null)
+    || (typeof window !== 'undefined' && window.localStorage?.getItem('clerk_token'))
+    || localStorage.getItem('token');
   const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
   const compressed = await compressAudioForUpload(audioFile);
   const fd = new FormData();
   fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
-  const r = await fetch('/separate-stems', { method: 'POST', body: fd, headers: authHeaders });
+  const r = await fetch('/separate-stems', { method: 'POST', body: fd, headers: authHeaders, credentials: 'include' });
   if (!r.ok) throw new Error(`separate-stems HTTP ${r.status}`);
   const start = await r.json();
   const taskId = start.task_id;
