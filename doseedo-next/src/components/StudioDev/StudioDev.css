@@ -900,8 +900,15 @@
 .sd-spacer { flex: 1; }
 
 /* ---- Timeline (workbench .wb-timeline spec: 35 px rows, 230 px tracklist, blue accent on ruler, warm-orange playhead) */
+/* Single vertical scroll owned by .sd-timeline so the tracklist column and
+ * the lanes column move in lockstep. Their two children have NO internal
+ * overflow — each grows to the height of its content and the flex-row's
+ * align-items:stretch keeps them equal-height. The header row and the
+ * ruler use position:sticky so they pin to the top while bus + track rows
+ * scroll beneath. */
 .sd-timeline {
   display: flex; flex: 1; min-height: 0;
+  overflow-y: auto; overflow-x: hidden;
   --row-h: 35px;
   background: var(--wb-bg);
   font-family: var(--wb-font-mono);
@@ -910,11 +917,12 @@
   width: 230px; flex: 0 0 230px;
   border-right: 1px solid var(--wb-rule);
   background: var(--wb-surface);
-  overflow-y: auto; overflow-x: hidden;
 }
 .sd-tracks-header {
+  position: sticky; top: 0; z-index: 3;
   height: 22px; border-bottom: 1px solid var(--wb-rule);
   display: flex; align-items: center; padding: 0 10px;
+  background: var(--wb-surface);
   font-family: var(--wb-font-mono);
   font-size: 9px; letter-spacing: 0.8px; text-transform: uppercase;
   color: var(--wb-ink-mute);
@@ -1040,8 +1048,7 @@
 }
 
 .sd-lanes {
-  flex: 1; min-width: 0; min-height: 0;
-  overflow-y: auto; overflow-x: hidden;
+  flex: 1; min-width: 0;
   position: relative; cursor: pointer;
   /* Vertical bar divisions every 12.5 % (same repeating gradient workbench
      uses for .wb-grid). */
@@ -1054,9 +1061,10 @@
   );
 }
 .sd-ruler {
+  position: sticky; top: 0; z-index: 3;
   height: 22px; border-bottom: 1px solid var(--wb-rule);
   display: flex; align-items: flex-end; padding-bottom: 3px;
-  position: relative;
+  background: var(--wb-bg);
 }
 .sd-ruler .sd-tick {
   flex: 1; padding-left: 3px;
