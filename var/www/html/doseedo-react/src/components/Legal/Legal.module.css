@@ -293,3 +293,182 @@
     padding: 24px;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ * Active only when <body> has the workbench-theme class (applied on
+ * /about, /privacy, /terms, /help, /feedback, /plans by App.js).
+ * Legacy routes keep the dark styles above. See theme-workbench.css
+ * for token reference.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .legal {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .title {
+  font-family: var(--wb-font-sans);
+  color: var(--wb-ink);
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+
+:global(body.workbench-theme) .lastUpdated {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+  font-size: 11px;
+}
+
+:global(body.workbench-theme) .section {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .sectionTitle {
+  font-family: var(--wb-font-sans);
+  color: var(--wb-ink);
+  font-weight: 600;
+}
+
+:global(body.workbench-theme) .sectionText {
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .sectionText a {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .list li {
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .list li i {
+  color: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .contactInfo {
+  background: var(--wb-bg);
+  border: var(--wb-border-strong);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .contactInfo p {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .contactInfo a {
+  color: var(--wb-accent);
+}
+
+/* Feedback form */
+:global(body.workbench-theme) .feedbackLabel {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+  font-size: 11px;
+}
+
+:global(body.workbench-theme) .feedbackSelect,
+:global(body.workbench-theme) .feedbackTextarea {
+  background: var(--wb-bg);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .feedbackSelect:focus,
+:global(body.workbench-theme) .feedbackTextarea:focus {
+  border-color: var(--wb-ink);
+  background: #fff;
+}
+
+:global(body.workbench-theme) .feedbackButton {
+  background: var(--wb-ink);
+  border: 1px solid var(--wb-ink);
+  border-radius: var(--wb-radius);
+  color: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+  font-size: 11px;
+  padding: 10px 22px;
+}
+
+:global(body.workbench-theme) .feedbackButton:hover {
+  background: #000;
+  border-color: #000;
+}
+
+/* Plans / pricing cards */
+:global(body.workbench-theme) .planCard {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+}
+
+:global(body.workbench-theme) .planCardMuted {
+  background: var(--wb-bg);
+  border-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .planTierName {
+  font-family: var(--wb-font-sans);
+  color: var(--wb-ink);
+  font-weight: 600;
+}
+
+:global(body.workbench-theme) .planTierPrice {
+  font-family: var(--wb-font-sans);
+  color: var(--wb-ink);
+  font-weight: 600;
+}
+
+:global(body.workbench-theme) .planTierPriceMuted {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  letter-spacing: var(--wb-tracking-caps);
+}
+
+:global(body.workbench-theme) .planTagline {
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .planCtaPrimary,
+:global(body.workbench-theme) .planCtaSecondary {
+  font-family: var(--wb-font-mono);
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+  font-size: 11px;
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .planCtaPrimary {
+  background: var(--wb-ink);
+  border: 1px solid var(--wb-ink);
+  color: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .planCtaPrimary:hover {
+  background: #000;
+  border-color: #000;
+}
+
+:global(body.workbench-theme) .planCtaSecondary {
+  background: transparent;
+  border: var(--wb-border-strong);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .planCtaSecondary:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}

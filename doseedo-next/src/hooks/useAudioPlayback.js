@@ -2,7 +2,8 @@ import { useEffect, useRef, useCallback } from 'react';
 import midiPlayer from '../utils/midiPlayer';
 import tunaFX from '../services/tunaFX';
 import { isMaskPlaybackReady, setGains as setMaskGains, setActiveStem, seek as maskSeek, play as maskPlay, stop as maskStop } from '../services/maskPlayback';
-import { getTrackSchedule, getTrackSubstemSchedules, resumeFromPlayhead } from '../services/virtualTrackEdit';
+import { dispatchStrategy, getTrackSubstemSchedules, resumeFromPlayhead } from '../services/virtualTrackEdit';
+import { getStretchedBuffer } from '../services/wsolaStretch';
 
 // Global audio buffer cache (shared across all instances)
 const audioBufferCache = new Map();
@@ -11,7 +12,7 @@ const audioBufferCache = new Map();
  * Custom hook for managing audio playback across multiple tracks
  * Integrates with global state via dispatch
  */
-export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10, currentPlayheadPosition = 0, bpm = 120, masterGain = 0.8, beatsPerBar = 4, meterDenominator = 4) {
+export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10, currentPlayheadPosition = 0, bpm = 120, masterGain = 0.8, beatsPerBar = 4, meterDenominator = 4, tempoMap = null) {
   const audioContextRef = useRef(null);
   const masterGainNodeRef = useRef(null); // Master gain node for overall volume control
   const sourceNodesRef = useRef([]);
@@ -360,7 +361,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       // hit-snap to the new meter grid; sustain substems stay on bar
       // rearrange. All substems mix into ONE shared per-track gain so
       // solo/mute on the parent drum track keeps working.
-      const projectMeter = { bpm, beatsPerBar, meterDenominator };
+      const projectMeter = { bpm, beatsPerBar, meterDenominator, tempoMap };
 
       // Helper: ensure a buffer is decoded + cached, then run the cb.
       const ensureBuffer = async (url) => {
@@ -420,7 +421,10 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         }
 
         // ── Regular single-buffer path ────────────────────────────────
-        const schedule = getTrackSchedule(track, projectMeter);
+        // Dispatcher picks per-stem-type strategy: vocals get word-
+        // protected schedule, bass gets melodic-protected, others fall
+        // through to bar rearrange.
+        const schedule = dispatchStrategy(track, projectMeter);
         if (audioBufferCache.has(url)) {
           const { sources, gainNode } = scheduleTrackWithSchedule(
             audioContext, url, schedule, finalGain, trackStartTime,
@@ -922,15 +926,19 @@ function scheduleTrack(
  *   [ seg1 source → seg1 fadeGain ─┼── track gain ── master
  *   [ segN source → segN fadeGain ─┘
  *
- * Every segment plays at rate 1 (rearrange-only schedules). A `stretch`
- * segment is explicitly NOT handled here — it would need a WSOLA
- * AudioWorklet to preserve pitch. If one appears, we skip it with a
- * warning rather than pitch-shift via playbackRate.
+ * Most segments play at rate 1 (rearrange-only schedules). When a
+ * `stretch` segment appears (rate !== 1, e.g. tempo change or future
+ * non-meter stretch features), the engine pre-renders the slice via
+ * WSOLA (services/wsolaStretch.js) into a new AudioBuffer at the target
+ * duration and plays THAT at rate 1. Pitch is preserved — we never set
+ * AudioBufferSourceNode.playbackRate to anything other than 1.
  *
  * source.start(when, offset, srcDuration):
  *   - `when`         AudioContext time to start this segment
- *   - `offset`       offset into the decoded buffer (seconds)
- *   - `srcDuration`  src content to play (at rate 1, equals dst duration)
+ *   - `offset`       offset into the (possibly pre-stretched) buffer
+ *   - `srcDuration`  buffer content to play; for rate=1 segments equals
+ *                    dst duration; for rate≠1 the buffer IS the dst
+ *                    content already, so offset/duration are dst-space.
  *
  * Returns { sources: [...], gainNode }. Callers push every element of
  * `sources` into sourceNodesRef so pause()/stop() tears them all down.
@@ -968,13 +976,6 @@ function scheduleTrackWithSchedule(
     for (const entry of live) {
       const { seg, dstOffsetIntoSeg, srcOffsetIntoSeg, srcDuration } = entry;
 
-      // STRICT: no pitch shift. If a stretch segment slips in, skip it
-      // instead of pitch-shifting via playbackRate.
-      if (seg.rate !== 1) {
-        console.warn('[useAudioPlayback] skipping non-rate-1 seg (WSOLA not wired):', seg);
-        continue;
-      }
-
       // When does this segment start in AudioContext wall-clock time?
       //   - Already in flight (dstOffsetIntoSeg > 0): start now.
       //   - Future: trackStart + seg.dstStart relative to the wall-clock
@@ -987,15 +988,45 @@ function scheduleTrackWithSchedule(
       }
       if (when < schedulingStartTime - 1e-3) continue;
 
+      // ── Pick playback buffer + offset/duration based on seg.rate ──
+      // rate === 1: slice the original audioBuffer at srcStart+offset.
+      // rate !== 1: pre-render the slice via WSOLA into a new buffer
+      //   at the target dst length (pitch preserved). The pre-rendered
+      //   buffer plays at rate 1 — NEVER use playbackRate, which would
+      //   pitch-shift. Cached per (url, srcStart, srcEnd, ratio).
+      let bufferToPlay, offset, srcPlayable;
+      const dstDurFromHere = (seg.dstEnd - seg.dstStart) - dstOffsetIntoSeg;
+      if (seg.rate === 1) {
+        bufferToPlay = audioBuffer;
+        offset = seg.srcStart + srcOffsetIntoSeg;
+        if (offset >= audioBuffer.duration) continue;
+        srcPlayable = Math.min(srcDuration, audioBuffer.duration - offset);
+      } else {
+        // ratio = output_length / input_length = 1 / seg.rate.
+        //   seg.rate > 1 (compress): ratio < 1, output shorter than input
+        //   seg.rate < 1 (stretch):  ratio > 1, output longer than input
+        const ratio = 1 / seg.rate;
+        bufferToPlay = getStretchedBuffer(
+          audioContext, audioBuffer, audioUrl,
+          seg.srcStart, seg.srcEnd, ratio,
+        );
+        // The stretched buffer's full length corresponds to the segment's
+        // dst window. Mid-segment resume offsets directly into dst space.
+        offset = dstOffsetIntoSeg;
+        if (offset >= bufferToPlay.duration) continue;
+        srcPlayable = Math.min(dstDurFromHere, bufferToPlay.duration - offset);
+      }
+      if (srcPlayable <= 0) continue;
+
       const src = audioContext.createBufferSource();
-      src.buffer = audioBuffer;
-      // playbackRate stays at 1 — we NEVER pitch-shift via playbackRate.
+      src.buffer = bufferToPlay;
+      // playbackRate stays at 1 — pitch preservation. WSOLA already
+      // bent the time axis; the source just plays the result back.
 
       const segGain = audioContext.createGain();
-      const dstDurRemaining = srcDuration; // rate=1
-      const fadeIn  = dstOffsetIntoSeg > 0 ? 0 : Math.min(seg.fadeIn  || 0, dstDurRemaining * 0.5);
-      const fadeOut = Math.min(seg.fadeOut || 0, dstDurRemaining * 0.5);
-      const segEnd = when + dstDurRemaining;
+      const fadeIn  = dstOffsetIntoSeg > 0 ? 0 : Math.min(seg.fadeIn  || 0, dstDurFromHere * 0.5);
+      const fadeOut = Math.min(seg.fadeOut || 0, dstDurFromHere * 0.5);
+      const segEnd = when + dstDurFromHere;
       if (fadeIn > 0) {
         segGain.gain.setValueAtTime(0, when);
         segGain.gain.linearRampToValueAtTime(1, when + fadeIn);
@@ -1009,11 +1040,6 @@ function scheduleTrackWithSchedule(
 
       src.connect(segGain);
       segGain.connect(trackGain);
-
-      const offset = seg.srcStart + srcOffsetIntoSeg;
-      if (offset >= audioBuffer.duration) continue;
-      const srcPlayable = Math.min(srcDuration, audioBuffer.duration - offset);
-      if (srcPlayable <= 0) continue;
 
       try {
         src.start(when, offset, srcPlayable);

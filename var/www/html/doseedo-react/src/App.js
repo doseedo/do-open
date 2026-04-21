@@ -160,6 +160,9 @@ function AppContent() {
       p === '/whats-new' ||
       p === '/help' ||
       p === '/feedback' ||
+      p === '/about' ||
+      p === '/privacy' ||
+      p === '/terms' ||
       p.startsWith('/research') ||
       p.startsWith('/plugins') ||
       p.startsWith('/creation/');

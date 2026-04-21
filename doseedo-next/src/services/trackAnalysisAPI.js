@@ -64,6 +64,34 @@ export async function detectChordsAndTempo(audioFile) {
   return data;
 }
 
+/**
+ * Rich per-bar tempo/meter analysis. Returns:
+ *   {
+ *     bpm, beatsPerBar, meterDenominator, grouping,
+ *     downbeat_offset,
+ *     beat_map: [{t, pos}, ...],
+ *     tempoMap: [{bar, t, bpm, meter: [n,d], grouping?}, ...],
+ *     duration,
+ *   }
+ *
+ * Populated by the backend /api/analyze-rhythm endpoint using beat_this +
+ * librosa. Supports in-song tempo and meter changes — each entry in
+ * tempoMap represents a run of bars sharing local tempo+meter.
+ *
+ * Independent of /api/detect-chords (which is currently gated off for
+ * chord extraction). Safe to call on every audio upload.
+ */
+export async function analyzeRhythm(audioFile) {
+  const compressed = await compressAudioForUpload(audioFile);
+  const fd = new FormData();
+  fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
+  const r = await fetch('/api/analyze-rhythm', { method: 'POST', body: fd });
+  if (!r.ok) throw new Error(`analyze-rhythm HTTP ${r.status}`);
+  const data = await r.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
 export async function encodeLatentsBulk(urls) {
   // Client-side only — fetches each stem WAV, encodes in-browser, uploads latent.
   // Throws (fail-closed) if encoder is unavailable. Per-URL errors are logged and skipped.

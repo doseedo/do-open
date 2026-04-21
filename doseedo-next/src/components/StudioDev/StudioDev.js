@@ -21,9 +21,10 @@ import { useAudioRecorder } from '../../hooks/useAudioRecorder';
 import useAutoRepaintMeter from '../../hooks/useAutoRepaintMeter';
 import useTrackActions from '../../hooks/useTrackActions';
 import {
-  separateStemsAuto, iconForType, detectChordsAndTempo,
-  analyzeAudio,
+  separateStemsAuto, iconForType,
+  analyzeAudio, analyzeRhythm,
 } from '../../services/trackAnalysisAPI';
+import { formatTempoMap } from '../../services/tempoMap';
 import * as saveService from '../../services/saveService';
 
 // Existing production components reused for mode content + overlays.
@@ -437,6 +438,7 @@ export default function StudioDev() {
     state.masterGain ?? 0.8,
     state.beatsPerBar || 4,
     state.meterDenominator || 4,
+    state.tempoMap || null,
   );
 
   /* ---------- Auto-switch mode based on selected track type ---------- */
@@ -495,6 +497,39 @@ export default function StudioDev() {
       },
     });
 
+    // Rich rhythm analysis (per-bar tempoMap + beat_map). Fires in parallel
+    // with analyze-audio so the UI sees bar lines + correct meter ASAP.
+    analyzeRhythm(file).then((ra) => {
+      if (!ra || !Array.isArray(ra.tempoMap) || ra.tempoMap.length === 0) return;
+      dispatch({ type: 'SET_PROJECT_TEMPO_MAP', payload: ra.tempoMap });
+      if (ra.beat_map) dispatch({ type: 'SET_BEAT_MAP', payload: ra.beat_map });
+      if (typeof ra.downbeat_offset === 'number') {
+        dispatch({ type: 'SET_TIMELINE_OFFSET', payload: ra.downbeat_offset });
+      }
+      const first = ra.tempoMap[0];
+      if (ra.bpm) dispatch({ type: 'UPDATE_BPM', payload: Math.round(ra.bpm) });
+      if (first?.meter) dispatch({ type: 'SET_METER', payload: `${first.meter[0]}/${first.meter[1]}` });
+      dispatch({
+        type: 'UPDATE_TRACK',
+        payload: {
+          busId, trackId,
+          updates: {
+            metadata: {
+              tempoMap: ra.tempoMap,
+              barStarts: (ra.beat_map || []).filter((b) => b.pos === 1).map((b) => b.t),
+              detectedBpm: ra.bpm,
+              detectedMeter: ra.beatsPerBar,
+              detectedMeterDenominator: ra.meterDenominator,
+              detectedGrouping: ra.grouping,
+              downbeatOffset: ra.downbeat_offset,
+            },
+          },
+        },
+      });
+      console.log(`🎶 tempoMap extracted (${ra.tempoMap.length} entries, duration ${ra.duration?.toFixed(2)}s):`);
+      console.log(formatTempoMap(ra.tempoMap));
+    }).catch((err) => console.warn('[analyze-rhythm] failed:', err?.message || err));
+
     analyzeAudio(file).then((res) => {
       const cls = res.classification;
       const midi = res.midi;
@@ -521,7 +556,70 @@ export default function StudioDev() {
       });
     }).catch((err) => console.warn('analyze failed:', err?.message || err));
 
+    // BasicPitch (server-side, higher quality than LatentPitch) delivers
+    // per-stem MIDI incrementally after demucs finishes. Each delivery
+    // replaces the latent_pitch placeholder on the matching stem track
+    // AND triggers a chord-row re-detection so the ChordTrack upgrades
+    // to the cleaner transcription. Debounced so a burst of stem
+    // deliveries produces one chord pass.
+    const bpMidiByStem = {};
+    let chordRerunTimer = null;
+    const swapInBasicPitch = async ({ midi_urls }) => {
+      const tempo = stateRef.current.bpm || 120;
+      for (const [stemName, midiUrl] of Object.entries(midi_urls || {})) {
+        try {
+          const r = await fetch(midiUrl);
+          if (!r.ok) { console.warn(`[basicPitch] ${stemName} fetch ${r.status}`); continue; }
+          const ab = await r.arrayBuffer();
+          const { Midi } = await import('@tonejs/midi');
+          const midi = new Midi(ab);
+          const notes = [];
+          let duration = 0;
+          for (const tr of midi.tracks) {
+            for (const n of tr.notes) {
+              notes.push({
+                note: n.midi,
+                time: n.time,
+                duration: n.duration,
+                velocity: Math.max(1, Math.min(127, Math.round((n.velocity ?? 0.7) * 127))),
+              });
+              duration = Math.max(duration, n.time + n.duration);
+            }
+          }
+          notes.sort((a, b) => a.time - b.time);
+          console.log(`[basicPitch] ${stemName}: ${notes.length} notes (replacing latent_pitch placeholder)`);
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: {
+              busId, trackId: `stem-${trackId}-${stemName}`,
+              updates: { metadata: { midiData: { notes, duration, tempo } } },
+            },
+          });
+          bpMidiByStem[stemName] = notes;
+        } catch (e) {
+          console.warn(`[basicPitch] ${stemName} parse failed:`, e?.message || e);
+        }
+      }
+      if (chordRerunTimer) clearTimeout(chordRerunTimer);
+      chordRerunTimer = setTimeout(async () => {
+        try {
+          const { rerunChordDetection } = await import('../../services/detectChordsFromMIDI');
+          const s = stateRef.current;
+          const chordsNum = rerunChordDetection(bpMidiByStem, {
+            beatMap: s.beatMap, bpm: s.bpm || tempo,
+          });
+          if (Object.keys(chordsNum).length > 0) {
+            dispatch({ type: 'SET_CHORDS', payload: chordsNum });
+            console.log(`[basicPitch] chord row rebuilt from ${Object.keys(bpMidiByStem).length} upgraded stem(s): ${Object.keys(chordsNum).length} chord changes`);
+          }
+        } catch (err) {
+          console.warn('[basicPitch] chord rerun failed:', err?.message || err);
+        }
+      }, 400);
+    };
+
     separateStemsAuto(file, {
+      onMidiReady: swapInBasicPitch,
       onDrumTeacher: ({ drum_substem_urls, drum_substem_onsets, drum_substem_onset_strengths }) => {
         // Attach per-substem WAV URLs + onset times + per-onset strengths
         // to the drums STEM TRACK's metadata. virtualTrackEdit uses the
@@ -545,10 +643,26 @@ export default function StudioDev() {
         });
       },
       onLyrics: ({ vocals_lyrics, vocals_lyrics_language }) => {
-        console.log(`[studio-dev] whisper: ${vocals_lyrics?.length || 0} words (${vocals_lyrics_language})`);
+        // Word-level timing [{word, start, end, probability}] is required
+        // by virtualTrackEdit.buildVocalProtectedSchedule to avoid cutting
+        // a word during meter changes. Attach to the vocals STEM TRACK so
+        // the schedule builder can read it directly from track.metadata.
+        if (!Array.isArray(vocals_lyrics) || vocals_lyrics.length === 0) return;
+        console.log(`[studio-dev] whisper: ${vocals_lyrics.length} words (${vocals_lyrics_language})`);
+        dispatch({
+          type: 'UPDATE_TRACK',
+          payload: {
+            busId, trackId: `stem-${trackId}-vocals`,
+            updates: { metadata: {
+              vocalsLyrics: vocals_lyrics,
+              vocalsLyricsLanguage: vocals_lyrics_language || null,
+            } },
+          },
+        });
       },
     }).then((sep) => {
       if (!sep?.stems) return;
+      const stemOnsets = sep.stem_onsets || {};
       const stemTracks = Object.entries(sep.stems).map(([stemName, audioUrl]) => ({
         id: `stem-${trackId}-${stemName}`,
         name: `${baseName} — ${stemName}`,
@@ -559,6 +673,10 @@ export default function StudioDev() {
           type: 'stem', stemType: stemName,
           parentTrackId: trackId, instrument: stemName,
           icon: iconForType(stemName),
+          // Per-stem librosa onsets — consumed by
+          // virtualTrackEdit.buildMelodicProtectedSchedule to gate bar
+          // drops around sustained notes. Empty array = silent/no hits.
+          stemOnsets: Array.isArray(stemOnsets[stemName]) ? stemOnsets[stemName] : [],
         },
       }));
       dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: stemTracks } });
@@ -648,6 +766,45 @@ export default function StudioDev() {
                 });
               }
               console.log(`[latentPitch] applied MIDI to all ${stemNames.length} stems`);
+
+              // Auto-detect chord row from the pooled non-drum stems' MIDI.
+              // Zero backend — uses the latent-pitch notes we just
+              // extracted. Beat times come from the analyze-rhythm
+              // beat_map when present, else a constant-BPM grid.
+              try {
+                const { detectChordsFromNotes } = await import('../../services/detectChordsFromMIDI');
+                const pooledNotes = [];
+                for (let k = 0; k < pitchedIdx.length; k++) {
+                  const stemName = stemNames[pitchedIdx[k]];
+                  if (stemName === 'drums' || stemName === 'drum_kit') continue;
+                  const { notes } = pitchedResults[k];
+                  for (const n of notes) {
+                    pooledNotes.push({
+                      start: n.start ?? n.time ?? 0,
+                      end: (n.start ?? n.time ?? 0) + (n.duration ?? 0.25),
+                      pitch: n.pitch ?? n.note ?? n.midi,
+                    });
+                  }
+                }
+                const beatMap = state.beatMap;
+                let beatTimes;
+                if (Array.isArray(beatMap) && beatMap.length > 0) {
+                  beatTimes = beatMap.map((b) => b.t);
+                } else {
+                  const spb = 60 / (state.bpm || tempo || 120);
+                  const totalBeats = Math.ceil((pooledNotes.reduce((m, n) => Math.max(m, n.end), 0)) / spb) + 1;
+                  beatTimes = Array.from({ length: totalBeats }, (_, i) => i * spb);
+                }
+                const chords = detectChordsFromNotes(pooledNotes, beatTimes);
+                if (Object.keys(chords).length > 0) {
+                  const chordsNum = {};
+                  Object.entries(chords).forEach(([k, v]) => { chordsNum[parseInt(k, 10)] = v; });
+                  dispatch({ type: 'SET_CHORDS', payload: chordsNum });
+                  console.log(`[chords] detected ${Object.keys(chords).length} chord changes from pooled MIDI`);
+                }
+              } catch (err) {
+                console.warn('[chords] auto-detect failed:', err?.message || err);
+              }
             },
           });
         } catch (err) {
@@ -927,36 +1084,49 @@ export default function StudioDev() {
     }
   }, [state.playheadPosition, loopEnabled, loopRegion, state.isPlaying, dispatch, seek]);
 
-  // Detect-chords action on selected track. Wires to the same /api/detect-
-  // chords endpoint the original TrackInfoSidebar calls; result is scribed
-  // into state.chords via UPDATE_CHORD so the chord row lights up.
+  // Detect-chords action on selected track. Pools MIDI from the selected
+  // bus's non-drum stems (already produced by the latent-pitch pass on
+  // upload) and runs the client-side symbolic chord detector. Zero
+  // backend — the old /api/detect-chords chord path is 503-gated and
+  // was replaced by detectChordsFromMIDI.
   const runDetectChords = useCallback(async () => {
-    if (!selectedTrack?.audioFile && !selectedTrack?.audioUrl) return;
+    if (!selectedBusId) return;
     setDetectingChords(true);
     try {
-      const file = selectedTrack.audioFile instanceof File
-        ? selectedTrack.audioFile
-        : await (async () => {
-            const r = await fetch(selectedTrack.audioUrl);
-            const b = await r.blob();
-            return new File([b], selectedTrack.name || 'track.wav', { type: b.type || 'audio/wav' });
-          })();
-      const res = await detectChordsAndTempo(file);
-      const bpm = res?.bpm || state.bpm || 120;
-      const spb = 60 / bpm;
-      // Project detected chords onto beat indices. The reducer keys chords
-      // by beat number; we quantize each chord onset to the nearest beat.
-      for (const c of (res?.chords || [])) {
-        const beatIdx = Math.round((c.start ?? c.time ?? 0) / spb);
-        if (c.chord) dispatch({ type: 'UPDATE_CHORD', payload: { beatIndex: beatIdx, chord: c.chord } });
+      const bus = state.buses.find((b) => b.id === selectedBusId);
+      const stemsWithMidi = (bus?.tracks || []).filter((t) => t?.metadata?.midiData?.notes?.length);
+      if (stemsWithMidi.length === 0) {
+        console.warn('[studio-dev] detect-chords: no stem MIDI available yet — wait for latent-pitch pass to finish');
+        return;
       }
-      if (res?.bpm) dispatch({ type: 'UPDATE_BPM', payload: res.bpm });
+      const { poolMidiFromStems, detectChordsFromNotes } = await import('../../services/detectChordsFromMIDI');
+      const notes = poolMidiFromStems(stemsWithMidi);
+      if (notes.length === 0) {
+        console.warn('[studio-dev] detect-chords: no pitched notes pooled (all drum stems?)');
+        return;
+      }
+      const bpm = state.bpm || 120;
+      const spb = 60 / bpm;
+      const beatMap = state.beatMap;
+      let beatTimes;
+      if (Array.isArray(beatMap) && beatMap.length > 0) {
+        beatTimes = beatMap.map((b) => b.t);
+      } else {
+        const maxEnd = notes.reduce((m, n) => Math.max(m, n.end), 0);
+        const nBeats = Math.ceil(maxEnd / spb) + 1;
+        beatTimes = Array.from({ length: nBeats }, (_, i) => i * spb);
+      }
+      const chords = detectChordsFromNotes(notes, beatTimes);
+      const chordsNum = {};
+      Object.entries(chords).forEach(([k, v]) => { chordsNum[parseInt(k, 10)] = v; });
+      dispatch({ type: 'SET_CHORDS', payload: chordsNum });
+      console.log(`[studio-dev] detect-chords: ${Object.keys(chords).length} chord changes from ${stemsWithMidi.length} stem(s)`);
     } catch (e) {
       console.warn('[studio-dev] detect-chords failed:', e?.message || e);
     } finally {
       setDetectingChords(false);
     }
-  }, [selectedTrack, state.bpm, dispatch]);
+  }, [selectedBusId, state.buses, state.bpm, state.beatMap, dispatch]);
 
   // Stem-separate the selected (existing) track.
   const runStemSep = useCallback(async () => {

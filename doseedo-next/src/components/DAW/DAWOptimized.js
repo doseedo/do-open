@@ -5,7 +5,8 @@ import { useAudioPlayback } from '../../hooks/useAudioPlayback';
 import { useKeyboardControls } from '../../hooks/useKeyboardControls';
 import { useMetronome } from '../../hooks/useMetronome';
 import { parseMIDIFile } from '../../utils/midiParser';
-import { analyzeAudio, iconForType, separateStemsAuto, repaintMeter, encodeLatentsBulk, detectChordsAndTempo } from '../../services/trackAnalysisAPI';
+import { analyzeAudio, iconForType, separateStemsAuto, repaintMeter, encodeLatentsBulk, detectChordsAndTempo, analyzeRhythm } from '../../services/trackAnalysisAPI';
+import { formatTempoMap } from '../../services/tempoMap';
 import { meterChangeAllStems, initLatentEditor } from '../../services/latentMeterChange';
 import { initDrumSep, splitDrumLatent } from '../../services/latentDrumSep';
 import { initMaskPlayback, createMaskPlaybackNode, setMaster, computeAndSetMasks, setRefinedMasks, precomputeStemAudio } from '../../services/maskPlayback';
@@ -218,6 +219,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
     state.masterGain || 0.8,  // Master gain (default 80% to prevent clipping)
     state.beatsPerBar || 4,
     state.meterDenominator || 4,
+    state.tempoMap || null,
   );
 
   // Enable keyboard controls (spacebar for play/pause, etc.)
@@ -832,6 +834,13 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
   // The downbeat offset becomes the timeline pre-roll so bar 1 lands
   // exactly on the song's first downbeat (silence + pickup → bar 0).
   const applyDetection = useCallback(async (file, trackId, busId) => {
+    // Kick off rich tempoMap analysis in parallel with the legacy chord/
+    // tempo detection. tempoMap is the source of truth going forward; the
+    // legacy call still lands (chord row etc.) when it's re-enabled.
+    const rhythmP = analyzeRhythm(file).catch((err) => {
+      console.warn('[analyze-rhythm] failed:', err?.message || err);
+      return null;
+    });
     try {
       const det = await detectChordsAndTempo(file);
       const detDen = det.meter_denominator || 4;          // detector now reports /4 vs /8
@@ -882,6 +891,42 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
       console.log(`🎵 detected: ${Math.round(det.bpm)} BPM, ${det.beats_per_bar}/${detDen}${det.grouping ? ' (' + det.grouping + ')' : ''}, downbeat at ${det.downbeat_offset?.toFixed(2)}s`);
     } catch (err) {
       console.warn('detection failed:', err.message);
+    }
+
+    // analyze-rhythm: rich per-bar tempoMap (survives in-song tempo/meter
+    // changes). Lands on project state + track metadata. Runs in parallel
+    // with the legacy detection above; either path may populate the first
+    // cut of bpm/meter, but tempoMap is the authoritative per-bar record.
+    try {
+      const ra = await rhythmP;
+      if (ra && Array.isArray(ra.tempoMap) && ra.tempoMap.length > 0) {
+        dispatch({ type: 'SET_PROJECT_TEMPO_MAP', payload: ra.tempoMap });
+        if (ra.beat_map) dispatch({ type: 'SET_BEAT_MAP', payload: ra.beat_map });
+        // Also mirror onto the track metadata so virtualTrackEdit can use
+        // real downbeat times instead of synthesizing from constant BPM.
+        dispatch({
+          type: 'UPDATE_TRACK',
+          payload: {
+            busId, trackId,
+            updates: {
+              metadata: {
+                tempoMap: ra.tempoMap,
+                barStarts: (ra.beat_map || []).filter((b) => b.pos === 1).map((b) => b.t),
+                detectedBpm: ra.bpm,
+                detectedMeter: ra.beatsPerBar,
+                detectedMeterDenominator: ra.meterDenominator,
+                detectedGrouping: ra.grouping,
+                downbeatOffset: ra.downbeat_offset,
+              },
+            },
+          },
+        });
+        // Log the full map so the operator can see exactly what was extracted.
+        console.log(`🎶 tempoMap extracted (${ra.tempoMap.length} entries, duration ${ra.duration?.toFixed(2)}s):`);
+        console.log(formatTempoMap(ra.tempoMap));
+      }
+    } catch (err) {
+      console.warn('analyze-rhythm apply failed:', err?.message || err);
     }
   }, [dispatch]);
 
@@ -1393,6 +1438,12 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
             // stem's MIDI arrives, swap it in to replace the latent_pitch
             // placeholder on that track.
             const tempo = state.bpm || 120;
+            // Accumulator for BasicPitch-quality MIDI per stem. When a
+            // stem lands we upgrade the placeholder AND re-run chord
+            // detection using the higher-quality notes. Debounced so a
+            // burst of N stem deliveries produces one chord pass.
+            const bpMidiByStem = {};
+            let chordRerunTimer = null;
             const swapInBasicPitch = async ({ midi_urls }) => {
               for (const [stemName, midiUrl] of Object.entries(midi_urls || {})) {
                 try {
@@ -1424,10 +1475,29 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                       updates: { metadata: { midiData: { notes, duration, tempo } } },
                     },
                   });
+                  bpMidiByStem[stemName] = notes;
                 } catch (e) {
                   console.warn(`[basicPitch] ${stemName} parse failed:`, e?.message || e);
                 }
               }
+              // Re-run chord detection after the swap burst settles.
+              // 400ms is long enough to coalesce a typical 3-5 stem batch,
+              // short enough that the user sees updated chords quickly.
+              if (chordRerunTimer) clearTimeout(chordRerunTimer);
+              chordRerunTimer = setTimeout(async () => {
+                try {
+                  const { rerunChordDetection } = await import('../../services/detectChordsFromMIDI');
+                  const chordsNum = rerunChordDetection(bpMidiByStem, {
+                    beatMap: state.beatMap, bpm: state.bpm || tempo,
+                  });
+                  if (Object.keys(chordsNum).length > 0) {
+                    dispatch({ type: 'SET_CHORDS', payload: chordsNum });
+                    console.log(`[basicPitch] chord row rebuilt from ${Object.keys(bpMidiByStem).length} upgraded stem(s): ${Object.keys(chordsNum).length} chord changes`);
+                  }
+                } catch (err) {
+                  console.warn('[basicPitch] chord rerun failed:', err?.message || err);
+                }
+              }, 400);
             };
             // onDrumTeacher: attach per-substem WAV URLs + onsets to the
             // drums STEM TRACK's metadata so virtual-edit playback can do
@@ -1450,9 +1520,27 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                 },
               });
             };
+            // Whisper word-level lyrics → persist onto the vocals stem
+            // track so virtualTrackEdit.buildVocalProtectedSchedule can
+            // avoid cutting mid-word when converting meter.
+            const onLyrics = ({ vocals_lyrics, vocals_lyrics_language }) => {
+              if (!Array.isArray(vocals_lyrics) || vocals_lyrics.length === 0) return;
+              console.log(`[separate-stems] whisper: ${vocals_lyrics.length} words (${vocals_lyrics_language})`);
+              dispatch({
+                type: 'UPDATE_TRACK',
+                payload: {
+                  busId, trackId: `stem-${trackId}-vocals`,
+                  updates: { metadata: {
+                    vocalsLyrics: vocals_lyrics,
+                    vocalsLyricsLanguage: vocals_lyrics_language || null,
+                  } },
+                },
+              });
+            };
             const sep = await separateStemsAuto(file, {
               onMidiReady: swapInBasicPitch,
               onDrumTeacher,
+              onLyrics,
             });
             console.log(`[separate-stems] stems ready in ${(performance.now() - tSep0).toFixed(0)}ms (BasicPitch continues in background)`);
             const wavUrls = sep?.stems || {};
@@ -1500,16 +1588,22 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
               // never fall through to paintBarAnimationFromBuffer. Audio
               // for playback rides on `audioUrl`, independent from the
               // waveform canvas, which is always driven by envelopeData.
+              const stemOnsets = sep?.stem_onsets || {};
               for (const stemName of stemNames) {
                 const wavUrl = effectiveWavUrls[stemName];
                 if (!wavUrl) continue;
-                // 1) audioUrl wired in immediately so playback can start
+                // 1) audioUrl + per-stem librosa onsets wired in immediately
+                // so playback can start and virtualTrackEdit's melodic
+                // protection can gate bar edits on sustained notes.
                 dispatch({
                   type: 'UPDATE_TRACK',
                   payload: {
                     busId,
                     trackId: `stem-${trackId}-${stemName}`,
-                    updates: { audioUrl: wavUrl, metadata: { playbackReady: true } },
+                    updates: { audioUrl: wavUrl, metadata: {
+                      playbackReady: true,
+                      stemOnsets: Array.isArray(stemOnsets[stemName]) ? stemOnsets[stemName] : [],
+                    } },
                   },
                 });
                 // 2) compute envelope from the real WAV and swap it in —
@@ -2071,8 +2165,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
             playheadPosition={state.playheadPosition || 0}
             isBPMMode={state.isBPMMode}
             bpm={state.bpm || 120}
-            sceneTempos={state.video?.sceneTempos || []}
-            sceneChanges={state.video?.sceneChanges || []}
+            sceneTempos={state.tempoMap?.length ? state.tempoMap.map(e => e.bpm) : (state.video?.sceneTempos || [])}
+            sceneChanges={state.tempoMap?.length ? state.tempoMap.map(e => e.t ?? 0) : (state.video?.sceneChanges || [])}
+            sceneMeters={state.tempoMap?.length ? state.tempoMap.map(e => e.meter || [4, 4]) : []}
             onZoomIn={handleZoomIn}
             onZoomOut={handleZoomOut}
             trackHeight={state.trackHeight || 72}
@@ -2117,8 +2212,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
             playheadPosition={state.playheadPosition || 0}
             isBPMMode={state.isBPMMode}
             bpm={state.bpm || 120}
-            sceneTempos={state.video?.sceneTempos || []}
-            sceneChanges={state.video?.sceneChanges || []}
+            sceneTempos={state.tempoMap?.length ? state.tempoMap.map(e => e.bpm) : (state.video?.sceneTempos || [])}
+            sceneChanges={state.tempoMap?.length ? state.tempoMap.map(e => e.t ?? 0) : (state.video?.sceneChanges || [])}
+            sceneMeters={state.tempoMap?.length ? state.tempoMap.map(e => e.meter || [4, 4]) : []}
             playheadOnly={true}
             skipWidthMeasurement={true} // Don't measure width - use global state from main timeline
           />
@@ -2132,8 +2228,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
             containerWidth={state.timelineWidth || 700}
             isBPMMode={state.isBPMMode}
             bpm={state.bpm || 120}
-            sceneTempos={state.video?.sceneTempos || []}
-            sceneChanges={state.video?.sceneChanges || []}
+            sceneTempos={state.tempoMap?.length ? state.tempoMap.map(e => e.bpm) : (state.video?.sceneTempos || [])}
+            sceneChanges={state.tempoMap?.length ? state.tempoMap.map(e => e.t ?? 0) : (state.video?.sceneChanges || [])}
+            sceneMeters={state.tempoMap?.length ? state.tempoMap.map(e => e.meter || [4, 4]) : []}
             buses={state.buses}
             trackHeight={state.trackHeight || 72}
             onSeek={seek}
