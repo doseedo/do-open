@@ -124,6 +124,7 @@ function SummedWaveform({
   busStart, busEnd,      // seconds — envelope of rendered bar range
   width100 = 100,        // cosmetic number of bars to render
   height = 16, color = '#fff', opacity = 0.9, bw = 2, gap = 1,
+  silent = false,
 }) {
   const range = Math.max(0.0001, busEnd - busStart);
   // Cap bars at 600 so a very long / zoomed-in bus doesn't generate
@@ -132,6 +133,19 @@ function SummedWaveform({
   // count and trigger a full SVG rebuild each frame.
   const rawBars = Math.max(20, Math.min(width100, 600));
   const bars = Math.max(20, Math.round(rawBars / 10) * 10);
+  // Silent bus (all children are MIDI placeholders / no audioUrl yet) —
+  // render a flat minimal bar row at reduced opacity so the aggregate
+  // reads as 'no audio' while still showing the bus envelope.
+  if (silent) {
+    const w = bars * (bw + gap) - gap;
+    return (
+      <svg width="100%" height={height} viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+        {Array.from({ length: bars }).map((_, i) => (
+          <rect key={i} x={i * (bw + gap)} y={(height - 1.5) / 2} width={bw} height={1.5} rx={bw / 2} fill={color} opacity={Math.min(opacity, 0.35)} />
+        ))}
+      </svg>
+    );
+  }
 
   // Sample by absolute TIME, not bar index. Each bar b maps to tSec;
   // amplitude = BAR_SIG[(seed + floor(tSec × density)) % len]. This
@@ -1888,6 +1902,7 @@ export default function StudioDev() {
                           busStart={busStart} busEnd={busEnd}
                           width100={Math.max(40, Math.floor((busEnd - busStart) * CLIP_BARS_PER_SEC * timelineZoom))}
                           height={20} color={bus.color}
+                          silent={!bus.tracks.some((tr) => tr._real?.audioUrl)}
                         />
                       </div>
                     );
