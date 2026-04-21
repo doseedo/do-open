@@ -574,7 +574,11 @@
   border-color: var(--wb-rule-strong);
 }
 
-.trendingTabActive {
+/* Double class (.trendingTab.trendingTabActive) bumps specificity so it
+ * wins over .trendingTab:hover (0,2,0). Hover variant also pinned so
+ * moving the mouse onto the selected tab doesn't flip the colors back. */
+.trendingTab.trendingTabActive,
+.trendingTab.trendingTabActive:hover {
   color: var(--wb-bg);
   background: var(--wb-ink);
   border-color: var(--wb-ink);
