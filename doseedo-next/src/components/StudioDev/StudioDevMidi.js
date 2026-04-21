@@ -405,8 +405,43 @@ export default function StudioDevMidi() {
     if (!el) return;
     const onWheelNative = (e) => {
       if (e.ctrlKey || e.metaKey) {
+        // Zoom-to-cursor: the point under the cursor stays anchored
+        // so users can dial in a region. We:
+        //   1. compute the logical (time, rowIdx) under the cursor
+        //      using the CURRENT pxPerSec / rowH
+        //   2. scale pxPerSec by 1.15 and derive the new rowH (same
+        //      square-cell rule as the render body)
+        //   3. pick new scrollX/scrollY so that same (time, rowIdx)
+        //      still lands under the same (mx, my)
         e.preventDefault();
-        setPxPerSec((v) => Math.max(20, Math.min(800, v * (e.deltaY < 0 ? 1.15 : 1 / 1.15))));
+        const c = canvasRef.current; if (!c) return;
+        const r = c.getBoundingClientRect();
+        const mx = e.clientX - r.left;
+        const my = e.clientY - r.top;
+        // Only zoom when cursor is over the grid region.
+        if (mx < KEYS_W || my < RULER_H) return;
+
+        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        const newPxPerSec = Math.max(20, Math.min(800, pxPerSec * factor));
+        // Derive the new cellSec + rowH the same way the render body does.
+        let newSub = 1;
+        while (newSub < 8 && (beatSec / newSub) * newPxPerSec > SUBDIVIDE_AT_PX * 2) newSub *= 2;
+        const newCellSec = beatSec / newSub;
+        const newRowH = Math.max(12, Math.round(newCellSec * newPxPerSec));
+
+        // Logical anchor under the cursor BEFORE zoom.
+        const t = (mx - KEYS_W) / pxPerSec + scrollX;
+        const rowIdxF = (my - RULER_H + scrollY) / rowH;
+        // New scroll so (t, rowIdxF) projects back to (mx, my).
+        const nextScrollX = Math.max(0, t - (mx - KEYS_W) / newPxPerSec);
+        const contentH = (maxPitch - minPitch + 1) * newRowH;
+        const maxScrollY = Math.max(0, contentH - (size.h - RULER_H));
+        const nextScrollY = Math.max(0, Math.min(maxScrollY,
+          rowIdxF * newRowH - (my - RULER_H)));
+
+        setPxPerSec(newPxPerSec);
+        setScrollX(nextScrollX);
+        setScrollY(nextScrollY);
       } else if (e.shiftKey) {
         e.preventDefault();
         setScrollX((v) => Math.max(0, v + e.deltaY / pxPerSec));
@@ -421,7 +456,7 @@ export default function StudioDevMidi() {
     };
     el.addEventListener('wheel', onWheelNative, { passive: false });
     return () => el.removeEventListener('wheel', onWheelNative);
-  }, [pxPerSec, rowH, maxPitch, minPitch, size.h]);
+  }, [pxPerSec, rowH, maxPitch, minPitch, size.h, scrollX, scrollY, beatSec]);
 
   // Delete / escape key
   useEffect(() => {
