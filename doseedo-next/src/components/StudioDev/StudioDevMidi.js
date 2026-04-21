@@ -201,33 +201,24 @@ export default function StudioDevMidi() {
     });
   }, [dispatch, selectedTrack, busIdForSelected, state.bpm]);
 
-  // ---- Coords ----
-  const cfg = { pxPerSec, rowH, maxPitch, minPitch, scrollX, scrollY };
-  const timeAtX = (x) => (x - KEYS_W) / pxPerSec + scrollX;
-  const pitchAtY = (y) => {
-    const p = maxPitch - Math.floor((y - RULER_H + scrollY) / rowH);
-    return Math.max(minPitch, Math.min(maxPitch, p));
-  };
-
-  // Active grid cell in seconds. Automatically subdivides as the user
-  // zooms in so cells stay visually comfortable (~32 px min wide).
-  // beat → 8th → 16th → 32nd.
+  // ---- Grid timing ----
+  // Must come BEFORE cfg/coord helpers below — cfg reads rowH, which
+  // is derived from cellSec, which is derived from pxPerSec + bpm.
+  // Putting the cfg literal first caused a TDZ (Cannot access 'W'/'rowH'
+  // before initialization) because const rowH hoisted the binding but
+  // left it unreadable until this block ran.
   //
-  // This is the single source of truth for:
+  // cellSec is the single source of truth for:
   //   • note snapping on click/drag
   //   • hover-cell highlight width
   //   • subdivision lines drawn in the ruler + grid
-  // which previously each used different definitions (snap was 1/16,
-  // highlight was 1/4-beat, grid only drew beats), so cells never
-  // visually matched the snap.
   const beatSec = 60 / Math.max(40, state.bpm || 120);
   // Subdivide as soon as a beat is wider than ~48 px (threshold for
   // halving into eighths). The loop halves again whenever the CURRENT
   // cell is still wider than that, so the grid keeps up with zoom
-  // through 8th → 16th → 32nd. Keeps cells ≥ ~24 px so they stay
-  // clickable.
+  // through 8th → 16th → 32nd.
   const SUBDIVIDE_AT_PX = 48;
-  let subdivision = 1;  // divisions per beat (1 = quarter, 2 = 8th, 4 = 16th, 8 = 32nd)
+  let subdivision = 1;
   while (subdivision < 8 && (beatSec / subdivision) * pxPerSec > SUBDIVIDE_AT_PX * 2) {
     subdivision *= 2;
   }
@@ -235,10 +226,16 @@ export default function StudioDevMidi() {
   const snapTime = (t) => Math.round(t / cellSec) * cellSec;
 
   // Row height derives from the cell width so every cell is a perfect
-  // square. Unified zoom: Ctrl-scroll adjusts pxPerSec; rowH follows
-  // automatically. Subdivision clamps cellPx to (48, 96], keeping
-  // squares between 12 and 96 px tall across the full zoom range.
+  // square. Unified zoom: Ctrl-scroll adjusts pxPerSec; rowH follows.
   const rowH = Math.max(12, Math.round(cellSec * pxPerSec));
+
+  // ---- Coords ----
+  const cfg = { pxPerSec, rowH, maxPitch, minPitch, scrollX, scrollY };
+  const timeAtX = (x) => (x - KEYS_W) / pxPerSec + scrollX;
+  const pitchAtY = (y) => {
+    const p = maxPitch - Math.floor((y - RULER_H + scrollY) / rowH);
+    return Math.max(minPitch, Math.min(maxPitch, p));
+  };
 
   // Mouse handlers. Drag uses window-level move/up so React re-renders
   // during commit() can't drop the drag session mid-flight.
