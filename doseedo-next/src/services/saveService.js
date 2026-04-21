@@ -85,13 +85,16 @@ export async function saveLocal(projectName, state) {
  */
 export async function saveToCloud(projectName, state, options = {}) {
   try {
-    updateSaveStatus(SaveStatus.SAVING);
-
+    // Short-circuit when the user isn't signed in. Autosave runs on a 5s
+    // interval regardless of auth state; without this guard every tick
+    // used to `throw new Error('User not authenticated')` and spam the
+    // console. Local save keeps working via quickSave -> saveToLocal.
     const user = getCurrentUser();
     if (!user || !user.id) {
-      throw new Error('User not authenticated');
+      return { success: false, skipped: 'not-authenticated' };
     }
 
+    updateSaveStatus(SaveStatus.SAVING);
     console.log(`☁️ Saving to cloud: ${projectName}`);
 
     // Check if session already exists in cloud

@@ -613,6 +613,43 @@ export default function StudioDev() {
   // one, so both routes stay in lockstep.
   useAutoRepaintMeter();
 
+  // Prewarm ALL WebGPU/WASM ORT sessions so none lazy-loads during the
+  // first file drop. Matches the /studio (DAWOptimized.js) boot block —
+  // order smallest → largest so any failure short-circuits cheaper work
+  // first. Each model owns its own init log (e.g. `[latentPitch] model
+  // loaded…`, `[latentVisual] ready`) so the console shows each as it
+  // warms up.
+  useEffect(() => {
+    fetch('/health').catch(() => {});
+    (async () => {
+      try {
+        const { initRmsDemucs } = await import('../../services/rmsDemucs');
+        await initRmsDemucs();
+      } catch (_) {}
+      try {
+        const { initSem4Decoder } = await import('../../services/sem4Decoder');
+        await initSem4Decoder();
+      } catch (_) {}
+      try {
+        const { initLatentEncoder } = await import('../../services/latentEncoder');
+        await initLatentEncoder();
+      } catch (_) {}
+      try {
+        const { initLatentPitch } = await import('../../services/latentPitch');
+        await initLatentPitch();
+      } catch (_) {}
+      try {
+        const { initDrumSep } = await import('../../services/latentDrumSep');
+        await initDrumSep();
+      } catch (_) {}
+      try {
+        const { initLatentVisual } = await import('../../services/latentVisual');
+        await initLatentVisual();
+      } catch (_) {}
+    })();
+    console.log('[prewarm] studio opened — warming rmsDemucs + sem4Decoder + latentEncoder + latentPitch + latentDrumSep + latentVisual');
+  }, []);
+
   // Autosave loop: quickSave every 8 s. We read state out of a ref so the
   // interval is installed once and doesn't get torn down on every mutation
   // (which would prevent it from ever firing).
