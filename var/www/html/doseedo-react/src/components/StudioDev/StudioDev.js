@@ -75,18 +75,34 @@ function Icon({ k, size = 16, stroke = 1.4, color = 'currentColor', fill = 'none
 
 /* ---------- Static waveform bars (from spec) ---------- */
 const BAR_SIG = [0.10,0.14,0.10,0.30,0.60,0.55,0.20,0.38,0.85,0.70,0.55,0.78,0.45,0.35,0.28,0.22,0.48,0.80,0.95,0.82,0.58,0.38,0.30,0.45,0.62,0.78,0.55,0.38,0.28,0.20,0.30,0.42,0.30,0.22,0.58,0.90,0.82,0.70,0.52,0.40,0.28,0.20,0.20,0.30,0.42,0.50,0.40,0.30,0.22,0.18,0.16,0.28,0.45,0.60,0.72,0.60,0.45,0.35,0.52,0.70,0.82,0.75,0.60,0.45,0.35,0.25,0.20,0.14,0.18,0.26,0.40,0.58,0.70,0.60,0.45,0.30,0.22,0.18,0.14,0.12,0.20,0.32,0.48,0.62,0.58,0.45,0.32,0.22,0.18,0.14,0.16,0.26,0.42,0.58,0.72,0.80,0.78,0.62];
-function Waveform({ height = 16, color = '#fff', start = 0, end = 60, bw = 2, gap = 1, opacity = 0.85 }) {
-  const slice = BAR_SIG.slice(start, end);
-  const w = slice.length * (bw + gap) - gap;
+/**
+ * Waveform — fixed-density clip-internal visualization.
+ *
+ * Caller passes `bars` proportional to the clip's duration (≈5 bars/sec,
+ * see BARS_PER_SEC below). The SVG still scales with the container via
+ * preserveAspectRatio="none", but because bars-count scales with width,
+ * each bar stays visually ~the same width when a clip is stretched. The
+ * `seed` selects a rotating starting offset in BAR_SIG so two clips of
+ * the same length don't look identical.
+ */
+function Waveform({ height = 16, color = '#fff', seed = 0, bars = 60, bw = 2, gap = 1, opacity = 0.85 }) {
+  const n = Math.max(4, Math.floor(bars));
+  const samples = new Array(n);
+  for (let i = 0; i < n; i++) samples[i] = BAR_SIG[(seed + i) % BAR_SIG.length];
+  const w = n * (bw + gap) - gap;
   return (
     <svg width="100%" height={height} viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" style={{ display: 'block' }}>
-      {slice.map((a, i) => {
+      {samples.map((a, i) => {
         const h = Math.max(1.5, a * height);
         return <rect key={i} x={i * (bw + gap)} y={(height - h) / 2} width={bw} height={h} rx={bw / 2} fill={color} opacity={opacity} />;
       })}
     </svg>
   );
 }
+// Bars-per-second target for clip waveforms. At zoom=1 a bar is ~5 per
+// timeline-second; when the clip is stretched (duration ↑) the bar count
+// scales with it, so the pixel density remains ≈constant.
+const CLIP_BARS_PER_SEC = 5;
 
 /**
  * SummedWaveform — bus master waveform.
@@ -104,7 +120,9 @@ function SummedWaveform({
   height = 16, color = '#fff', opacity = 0.9, bw = 2, gap = 1,
 }) {
   const range = Math.max(0.0001, busEnd - busStart);
-  const bars = Math.max(20, Math.min(width100, 160));
+  // Cap bars at 600 so a very long / zoomed-in bus doesn't generate
+  // thousands of SVG rects — visually indistinguishable past this point.
+  const bars = Math.max(20, Math.min(width100, 600));
   // For each bar position within the bus window, sum the BAR_SIG amplitude
   // of every track that is active at that position.
   const sums = new Array(bars).fill(0);
@@ -1797,7 +1815,7 @@ export default function StudioDev() {
                         <SummedWaveform
                           tracks={trackEnvelopes}
                           busStart={busStart} busEnd={busEnd}
-                          width100={Math.max(40, Math.min(120, Math.floor((busEnd - busStart) * 5)))}
+                          width100={Math.max(40, Math.floor((busEnd - busStart) * CLIP_BARS_PER_SEC * timelineZoom))}
                           height={20} color={bus.color}
                         />
                       </div>
@@ -1826,7 +1844,12 @@ export default function StudioDev() {
                               onClick={(e) => { e.stopPropagation(); tr._real && selectTrack(tr._real.id, tr._real._busId); }}
                               >
                                 <div className="sd-clip-label" style={{ color: tr.color }}>{tr.name}</div>
-                                <Waveform height={16} color={tr.color} start={(bi * 8 + i * 3) % 60} end={((bi * 8 + i * 3) % 60) + 60} />
+                                <Waveform
+                                  height={16}
+                                  color={tr.color}
+                                  seed={(bi * 8 + i * 3) % BAR_SIG.length}
+                                  bars={Math.max(8, Math.round((c.e - c.s) * CLIP_BARS_PER_SEC * timelineZoom))}
+                                />
                                 {tr._real && (
                                   <div className="sd-clip-resize"
                                        onMouseDown={(e) => onClipMouseDown(e, tr._real, 'resize')}
