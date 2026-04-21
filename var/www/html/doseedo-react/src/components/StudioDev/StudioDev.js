@@ -290,7 +290,6 @@ export default function StudioDev() {
   // For the Instruments tab: null → show group tiles, group-id → show its subgroups.
   const [activeInstGroup, setActiveInstGroup] = useState(null);
   // Palette layout: 'list' (workbench-style dense rows) | 'grid' (icon tiles).
-  const [paletteView, setPaletteView] = useState('list');
   const [activeMode, setActiveMode] = useState('midi');
   // Which content is showing in the 300px left panel.
   //   'instruments' (default) · 'chat' · 'browse' · 'generate'
@@ -1436,29 +1435,17 @@ export default function StudioDev() {
               <input ref={fileInputRef} type="file" accept="audio/*"
                      style={{ display: 'none' }} onChange={onFilePick} />
 
-              <div className={`sd-inst-palette sd-inst-${paletteView}`}>
+              <div className="sd-inst-palette sd-inst-list">
                 <div className="sd-inst-palette-head">
                   <div className="sd-label" data-count={
                     activeTab === 'Instruments' ? INSTRUMENT_GROUPS.length
                     : activeTab === 'Drums'     ? DRUM_GROUPS.length
                     : VOCAL_GROUPS.length
                   }><span>{activeTab}</span></div>
-                  <div className="sd-palette-toggle" role="tablist" aria-label="Palette layout">
-                    <button className={paletteView === 'list' ? 'on' : ''}
-                            onClick={() => setPaletteView('list')}
-                            title="List view">
-                      <i className="fa-solid fa-list" />
-                    </button>
-                    <button className={paletteView === 'grid' ? 'on' : ''}
-                            onClick={() => setPaletteView('grid')}
-                            title="Icon grid">
-                      <i className="fa-solid fa-table-cells" />
-                    </button>
-                  </div>
                 </div>
 
-                {/* ============== LIST view (workbench-style) ============== */}
-                {paletteView === 'list' && <>
+                {/* Workbench-style list palette (only view now). */}
+                <>
 
                 {/* ---- Instruments: expandable group → subgroup tree ---- */}
                 {activeTab === 'Instruments' && INSTRUMENT_GROUPS.map((g, idx) => {
@@ -1519,82 +1506,7 @@ export default function StudioDev() {
                     <span className="sd-inst-row-name">{g.label}</span>
                   </button>
                 ))}
-                </>}
-
-                {/* ============== GRID view (original icon tiles) ============== */}
-                {paletteView === 'grid' && <>
-
-                {/* Instruments grid: groups → subgroups two-tier. */}
-                {activeTab === 'Instruments' && activeInstGroup == null && (
-                  <div className="sd-grid-3">
-                    {INSTRUMENT_GROUPS.map((g) => (
-                      <button key={g.id} className="sd-inst sd-inst-group"
-                              onClick={() => setActiveInstGroup(g.id)} title={g.label}>
-                        <img src={g.img} alt="" className="sd-inst-img" />
-                        <div className="sd-inst-name">{g.label}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {activeTab === 'Instruments' && activeInstGroup != null && (
-                  <>
-                    <div className="sd-inst-crumb" style={{ marginBottom: 10 }}>
-                      <button className="sd-inst-back" onClick={() => setActiveInstGroup(null)}
-                              title="Back to instrument groups">
-                        <i className="fa-solid fa-chevron-left" />
-                      </button>
-                      <span>{INSTRUMENT_GROUPS.find((g) => g.id === activeInstGroup)?.label || '—'}</span>
-                    </div>
-                    <div className="sd-grid-3">
-                      {(INSTRUMENT_SUBGROUPS[activeInstGroup] || []).map((s) => (
-                        <button key={s.id} className="sd-inst sd-inst-group"
-                                onClick={() => addInstrumentTrack({
-                                  label: s.label, sub: s.sub,
-                                  type: activeInstGroup, icon: 'piano',
-                                  subgroup: s.id, group: activeInstGroup,
-                                })}
-                                title={`Add ${s.label} ${activeInstGroup} track`}>
-                          <img src={s.img} alt="" className="sd-inst-img" />
-                          <div className="sd-inst-name">{s.label}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {activeTab === 'Drums' && (
-                  <div className="sd-grid-3">
-                    {DRUM_GROUPS.map((g) => (
-                      <button key={g.id} className="sd-inst sd-inst-group"
-                              onClick={() => addInstrumentTrack({
-                                label: g.label, type: 'drums', icon: 'drums',
-                                subgroup: g.id, group: 'drums',
-                              })}
-                              title={g.label}>
-                        <img src={g.img} alt="" className="sd-inst-img" />
-                        <div className="sd-inst-name">{g.label}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {activeTab === 'Vocals' && (
-                  <div className="sd-grid-3">
-                    {VOCAL_GROUPS.map((g) => (
-                      <button key={g.id} className="sd-inst sd-inst-group"
-                              onClick={() => addInstrumentTrack({
-                                label: g.label, type: 'vocals', icon: 'mic',
-                                subgroup: g.id, group: 'vocals',
-                              })}
-                              title={g.label}>
-                        <img src={g.img} alt="" className="sd-inst-img" />
-                        <div className="sd-inst-name">{g.label}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                </>}
+                </>
               </div>
 
               {/* Generate form — visible below the palette in every tab
