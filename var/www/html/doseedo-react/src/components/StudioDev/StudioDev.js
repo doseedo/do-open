@@ -1714,21 +1714,10 @@ export default function StudioDev() {
                 </div>
                 {timelineBuses.length === 0 && (
                   <div className="sd-empty-upload">
-                    <div className="sd-empty-upload-inner">
+                    <button type="button" className="sd-empty-upload-inner" onClick={triggerUpload}>
                       <div className="sd-empty-upload-title">Drop an audio file here</div>
-                      <div className="sd-empty-upload-body">
-                        WAV · MP3 · MIDI · FLAC · M4A. Dropping a file creates a
-                        new bus, analyzes the audio, and auto-separates stems.
-                      </div>
-                      <div className="sd-empty-upload-actions">
-                        <button className="wb-btn wb-btn--primary" onClick={triggerUpload}>
-                          &gt; Load file
-                        </button>
-                        <button className="wb-btn" onClick={addEmptyTrack}>
-                          &gt; New MIDI track
-                        </button>
-                      </div>
-                    </div>
+                      <div className="sd-empty-upload-body">WAV · MP3 · MIDI · FLAC · M4A</div>
+                    </button>
                   </div>
                 )}
                 {timelineBuses.map((bus, bi) => {

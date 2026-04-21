@@ -1077,29 +1077,34 @@
   pointer-events: none;
   padding: 24px;
 }
+/* Compact drop target. The whole card is a button so clicking it opens
+ * the file picker — drag-drop on the timeline still works anywhere. */
 .sd-empty-upload-inner {
   pointer-events: auto;
-  max-width: 520px; width: 100%;
+  max-width: 320px; width: 100%;
   background: var(--wb-surface);
   border: 1.5px dashed var(--wb-rule-strong);
-  border-radius: var(--wb-radius-lg);
-  padding: 32px 28px;
+  border-radius: var(--wb-radius);
+  padding: 14px 18px;
   text-align: center;
   font-family: var(--wb-font-mono);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.sd-empty-upload-inner:hover {
+  border-color: var(--wb-ink);
+  background: var(--wb-bg);
 }
 .sd-empty-upload-title {
-  font-size: 13px; font-weight: 600;
+  font-size: 11px; font-weight: 600;
   color: var(--wb-ink);
   text-transform: uppercase; letter-spacing: var(--wb-tracking-caps);
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .sd-empty-upload-body {
-  font-size: 11px; color: var(--wb-ink-soft);
-  line-height: 1.55;
-  margin-bottom: 18px;
-}
-.sd-empty-upload-actions {
-  display: flex; gap: 10px; justify-content: center;
+  font-size: 9px; color: var(--wb-ink-mute);
+  letter-spacing: var(--wb-tracking-caps);
+  text-transform: uppercase;
 }
 
 /* Drag-over visual. Whole timeline gets a dashed inset outline while the
