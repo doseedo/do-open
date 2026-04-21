@@ -1088,6 +1088,65 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
           }
         })();
 
+        // ── Tier 1: master BasicPitch on-device (in parallel) ──
+        // Same three-tier cascade as StudioDev: master transcription via
+        // WebGPU BasicPitch ONNX feeds both the parent track's MIDI and
+        // the Tier-2 refinement pass below. masterNotesPromise resolves
+        // with the raw master note list so the pitched-stem block can
+        // combineForStems(master, stems) before dispatching per-stem.
+        let masterNotesResolve;
+        const masterNotesPromise = new Promise((r) => { masterNotesResolve = r; });
+        (async () => {
+          try {
+            const src = await decodePromise;
+            if (!src) { masterNotesResolve([]); return; }
+            const N = src.numFrames;
+            const mono = new Float32Array(N);
+            for (let i = 0; i < N; i++) mono[i] = (src.flat[i] + src.flat[N + i]) * 0.5;
+            const { transcribeAudio } = await import('../../services/basicPitchOnnx');
+            const t0 = performance.now();
+            const { notes, duration } = await transcribeAudio(mono, 48000);
+            if (!notes || notes.length === 0) { masterNotesResolve([]); return; }
+            console.log(`[basicPitch] master: ${notes.length} notes in ${(performance.now() - t0).toFixed(0)}ms (${duration.toFixed(1)}s audio)`);
+            dispatch({
+              type: 'UPDATE_TRACK',
+              payload: {
+                busId, trackId,
+                updates: { metadata: {
+                  midiData: { notes, duration, tempo: state.bpm || 120 },
+                  masterBasicPitch: { notes, duration },
+                } },
+              },
+            });
+            // First-pass chord detection from master alone.
+            try {
+              const { detectChordsFromNotes } = await import('../../services/detectChordsFromMIDI');
+              const pool = notes.map((n) => ({
+                start: n.time, end: n.time + (n.duration || 0.25),
+                pitch: n.note,
+              }));
+              const beatTimes = (Array.isArray(state.beatMap) && state.beatMap.length > 0)
+                ? state.beatMap.map((b) => b.t)
+                : (() => {
+                    const spb = 60 / (state.bpm || 120);
+                    const nb = Math.ceil(duration / spb) + 1;
+                    return Array.from({ length: nb }, (_, i) => i * spb);
+                  })();
+              const chords = detectChordsFromNotes(pool, beatTimes);
+              if (Object.keys(chords).length > 0) {
+                const num = {};
+                Object.entries(chords).forEach(([k, v]) => { num[parseInt(k, 10)] = v; });
+                dispatch({ type: 'SET_CHORDS', payload: num });
+                console.log(`[basicPitch] master → ${Object.keys(chords).length} chord changes (first pass)`);
+              }
+            } catch (_) {}
+            masterNotesResolve(notes);
+          } catch (err) {
+            console.warn('[basicPitch] master extraction failed:', err?.message || err);
+            masterNotesResolve([]);
+          }
+        })();
+
         // Create a new SFX bus for this track.
         // Start COLLAPSED: the bus row renders the uploaded track as
         // its master waveform immediately, and stays locked in that
@@ -1329,12 +1388,35 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
 
                       const [pitchedResults, drumResult] = await Promise.all([pitchedPromise, drumsPromise]);
 
-                      // Apply pitched results.
+                      // ── Tier 2: refine per-stem latentPitch with master ──
+                      // Await master BasicPitch; if it's empty the refinement
+                      // is a no-op and we dispatch raw latentPitch notes.
+                      let masterNotes = [];
+                      try { masterNotes = await masterNotesPromise; } catch (_) { masterNotes = []; }
+                      const stemNotesByName = {};
+                      for (let k = 0; k < pitchedIdx.length; k++) {
+                        stemNotesByName[stemNames[pitchedIdx[k]]] = pitchedResults[k].notes;
+                      }
+                      let refinedByStem = stemNotesByName;
+                      if (masterNotes.length > 0) {
+                        try {
+                          const { combineForStems } = await import('../../services/midiRefine');
+                          refinedByStem = combineForStems(masterNotes, stemNotesByName);
+                          const before = Object.values(stemNotesByName).reduce((s, a) => s + a.length, 0);
+                          const after = Object.values(refinedByStem).reduce((s, a) => s + a.length, 0);
+                          console.log(`[basicPitch] refined ${Object.keys(stemNotesByName).length} stems with master: ${before} → ${after} notes`);
+                        } catch (err) {
+                          console.warn('[basicPitch] refinement failed, using raw latentPitch:', err?.message || err);
+                        }
+                      }
+
+                      // Apply REFINED pitched results.
                       for (let k = 0; k < pitchedIdx.length; k++) {
                         const i = pitchedIdx[k];
                         const stemName = stemNames[i];
-                        const { notes, duration } = pitchedResults[k];
-                        console.log(`[latentPitch] ${stemName}: ${notes.length} notes`);
+                        const { duration } = pitchedResults[k];
+                        const notes = refinedByStem[stemName] || pitchedResults[k].notes;
+                        console.log(`[latentPitch] ${stemName}: ${notes.length} notes (${masterNotes.length > 0 ? 'refined' : 'raw'})`);
                         dispatch({
                           type: 'UPDATE_TRACK',
                           payload: {
@@ -1344,6 +1426,18 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                           },
                         });
                       }
+
+                      // Tier-2 chord pass from refined stems.
+                      try {
+                        const { rerunChordDetection } = await import('../../services/detectChordsFromMIDI');
+                        const chordsNum = rerunChordDetection(refinedByStem, {
+                          beatMap: state.beatMap, bpm: state.bpm || tempo,
+                        });
+                        if (Object.keys(chordsNum).length > 0) {
+                          dispatch({ type: 'SET_CHORDS', payload: chordsNum });
+                          console.log(`[chords] Tier-2 refined-stem pass: ${Object.keys(chordsNum).length} chord changes`);
+                        }
+                      } catch (_) {}
 
                       // Apply drum result.
                       if (drumResult && drumsIdx >= 0) {

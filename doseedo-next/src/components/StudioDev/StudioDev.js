@@ -328,7 +328,7 @@ export default function StudioDev() {
   const [loopDrag, setLoopDrag] = useState(null);
   // Layout — resizable widths/heights for the sidebar + timeline split.
   const [sidebarWidth, setSidebarWidth] = useState(260);
-  const [timelineHeight, setTimelineHeight] = useState(420);  // default taller: more DAW, shorter canvas
+  const [timelineHeight, setTimelineHeight] = useState(260);  // resizer defaults low — more canvas room for piano-roll / waveform
   const [sbResizing, setSbResizing] = useState(false);
   const [tlResizing, setTlResizing] = useState(false);
   const [snapMode, setSnapMode] = useState('beat');           // 'off' · 'sixteenth' · 'beat' · 'bar'
@@ -479,6 +479,22 @@ export default function StudioDev() {
     const busId = `bus-${Date.now()}`;
     const trackId = `t-${Date.now()}`;
     const baseName = file.name.replace(/\.[^.]+$/, '');
+    // ── MIDI transcription cascade (three quality tiers, converging) ──
+    //   Tier 1 — master BasicPitch on-device (this IIFE, ~5–10s after upload).
+    //            Writes high-quality mix MIDI onto the PARENT track and
+    //            fires a first chord pass. The masterNotesPromise below
+    //            resolves with this result so downstream tiers can refine.
+    //   Tier 2 — per-stem latentPitch (inside the WebGPU pipeline). When
+    //            it completes it awaits masterNotesPromise and runs
+    //            combineForStems(master, stems) to drop stem false
+    //            positives and attribute master notes back to the
+    //            right stem. Drums stay on the latentDrumTranscribe path.
+    //   Tier 3 — backend BasicPitch per stem (swapInBasicPitch). When
+    //            the server finishes a stem, that tier overrides the
+    //            refined MIDI on that stem with ground-truth server MIDI
+    //            + re-runs chord detection.
+    let masterNotesResolve;
+    const masterNotesPromise = new Promise((r) => { masterNotesResolve = r; });
     dispatch({
       type: 'CREATE_BUS',
       payload: { id: busId, type: 'INSTRUMENT', name: baseName, expanded: false },
@@ -529,6 +545,71 @@ export default function StudioDev() {
       console.log(`🎶 tempoMap extracted (${ra.tempoMap.length} entries, duration ${ra.duration?.toFixed(2)}s):`);
       console.log(formatTempoMap(ra.tempoMap));
     }).catch((err) => console.warn('[analyze-rhythm] failed:', err?.message || err));
+
+    // ── Tier 1: master BasicPitch on-device (in parallel) ─────────────
+    // Decodes the file once to stereo@48k (same call the WebGPU pipeline
+    // uses below — our toMono22050 will resample inside BasicPitch), mixes
+    // to mono, feeds BasicPitch ONNX. When done:
+    //   • parent track gets midiData for the midi window
+    //   • first-pass chord detection fires (master-only pool)
+    //   • masterNotesPromise resolves so the latentPitch refinement (Tier 2)
+    //     downstream can call combineForStems(master, stems).
+    (async () => {
+      try {
+        const { audioFileToStereo48k } = await import('../../services/latentEncoder');
+        const src = await audioFileToStereo48k(file);
+        const N = src.numFrames;
+        const mono = new Float32Array(N);
+        for (let i = 0; i < N; i++) mono[i] = (src.flat[i] + src.flat[N + i]) * 0.5;
+        const { transcribeAudio } = await import('../../services/basicPitchOnnx');
+        const t0 = performance.now();
+        const { notes, duration } = await transcribeAudio(mono, 48000);
+        if (!notes || notes.length === 0) {
+          masterNotesResolve([]);
+          return;
+        }
+        console.log(`[basicPitch] master: ${notes.length} notes in ${(performance.now() - t0).toFixed(0)}ms (${duration.toFixed(1)}s audio)`);
+        const s0 = stateRef.current;
+        dispatch({
+          type: 'UPDATE_TRACK',
+          payload: {
+            busId, trackId,
+            updates: { metadata: {
+              midiData: { notes, duration, tempo: s0.bpm || 120 },
+              masterBasicPitch: { notes, duration },
+            } },
+          },
+        });
+        // First-pass chord detection from master BasicPitch alone. Master
+        // BasicPitch is good enough for chord labels (vs per-stem pool).
+        try {
+          const { detectChordsFromNotes } = await import('../../services/detectChordsFromMIDI');
+          const s = stateRef.current;
+          const pool = notes.map((n) => ({
+            start: n.time, end: n.time + (n.duration || 0.25),
+            pitch: n.note,
+          }));
+          const beatTimes = (Array.isArray(s.beatMap) && s.beatMap.length > 0)
+            ? s.beatMap.map((b) => b.t)
+            : (() => {
+                const spb = 60 / (s.bpm || 120);
+                const nb = Math.ceil(duration / spb) + 1;
+                return Array.from({ length: nb }, (_, i) => i * spb);
+              })();
+          const chords = detectChordsFromNotes(pool, beatTimes);
+          if (Object.keys(chords).length > 0) {
+            const num = {};
+            Object.entries(chords).forEach(([k, v]) => { num[parseInt(k, 10)] = v; });
+            dispatch({ type: 'SET_CHORDS', payload: num });
+            console.log(`[basicPitch] master → ${Object.keys(chords).length} chord changes (first pass)`);
+          }
+        } catch (_) {}
+        masterNotesResolve(notes);
+      } catch (err) {
+        console.warn('[basicPitch] master extraction failed:', err?.message || err);
+        masterNotesResolve([]);   // unblock downstream refinement
+      }
+    })();
 
     analyzeAudio(file).then((res) => {
       const cls = res.classification;
@@ -744,10 +825,36 @@ export default function StudioDev() {
 
               const [pitchedResults, drumResult] = await Promise.all([pitchedPromise, drumsPromise]);
 
+              // ── Tier 2: refine per-stem latentPitch with master BasicPitch ──
+              // Wait for master BasicPitch (may have already resolved). If
+              // it returned empty (disabled / failed), fall through and use
+              // raw latentPitch for each stem. Drums stay on the
+              // latentDrumTranscribe path — BasicPitch doesn't do drums.
+              let masterNotes = [];
+              try { masterNotes = await masterNotesPromise; } catch (_) { masterNotes = []; }
+              const stemNotesByName = {};
+              for (let k = 0; k < pitchedIdx.length; k++) {
+                const stemName = stemNames[pitchedIdx[k]];
+                stemNotesByName[stemName] = pitchedResults[k].notes;
+              }
+              let refinedByStem = stemNotesByName;
+              if (masterNotes.length > 0) {
+                try {
+                  const { combineForStems } = await import('../../services/midiRefine');
+                  refinedByStem = combineForStems(masterNotes, stemNotesByName);
+                  const before = Object.values(stemNotesByName).reduce((s, a) => s + a.length, 0);
+                  const after = Object.values(refinedByStem).reduce((s, a) => s + a.length, 0);
+                  console.log(`[basicPitch] refined ${Object.keys(stemNotesByName).length} stems with master: ${before} → ${after} notes`);
+                } catch (err) {
+                  console.warn('[basicPitch] refinement failed, using raw latentPitch:', err?.message || err);
+                  refinedByStem = stemNotesByName;
+                }
+              }
               for (let k = 0; k < pitchedIdx.length; k++) {
                 const i = pitchedIdx[k];
                 const stemName = stemNames[i];
-                const { notes, duration } = pitchedResults[k];
+                const { duration } = pitchedResults[k];
+                const notes = refinedByStem[stemName] || pitchedResults[k].notes;
                 dispatch({
                   type: 'UPDATE_TRACK',
                   payload: {
@@ -767,43 +874,21 @@ export default function StudioDev() {
               }
               console.log(`[latentPitch] applied MIDI to all ${stemNames.length} stems`);
 
-              // Auto-detect chord row from the pooled non-drum stems' MIDI.
-              // Zero backend — uses the latent-pitch notes we just
-              // extracted. Beat times come from the analyze-rhythm
-              // beat_map when present, else a constant-BPM grid.
+              // Chord pass from REFINED stems (supersedes the master-only
+              // first pass). Same pool-then-detect pipeline; the notes
+              // are now timing-snapped + false-positive-filtered.
               try {
-                const { detectChordsFromNotes } = await import('../../services/detectChordsFromMIDI');
-                const pooledNotes = [];
-                for (let k = 0; k < pitchedIdx.length; k++) {
-                  const stemName = stemNames[pitchedIdx[k]];
-                  if (stemName === 'drums' || stemName === 'drum_kit') continue;
-                  const { notes } = pitchedResults[k];
-                  for (const n of notes) {
-                    pooledNotes.push({
-                      start: n.start ?? n.time ?? 0,
-                      end: (n.start ?? n.time ?? 0) + (n.duration ?? 0.25),
-                      pitch: n.pitch ?? n.note ?? n.midi,
-                    });
-                  }
-                }
-                const beatMap = state.beatMap;
-                let beatTimes;
-                if (Array.isArray(beatMap) && beatMap.length > 0) {
-                  beatTimes = beatMap.map((b) => b.t);
-                } else {
-                  const spb = 60 / (state.bpm || tempo || 120);
-                  const totalBeats = Math.ceil((pooledNotes.reduce((m, n) => Math.max(m, n.end), 0)) / spb) + 1;
-                  beatTimes = Array.from({ length: totalBeats }, (_, i) => i * spb);
-                }
-                const chords = detectChordsFromNotes(pooledNotes, beatTimes);
-                if (Object.keys(chords).length > 0) {
-                  const chordsNum = {};
-                  Object.entries(chords).forEach(([k, v]) => { chordsNum[parseInt(k, 10)] = v; });
+                const { rerunChordDetection } = await import('../../services/detectChordsFromMIDI');
+                const s = stateRef.current;
+                const chordsNum = rerunChordDetection(refinedByStem, {
+                  beatMap: s.beatMap, bpm: s.bpm || tempo,
+                });
+                if (Object.keys(chordsNum).length > 0) {
                   dispatch({ type: 'SET_CHORDS', payload: chordsNum });
-                  console.log(`[chords] detected ${Object.keys(chords).length} chord changes from pooled MIDI`);
+                  console.log(`[chords] Tier-2 refined-stem pass: ${Object.keys(chordsNum).length} chord changes`);
                 }
               } catch (err) {
-                console.warn('[chords] auto-detect failed:', err?.message || err);
+                console.warn('[chords] Tier-2 pass failed:', err?.message || err);
               }
             },
           });

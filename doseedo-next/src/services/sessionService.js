@@ -14,47 +14,10 @@
  * }
  */
 
-import * as sessionAPI from './sessionAPI';
-import * as audioCacheService from './audioCacheService';
-
 const SESSION_PREFIX = 'session-';
 const PROJECTS_KEY = 'projects';
 const ACTIVE_PROJECT_KEY = 'activeProject';
 const LAST_SESSION_KEY = 'lastSession';
-const NAME_TO_ID_KEY = 'session-name-to-id';
-
-// ── name ⇄ remote-id mapping ──────────────────────────────────────────
-// Tracks the Neon row id for each local project name. Required by
-// saveService.queueBackendAutosave (which PATCHes by id) and by
-// loadSessionAsync (which GETs by id on a second device).
-
-function _readNameToIdMap() {
-  try { return JSON.parse(localStorage.getItem(NAME_TO_ID_KEY)) || {}; }
-  catch { return {}; }
-}
-function _writeNameToIdMap(map) {
-  try { localStorage.setItem(NAME_TO_ID_KEY, JSON.stringify(map)); }
-  catch (e) { console.warn('[sessionService] name→id map write failed', e); }
-}
-export function rememberSessionId(projectName, remoteId) {
-  if (!projectName || !remoteId) return;
-  const map = _readNameToIdMap();
-  map[projectName] = remoteId;
-  _writeNameToIdMap(map);
-}
-export function getSessionIdForName(projectName) {
-  if (!projectName) return null;
-  const map = _readNameToIdMap();
-  return map[projectName] || null;
-}
-function _looksLikeSessionId(value) {
-  return (
-    typeof value === 'string' &&
-    value.length >= 12 &&
-    !value.includes(' ') &&
-    /[0-9]/.test(value)
-  );
-}
 
 /**
  * Get list of all project names
@@ -139,23 +102,12 @@ export function saveSession(projectName, state) {
 }
 
 /**
- * Load a session from localStorage (synchronous — preserved signature).
- *
- * Kicks a background refresh from `/api/sessions/{id}/state` when we have
- * a remote id, so the local cache gets updated for the next load. Callers
- * that need the up-to-date remote state on THIS call should use
- * `loadSessionAsync` instead.
+ * Load a session from localStorage
  */
 export function loadSession(projectName) {
   try {
     const sessionKey = `${SESSION_PREFIX}${projectName}`;
     const sessionData = localStorage.getItem(sessionKey);
-
-    // Kick background refresh if we know the remote id.
-    const remoteId = getSessionIdForName(projectName);
-    if (remoteId) {
-      _refreshFromRemote(projectName, remoteId).catch(() => {});
-    }
 
     if (!sessionData) {
       console.warn(`No session found for: ${projectName}`);
@@ -163,115 +115,20 @@ export function loadSession(projectName) {
     }
 
     const parsed = JSON.parse(sessionData);
+    // Migration: strip the legacy hardcoded chord progression so the
+    // chord row always loads empty. Users re-detect via the sidebar.
     if (parsed?.state?.chordTrack) {
       parsed.state.chordTrack = { ...parsed.state.chordTrack, chords: {} };
     }
     if (parsed?.state?.chords) {
       parsed.state.chords = {};
     }
-    console.log(`✅ Session loaded (local): ${projectName}`);
+    console.log(`✅ Session loaded: ${projectName}`);
     return parsed;
   } catch (error) {
     console.error('Error loading session:', error);
     return null;
   }
-}
-
-function _warmAudioCacheForState(state) {
-  try {
-    if (!state?.buses) return;
-    const urls = new Set();
-    for (const bus of state.buses) {
-      for (const track of bus.tracks || []) {
-        if (track.audioUrl && typeof track.audioUrl === 'string' &&
-            /^https?:\/\//.test(track.audioUrl)) {
-          urls.add(track.audioUrl);
-        }
-      }
-    }
-    for (const url of urls) {
-      audioCacheService.fetchAudioWithCache(url).catch((e) => {
-        console.warn('[sessionService] warm cache failed', url, e?.message);
-      });
-    }
-  } catch (e) {
-    console.warn('[sessionService] warmAudioCacheForState error', e);
-  }
-}
-
-async function _refreshFromRemote(projectName, remoteId) {
-  try {
-    const { state } = await sessionAPI.getSessionState(remoteId);
-    if (!state) return;
-    const sessionData = {
-      projectName,
-      timestamp: Date.now(),
-      remoteSessionId: remoteId,
-      state,
-    };
-    localStorage.setItem(`${SESSION_PREFIX}${projectName}`, JSON.stringify(sessionData));
-    _warmAudioCacheForState(state);
-  } catch (_) {
-    // Silent — local cache still valid.
-  }
-}
-
-/**
- * Async remote-first load. Tries the backend; falls back to localStorage.
- * Accepts either a project name or a backend session id.
- */
-export async function loadSessionAsync(projectNameOrId) {
-  if (!projectNameOrId) return null;
-
-  // Resolve to a remote id. Direct id, cached name→id map, or listSessions.
-  let remoteId = _looksLikeSessionId(projectNameOrId)
-    ? projectNameOrId
-    : getSessionIdForName(projectNameOrId);
-
-  let projectName = _looksLikeSessionId(projectNameOrId) ? null : projectNameOrId;
-
-  if (!remoteId) {
-    try {
-      const page = await sessionAPI.listSessions({ limit: 100 });
-      const items = Array.isArray(page) ? page : page?.items || [];
-      const match = items.find(
-        (s) => s.name === projectNameOrId || s.id === projectNameOrId
-      );
-      if (match?.id) {
-        remoteId = match.id;
-        projectName = match.name || projectName;
-        rememberSessionId(match.name || projectNameOrId, match.id);
-      }
-    } catch (e) {
-      console.warn('[sessionService] name→id lookup failed', e?.message);
-    }
-  }
-
-  if (remoteId) {
-    try {
-      const [meta, stateBlob] = await Promise.all([
-        sessionAPI.getSession(remoteId),
-        sessionAPI.getSessionState(remoteId),
-      ]);
-      projectName = meta?.name || projectName || 'Untitled';
-      rememberSessionId(projectName, remoteId);
-      const state = stateBlob?.state ?? null;
-      const adapted = {
-        projectName,
-        timestamp: Date.now(),
-        remoteSessionId: remoteId,
-        state: state || {},
-      };
-      localStorage.setItem(`${SESSION_PREFIX}${projectName}`, JSON.stringify(adapted));
-      if (state) _warmAudioCacheForState(state);
-      console.log(`✅ Session loaded (remote): ${projectName}`);
-      return adapted;
-    } catch (err) {
-      console.warn('[sessionService] remote load failed, falling back:', err?.message);
-    }
-  }
-
-  return loadSession(projectName || projectNameOrId);
 }
 
 /**

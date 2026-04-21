@@ -62,11 +62,15 @@
   border-bottom-color: var(--wb-accent);
 }
 
-/* Empty canvas */
+/* Empty canvas — fills its parent (.sd-canvas-main is
+ * position:relative overflow:hidden), so inset:0 makes the grid /
+ * empty card reach every edge and resize live with the horizontal
+ * timeline drag. */
 .studio-dev .wb-canvas {
-  flex: 1; position: relative;
+  position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  padding: 32px; min-height: 0;
+  padding: 32px;
+  overflow: auto;
 }
 .studio-dev .wb-canvas__grid {
   position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
