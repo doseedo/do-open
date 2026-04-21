@@ -251,6 +251,14 @@ export default function StudioDev() {
   const { state, dispatch } = useApp();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
+  // Timeline scroll sync — tracklist column and lanes column each have their
+  // own overflow-y:auto. Without these refs they scroll independently and the
+  // track labels drift out of alignment with their waveforms. The onScroll
+  // handlers below mirror scrollTop between them, with a lock flag to avoid
+  // the two listeners ping-ponging each other.
+  const tracksColRef = useRef(null);
+  const lanesColRef  = useRef(null);
+  const scrollSyncLockRef = useRef(false);
 
   const [activeTab, setActiveTab] = useState('Instruments');
   // For the Instruments tab: null → show group tiles, group-id → show its subgroups.
@@ -1542,7 +1550,16 @@ export default function StudioDev() {
             </div>
 
             <div className="sd-timeline" style={{ '--row-h': `${Math.round(38 * laneRowZoom)}px` }}>
-              <div className="sd-tracks-col">
+              <div
+                className="sd-tracks-col"
+                ref={tracksColRef}
+                onScroll={(e) => {
+                  if (scrollSyncLockRef.current) return;
+                  scrollSyncLockRef.current = true;
+                  if (lanesColRef.current) lanesColRef.current.scrollTop = e.currentTarget.scrollTop;
+                  requestAnimationFrame(() => { scrollSyncLockRef.current = false; });
+                }}
+              >
                 <div className="sd-tracks-header">Buses · Tracks</div>
                 {timelineBuses.map((bus) => (
                   <React.Fragment key={bus.id}>
@@ -1632,7 +1649,17 @@ export default function StudioDev() {
                   </React.Fragment>
                 ))}
               </div>
-              <div className="sd-lanes" onClick={onLaneClick}>
+              <div
+                className="sd-lanes"
+                ref={lanesColRef}
+                onClick={onLaneClick}
+                onScroll={(e) => {
+                  if (scrollSyncLockRef.current) return;
+                  scrollSyncLockRef.current = true;
+                  if (tracksColRef.current) tracksColRef.current.scrollTop = e.currentTarget.scrollTop;
+                  requestAnimationFrame(() => { scrollSyncLockRef.current = false; });
+                }}
+              >
                 <div
                   className="sd-ruler"
                   onClick={(e) => {
