@@ -37,23 +37,6 @@ export default function SignInPage() {
           gap: '20px',
         }}
       >
-        <div style={{ textAlign: 'center' }}>
-          <a
-            href="/"
-            style={{
-              color: '#fff',
-              textDecoration: 'none',
-              fontSize: '1.4em',
-              fontWeight: 700,
-              letterSpacing: '-0.5px',
-            }}
-          >
-            Doseedo
-          </a>
-          <div style={{ color: '#666', fontSize: '0.85em', marginTop: 4 }}>
-            Sign in to your studio
-          </div>
-        </div>
         {isSignedIn ? (
           <div style={{ color: '#666', fontSize: '0.85em' }}>Redirecting…</div>
         ) : (
