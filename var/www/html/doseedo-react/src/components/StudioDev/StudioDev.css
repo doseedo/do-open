@@ -1151,7 +1151,7 @@
   );
 }
 .sd-ruler {
-  position: sticky; top: 20px; z-index: 3;
+  position: sticky; top: 0; z-index: 3;
   height: 22px; border-bottom: 1px solid var(--wb-rule);
   display: flex; align-items: flex-end; padding-bottom: 3px;
   background: var(--wb-bg);
@@ -1163,9 +1163,16 @@
  * the polypitchChordSync effect uses to pitch-shift stems so the audio
  * fits the new chord. */
 .sd-chord-row {
-  position: sticky; top: 0; z-index: 4;
+  /* position: relative (not sticky) so absolutely-positioned cells are
+   * guaranteed to anchor to this element regardless of scroll context.
+   * Sticky was inconsistent under CRA's flex layout — cells occasionally
+   * escaped and rendered on top of the lane tracks. */
+  position: relative;
+  display: block; width: 100%;
   height: 20px; background: var(--wb-bg);
   border-bottom: 1px solid var(--wb-rule);
+  overflow: hidden;
+  z-index: 4;
 }
 .sd-chord-cell {
   position: absolute; top: 0; height: 100%;
@@ -1175,6 +1182,7 @@
   font-family: var(--wb-mono, monospace);
   color: var(--wb-ink-soft); font-size: 10px;
   overflow: hidden;
+  pointer-events: auto;
 }
 .sd-chord-cell.bar-start { border-left: 1px solid rgba(255,255,255,0.2); }
 .sd-chord-cell:hover { background: rgba(102,126,234,0.15); color: var(--wb-ink); }
