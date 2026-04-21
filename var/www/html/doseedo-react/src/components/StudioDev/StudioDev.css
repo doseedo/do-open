@@ -397,6 +397,15 @@
 }
 .sd-sidebar .sd-inst-row:hover,
 .sd-sidebar .sd-inst-row.open { background: var(--wb-surface-2); }
+/* Selected instrument — picks target for the Generate panel. */
+.sd-sidebar .sd-inst-row.on,
+.sd-sidebar .sd-inst-row.on:hover {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  border-color: var(--wb-ink);
+}
+.sd-sidebar .sd-inst-row.on .sd-inst-row-num,
+.sd-sidebar .sd-inst-row.on .sd-inst-row-meta { color: var(--wb-bg); opacity: 0.7; }
 
 .sd-sidebar .sd-inst-row-caret {
   width: 10px;

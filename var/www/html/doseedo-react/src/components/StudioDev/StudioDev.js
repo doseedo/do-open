@@ -318,6 +318,12 @@ export default function StudioDev() {
   // tree; 'custom' is a user-curated collection (empty placeholder for now
   // — 'Create new' button is wired to nothing).
   const [paletteSource, setPaletteSource] = useState('live');
+  // Instrument picked from the left-sidebar palette. It's just a
+  // selection marker now — clicking a row no longer creates a track.
+  // StudioDevGenerate reads this as the target instrument for stemphonic.
+  // Shape: { id, label, group, subgroup, sub } — same keys addInstrumentTrack
+  // used to take. Null means generate uses its own fallback.
+  const [selectedInstrument, setSelectedInstrument] = useState(null);
   // Palette layout: 'list' (workbench-style dense rows) | 'grid' (icon tiles).
   const [activeMode, setActiveMode] = useState('midi');
   // Which content is showing in the 300px left panel.
@@ -1940,11 +1946,10 @@ export default function StudioDev() {
                       {open && subs.map((s, si) => (
                         <button
                           key={s.id}
-                          className="sd-inst-row sd-inst-row-sub"
-                          onClick={() => addInstrumentTrack({
-                            label: s.label, sub: s.sub,
-                            type: g.id, icon: 'piano',
-                            subgroup: s.id, group: g.id,
+                          className={`sd-inst-row sd-inst-row-sub ${selectedInstrument?.subgroup === s.id ? 'on' : ''}`}
+                          onClick={() => setSelectedInstrument({
+                            id: s.id, label: s.label, sub: s.sub,
+                            group: g.id, subgroup: s.id,
                           })}
                         >
                           <span className="sd-inst-row-num">
@@ -1960,10 +1965,11 @@ export default function StudioDev() {
 
                 {/* ---- Drums: flat list ---- */}
                 {activeTab === 'Drums' && DRUM_GROUPS.map((g, idx) => (
-                  <button key={g.id} className="sd-inst-row"
-                          onClick={() => addInstrumentTrack({
-                            label: g.label, type: 'drums', icon: 'drums',
-                            subgroup: g.id, group: 'drums',
+                  <button key={g.id}
+                          className={`sd-inst-row ${selectedInstrument?.subgroup === g.id ? 'on' : ''}`}
+                          onClick={() => setSelectedInstrument({
+                            id: g.id, label: g.label,
+                            group: 'drums', subgroup: g.id,
                           })}>
                     <span className="sd-inst-row-num">{String(idx + 1).padStart(2, '0')}</span>
                     <span className="sd-inst-row-name">{g.label}</span>
@@ -1972,10 +1978,11 @@ export default function StudioDev() {
 
                 {/* ---- Vocals: flat list ---- */}
                 {activeTab === 'Vocals' && VOCAL_GROUPS.map((g, idx) => (
-                  <button key={g.id} className="sd-inst-row"
-                          onClick={() => addInstrumentTrack({
-                            label: g.label, type: 'vocals', icon: 'mic',
-                            subgroup: g.id, group: 'vocals',
+                  <button key={g.id}
+                          className={`sd-inst-row ${selectedInstrument?.subgroup === g.id ? 'on' : ''}`}
+                          onClick={() => setSelectedInstrument({
+                            id: g.id, label: g.label,
+                            group: 'vocals', subgroup: g.id,
                           })}>
                     <span className="sd-inst-row-num">{String(idx + 1).padStart(2, '0')}</span>
                     <span className="sd-inst-row-name">{g.label}</span>
@@ -1987,7 +1994,7 @@ export default function StudioDev() {
               {/* Generate form — visible below the palette in every tab
                   (Instruments / Vocals / Drums) so the advanced-params
                   dropdown and the Generate button are always reachable. */}
-              <StudioDevGenerate embedded />
+              <StudioDevGenerate embedded selectedInstrument={selectedInstrument} />
             </>
           )}
 
@@ -2000,7 +2007,7 @@ export default function StudioDev() {
           )}
 
           {sidebarPanel === 'generate' && (
-            <StudioDevGenerate onClose={() => setSidebarPanel('instruments')} />
+            <StudioDevGenerate onClose={() => setSidebarPanel('instruments')} selectedInstrument={selectedInstrument} />
           )}
         </aside>
 
@@ -2236,7 +2243,7 @@ export default function StudioDev() {
               <div className="sd-lanes" onClick={onLaneClick}>
                 <StudioDevChordRow
                   visibleSec={TIMELINE_SECONDS / timelineZoom}
-                  timelineOffsetSec={state.timelineOffset || 0}
+                  timelineOffsetSec={0}
                 />
                 <div
                   className="sd-ruler"
