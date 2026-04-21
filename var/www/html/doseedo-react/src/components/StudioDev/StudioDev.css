@@ -1142,10 +1142,40 @@
   );
 }
 .sd-ruler {
-  position: sticky; top: 0; z-index: 3;
+  position: sticky; top: 20px; z-index: 3;
   height: 22px; border-bottom: 1px solid var(--wb-rule);
   display: flex; align-items: flex-end; padding-bottom: 3px;
   background: var(--wb-bg);
+}
+
+/* Chord row: sits just above the ruler, spans the same visible second
+ * window. Populated by tier-1/2/3 chord detection into state.chordTrack.
+ * Click a cell to override the label — dispatches UPDATE_CHORD which
+ * the polypitchChordSync effect uses to pitch-shift stems so the audio
+ * fits the new chord. */
+.sd-chord-row {
+  position: sticky; top: 0; z-index: 4;
+  height: 20px; background: var(--wb-bg);
+  border-bottom: 1px solid var(--wb-rule);
+}
+.sd-chord-cell {
+  position: absolute; top: 0; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; box-sizing: border-box;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  font-family: var(--wb-mono, monospace);
+  color: var(--wb-ink-soft); font-size: 10px;
+  overflow: hidden;
+}
+.sd-chord-cell.bar-start { border-left: 1px solid rgba(255,255,255,0.2); }
+.sd-chord-cell:hover { background: rgba(102,126,234,0.15); color: var(--wb-ink); }
+.sd-chord-label { font-weight: 600; letter-spacing: 0.2px; }
+.sd-chord-input {
+  width: calc(100% - 4px); height: 16px; padding: 0 2px;
+  font: inherit; color: var(--wb-ink);
+  background: var(--wb-bg-hi, #1a1a1a);
+  border: 1px solid var(--wb-accent); border-radius: 2px; outline: none;
+  text-align: center;
 }
 
 /* Empty-state upload field. Shown inside .sd-lanes when the project has

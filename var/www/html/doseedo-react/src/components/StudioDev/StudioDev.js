@@ -37,6 +37,8 @@ import StudioDevWaveform from './StudioDevWaveform';
 import StudioDevFX from './StudioDevFX';
 import StudioDevVideo from './StudioDevVideo';
 import StudioDevChords from './StudioDevChords';
+import StudioDevChordRow from './StudioDevChordRow';
+import { applyChordChange as polypitchApplyChordChange } from '../../services/polypitchChordSync';
 import StudioDevGenerate from './StudioDevGenerate';
 import StudioDevChat from './StudioDevChat';
 import StudioDevNav from './StudioDevNav';
@@ -1113,6 +1115,62 @@ export default function StudioDev() {
     console.log('[prewarm] studio opened — warming rmsDemucs + sem4Decoder + latentEncoder + latentPitch + latentDrumSep + latentVisual');
   }, []);
 
+  // Chord-row diff: when a user edits a chord cell (or a re-detection
+  // pass rewrites the map), find what changed vs. the previous render and
+  // drive polypitch to pitch-shift the affected stem audio so it matches.
+  // Tier-1/2/3 detection passes ALSO hit SET_CHORDS but tend to replace
+  // wholesale — we only resynth for single-cell changes (user edits).
+  const prevChordsRef = useRef({});
+  useEffect(() => {
+    const prev = prevChordsRef.current || {};
+    const next = state.chordTrack?.chords || {};
+    prevChordsRef.current = next;
+
+    const changedKeys = [];
+    const seen = new Set();
+    for (const k of Object.keys(next)) {
+      seen.add(k);
+      if (prev[k] !== next[k]) changedKeys.push(k);
+    }
+    for (const k of Object.keys(prev)) {
+      if (!seen.has(k) && prev[k]) changedKeys.push(k);
+    }
+    if (changedKeys.length === 0) return;
+
+    // Bulk rewrites (detection passes) touch tens of cells at once; skip
+    // those, only resynth on single-cell user edits. If we later want to
+    // re-voice on full-song key changes, lift this threshold.
+    if (changedKeys.length > 3) return;
+
+    const pitchedStemTracks = [];
+    for (const bus of state.buses || []) {
+      for (const tr of bus.tracks || []) {
+        const isDrum = tr.metadata?.stemType === 'drums' || tr.metadata?.instrumentGroup === 'drums';
+        if (isDrum) continue;
+        if (!tr.audioUrl || !tr.metadata?.midiData?.notes?.length) continue;
+        pitchedStemTracks.push({ ...tr, busId: bus.id, midiData: tr.metadata.midiData });
+      }
+    }
+    if (pitchedStemTracks.length === 0) return;
+
+    for (const k of changedKeys) {
+      const beatIndex = parseInt(k, 10);
+      polypitchApplyChordChange({
+        beatIndex,
+        oldChord: prev[k] || null,
+        newChord: next[k] || null,
+        pitchedStemTracks,
+        tempo: { beatMap: state.beatMap, bpm: state.bpm || 120 },
+        onTrackAudioReady: (trackId, busId, newUrl) => {
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: { busId, trackId, updates: { audioUrl: newUrl } },
+          });
+        },
+      });
+    }
+  }, [state.chordTrack?.chords, state.buses, state.beatMap, state.bpm, dispatch]);
+
   // Autosave loop: quickSave every 8 s. We read state out of a ref so the
   // interval is installed once and doesn't get torn down on every mutation
   // (which would prevent it from ever firing).
@@ -2176,6 +2234,10 @@ export default function StudioDev() {
                 ))}
               </div>
               <div className="sd-lanes" onClick={onLaneClick}>
+                <StudioDevChordRow
+                  visibleSec={TIMELINE_SECONDS / timelineZoom}
+                  timelineOffsetSec={state.timelineOffset || 0}
+                />
                 <div
                   className="sd-ruler"
                   onClick={(e) => {
