@@ -418,7 +418,7 @@ export default function StudioDev() {
     const baseName = file.name.replace(/\.[^.]+$/, '');
     dispatch({
       type: 'CREATE_BUS',
-      payload: { id: busId, type: 'INSTRUMENT', name: baseName, expanded: true },
+      payload: { id: busId, type: 'INSTRUMENT', name: baseName, expanded: false },
     });
     dispatch({
       type: 'ADD_TRACK',
@@ -498,7 +498,7 @@ export default function StudioDev() {
                   : (inst.group === 'drums')  ? 'DRUMS' : 'INSTRUMENT';
     dispatch({
       type: 'CREATE_BUS',
-      payload: { id: busId, type: busType, name: inst.label, expanded: true },
+      payload: { id: busId, type: busType, name: inst.label, expanded: false },
     });
     const newTrack = {
       id: trackId, name: inst.label, duration: 4, startPosition: 0,
@@ -1158,7 +1158,7 @@ export default function StudioDev() {
                             const file = new File([blob], `take-${Date.now()}.webm`, { type: blob.type });
                             const busId = `bus-rec-${Date.now()}`;
                             const trackId = `t-rec-${Date.now()}`;
-                            dispatch({ type: 'CREATE_BUS', payload: { id: busId, type: 'AUDIO', name: 'Recording', expanded: true } });
+                            dispatch({ type: 'CREATE_BUS', payload: { id: busId, type: 'AUDIO', name: 'Recording', expanded: false } });
                             dispatch({ type: 'ADD_TRACK', payload: { busId, track: {
                               id: trackId, name: file.name, audioFile: file, audioUrl: URL.createObjectURL(blob),
                               duration: 0, startPosition: state.playheadPosition || 0,
