@@ -14,6 +14,8 @@
  * ones. The 1.5 MB fp16 ONNX is tiny enough to preload eagerly.
  */
 
+import { ortWebGPURun } from './webgpuOrtQueue';
+
 const MODEL_URL = '/static/models/mask_refiner_fp16.onnx';
 const N_FREQ = 1025;
 const LATENT_CHANNELS = 64;
@@ -106,18 +108,9 @@ async function _refine(sess, ort, latentTC, T, noisyMask, F, T_stft) {
   const latentInput = new ort.Tensor('float32', latCF, [1, LATENT_CHANNELS, T]);
   const maskInput = new ort.Tensor('float32', noisyMask, [1, F, T_stft]);
 
-  let res;
-  try {
-    res = await sess.run({ latent: latentInput, noisy_mask: maskInput });
-  } catch (err) {
-    const msg = err?.message || String(err);
-    if (/already started|backend is still in use|webgpu/i.test(msg)) {
-      await new Promise(r => setTimeout(r, 120));
-      res = await sess.run({ latent: latentInput, noisy_mask: maskInput });
-    } else {
-      throw err;
-    }
-  }
+  const res = await ortWebGPURun(() => sess.run({
+    latent: latentInput, noisy_mask: maskInput,
+  }));
   return await pullTensor(res.refined_mask);
 }
 

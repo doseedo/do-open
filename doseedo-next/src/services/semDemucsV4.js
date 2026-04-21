@@ -33,6 +33,8 @@
 // stft_masks tensor for display/classification. v2 was Conv1d-STFT (same as v3
 // internally). v1 was native STFT op. Bump suffix on every re-export to bust
 // the `cache: 'force-cache'` reads below.
+import { ortWebGPURun } from './webgpuOrtQueue';
+
 const MODEL_URL = '/static/models/sem_demucs_v4_6s_packed_v3.onnx';
 const MODEL_DATA_URL = '/static/models/sem_demucs_v4_6s_packed_v3.onnx.data';
 const TARGET_SR = 48000;
@@ -193,18 +195,7 @@ async function _analyze(sess, ort, flat, numFrames) {
     chunkFlat.set(flat.subarray(numFrames + start, numFrames + end), chunkLen);
 
     const input = new ort.Tensor('float32', chunkFlat, [1, 2, chunkLen]);
-    let res;
-    try {
-      res = await sess.run({ waveform: input });
-    } catch (err) {
-      const msg = err?.message || String(err);
-      if (/already started|backend is still in use|webgpu/i.test(msg)) {
-        await new Promise(r => setTimeout(r, 120));
-        res = await sess.run({ waveform: input });
-      } else {
-        throw err;
-      }
-    }
+    const res = await ortWebGPURun(() => sess.run({ waveform: input }));
     chunks.push(res);
   }
 

@@ -15,6 +15,8 @@
  * etc.) does the caller fall back to backend /separate-stems.
  */
 
+import { ortWebGPURun } from './webgpuOrtQueue';
+
 const MODEL_URL = '/static/models/distill_demucs.onnx';
 const MODEL_DATA_URL = '/static/models/distill_demucs.onnx.data';
 const TARGET_SR = 48000;
@@ -186,7 +188,7 @@ async function _separate(sess, ort, flat, numFrames, chunkSamples) {
     chunkFlat.set(src.subarray(s, s + N), 0);
     chunkFlat.set(src.subarray(padded + s, padded + s + N), N);
     const input = new ort.Tensor('float32', chunkFlat, [1, 2, N]);
-    const out = await sess.run({ waveform: input });
+    const out = await ortWebGPURun(() => sess.run({ waveform: input }));
     // output name is "stem_latents", shape [1, 4, 64, latN]
     const t = out.stem_latents || out[Object.keys(out)[0]];
     const raw = t.data; // Float32Array length 1*4*64*latN in [B, S, C, T] order

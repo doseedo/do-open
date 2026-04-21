@@ -14,6 +14,7 @@
 
 import * as ort from 'onnxruntime-web';
 import { initDrumSep, splitDrumLatent } from './latentDrumSep';
+import { ortWebGPURun } from './webgpuOrtQueue';
 
 const EDITOR_URL = '/models/latent_editor.onnx';
 const EDITOR_DATA_URL = '/models/latent_editor.onnx.data';
@@ -124,11 +125,11 @@ async function repairBoundaries(latent, T, spliceFrames, radius = 4) {
   const maskTensor = new ort.Tensor('float32', mask, [1, T]);
   const phaseTensor = new ort.Tensor('float32', new Float32Array([0.0]), [1]);
 
-  const results = await editorSession.run({
+  const results = await ortWebGPURun(() => editorSession.run({
     latent: latentTensor,
     boundary_mask: maskTensor,
     phase: phaseTensor,
-  });
+  }));
 
   return results.edited_latent.data;
 }

@@ -21,6 +21,7 @@
  */
 
 import * as ort from 'onnxruntime-web';
+import { ortWebGPURun } from './webgpuOrtQueue';
 
 // ?v=1 cache-busts Cloudflare, which aggressively caches 404 HTML pages
 // (max-age 30 days). Before the model file was deployed CF cached an HTML
@@ -44,16 +45,12 @@ const MIN_NOTE_LEN_FRAMES   = 11;                         // ≈128ms
 let session = null;
 let outputKeys = null;
 let initFailed = false;
-// Concurrency guards:
-//   _initInFlight — first-call mutex for InferenceSession.create. Without it,
-//     two parallel callers race into ORT-Web's session construction and the
-//     second gets "Session already started".
-//   _runQueue — ORT-Web 1.22 sessions serialize run() internally; issuing a
-//     second run() before the first resolves throws the same error. We chain
-//     all runs off this promise so the call sites can still be async-parallel
-//     without having to know about it.
+// Concurrency guard for the one-time session build. Once the session
+// exists, all sess.run() calls go through the process-wide WebGPU
+// queue in webgpuOrtQueue so they don't collide with other ORT-Web
+// WebGPU sessions (latentDrumSep, sem4Decoder, ...) that share the
+// jsep backend's module-scoped "Session already started" guard.
 let _initInFlight = null;
-let _runQueue = Promise.resolve();
 
 /**
  * Lazy-load the ONNX session. Safe to call repeatedly. Returns null if
@@ -143,18 +140,6 @@ export async function initBasicPitch() {
 }
 
 /**
- * Run a single ORT inference serialized against any other in-flight basic-pitch
- * runs. ORT-Web 1.22 sessions are not concurrency-safe; multiple overlapping
- * `run()` calls surface as "Session already started".
- */
-function runSerialized(sess, feeds) {
-  const next = _runQueue.then(() => sess.run(feeds));
-  // Prevent a rejected run from poisoning the queue forever.
-  _runQueue = next.catch(() => {});
-  return next;
-}
-
-/**
  * Map session.outputNames to semantic roles.
  *
  * nmp.onnx (TF SavedModel exported via tf2onnx, confirmed with onnx.load()):
@@ -189,7 +174,7 @@ function mapOutputs(sess) {
 
 async function probeShapes(sess) {
   const zeroIn = new ort.Tensor('float32', new Float32Array(CHUNK_SAMPLES), [1, CHUNK_SAMPLES, 1]);
-  const out = await runSerialized(sess, { [sess.inputNames[0]]: zeroIn });
+  const out = await ortWebGPURun(() => sess.run({ [sess.inputNames[0]]: zeroIn }));
   let onset = null, frame = null, contour = null;
   for (const n of sess.outputNames) {
     const w = out[n].dims[out[n].dims.length - 1];
@@ -237,18 +222,12 @@ async function toMono22050(audio, sr) {
  * @param {number} [opts.minNoteLenFrames=11]
  * @returns {Promise<{notes: Array, duration: number}>}
  */
-// Module-level queue so overlapping transcribeAudio() calls (e.g. master
-// + rapid re-ingest during a new upload) don't fight over the single
-// ORT session. ORT-Web 1.22 rejects concurrent sess.run with "Session
-// already started"; serializing whole transcribe calls at the module
-// level is the lightest-weight guarantee. _runQueue still protects the
-// one-session-create path inside initBasicPitch.
-let _transcribeQueue = Promise.resolve();
-
 export async function transcribeAudio(audio, sr, opts = {}) {
-  const p = _transcribeQueue.then(() => _transcribeAudioImpl(audio, sr, opts));
-  _transcribeQueue = p.catch(() => {});
-  return p;
+  // Per-run serialization is handled by runWebGpu at the sess.run level;
+  // a separate transcribe-level mutex would just double-queue the same
+  // work. Do a single cross-check against the init path so we don't
+  // start chunking while the session is still being built.
+  return _transcribeAudioImpl(audio, sr, opts);
 }
 
 async function _transcribeAudioImpl(audio, sr, opts = {}) {
@@ -270,7 +249,7 @@ async function _transcribeAudioImpl(audio, sr, opts = {}) {
     const end = Math.min(start + CHUNK_SAMPLES, audio22k.length);
     chunk.set(audio22k.subarray(start, end));
     const inputTensor = new ort.Tensor('float32', chunk, [1, CHUNK_SAMPLES, 1]);
-    const out = await runSerialized(sess, { [sess.inputNames[0]]: inputTensor });
+    const out = await ortWebGPURun(() => sess.run({ [sess.inputNames[0]]: inputTensor }));
     // Outputs are already sigmoid'd inside the graph — copy straight in.
     const onset = out[outputKeys.onset].data;
     const frame = out[outputKeys.frame].data;

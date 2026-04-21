@@ -20,6 +20,8 @@
  *   0 drums  1 bass  2 vocals  3 other  4 guitar  5 piano
  */
 
+import { ortWebGPURun } from './webgpuOrtQueue';
+
 const MODEL_URL = '/static/models/v4cond_pred_6s_fp16.onnx';
 const MODEL_DATA_URL = '/static/models/v4cond_pred_6s_fp16.onnx.data';
 const TARGET_SR = 48000;
@@ -182,18 +184,9 @@ async function _separate(sess, ort, flat, numFrames, v4Result, chunkSamples) {
     chunkFlat.set(flat.subarray(numFrames + consumed, numFrames + consumed + useN), useN);
     const wavTensor = new ort.Tensor('float32', chunkFlat, [1, 2, useN]);
 
-    let res;
-    try {
-      res = await sess.run({ waveform: wavTensor, sem_emb: semTensor, stft_masks: masksTensor });
-    } catch (err) {
-      const msg = err?.message || String(err);
-      if (/already started|backend is still in use|webgpu/i.test(msg)) {
-        await new Promise(r => setTimeout(r, 120));
-        res = await sess.run({ waveform: wavTensor, sem_emb: semTensor, stft_masks: masksTensor });
-      } else {
-        throw err;
-      }
-    }
+    const res = await ortWebGPURun(() => sess.run({
+      waveform: wavTensor, sem_emb: semTensor, stft_masks: masksTensor,
+    }));
 
     const latents = await pullTensor(res.stem_latents);
     // latents: [1, 6, 64, T_chunk] flattened. Slice per-stem and
