@@ -222,9 +222,14 @@ export default function StudioDevMidi() {
   // highlight was 1/4-beat, grid only drew beats), so cells never
   // visually matched the snap.
   const beatSec = 60 / Math.max(40, state.bpm || 120);
-  const MIN_CELL_PX = 32;
+  // Subdivide as soon as a beat is wider than ~48 px (threshold for
+  // halving into eighths). The loop halves again whenever the CURRENT
+  // cell is still wider than that, so the grid keeps up with zoom
+  // through 8th → 16th → 32nd. Keeps cells ≥ ~24 px so they stay
+  // clickable.
+  const SUBDIVIDE_AT_PX = 48;
   let subdivision = 1;  // divisions per beat (1 = quarter, 2 = 8th, 4 = 16th, 8 = 32nd)
-  while (subdivision < 8 && (beatSec / subdivision) * pxPerSec > MIN_CELL_PX * 2) {
+  while (subdivision < 8 && (beatSec / subdivision) * pxPerSec > SUBDIVIDE_AT_PX * 2) {
     subdivision *= 2;
   }
   const cellSec = beatSec / subdivision;
@@ -350,14 +355,15 @@ export default function StudioDevMidi() {
     const r = canvasRef.current.getBoundingClientRect();
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     setHoverTime(timeAtX(mx));
-    // Cell under cursor — snapped to the active grid cell (cellSec
-     // auto-subdivides with zoom). Width in the highlight draw will
-     // match this exactly so the hover rect fills the cell.
+    // Cell under cursor — store raw time + row; snap to the active
+    // cell at DRAW time so when the user zooms in mid-hover the
+    // highlight re-quantizes automatically (previously beatIdx was
+    // frozen to old cellSec, making the hover rect misalign after a
+    // zoom change without a fresh mouse move).
     if (mx >= KEYS_W && my >= RULER_H) {
-      const t = timeAtX(mx);
-      const beatIdx = Math.floor(Math.max(0, t) / cellSec);
+      const t = Math.max(0, timeAtX(mx));
       const row = Math.floor((my - RULER_H + scrollY) / rowH);
-      setHoverCell({ row, beatIdx });
+      setHoverCell({ row, time: t });
     } else {
       setHoverCell(null);
     }
@@ -479,8 +485,11 @@ export default function StudioDevMidi() {
     const endSec = scrollX + (W - KEYS_W) / pxPerSec;
 
     // Subdivision lines first (so beat/bar lines draw on top).
+    // Visibility tiered below the beat-rule strength so they read as
+    // helpers. rgba alpha chosen so lines are clearly visible on the
+    // cream lane bg even at 0 brightness boost.
     if (subdivision > 1) {
-      ctx.fillStyle = 'rgba(21, 24, 28, 0.07)';  // subtler than C.rule
+      ctx.fillStyle = 'rgba(21, 24, 28, 0.12)';
       const firstCell = Math.floor(startSec / cellSec);
       for (let i = firstCell; i * cellSec < endSec; i++) {
         if (i % subdivision === 0) continue;  // skip beats (drawn below)
@@ -538,18 +547,18 @@ export default function StudioDevMidi() {
     }
 
     // Hover-cell highlight — rectangle exactly matching the active
-    // grid cell so it always fills the cell the click will land in.
-    // Skip while dragging (the note itself is the feedback).
+    // grid cell. We floor the hover time to the nearest cell AT DRAW
+    // TIME using the current cellSec, then left/right edges come from
+    // the same pxPerSec math the grid lines use → zero-gap fit.
     if (hoverCell && !drag) {
-      const hxRaw = KEYS_W + (hoverCell.beatIdx * cellSec - scrollX) * pxPerSec;
+      const cellStartSec = Math.floor(hoverCell.time / cellSec) * cellSec;
+      const hxRaw = KEYS_W + (cellStartSec - scrollX) * pxPerSec;
+      const hxRight = hxRaw + cellSec * pxPerSec;
       const hy = RULER_H + hoverCell.row * rowH - scrollY;
-      // Compute right edge from the NEXT cell boundary so cellsWidth
-      // in pixels exactly matches a grid cell, with no sub-pixel gap.
-      const hxRight = KEYS_W + ((hoverCell.beatIdx + 1) * cellSec - scrollX) * pxPerSec;
       const hx = Math.max(KEYS_W, hxRaw);
       const hw = Math.max(2, hxRight - hx);
       if (hxRight > KEYS_W && hxRaw < W && hy + rowH > RULER_H && hy < H) {
-        ctx.fillStyle = C.ink + '14';  // ~8% alpha
+        ctx.fillStyle = C.ink + '1f';  // ~12% alpha
         ctx.fillRect(hx, hy, hw, rowH);
       }
     }

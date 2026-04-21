@@ -485,8 +485,11 @@ export default function StudioDevMidi() {
     const endSec = scrollX + (W - KEYS_W) / pxPerSec;
 
     // Subdivision lines first (so beat/bar lines draw on top).
+    // Visibility tiered below the beat-rule strength so they read as
+    // helpers. rgba alpha chosen so lines are clearly visible on the
+    // cream lane bg even at 0 brightness boost.
     if (subdivision > 1) {
-      ctx.fillStyle = 'rgba(21, 24, 28, 0.07)';  // subtler than C.rule
+      ctx.fillStyle = 'rgba(21, 24, 28, 0.12)';
       const firstCell = Math.floor(startSec / cellSec);
       for (let i = firstCell; i * cellSec < endSec; i++) {
         if (i % subdivision === 0) continue;  // skip beats (drawn below)
