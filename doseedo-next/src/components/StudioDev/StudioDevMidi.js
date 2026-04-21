@@ -89,8 +89,14 @@ function hitTestNote(notes, mx, my, cfg) {
     const w = Math.max(6, n.duration * cfg.pxPerSec);
     const h = cfg.rowH - 1;
     if (mx >= x && mx <= x + w && my >= y && my <= y + h) {
-      // edge-hit = right 6 px for resize
-      const edge = mx >= x + w - 6;
+      // Edge grab: right 6 px → resize end (duration), left 6 px →
+      // resize start (shifts time while keeping the far end pinned).
+      // Notes under ~14 px wide skip left-edge resize so both grabs
+      // don't overlap the centre.
+      const edge =
+        mx >= x + w - 6 ? 'right'
+        : (w > 14 && mx <= x + 6) ? 'left'
+        : null;
       return { idx: i, note: n, edge };
     }
   }
@@ -108,8 +114,15 @@ export default function StudioDevMidi() {
   const [scrollX, setScrollX] = useState(0);
   const [scrollY, setScrollY] = useState(0);
   const [selected,setSelected]= useState(new Set());
-  const [drag, setDrag] = useState(null);        // {mode:'move'|'resize'|'marquee'|'new', ...}
+  const [drag, setDrag] = useState(null);        // {mode:'move'|'resize-right'|'resize-left'|'marquee'|'new', ...}
   const [hoverTime, setHoverTime] = useState(null);
+  // Cell currently under the cursor: { row, beatIdx } in piano-roll grid
+  // coords. Drawn as a faint rect during draw() so users can see where a
+  // click will land. Null when the cursor is over the ruler / key rail.
+  const [hoverCell, setHoverCell] = useState(null);
+  // Duration of the most-recently edited note, used as the default when
+  // the user clicks an empty cell to add a new note. Starts at a half-beat.
+  const lastNoteDurRef = useRef(null);
 
   const busIdForSelected = useMemo(() => {
     if (!selectedTrack) return null;
@@ -209,19 +222,27 @@ export default function StudioDevMidi() {
         nextSel = selected.has(hit.idx) ? selected : new Set([hit.idx]);
       }
       setSelected(nextSel);
+      const mode =
+        hit.edge === 'right' ? 'resize-right'
+        : hit.edge === 'left' ? 'resize-left'
+        : 'move';
       setDrag({
-        mode: hit.edge ? 'resize' : 'move',
+        mode,
         startClientX: e.clientX, startClientY: e.clientY,
         origNotes: notes.map((n) => ({ ...n })),
         indices: [...nextSel],
+        moved: false,
       });
     } else {
-      // Click empty → add a note at clicked position, then continue into
-      // a resize drag so the user can drag out the duration in one gesture.
+      // Click empty → add a note at clicked position using the user's
+      // last-edited note duration (falls back to a half-beat for the
+      // very first note of a session). Continues into a resize drag so
+      // the user can extend the duration in the same gesture if they
+      // want a different length.
       const t = Math.max(0, timeAtX(mx));
       const p = pitchAtY(my);
       const beatSec = 60 / Math.max(40, state.bpm || 120);
-      const defDur = beatSec / 2;
+      const defDur = lastNoteDurRef.current ?? (beatSec / 2);
       const newNote = {
         note: p,
         time: +(Math.round(t / (beatSec / 4)) * (beatSec / 4)).toFixed(4),
@@ -231,10 +252,11 @@ export default function StudioDevMidi() {
       commit(nxt);
       setSelected(new Set([nxt.length - 1]));
       setDrag({
-        mode: 'resize',
+        mode: 'resize-right',
         startClientX: e.clientX, startClientY: e.clientY,
         origNotes: nxt.map((n) => ({ ...n })),
         indices: [nxt.length - 1],
+        moved: false,
       });
     }
   };
@@ -243,9 +265,16 @@ export default function StudioDevMidi() {
   // pxPerSec, rowH, minPitch, maxPitch change (any of which affect math).
   useEffect(() => {
     if (!drag) return;
+    // Threshold (px) below which a mousedown-up is treated as a plain
+    // click, not a drag — prevents tiny 1-2px jitters after selecting a
+    // note from shifting it unexpectedly (user's 'note moves when I
+    // click' complaint).
+    const DRAG_THRESHOLD_PX = 3;
     const onMove = (e) => {
       const dxPx = e.clientX - drag.startClientX;
       const dyPx = e.clientY - drag.startClientY;
+      if (!drag.moved && Math.abs(dxPx) < DRAG_THRESHOLD_PX && Math.abs(dyPx) < DRAG_THRESHOLD_PX) return;
+      drag.moved = true;  // mutate in place — next tick takes this path
       const dt = dxPx / pxPerSec;
       const dp = -Math.round(dyPx / rowH);
       const nxt = drag.origNotes.map((n) => ({ ...n }));
@@ -254,26 +283,71 @@ export default function StudioDevMidi() {
           nxt[i].time = Math.max(0, drag.origNotes[i].time + dt);
           nxt[i].note = Math.max(minPitch, Math.min(maxPitch, drag.origNotes[i].note + dp));
         }
-      } else if (drag.mode === 'resize') {
+      } else if (drag.mode === 'resize-right') {
         for (const i of drag.indices) {
           nxt[i].duration = Math.max(0.03, drag.origNotes[i].duration + dt);
+        }
+      } else if (drag.mode === 'resize-left') {
+        // Drag the start edge: shift time forward, shrink duration by
+        // the same amount so the right edge stays pinned. Don't let
+        // the note get shorter than 0.03s or earlier than t=0.
+        for (const i of drag.indices) {
+          const orig = drag.origNotes[i];
+          const maxShift = orig.duration - 0.03;
+          const clampedDt = Math.max(-orig.time, Math.min(maxShift, dt));
+          nxt[i].time = orig.time + clampedDt;
+          nxt[i].duration = orig.duration - clampedDt;
         }
       }
       commit(nxt);
     };
-    const onUp = () => setDrag(null);
+    const onUp = () => {
+      // On release, remember the last-edited note's duration so the
+      // next empty-cell click creates a note the same size.
+      if (drag.moved && drag.indices.length) {
+        const last = drag.indices[drag.indices.length - 1];
+        // Read from current notes; after commit the track state carries
+        // the new duration. Fall back to origNotes if index shifted.
+        const lastDur = (notes[last] && notes[last].duration) ?? drag.origNotes[last]?.duration;
+        if (lastDur && lastDur > 0) lastNoteDurRef.current = lastDur;
+      }
+      setDrag(null);
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [drag, pxPerSec, rowH, minPitch, maxPitch, commit]);
+  }, [drag, pxPerSec, rowH, minPitch, maxPitch, commit, notes]);
 
   const onMouseMoveCanvas = (e) => {
-    // Lightweight — just the cursor read-out. Heavy drag math runs on window.
+    // Lightweight — cursor read-out + cell highlight + resize cursor.
+    // Heavy drag math runs on window.
     const r = canvasRef.current.getBoundingClientRect();
-    setHoverTime(timeAtX(e.clientX - r.left));
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    setHoverTime(timeAtX(mx));
+    // Cell under cursor (grid-quantized to a quarter-beat column).
+    if (mx >= KEYS_W && my >= RULER_H) {
+      const beatSec = 60 / Math.max(40, state.bpm || 120);
+      const cellSec = beatSec / 4;
+      const t = timeAtX(mx);
+      const beatIdx = Math.floor(Math.max(0, t) / cellSec);
+      const row = Math.floor((my - RULER_H + scrollY) / rowH);
+      setHoverCell({ row, beatIdx });
+    } else {
+      setHoverCell(null);
+    }
+    // Swap mouse cursor to ew-resize when hovering an edge so users see
+    // the grab affordance before clicking. Falls back to crosshair on
+    // empty cells and default 'grab' on note bodies.
+    if (!drag) {
+      const c = canvasRef.current;
+      const hit = hitTestNote(notes, mx, my, cfg);
+      c.style.cursor = hit
+        ? (hit.edge ? 'ew-resize' : 'grab')
+        : (mx < KEYS_W || my < RULER_H ? 'default' : 'crosshair');
+    }
   };
 
   const onDoubleClick = (e) => {
@@ -423,6 +497,19 @@ export default function StudioDevMidi() {
       }
     }
 
+    // Hover-cell highlight — faint rectangle showing where a click
+    // would land. Skip while dragging (the note itself is the feedback).
+    if (hoverCell && !drag) {
+      const cellSec = beatSec / 4;
+      const hx = KEYS_W + (hoverCell.beatIdx * cellSec - scrollX) * pxPerSec;
+      const hy = RULER_H + hoverCell.row * rowH - scrollY;
+      const hw = Math.max(2, cellSec * pxPerSec);
+      if (hx + hw > KEYS_W && hx < size.w && hy + rowH > RULER_H && hy < size.h) {
+        ctx.fillStyle = C.ink + '14';  // ~8% alpha
+        ctx.fillRect(Math.max(KEYS_W, hx), hy, hw, rowH);
+      }
+    }
+
     // Notes
     for (let i = 0; i < notes.length; i++) {
       const n = notes[i];
@@ -454,7 +541,7 @@ export default function StudioDevMidi() {
       ctx.fillStyle = C.accent;
       ctx.fillRect(px, 0, 1, size.h);
     }
-  }, [size, notes, selected, trackColor, isDrum, pxPerSec, rowH, scrollX, scrollY, maxPitch, minPitch, state.bpm, state.playheadPosition]);
+  }, [size, notes, selected, trackColor, isDrum, pxPerSec, rowH, scrollX, scrollY, maxPitch, minPitch, state.bpm, state.playheadPosition, hoverCell, drag]);
 
   // Empty state — uses the workbench .wb-canvas / .wb-empty block verbatim
   // so the font stack (Inter 28/600 title, Inter 13 body, mono status pill)
@@ -535,6 +622,7 @@ export default function StudioDevMidi() {
         ref={wrapRef}
         className="sd-midi-canvas-wrap"
         onWheel={onWheel}
+        onMouseLeave={() => setHoverCell(null)}
       >
         <canvas
           ref={canvasRef}
