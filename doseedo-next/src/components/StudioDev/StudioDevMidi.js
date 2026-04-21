@@ -109,9 +109,21 @@ export default function StudioDevMidi() {
   const canvasRef  = useRef(null);
   const wrapRef    = useRef(null);
   const [size,    setSize]    = useState({ w: 800, h: 400 });
-  const [pxPerSec,setPxPerSec]= useState(96);    // unified zoom — Y derives from X so cells stay square
+  const [pxPerSec,setPxPerSec]= useState(96);    // X-axis pixel density
+  // Independent vertical zoom multiplier on top of the unified pxPerSec.
+  // 1 = square cells (Y matches cellSec*pxPerSec). Alt-scroll adjusts
+  // this so users can stretch the piano roll vertically without
+  // touching horizontal resolution.
+  const [rowScale,setRowScale]= useState(1);
   const [scrollX, setScrollX] = useState(0);
   const [scrollY, setScrollY] = useState(0);
+  // Axis settings — placeholder UI for future custom quantization.
+  // Defaults mirror the built-in behavior: Y = 2^(1/12) (semitone
+  // spacing), X = 60/BPM (one beat per unit). Expressions are stored
+  // as strings now; we'll wire them to actual grid math in a follow-up.
+  const [axisOpen, setAxisOpen] = useState(false);
+  const [xAxisExpr, setXAxisExpr] = useState('60/BPM');
+  const [yAxisExpr, setYAxisExpr] = useState('2^(1/12)');
   const [selected,setSelected]= useState(new Set());
   const [drag, setDrag] = useState(null);        // {mode:'move'|'resize-right'|'resize-left'|'marquee'|'new', ...}
   const [hoverTime, setHoverTime] = useState(null);
@@ -225,9 +237,11 @@ export default function StudioDevMidi() {
   const cellSec = beatSec / subdivision;
   const snapTime = (t) => Math.round(t / cellSec) * cellSec;
 
-  // Row height derives from the cell width so every cell is a perfect
-  // square. Unified zoom: Ctrl-scroll adjusts pxPerSec; rowH follows.
-  const rowH = Math.max(12, Math.round(cellSec * pxPerSec));
+  // Row height is square by default (cellSec × pxPerSec), then
+  // multiplied by rowScale so the user can stretch Y independently.
+  // Alt-scroll adjusts rowScale; plain Ctrl-scroll keeps rowScale=1
+  // (square). Min clamp avoids 1-px rows that can't render text.
+  const rowH = Math.max(6, Math.round(cellSec * pxPerSec * rowScale));
 
   // ---- Coords ----
   const cfg = { pxPerSec, rowH, maxPitch, minPitch, scrollX, scrollY };
@@ -456,6 +470,15 @@ export default function StudioDevMidi() {
         setPxPerSec(newPxPerSec);
         setScrollX(nextScrollX);
         setScrollY(nextScrollY);
+      } else if (e.altKey) {
+        // Y-only zoom — stretch/squish rows without touching pxPerSec.
+        // Same linear-step formula as the unified zoom.
+        e.preventDefault();
+        const deltaPx = e.deltaMode === 1 ? e.deltaY * 16
+                       : e.deltaMode === 2 ? e.deltaY * 400
+                       : e.deltaY;
+        const step = Math.max(-0.25, Math.min(0.25, -deltaPx * 0.0015));
+        setRowScale((v) => Math.max(0.3, Math.min(6, v * (1 + step))));
       } else if (e.shiftKey) {
         e.preventDefault();
         setScrollX((v) => Math.max(0, v + e.deltaY / pxPerSec));
@@ -744,6 +767,56 @@ export default function StudioDevMidi() {
           onDoubleClick={onDoubleClick}
           className="sd-midi-canvas"
         />
+        {/* Axis-settings gear — top-left of the canvas. Opens a panel
+         * where the user edits X / Y axis expressions. Expression
+         * evaluation is a follow-up; for now the fields just store
+         * strings and the panel is purely UI. */}
+        <button
+          className="sd-midi-axis-btn"
+          onClick={() => setAxisOpen((v) => !v)}
+          title="Axis settings"
+        >
+          <i className="fa-solid fa-sliders" />
+        </button>
+        {axisOpen && (
+          <div className="sd-midi-axis-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="sd-midi-axis-head">
+              <span className="sd-midi-kv-k">Axis settings</span>
+              <div className="sd-midi-spacer" />
+              <button className="sd-midi-btn" onClick={() => setAxisOpen(false)}>Close</button>
+            </div>
+            <div className="sd-midi-axis-row">
+              <label className="sd-midi-kv-k">X axis</label>
+              <input
+                type="text"
+                className="sd-midi-axis-input"
+                value={xAxisExpr}
+                onChange={(e) => setXAxisExpr(e.target.value)}
+                placeholder="60/BPM"
+              />
+              <span className="sd-midi-axis-hint">units / cell</span>
+            </div>
+            <div className="sd-midi-axis-row">
+              <label className="sd-midi-kv-k">Y axis</label>
+              <input
+                type="text"
+                className="sd-midi-axis-input"
+                value={yAxisExpr}
+                onChange={(e) => setYAxisExpr(e.target.value)}
+                placeholder="2^(1/12)"
+              />
+              <span className="sd-midi-axis-hint">ratio / row</span>
+            </div>
+            <div className="sd-midi-axis-row">
+              <button
+                className="sd-midi-btn"
+                onClick={() => { setXAxisExpr('60/BPM'); setYAxisExpr('2^(1/12)'); }}
+              >
+                Reset defaults
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer readout */}

@@ -1522,6 +1522,76 @@
   cursor: crosshair;
 }
 
+/* Axis-settings gear — floats top-left of the canvas. */
+.sd-midi-axis-btn {
+  position: absolute;
+  top: 6px; left: 6px;
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-sm);
+  color: var(--wb-ink);
+  font-size: 10px;
+  cursor: pointer;
+  z-index: 5;
+  padding: 0;
+}
+.sd-midi-axis-btn:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule-strong);
+}
+
+/* Settings panel opens above the canvas (anchored below the gear). */
+.sd-midi-axis-panel {
+  position: absolute;
+  top: 32px; left: 6px;
+  min-width: 280px;
+  padding: 10px 12px;
+  background: var(--wb-surface);
+  border: var(--wb-border-strong);
+  border-radius: var(--wb-radius);
+  box-shadow: var(--wb-shadow-lg);
+  z-index: 10;
+  font-family: var(--wb-font-mono);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.sd-midi-axis-head {
+  display: flex; align-items: center; gap: 6px;
+  padding-bottom: 6px;
+  border-bottom: var(--wb-border);
+}
+.sd-midi-axis-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 10px;
+}
+.sd-midi-axis-row label {
+  flex: 0 0 56px;
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+  color: var(--wb-ink-mute);
+}
+.sd-midi-axis-input {
+  flex: 1; min-width: 0;
+  padding: 4px 8px;
+  background: var(--wb-bg);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-sm);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+}
+.sd-midi-axis-input:focus {
+  outline: none;
+  border-color: var(--wb-ink);
+}
+.sd-midi-axis-hint {
+  font-size: 9px;
+  color: var(--wb-ink-mute);
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+}
+
 .sd-midi-footer {
   height: 22px; flex-shrink: 0;
   display: flex; align-items: center; gap: 10px; padding: 0 12px;
