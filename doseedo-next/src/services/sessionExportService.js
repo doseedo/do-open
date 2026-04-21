@@ -39,39 +39,61 @@ async function urlToFile(url, filename, mimeType) {
   }
 }
 
+// Cache of already-uploaded files for this session, keyed by path. Each
+// entry remembers the audioUrl at upload time plus the R2 result so we
+// can reuse it across saves. Cleared when a new sessionId appears.
+//
+// Without this, moving a single track to a new position re-uploaded
+// every stem's multi-MB audio on every autosave tick (saveService's
+// fingerprint flips because startPosition changed, cloud save fires,
+// this function re-fetches + re-uploads every audioUrl blindly).
+const _uploadCache = { sessionId: null, byPath: new Map() };
+
+function _resetCacheIfNewSession(sessionId) {
+  if (_uploadCache.sessionId !== sessionId) {
+    _uploadCache.sessionId = sessionId;
+    _uploadCache.byPath = new Map();
+  }
+}
+
 /**
- * Extract all audio and MIDI files from tracks
+ * Extract all audio and MIDI files from tracks. For audio tracks whose
+ * audioUrl matches what we already uploaded this session, we emit a
+ * cache-hit marker instead of fetching + rebuilding the File — the
+ * export loop skips the upload entirely.
  */
 async function extractTrackFiles(buses) {
   const files = [];
 
   for (const bus of buses) {
     for (const track of bus.tracks || []) {
-      // Extract audio file if exists
+      // Audio: cache on (path, audioUrl). Blob URLs are stable across
+      // the session; /separate-stems/download/<id>/... is stable per
+      // demucs run. MIDI and parameter edits don't touch audioUrl.
       if (track.audioUrl) {
         const ext = track.type === 'audio' ? 'wav' : 'mp3';
-        const audioFile = await urlToFile(
-          track.audioUrl,
-          `track-${track.id}.${ext}`,
-          `audio/${ext === 'wav' ? 'wav' : 'mpeg'}`
-        );
-
-        if (audioFile) {
-          files.push({
-            file: audioFile,
-            path: `tracks/${track.id}/audio.${ext}`,
-            trackId: track.id,
-            type: 'audio'
-          });
+        const path = `tracks/${track.id}/audio.${ext}`;
+        const cached = _uploadCache.byPath.get(path);
+        if (cached && cached.audioUrl === track.audioUrl && cached.result) {
+          files.push({ cached: cached.result, path, trackId: track.id, type: 'audio', audioUrl: track.audioUrl });
+        } else {
+          const audioFile = await urlToFile(
+            track.audioUrl,
+            `track-${track.id}.${ext}`,
+            `audio/${ext === 'wav' ? 'wav' : 'mpeg'}`
+          );
+          if (audioFile) {
+            files.push({ file: audioFile, path, trackId: track.id, type: 'audio', audioUrl: track.audioUrl });
+          }
         }
       }
 
-      // Extract MIDI data if exists
+      // MIDI file — rebuilt from notes each time; the midiData content
+      // hash would be the right cache key but tracking notes equality
+      // cheaply is awkward, so just always re-export. It's small.
       if (track.midiData && track.midiData.notes && track.midiData.notes.length > 0) {
-        // Convert MIDI data to MIDI file blob
         const midiBlob = createMidiFile(track.midiData);
         const midiFile = new File([midiBlob], `track-${track.id}.mid`, { type: 'audio/midi' });
-
         files.push({
           file: midiFile,
           path: `tracks/${track.id}/midi.mid`,
@@ -219,14 +241,21 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
       type: 'application/json'
     });
 
-    // Step 4: Upload all files to R2 (endpoint path kept as /api/upload/gcs
-    // for URL back-compat — app/storage.py in the Fly auth service has
-    // been R2-only for a while now).
-    console.log(`📤 Uploading ${trackFiles.length + 1} files to R2…`);
+    // Step 4: Upload to R2 (endpoint path kept as /api/upload/gcs for URL
+    // back-compat — app/storage.py in the Fly auth service has been
+    // R2-only for a while). Skip already-uploaded files whose audioUrl
+    // didn't change since the last save.
+    _resetCacheIfNewSession(sessionId);
+    const toUpload = trackFiles.filter((tf) => !tf.cached);
+    const reused = trackFiles.length - toUpload.length;
+    console.log(
+      `📤 Uploading ${toUpload.length + 1} file(s) to R2…` +
+      (reused > 0 ? ` (${reused} reused from cache)` : '')
+    );
 
     const uploadPromises = [];
 
-    // Upload session.json
+    // Upload session.json (always — metadata changes every save).
     uploadPromises.push(
       gcsUploadService.uploadToGCS(
         sessionJsonFile,
@@ -240,8 +269,17 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
       ).then(result => ({ ...result, path: 'session.json', type: 'metadata' }))
     );
 
-    // Upload track files
-    for (const trackFile of trackFiles) {
+    // Emit reused entries immediately so the result array has them in order.
+    for (const tf of trackFiles) {
+      if (tf.cached) {
+        uploadPromises.push(Promise.resolve({
+          ...tf.cached, path: tf.path, trackId: tf.trackId, type: tf.type,
+        }));
+      }
+    }
+
+    // Upload only files that aren't cached.
+    for (const trackFile of toUpload) {
       uploadPromises.push(
         gcsUploadService.uploadToGCS(
           trackFile.file,
@@ -253,7 +291,16 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
             filePath: `${basePath}/${trackFile.path}`,
             fileType: trackFile.type
           }
-        ).then(result => ({ ...result, ...trackFile }))
+        ).then(result => {
+          // Cache for future saves (audio files only — midi is re-exported).
+          if (trackFile.type === 'audio' && trackFile.audioUrl) {
+            _uploadCache.byPath.set(trackFile.path, {
+              audioUrl: trackFile.audioUrl,
+              result: { ...result, trackId: trackFile.trackId, type: trackFile.type },
+            });
+          }
+          return { ...result, ...trackFile };
+        })
       );
     }
 

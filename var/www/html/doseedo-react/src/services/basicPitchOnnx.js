@@ -237,7 +237,21 @@ async function toMono22050(audio, sr) {
  * @param {number} [opts.minNoteLenFrames=11]
  * @returns {Promise<{notes: Array, duration: number}>}
  */
+// Module-level queue so overlapping transcribeAudio() calls (e.g. master
+// + rapid re-ingest during a new upload) don't fight over the single
+// ORT session. ORT-Web 1.22 rejects concurrent sess.run with "Session
+// already started"; serializing whole transcribe calls at the module
+// level is the lightest-weight guarantee. _runQueue still protects the
+// one-session-create path inside initBasicPitch.
+let _transcribeQueue = Promise.resolve();
+
 export async function transcribeAudio(audio, sr, opts = {}) {
+  const p = _transcribeQueue.then(() => _transcribeAudioImpl(audio, sr, opts));
+  _transcribeQueue = p.catch(() => {});
+  return p;
+}
+
+async function _transcribeAudioImpl(audio, sr, opts = {}) {
   const sess = await initBasicPitch();
   if (!sess) return { notes: [], duration: 0 };
   const audio22k = await toMono22050(audio, sr);
