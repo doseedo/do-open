@@ -109,8 +109,7 @@ export default function StudioDevMidi() {
   const canvasRef  = useRef(null);
   const wrapRef    = useRef(null);
   const [size,    setSize]    = useState({ w: 800, h: 400 });
-  const [pxPerSec,setPxPerSec]= useState(96);    // horizontal zoom
-  const [rowH,    setRowH]    = useState(14);    // vertical zoom
+  const [pxPerSec,setPxPerSec]= useState(96);    // unified zoom — Y derives from X so cells stay square
   const [scrollX, setScrollX] = useState(0);
   const [scrollY, setScrollY] = useState(0);
   const [selected,setSelected]= useState(new Set());
@@ -234,6 +233,12 @@ export default function StudioDevMidi() {
   }
   const cellSec = beatSec / subdivision;
   const snapTime = (t) => Math.round(t / cellSec) * cellSec;
+
+  // Row height derives from the cell width so every cell is a perfect
+  // square. Unified zoom: Ctrl-scroll adjusts pxPerSec; rowH follows
+  // automatically. Subdivision clamps cellPx to (48, 96], keeping
+  // squares between 12 and 96 px tall across the full zoom range.
+  const rowH = Math.max(12, Math.round(cellSec * pxPerSec));
 
   // Mouse handlers. Drag uses window-level move/up so React re-renders
   // during commit() can't drop the drag session mid-flight.
@@ -393,11 +398,10 @@ export default function StudioDevMidi() {
 
   const onWheel = (e) => {
     if (e.ctrlKey || e.metaKey) {
+      // Unified zoom — pxPerSec alone; rowH is derived so cells stay
+      // square. Alt-scroll for Y-only zoom is no longer a thing.
       e.preventDefault();
       setPxPerSec((v) => Math.max(20, Math.min(800, v * (e.deltaY < 0 ? 1.15 : 1 / 1.15))));
-    } else if (e.altKey) {
-      e.preventDefault();
-      setRowH((v) => Math.max(8, Math.min(36, v + (e.deltaY < 0 ? 1 : -1))));
     } else if (e.shiftKey) {
       e.preventDefault();
       setScrollX((v) => Math.max(0, v + e.deltaY / pxPerSec));
@@ -633,8 +637,6 @@ export default function StudioDevMidi() {
           <span className="sd-midi-kv-k">Zoom</span>
           <button className="sd-midi-btn" onClick={() => setPxPerSec((v) => Math.max(20, v / 1.25))}>−</button>
           <button className="sd-midi-btn" onClick={() => setPxPerSec((v) => Math.min(800, v * 1.25))}>+</button>
-          <button className="sd-midi-btn" onClick={() => setRowH((v) => Math.max(8, v - 2))} title="Row shorter">⇡</button>
-          <button className="sd-midi-btn" onClick={() => setRowH((v) => Math.min(36, v + 2))} title="Row taller">⇣</button>
         </div>
         <div className="sd-midi-group">
           <button className="sd-midi-btn" onClick={() => {
