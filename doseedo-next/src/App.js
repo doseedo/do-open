@@ -141,14 +141,38 @@ function AppContent() {
     }
   }, [location]);
 
-  // Workbench theme: /studio is now the workbench-themed StudioDev. Applies
-  // the hi-fi purple body class so global overrides (e.g. password gate)
-  // match. Removed on navigation away so the rest of the app stays default.
+  // Workbench theme: the master cream/JetBrains-Mono theme defined in
+  // src/styles/theme-workbench.css is opt-in per route via body class.
+  // Every page listed below reads from var(--wb-*) tokens and flips to
+  // the workbench look as soon as this effect tags <body>. Legacy dark
+  // routes (landing marketing pages, etc.) are untouched.
   useEffect(() => {
-    const isHifiPurple = location.pathname === '/studio';
+    const p = location.pathname;
+    const isWorkbench =
+      p === '/studio' ||
+      p === '/dashboard' ||
+      p === '/projects' ||
+      p === '/profile' ||
+      p.startsWith('/profile/') ||
+      p === '/search' ||
+      p === '/tools' ||
+      p === '/plans' ||
+      p === '/whats-new' ||
+      p === '/help' ||
+      p === '/feedback' ||
+      p.startsWith('/research') ||
+      p.startsWith('/plugins') ||
+      p.startsWith('/creation/');
+    // Keep the legacy hifi-purple class in lockstep — /studio still uses
+    // it for the password-gate skin override.
+    const isHifiPurple = p === '/studio';
     if (typeof document !== 'undefined') {
+      document.body.classList.toggle('workbench-theme', isWorkbench);
       document.body.classList.toggle('theme-hifi-purple', isHifiPurple);
-      return () => document.body.classList.remove('theme-hifi-purple');
+      return () => {
+        document.body.classList.remove('workbench-theme');
+        document.body.classList.remove('theme-hifi-purple');
+      };
     }
   }, [location.pathname]);
 

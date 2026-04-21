@@ -1,4 +1,6 @@
-/* Dashboard - Spotify-Style Design */
+/* Dashboard — workbench cream theme.
+ * All colors + fonts read from src/styles/theme-workbench.css. To retheme
+ * every dashboard page at once, edit the tokens there, not the values here. */
 
 .dashboard {
   width: calc(100% - 220px);
@@ -6,9 +8,11 @@
   margin: 0;
   margin-left: 220px;
   padding: 40px;
-  color: white;
-  min-height: 100vh;
   padding-top: 100px;
+  color: var(--wb-ink);
+  background: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+  min-height: 100vh;
   box-sizing: border-box;
   overflow-x: hidden;
 }
@@ -22,37 +26,40 @@
 }
 
 .title {
-  font-size: 48px;
-  font-weight: 700;
-  color: #fff;
+  font-family: var(--wb-font-sans);
+  font-size: var(--wb-text-3xl);
+  font-weight: 600;
+  color: var(--wb-ink);
   margin: 0;
-  letter-spacing: -1.5px;
+  letter-spacing: -0.5px;
 }
 
 .createBtn {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 32px;
-  background: rgba(186, 156, 255, 0.15);
-  border: 1.5px solid rgba(186, 156, 255, 0.4);
-  border-radius: 24px;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
+  padding: 10px 18px;
+  background: var(--wb-ink);
+  border: var(--wb-border);
+  border-color: var(--wb-ink);
+  border-radius: var(--wb-radius);
+  color: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-sm);
+  font-weight: 500;
+  letter-spacing: var(--wb-tracking-caps);
+  text-transform: uppercase;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.12s ease;
   white-space: nowrap;
 }
 
 .createBtn:hover {
-  background: rgba(186, 156, 255, 0.25);
-  border-color: rgba(186, 156, 255, 0.6);
-  transform: scale(1.05);
+  background: #000;
 }
 
 .createBtn i {
-  font-size: 14px;
+  font-size: 11px;
 }
 
 /* Session Input */
@@ -61,25 +68,26 @@
 }
 
 .sessionInput {
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1.5px solid rgba(186, 156, 255, 0.3);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 14px;
+  padding: 10px 14px;
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-md);
   width: 400px;
   max-width: 100%;
-  transition: all 0.3s ease;
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
 
 .sessionInput:focus {
   outline: none;
-  border-color: rgba(186, 156, 255, 0.6);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--wb-ink);
+  background: #fff;
 }
 
 .sessionInput::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--wb-ink-mute);
 }
 
 /* Sessions Container */
@@ -96,14 +104,15 @@
   display: grid;
   grid-template-columns: 40px minmax(200px, 1fr) 80px 140px 100px 50px;
   gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  margin-bottom: 8px;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 12px;
+  padding: 10px 14px;
+  border-bottom: var(--wb-border);
+  margin-bottom: 6px;
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-xs);
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: var(--wb-tracking-caps);
 }
 
 .headerNumber {
@@ -126,21 +135,21 @@
   text-align: right;
 }
 
-/* Session Row (like Spotify playlist row) */
+/* Session Row */
 .sessionRow {
   display: grid;
   grid-template-columns: 40px minmax(200px, 1fr) 80px 140px 100px 50px;
   gap: 12px;
-  padding: 8px 16px;
-  border-radius: 6px;
+  padding: 8px 14px;
+  border-radius: var(--wb-radius);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.12s ease;
   align-items: center;
   min-height: 56px;
 }
 
 .sessionRow:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--wb-surface-2);
 }
 
 /* Session Number / Play Button */
@@ -148,31 +157,31 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 14px;
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-sm);
 }
 
 .playBtn {
   width: 32px;
   height: 32px;
-  background: rgba(186, 156, 255, 0.2);
+  background: var(--wb-ink);
   border: none;
   border-radius: 50%;
-  color: #fff;
+  color: var(--wb-bg);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: background 0.12s ease;
 }
 
 .playBtn:hover {
-  background: rgba(186, 156, 255, 0.4);
-  transform: scale(1.1);
+  background: var(--wb-accent);
 }
 
 .playBtn i {
-  font-size: 12px;
+  font-size: 11px;
   margin-left: 2px;
 }
 
@@ -180,7 +189,7 @@
 .sessionTitle {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   min-width: 0;
 }
 
@@ -188,58 +197,62 @@
   display: flex;
   align-items: center;
   gap: 1px;
-  height: 40px;
+  height: 36px;
   width: 80px;
   flex-shrink: 0;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 4px;
-  padding: 4px;
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-sm);
+  padding: 3px;
 }
 
 .waveformBar {
   flex: 1;
-  background: linear-gradient(180deg, rgba(186, 156, 255, 0.8), rgba(186, 156, 255, 0.4));
+  background: var(--wb-ink-soft);
   border-radius: 1px;
-  transition: all 0.2s ease;
+  transition: background 0.12s ease;
 }
 
 .sessionRow:hover .waveformBar {
-  background: linear-gradient(180deg, rgba(186, 156, 255, 1), rgba(186, 156, 255, 0.6));
+  background: var(--wb-accent);
 }
 
 .sessionName {
-  color: #fff;
-  font-size: 15px;
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-md);
   font-weight: 500;
+  letter-spacing: var(--wb-tracking-label);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .sessionNameInput {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1.5px solid rgba(186, 156, 255, 0.5);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 15px;
+  background: #fff;
+  border: 1.5px solid var(--wb-ink);
+  border-radius: var(--wb-radius);
+  padding: 6px 10px;
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-md);
   font-weight: 500;
-  color: white;
+  color: var(--wb-ink);
   width: 100%;
   max-width: 300px;
 }
 
 .sessionNameInput:focus {
   outline: none;
-  border-color: rgba(186, 156, 255, 0.8);
-  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--wb-accent);
 }
 
 /* Session Metadata */
 .sessionTracks,
 .sessionDate,
 .sessionDuration {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 14px;
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-sm);
 }
 
 .sessionTracks {
@@ -260,17 +273,17 @@
 
 /* Post Button */
 .postBtn {
-  width: 28px;
-  height: 28px;
-  background: rgba(186, 156, 255, 0.2);
-  border: 1px solid rgba(186, 156, 255, 0.3);
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: var(--wb-border);
   border-radius: 50%;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--wb-ink-soft);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: all 0.12s ease;
   opacity: 0;
   flex-shrink: 0;
 }
@@ -280,14 +293,13 @@
 }
 
 .postBtn:hover {
-  background: rgba(186, 156, 255, 0.4);
-  border-color: rgba(186, 156, 255, 0.6);
-  color: #fff;
-  transform: scale(1.1);
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+  color: var(--wb-bg);
 }
 
 .postBtn i {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 /* Session Menu */
@@ -299,17 +311,17 @@
 }
 
 .menuBtn {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   background: transparent;
   border: none;
   border-radius: 50%;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--wb-ink-mute);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: all 0.12s ease;
   opacity: 0;
 }
 
@@ -318,60 +330,61 @@
 }
 
 .menuBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--wb-surface);
+  color: var(--wb-ink);
 }
 
 .menuBtn i {
-  font-size: 16px;
+  font-size: 15px;
 }
 
 /* Dropdown Menu */
 .menuDropdown {
   position: absolute;
-  top: 40px;
+  top: 38px;
   right: 0;
-  background: rgba(28, 28, 28, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 8px;
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius);
+  padding: 6px;
   min-width: 160px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--wb-shadow-lg);
   z-index: 1000;
-  backdrop-filter: blur(10px);
 }
 
 .menuDropdown button {
   width: 100%;
   background: transparent;
   border: none;
-  color: #fff;
-  padding: 10px 12px;
+  color: var(--wb-ink);
+  padding: 8px 10px;
   text-align: left;
   cursor: pointer;
-  border-radius: 4px;
-  font-size: 14px;
+  border-radius: var(--wb-radius-sm);
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-sm);
+  letter-spacing: var(--wb-tracking-label);
   display: flex;
   align-items: center;
-  gap: 12px;
-  transition: all 0.2s ease;
+  gap: 10px;
+  transition: background 0.12s ease;
 }
 
 .menuDropdown button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--wb-surface-2);
 }
 
 .menuDropdown button i {
-  font-size: 13px;
-  width: 16px;
+  font-size: 12px;
+  width: 14px;
 }
 
 .deleteOption {
-  color: rgba(220, 38, 38, 0.9) !important;
+  color: var(--wb-accent-warm) !important;
 }
 
 .deleteOption:hover {
-  background: rgba(220, 38, 38, 0.15) !important;
+  background: rgba(201, 79, 44, 0.08) !important;
 }
 
 /* Empty State */
@@ -386,21 +399,23 @@
 }
 
 .emptyState i {
-  font-size: 64px;
-  color: rgba(186, 156, 255, 0.3);
-  margin-bottom: 24px;
+  font-size: 56px;
+  color: var(--wb-ink-mute);
+  margin-bottom: 22px;
 }
 
 .emptyState h3 {
-  font-size: 24px;
+  font-family: var(--wb-font-sans);
+  font-size: var(--wb-text-xl);
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
-  margin: 0 0 12px 0;
+  color: var(--wb-ink);
+  margin: 0 0 10px 0;
 }
 
 .emptyState p {
-  font-size: 15px;
-  color: rgba(255, 255, 255, 0.5);
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-md);
+  color: var(--wb-ink-soft);
   margin: 0;
 }
 
@@ -432,7 +447,7 @@
   }
 
   .title {
-    font-size: 36px;
+    font-size: var(--wb-text-2xl);
   }
 
   .createBtn {
@@ -470,10 +485,10 @@
   }
 
   .emptyState i {
-    font-size: 48px;
+    font-size: 44px;
   }
 
   .emptyState h3 {
-    font-size: 20px;
+    font-size: var(--wb-text-lg);
   }
 }

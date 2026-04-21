@@ -1,8 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { initSentry } from './lib/sentry';
-import './styles/colors.css'; // Master color palette
-import './styles/theme-hifi-purple.css'; // Dev variant override (body.theme-hifi-purple on /studio-dev)
+import './styles/colors.css'; // Master color palette (legacy dark theme)
+import './styles/theme-workbench.css'; // Master workbench theme — body.workbench-theme on /studio, /dashboard, /projects, ...
+import './styles/theme-hifi-purple.css'; // Dev variant override (body.theme-hifi-purple on /studio)
 import './styles/glass-theme-background.css'; // Glass theme backgrounds
 import './styles/liquid-glass.css'; // Glass theme button & panel effects
 import './assets/css/original-style5.css';

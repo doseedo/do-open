@@ -1,0 +1,134 @@
+/*
+ * theme-workbench.css — the single master theme for doseedo.
+ *
+ * Every workbench-themed page (/studio, /dashboard, /projects, and all
+ * dashboard sub-pages) reads from the tokens defined here. Page CSS
+ * modules reference these via var(--wb-*) so a tweak to this file
+ * re-themes the entire app at once.
+ *
+ * How to adopt the theme on a page:
+ *   1. Wrap the page's outermost div with className="workbench-scope"
+ *      OR toggle body.workbench-theme on route change (App.js does
+ *      this automatically for pathnames listed there).
+ *   2. In the page's CSS module, use tokens instead of hex colors:
+ *        background: var(--wb-surface);
+ *        color:      var(--wb-ink);
+ *        font-family: var(--wb-font-mono);
+ *
+ * DO NOT add new themes to this file. If an alternate skin is needed,
+ * create a separate override file that remaps these same --wb-* names.
+ */
+
+:root {
+  /* ========== Color tokens ========== */
+  /* Cream surfaces, warm ink, understated accents. Matches
+     /Users/hydroadmin/Downloads/daw/workbench-export/workbench.css. */
+  --wb-bg:          #e8e6e1;  /* page background (outer cream) */
+  --wb-surface:     #f2f0ea;  /* card / panel fill (lighter cream) */
+  --wb-surface-2:   #dcd9d1;  /* hover / inset fill */
+  --wb-surface-3:   #cfccc3;  /* pressed / deeper inset */
+  --wb-ink:         #15181c;  /* primary text + borders */
+  --wb-ink-soft:    #3a3d44;  /* secondary text */
+  --wb-ink-mute:    #7c7e85;  /* tertiary / meta text */
+  --wb-rule:        #c8c5bd;  /* 1px dividers */
+  --wb-rule-strong: #a5a29a;  /* 1.5px dividers / focus outlines */
+  --wb-accent:      #1d4c7a;  /* cool accent — links, active states */
+  --wb-accent-warm: #c94f2c;  /* warm accent — playhead, destructive */
+  --wb-accent-soft: rgba(29, 76, 122, 0.08); /* tinted hover */
+
+  /* Per-track / per-instrument color palette (workbench-matched) */
+  --wb-track-vox:     #c94f2c;
+  --wb-track-keys:    #7a5d3a;
+  --wb-track-bass:    #2f6b4e;
+  --wb-track-drums:   #4a3d6b;
+  --wb-track-strings: #1d4c7a;
+  --wb-track-pad:     #5c7a8a;
+
+  /* ========== Typography ========== */
+  --wb-font-mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+  --wb-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  --wb-text-xs:   10px;
+  --wb-text-sm:   11px;
+  --wb-text-base: 12px;
+  --wb-text-md:   13px;
+  --wb-text-lg:   15px;
+  --wb-text-xl:   18px;
+  --wb-text-2xl:  24px;
+  --wb-text-3xl:  32px;
+
+  --wb-tracking-label: 0.6px;
+  --wb-tracking-caps:  0.8px;
+
+  /* ========== Shape / layout ========== */
+  --wb-radius-sm: 2px;
+  --wb-radius:    4px;
+  --wb-radius-lg: 6px;
+  --wb-radius-xl: 12px;
+
+  --wb-border:        1px solid var(--wb-rule);
+  --wb-border-strong: 1.5px solid var(--wb-rule-strong);
+
+  --wb-shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.04);
+  --wb-shadow:    0 2px 6px rgba(0, 0, 0, 0.06);
+  --wb-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.10);
+}
+
+/* ------------------------------------------------------------------
+ * Body-level activation.
+ *
+ * Toggle body.workbench-theme from App.js when on a workbench route
+ * (/studio, /dashboard, /projects, /profile, ...). Any page that uses
+ * the var(--wb-*) tokens picks up the theme automatically; plus we
+ * force the base font + cream bg on the body itself so the margin /
+ * outer chrome looks right even before the page mounts.
+ * ------------------------------------------------------------------ */
+body.workbench-theme {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-base);
+  font-feature-settings: 'ss01', 'ss02';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Base element resets scoped to the theme — these only apply when the
+ * body class is active so the rest of the app (legacy routes) is
+ * unaffected. */
+body.workbench-theme input,
+body.workbench-theme textarea,
+body.workbench-theme select,
+body.workbench-theme button {
+  font-family: inherit;
+  color: inherit;
+}
+
+body.workbench-theme a {
+  color: var(--wb-accent);
+  text-decoration: none;
+}
+body.workbench-theme a:hover {
+  text-decoration: underline;
+}
+
+body.workbench-theme ::placeholder {
+  color: var(--wb-ink-mute);
+  opacity: 1;
+}
+
+body.workbench-theme ::selection {
+  background: var(--wb-accent-soft);
+  color: var(--wb-ink);
+}
+
+/* The .workbench-scope class is an alternative to the body toggle —
+ * useful for previewing the theme inside an otherwise-unthemed shell.
+ * Pages can wrap their outermost div with it and the same tokens
+ * apply. Kept intentionally minimal so it doesn't fight legacy CSS. */
+.workbench-scope {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-base);
+}

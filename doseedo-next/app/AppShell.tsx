@@ -4,7 +4,8 @@ import dynamic from 'next/dynamic';
 
 // CSS import chain ported from src/index.js — order matters.
 import '@/styles/colors.css';
-import '@/styles/theme-hifi-purple.css'; // Dev variant — scoped to body.theme-hifi-purple (applied on /studio-dev)
+import '@/styles/theme-workbench.css'; // Master workbench theme — body.workbench-theme on /studio, /dashboard, ...
+import '@/styles/theme-hifi-purple.css'; // Dev variant — scoped to body.theme-hifi-purple (applied on /studio)
 import '@/styles/glass-theme-background.css';
 import '@/styles/liquid-glass.css';
 import '@/assets/css/original-style5.css';
