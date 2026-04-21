@@ -778,11 +778,26 @@ export default function StudioDev() {
   }, []);
 
   // Keyboard shortcuts. Cmd-S is owned by StudioDevFileMenu.
+  //
+  // Critical: effect deps are stable ([dispatch, undo, redo]) so the
+  // listener mounts once and stays. Previously this effect listed
+  // state.playheadPosition, which changes ~60 fps during playback —
+  // tearing down + re-adding the listener every frame meant space
+  // presses that landed inside the cleanup window were dropped, so
+  // play/pause felt unreliable. All mutable state used by the handler
+  // (selectedTrack, selectedBusId, playheadPosition) now comes from a
+  // ref that always points at the latest value.
+  const keyDepsRef = useRef({ selectedTrack, selectedBusId, playheadPosition: state.playheadPosition });
+  useEffect(() => {
+    keyDepsRef.current = { selectedTrack, selectedBusId, playheadPosition: state.playheadPosition };
+  }, [selectedTrack, selectedBusId, state.playheadPosition]);
+
   useEffect(() => {
     const onKey = (e) => {
       // Ignore when typing in an input / textarea / contenteditable.
       const t = e.target;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const { selectedTrack: sel, selectedBusId: selBus, playheadPosition: pp } = keyDepsRef.current;
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -791,42 +806,45 @@ export default function StudioDev() {
         e.preventDefault();
         redo();
       } else if (e.code === 'Space') {
+        // preventDefault cancels the keyup-click the browser would
+        // otherwise fire on whichever button is currently focused
+        // (e.g. the transport play button right after a click). Without
+        // this, space would fire toggle-play twice per press.
         e.preventDefault();
         dispatch({ type: 'TOGGLE_PLAY' });
       } else if (mod && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         duplicateSelectedRef.current?.();
       } else if (mod && e.key.toLowerCase() === 'c') {
-        if (!selectedTrack) return;
+        if (!sel) return;
         e.preventDefault();
-        dispatch({ type: 'COPY_TRACK', payload: { track: selectedTrack } });
+        dispatch({ type: 'COPY_TRACK', payload: { track: sel } });
       } else if (mod && e.key.toLowerCase() === 'x') {
-        if (!selectedTrack || !selectedBusId) return;
+        if (!sel || !selBus) return;
         e.preventDefault();
-        dispatch({ type: 'COPY_TRACK', payload: { track: selectedTrack } });
-        dispatch({ type: 'REMOVE_TRACK', payload: { trackId: selectedTrack.id, busId: selectedBusId } });
+        dispatch({ type: 'COPY_TRACK', payload: { track: sel } });
+        dispatch({ type: 'REMOVE_TRACK', payload: { trackId: sel.id, busId: selBus } });
       } else if (mod && e.key.toLowerCase() === 'v') {
-        if (!selectedBusId) return;
+        if (!selBus) return;
         e.preventDefault();
         dispatch({
           type: 'PASTE_TRACK',
-          payload: { targetBusId: selectedBusId, playheadPosition: state.playheadPosition || 0 },
+          payload: { targetBusId: selBus, playheadPosition: pp || 0 },
         });
       } else if (!mod && e.key >= '1' && e.key <= '4') {
         // Mode-rail quick switch: 1=Video, 2=MIDI, 3=Audio, 4=FX
         const modeMap = { '1': 'video', '2': 'midi', '3': 'audio', '4': 'fx' };
         setActiveMode(modeMap[e.key]);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        // If a track is selected and not editing, delete the track.
-        if (selectedTrack && selectedBusId && !e.repeat) {
-          deleteTrack(selectedTrack.id, selectedBusId);
+        if (sel && selBus && !e.repeat) {
+          deleteTrack(sel.id, selBus);
         }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch, undo, redo, selectedTrack, selectedBusId, state.playheadPosition]);
+  }, [dispatch, undo, redo]);
 
   // Keep the ref pointing at the current duplicateSelected callback so
   // the keyboard effect (which runs before it in source order) can invoke
