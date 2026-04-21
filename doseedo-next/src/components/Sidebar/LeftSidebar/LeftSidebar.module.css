@@ -471,3 +471,165 @@
     display: none;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ *
+ * Active only when <body> has the workbench-theme class (applied by
+ * App.js on /dashboard, /projects, /profile, ...). Legacy routes keep
+ * the dark sidebar above. Every color/background uses a workbench
+ * token from src/styles/theme-workbench.css.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .sidebar {
+  background: var(--wb-surface);
+  border-right: var(--wb-border);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .toggleBtn {
+  border-bottom: var(--wb-border);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .toggleBtn:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .logoHeader {
+  border-bottom: var(--wb-border);
+  background: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .collapseBtn {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .collapseBtn:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .userInfoHeader,
+:global(body.workbench-theme) .userInfoHeaderCollapsed {
+  border-bottom: var(--wb-border);
+  background: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .userAvatar,
+:global(body.workbench-theme) .userAvatarSmall {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .userName {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  letter-spacing: var(--wb-tracking-label);
+}
+
+:global(body.workbench-theme) .userPlan {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  letter-spacing: var(--wb-tracking-caps);
+}
+
+:global(body.workbench-theme) .navLink,
+:global(body.workbench-theme) .navLinkHighlighted {
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-mono);
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+}
+
+:global(body.workbench-theme) .navLink:hover,
+:global(body.workbench-theme) .navLinkHighlighted:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .navLinkDisabled:hover {
+  background: transparent;
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .tooltip {
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+  color: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .sectionTitle {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  letter-spacing: var(--wb-tracking-caps);
+}
+
+:global(body.workbench-theme) .divider {
+  background-color: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .toolbarBtn {
+  background: var(--wb-bg);
+  border: var(--wb-border);
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .toolbarBtn:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule-strong);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .toolbarBtn.active {
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+  color: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .menuLinks::-webkit-scrollbar-track {
+  background: var(--wb-bg);
+}
+:global(body.workbench-theme) .menuLinks::-webkit-scrollbar-thumb {
+  background: var(--wb-rule);
+}
+:global(body.workbench-theme) .menuLinks::-webkit-scrollbar-thumb:hover {
+  background: var(--wb-rule-strong);
+}
+
+:global(body.workbench-theme) .userInfoFooter {
+  border-top: var(--wb-border);
+  background: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .userInfoFooter:hover {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .moreDropdown {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  box-shadow: var(--wb-shadow-lg);
+  backdrop-filter: none;
+}
+
+:global(body.workbench-theme) .moreItem {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .moreItem:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .moreItem i {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .mobileMenuBtn {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  color: var(--wb-ink);
+}
