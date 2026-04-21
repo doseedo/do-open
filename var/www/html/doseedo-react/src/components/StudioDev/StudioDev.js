@@ -85,16 +85,22 @@ const BAR_SIG = [0.10,0.14,0.10,0.30,0.60,0.55,0.20,0.38,0.85,0.70,0.55,0.78,0.4
  * `seed` selects a rotating starting offset in BAR_SIG so two clips of
  * the same length don't look identical.
  */
-function Waveform({ height = 16, color = '#fff', seed = 0, bars = 60, bw = 2, gap = 1, opacity = 0.85 }) {
+function Waveform({ height = 16, color = '#fff', seed = 0, bars = 60, bw = 2, gap = 1, opacity = 0.85, silent = false }) {
   const n = Math.max(4, Math.floor(bars));
+  // Silent = placeholder track (no audio / MIDI-only). Render a flat
+  // minimal bar row — preserves the waveform layout so sizes stay
+  // consistent across all clips, but reads as "no audio yet".
   const samples = new Array(n);
-  for (let i = 0; i < n; i++) samples[i] = BAR_SIG[(seed + i) % BAR_SIG.length];
+  for (let i = 0; i < n; i++) {
+    samples[i] = silent ? 0 : BAR_SIG[(seed + i) % BAR_SIG.length];
+  }
   const w = n * (bw + gap) - gap;
+  const silentOp = silent ? Math.min(opacity, 0.35) : opacity;
   return (
     <svg width="100%" height={height} viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" style={{ display: 'block' }}>
       {samples.map((a, i) => {
-        const h = Math.max(1.5, a * height);
-        return <rect key={i} x={i * (bw + gap)} y={(height - h) / 2} width={bw} height={h} rx={bw / 2} fill={color} opacity={opacity} />;
+        const h = silent ? 1.5 : Math.max(1.5, a * height);
+        return <rect key={i} x={i * (bw + gap)} y={(height - h) / 2} width={bw} height={h} rx={bw / 2} fill={color} opacity={silentOp} />;
       })}
     </svg>
   );
@@ -411,6 +417,8 @@ export default function StudioDev() {
     state.playheadPosition || 0,
     state.bpm || 120,
     state.masterGain ?? 0.8,
+    state.beatsPerBar || 4,
+    state.meterDenominator || 4,
   );
 
   /* ---------- Auto-switch mode based on selected track type ---------- */
@@ -496,8 +504,28 @@ export default function StudioDev() {
     }).catch((err) => console.warn('analyze failed:', err?.message || err));
 
     separateStemsAuto(file, {
-      onDrumTeacher: ({ drum_substem_urls }) => {
-        console.log('[studio-dev] drum teacher ready:', Object.keys(drum_substem_urls || {}));
+      onDrumTeacher: ({ drum_substem_urls, drum_substem_onsets }) => {
+        // Attach the per-substem WAV URLs (kick/snare/hh/toms/ride/crash)
+        // and onset times to the drums STEM TRACK's metadata. The virtual-
+        // edit playback path checks for `metadata.drumSubstems` and, when
+        // present, schedules each substem independently — percussive ones
+        // (kick/snare/toms) get hit-snap to the new meter grid; sustain
+        // ones (hh/ride/crash) stay on the bar-rearrange path. They mix
+        // through one shared per-track gain so solo/mute on the drums
+        // track keeps working.
+        const names = Object.keys(drum_substem_urls || {});
+        if (!names.length) return;
+        console.log('[studio-dev] drum teacher ready:', names);
+        dispatch({
+          type: 'UPDATE_TRACK',
+          payload: {
+            busId, trackId: `stem-${trackId}-drums`,
+            updates: { metadata: {
+              drumSubstems: drum_substem_urls,
+              drumSubstemOnsets: drum_substem_onsets || {},
+            } },
+          },
+        });
       },
       onLyrics: ({ vocals_lyrics, vocals_lyrics_language }) => {
         console.log(`[studio-dev] whisper: ${vocals_lyrics?.length || 0} words (${vocals_lyrics_language})`);
@@ -714,9 +742,15 @@ export default function StudioDev() {
   const redo = useCallback(() => dispatch({ type: 'REDO' }), [dispatch]);
   const toggleCinema = useCallback(() => dispatch({ type: 'TOGGLE_CINEMA_MODE' }), [dispatch]);
   const setTimeSig = useCallback((sig) => {
+    // AppContext reducer handles SET_METER ("N/D" string), not SET_TIME_SIGNATURE
+    // — the previous SET_TIME_SIGNATURE dispatch silently no-op'd, so /studio's
+    // meter select never moved state. With virtual-edit playback, this dispatch
+    // is also what makes meter change instant: useAudioPlayback watches
+    // state.beatsPerBar/meterDenominator and live-reschedules in place.
+    if (!sig) return;
     const [n, d] = sig.split('/').map((v) => parseInt(v, 10));
     if (!n || !d) return;
-    dispatch({ type: 'SET_TIME_SIGNATURE', payload: { beatsPerBar: n, meterDenominator: d } });
+    dispatch({ type: 'SET_METER', payload: sig });
   }, [dispatch]);
 
   // Wire real metronome audio — the hook schedules WebAudio clicks against
@@ -1886,6 +1920,7 @@ export default function StudioDev() {
                                   color={tr.color}
                                   seed={(bi * 8 + i * 3) % BAR_SIG.length}
                                   bars={Math.max(8, Math.round((c.e - c.s) * CLIP_BARS_PER_SEC * timelineZoom))}
+                                  silent={!tr._real?.audioUrl}
                                 />
                                 {tr._real && (
                                   <div className="sd-clip-resize"

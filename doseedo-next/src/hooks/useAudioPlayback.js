@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import midiPlayer from '../utils/midiPlayer';
 import tunaFX from '../services/tunaFX';
 import { isMaskPlaybackReady, setGains as setMaskGains, setActiveStem, seek as maskSeek, play as maskPlay, stop as maskStop } from '../services/maskPlayback';
+import { getTrackSchedule, getTrackSubstemSchedules, resumeFromPlayhead } from '../services/virtualTrackEdit';
 
 // Global audio buffer cache (shared across all instances)
 const audioBufferCache = new Map();
@@ -10,7 +11,7 @@ const audioBufferCache = new Map();
  * Custom hook for managing audio playback across multiple tracks
  * Integrates with global state via dispatch
  */
-export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10, currentPlayheadPosition = 0, bpm = 120, masterGain = 0.8) {
+export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10, currentPlayheadPosition = 0, bpm = 120, masterGain = 0.8, beatsPerBar = 4, meterDenominator = 4) {
   const audioContextRef = useRef(null);
   const masterGainNodeRef = useRef(null); // Master gain node for overall volume control
   const sourceNodesRef = useRef([]);
@@ -23,6 +24,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
   const isPlayingRef = useRef(isPlaying); // Track isPlaying in ref for animation loop
   const tracksRef = useRef(tracks); // Store tracks in ref to avoid recreating play callback
   const hasStartedPlaybackRef = useRef(false); // Track if playback has actually started
+  const playRef = useRef(null); // Latest play() fn — called by the meter-change live-reschedule effect
 
   // Initialize audio context, Tuna FX, and MIDI player
   useEffect(() => {
@@ -341,22 +343,91 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         console.log(`📦 Warming ${urlsToWarm.length} uncached buffer(s) in background`);
       }
 
-      // scheduleOrDefer: schedule a regular-audio track immediately if its
-      // buffer is cached; otherwise fetch+decode async and schedule it at
-      // the live playhead when it lands. This is what unblocks "hit play,
-      // timeline advances, audio streams in as it loads."
+      // Every regular-audio track plays through a Schedule — a list of
+      // segments mapping src-buffer windows to dst-timeline windows with
+      // rate 1 (rearrange-only) and short fades at cut points. Identity
+      // case collapses to a single full-buffer segment, so this path is
+      // safe for every track — no separate "simple" vs "edited" branch.
+      //
+      // When project meter != track meter, getTrackSchedule returns a
+      // keep/drop/duplicate schedule (see services/virtualTrackEdit.js).
+      // NO pitch shift — playbackRate is never used for meter math.
+      //
+      // DRUM SUBSTEMS: if the track has metadata.drumSubstems (the per-
+      // substem WAV URLs from MDX23C-DrumSep on the backend, attached by
+      // the onDrumTeacher callback), we ignore the bar-level mix and
+      // schedule each substem independently. Percussive substems get
+      // hit-snap to the new meter grid; sustain substems stay on bar
+      // rearrange. All substems mix into ONE shared per-track gain so
+      // solo/mute on the parent drum track keeps working.
+      const projectMeter = { bpm, beatsPerBar, meterDenominator };
+
+      // Helper: ensure a buffer is decoded + cached, then run the cb.
+      const ensureBuffer = async (url) => {
+        if (audioBufferCache.has(url)) return audioBufferCache.get(url);
+        const { fetchAudioWithCache } = await import('../services/audioCacheService');
+        const { blob } = await fetchAudioWithCache(url);
+        const arrayBuffer = await blob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        audioBufferCache.set(url, audioBuffer);
+        return audioBuffer;
+      };
+
       const scheduleOrDefer = (track, finalGain) => {
         const url = track.audioUrl;
         if (!url) return;
         const trackStartTime = track.startPosition || 0;
-        const trackCropStart = track.cropStart || 0;
+
+        // ── Drum substem fan-out ───────────────────────────────────────
+        const substems = getTrackSubstemSchedules(track, projectMeter);
+        if (substems) {
+          // Create the shared per-track gain once and register it under
+          // the parent track id so the gain-update loop reaches it.
+          const trackGain = audioContext.createGain();
+          trackGain.gain.value = finalGain;
+          trackGain.connect(masterGainNodeRef.current);
+          gainNodesRef.current.set(track.id, trackGain);
+
+          for (const [name, { audioUrl, schedule, kind }] of Object.entries(substems)) {
+            const scheduleSubstem = (when, anchor) => {
+              const { sources } = scheduleTrackWithSchedule(
+                audioContext, audioUrl, schedule, finalGain, trackStartTime,
+                when, anchor, masterGainNodeRef.current,
+                trackGain,    // <- share the parent's gain node
+              );
+              sourceNodesRef.current.push(...sources);
+              return sources.length;
+            };
+            if (audioBufferCache.has(audioUrl)) {
+              scheduleSubstem(currentPlayheadTime, schedulingStartTime);
+              continue;
+            }
+            // Late-load: fetch + decode in parallel with other substems,
+            // then schedule when ready (if still playing).
+            (async () => {
+              try {
+                await ensureBuffer(audioUrl);
+                if (!isPlayingRef.current) return;
+                const livePlayhead = audioContext.currentTime - startTimeRef.current;
+                const n = scheduleSubstem(livePlayhead, audioContext.currentTime);
+                console.log(`  🥁 Late-scheduled drum substem ${name} (${kind}, ${n} seg)`);
+              } catch (e) {
+                console.warn(`  ❌ Substem ${name} late-load failed:`, e?.message || e);
+              }
+            })();
+          }
+          return;
+        }
+
+        // ── Regular single-buffer path ────────────────────────────────
+        const schedule = getTrackSchedule(track, projectMeter);
         if (audioBufferCache.has(url)) {
-          const { source, gainNode } = scheduleTrack(
-            audioContext, url, finalGain, trackStartTime, trackCropStart,
+          const { sources, gainNode } = scheduleTrackWithSchedule(
+            audioContext, url, schedule, finalGain, trackStartTime,
             currentPlayheadTime, schedulingStartTime, masterGainNodeRef.current,
           );
-          if (source && gainNode) {
-            sourceNodesRef.current.push(source);
+          if (gainNode) {
+            sourceNodesRef.current.push(...sources);
             gainNodesRef.current.set(track.id, gainNode);
           }
           return;
@@ -364,23 +435,19 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         // Not cached — fire async, schedule on arrival if still playing.
         (async () => {
           try {
-            const { fetchAudioWithCache } = await import('../services/audioCacheService');
-            const { blob } = await fetchAudioWithCache(url);
-            const arrayBuffer = await blob.arrayBuffer();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            audioBufferCache.set(url, audioBuffer);
+            const audioBuffer = await ensureBuffer(url);
             if (!isPlayingRef.current) return;
             const livePlayhead = audioContext.currentTime - startTimeRef.current;
             const trackDuration = track.duration || audioBuffer.duration;
             if (livePlayhead > trackStartTime + trackDuration) return;  // already past
-            const { source, gainNode } = scheduleTrack(
-              audioContext, url, finalGain, trackStartTime, trackCropStart,
+            const { sources, gainNode } = scheduleTrackWithSchedule(
+              audioContext, url, schedule, finalGain, trackStartTime,
               livePlayhead, audioContext.currentTime, masterGainNodeRef.current,
             );
-            if (source && gainNode) {
-              sourceNodesRef.current.push(source);
+            if (gainNode) {
+              sourceNodesRef.current.push(...sources);
               gainNodesRef.current.set(track.id, gainNode);
-              console.log(`  🔈 Late-scheduled: ${track.name || url} at live playhead ${livePlayhead.toFixed(2)}s`);
+              console.log(`  🔈 Late-scheduled: ${track.name || url} at live playhead ${livePlayhead.toFixed(2)}s (${sources.length} seg(s))`);
             }
           } catch (error) {
             console.warn(`  ❌ Late-load failed for ${url}:`, error?.message || error);
@@ -591,7 +658,40 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       console.error('❌ Error starting playback:', error);
       dispatch({ type: 'SET_PLAYING', payload: false });
     }
-  }, [updatePlayhead, dispatch, bpm]); // Include bpm so playback updates when tempo changes
+  }, [updatePlayhead, dispatch, bpm, beatsPerBar, meterDenominator]); // Include bpm + meter so next play rebuilds schedules
+
+  // Keep a ref to the latest play() fn so the meter-change effect below
+  // can re-invoke it without bloating its own dep list.
+  useEffect(() => { playRef.current = play; }, [play]);
+
+  // Live reschedule on bpm / meter change while playing. Schedules are
+  // derived from (project bpm, project meter, track metadata), so when the
+  // user flips meter mid-playback we tear down in-flight sources and
+  // start over from the current playhead. Instant, pure rearrange, no
+  // backend. ~5ms dropout at the cut.
+  const lastMeterRef = useRef({ bpm, beatsPerBar, meterDenominator });
+  useEffect(() => {
+    const prev = lastMeterRef.current;
+    const changed = prev.bpm !== bpm || prev.beatsPerBar !== beatsPerBar || prev.meterDenominator !== meterDenominator;
+    lastMeterRef.current = { bpm, beatsPerBar, meterDenominator };
+    if (!changed) return;
+    if (!isPlayingRef.current || !audioContextRef.current || !hasStartedPlaybackRef.current) return;
+
+    const t = audioContextRef.current.currentTime - startTimeRef.current;
+    if (t >= 0 && t <= totalDuration + 1) {
+      pauseTimeRef.current = t;
+    }
+    sourceNodesRef.current.forEach((s) => { try { s.stop(); } catch (_) {} });
+    sourceNodesRef.current = [];
+    gainNodesRef.current.clear();
+    hasStartedPlaybackRef.current = false;
+
+    const fn = playRef.current;
+    if (fn) {
+      console.log(`🎚️ live reschedule: bpm=${bpm}, meter=${beatsPerBar}/${meterDenominator} at t=${pauseTimeRef.current.toFixed(2)}s`);
+      Promise.resolve().then(() => { if (isPlayingRef.current) fn(); });
+    }
+  }, [bpm, beatsPerBar, meterDenominator, totalDuration]);
 
   /**
    * Pause playback
@@ -806,5 +906,127 @@ function scheduleTrack(
   } catch (error) {
     console.error('❌ Error scheduling track:', audioUrl, error);
     return { source: null, gainNode: null };
+  }
+}
+
+/**
+ * Schedule-aware playback for a regular audio track.
+ *
+ * The schedule is an array of Segments (services/virtualTrackEdit.js).
+ * Identity schedules collapse to a single full-buffer Segment so this
+ * path is safe for every track — no separate "simple" codepath.
+ *
+ * Signal chain per track:
+ *
+ *   [ seg0 source → seg0 fadeGain ─┐
+ *   [ seg1 source → seg1 fadeGain ─┼── track gain ── master
+ *   [ segN source → segN fadeGain ─┘
+ *
+ * Every segment plays at rate 1 (rearrange-only schedules). A `stretch`
+ * segment is explicitly NOT handled here — it would need a WSOLA
+ * AudioWorklet to preserve pitch. If one appears, we skip it with a
+ * warning rather than pitch-shift via playbackRate.
+ *
+ * source.start(when, offset, srcDuration):
+ *   - `when`         AudioContext time to start this segment
+ *   - `offset`       offset into the decoded buffer (seconds)
+ *   - `srcDuration`  src content to play (at rate 1, equals dst duration)
+ *
+ * Returns { sources: [...], gainNode }. Callers push every element of
+ * `sources` into sourceNodesRef so pause()/stop() tears them all down.
+ */
+function scheduleTrackWithSchedule(
+  audioContext, audioUrl, schedule, gain, trackStartTime,
+  currentPlayheadTime, schedulingStartTime, masterGainNode,
+  existingTrackGain = null,
+) {
+  try {
+    const audioBuffer = audioBufferCache.get(audioUrl);
+    if (!audioBuffer) {
+      console.warn(`⚠️ Audio buffer not cached yet: ${audioUrl}`);
+      return { sources: [], gainNode: existingTrackGain };
+    }
+    if (!schedule || schedule.length === 0) {
+      return { sources: [], gainNode: existingTrackGain };
+    }
+
+    // Reuse the caller's track gain if provided (substem fan-out path —
+    // every substem sums into one per-track gain so solo/mute on the
+    // parent still works). Otherwise create a fresh one.
+    const trackGain = existingTrackGain || (() => {
+      const g = audioContext.createGain();
+      g.gain.value = gain;
+      g.connect(masterGainNode);
+      return g;
+    })();
+
+    // Clip-local playhead (0 == track start on the timeline).
+    const clipPlayhead = currentPlayheadTime - trackStartTime;
+    const live = resumeFromPlayhead(schedule, Math.max(0, clipPlayhead));
+
+    const sources = [];
+    for (const entry of live) {
+      const { seg, dstOffsetIntoSeg, srcOffsetIntoSeg, srcDuration } = entry;
+
+      // STRICT: no pitch shift. If a stretch segment slips in, skip it
+      // instead of pitch-shifting via playbackRate.
+      if (seg.rate !== 1) {
+        console.warn('[useAudioPlayback] skipping non-rate-1 seg (WSOLA not wired):', seg);
+        continue;
+      }
+
+      // When does this segment start in AudioContext wall-clock time?
+      //   - Already in flight (dstOffsetIntoSeg > 0): start now.
+      //   - Future: trackStart + seg.dstStart relative to the wall-clock
+      //     anchor (schedulingStartTime - currentPlayheadTime).
+      let when;
+      if (dstOffsetIntoSeg > 0) {
+        when = schedulingStartTime;
+      } else {
+        when = schedulingStartTime + (trackStartTime + seg.dstStart - currentPlayheadTime);
+      }
+      if (when < schedulingStartTime - 1e-3) continue;
+
+      const src = audioContext.createBufferSource();
+      src.buffer = audioBuffer;
+      // playbackRate stays at 1 — we NEVER pitch-shift via playbackRate.
+
+      const segGain = audioContext.createGain();
+      const dstDurRemaining = srcDuration; // rate=1
+      const fadeIn  = dstOffsetIntoSeg > 0 ? 0 : Math.min(seg.fadeIn  || 0, dstDurRemaining * 0.5);
+      const fadeOut = Math.min(seg.fadeOut || 0, dstDurRemaining * 0.5);
+      const segEnd = when + dstDurRemaining;
+      if (fadeIn > 0) {
+        segGain.gain.setValueAtTime(0, when);
+        segGain.gain.linearRampToValueAtTime(1, when + fadeIn);
+      } else {
+        segGain.gain.setValueAtTime(1, when);
+      }
+      if (fadeOut > 0) {
+        segGain.gain.setValueAtTime(1, segEnd - fadeOut);
+        segGain.gain.linearRampToValueAtTime(0, segEnd);
+      }
+
+      src.connect(segGain);
+      segGain.connect(trackGain);
+
+      const offset = seg.srcStart + srcOffsetIntoSeg;
+      if (offset >= audioBuffer.duration) continue;
+      const srcPlayable = Math.min(srcDuration, audioBuffer.duration - offset);
+      if (srcPlayable <= 0) continue;
+
+      try {
+        src.start(when, offset, srcPlayable);
+      } catch (err) {
+        console.warn('  ⚠️ segment start failed:', err?.message || err);
+        continue;
+      }
+      sources.push(src);
+    }
+
+    return { sources, gainNode: trackGain };
+  } catch (error) {
+    console.error('❌ Error scheduling track with schedule:', audioUrl, error);
+    return { sources: [], gainNode: null };
   }
 }

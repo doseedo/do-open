@@ -120,7 +120,6 @@ export async function separateStemsAuto(audioFile, opts = {}) {
   // on BasicPitch). Old callers that just awaited the result still work —
   // they'll get stems_ready payload + the final `status === 'completed'`
   // is still reachable via polling status if they need it.
-  const { onMidiReady } = opts;
   const token = localStorage.getItem('token');
   const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
   const compressed = await compressAudioForUpload(audioFile);
@@ -150,14 +149,35 @@ export async function separateStemsAuto(audioFile, opts = {}) {
     }
   }
 
-  // Phase 2: background-poll for BasicPitch MIDI (non-blocking).
-  if (onMidiReady && taskId && (result.status === 'stems_ready' || result.status === 'completed')) {
+  // Phase 2: background-poll for BasicPitch MIDI + drum-teacher substems
+  // (non-blocking). Both arrive after `stems_ready` on their own threads;
+  // we surface them via callbacks and also accumulate into `result` so a
+  // caller that passed no callback can still read them via the resolved
+  // promise once polling has caught up.
+  const { onMidiReady, onDrumTeacher, onLyrics } = opts;
+  const wantsBackground = (onMidiReady || onDrumTeacher || onLyrics)
+    && taskId && (result.status === 'stems_ready' || result.status === 'completed');
+  if (wantsBackground) {
     (async () => {
-      const seen = new Set(Object.keys(result.midi_urls || {}));
-      // Fire for anything already present at stems_ready (rare — BasicPitch
-      // usually starts after, so this is mostly a no-op first-pass).
-      if (seen.size) onMidiReady({ task_id: taskId, midi_urls: { ...result.midi_urls } });
-      for (let i = 0; i < 180; i++) {    // up to ~6 minutes of MIDI polling
+      const seenMidi = new Set(Object.keys(result.midi_urls || {}));
+      let drumDelivered = !!result.drum_substem_urls && Object.keys(result.drum_substem_urls).length > 0;
+      let lyricsDelivered = !!result.vocals_lyrics;
+      if (seenMidi.size && onMidiReady) onMidiReady({ task_id: taskId, midi_urls: { ...result.midi_urls } });
+      if (drumDelivered && onDrumTeacher) {
+        onDrumTeacher({
+          task_id: taskId,
+          drum_substem_urls: { ...result.drum_substem_urls },
+          drum_substem_onsets: { ...(result.drum_substem_onsets || {}) },
+        });
+      }
+      if (lyricsDelivered && onLyrics) {
+        onLyrics({
+          task_id: taskId,
+          vocals_lyrics: result.vocals_lyrics,
+          vocals_lyrics_language: result.vocals_lyrics_language,
+        });
+      }
+      for (let i = 0; i < 180; i++) {    // up to ~6 minutes of polling
         await new Promise((res) => setTimeout(res, 2000));
         let poll;
         try {
@@ -167,14 +187,49 @@ export async function separateStemsAuto(audioFile, opts = {}) {
           if (!sr.ok) continue;
           poll = await sr.json();
         } catch (_) { continue; }
-        const urls = poll?.midi_urls || {};
-        const added = {};
-        for (const [stem, url] of Object.entries(urls)) {
-          if (!seen.has(stem)) { seen.add(stem); added[stem] = url; }
+
+        // BasicPitch MIDI — incremental, fire per new stem.
+        if (onMidiReady) {
+          const urls = poll?.midi_urls || {};
+          const added = {};
+          for (const [stem, url] of Object.entries(urls)) {
+            if (!seenMidi.has(stem)) { seenMidi.add(stem); added[stem] = url; }
+          }
+          if (Object.keys(added).length) {
+            onMidiReady({ task_id: taskId, midi_urls: added });
+          }
         }
-        if (Object.keys(added).length) {
-          onMidiReady({ task_id: taskId, midi_urls: added });
+
+        // Drum teacher (MDX23C-DrumSep) — kick/snare/hh/toms/ride/crash WAVs
+        // + librosa onsets per substem. Arrives in one shot once the
+        // separator finishes; fire the callback exactly once.
+        if (!drumDelivered && poll?.drum_substem_urls && Object.keys(poll.drum_substem_urls).length > 0) {
+          drumDelivered = true;
+          result.drum_substem_urls = { ...poll.drum_substem_urls };
+          result.drum_substem_onsets = { ...(poll.drum_substem_onsets || {}) };
+          if (onDrumTeacher) {
+            onDrumTeacher({
+              task_id: taskId,
+              drum_substem_urls: result.drum_substem_urls,
+              drum_substem_onsets: result.drum_substem_onsets,
+            });
+          }
         }
+
+        // Whisper lyrics — fire once when present.
+        if (!lyricsDelivered && poll?.vocals_lyrics) {
+          lyricsDelivered = true;
+          result.vocals_lyrics = poll.vocals_lyrics;
+          result.vocals_lyrics_language = poll.vocals_lyrics_language;
+          if (onLyrics) {
+            onLyrics({
+              task_id: taskId,
+              vocals_lyrics: result.vocals_lyrics,
+              vocals_lyrics_language: result.vocals_lyrics_language,
+            });
+          }
+        }
+
         if (poll?.status === 'completed' || poll?.status === 'failed') break;
       }
     })().catch(() => {});   // swallow background errors — main path already returned

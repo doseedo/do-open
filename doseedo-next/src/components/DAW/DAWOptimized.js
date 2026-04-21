@@ -215,7 +215,9 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
     state.totalDuration || 10,
     state.playheadPosition || 0,
     state.bpm || 120,
-    state.masterGain || 0.8  // Master gain (default 80% to prevent clipping)
+    state.masterGain || 0.8,  // Master gain (default 80% to prevent clipping)
+    state.beatsPerBar || 4,
+    state.meterDenominator || 4,
   );
 
   // Enable keyboard controls (spacebar for play/pause, etc.)
@@ -522,6 +524,12 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
   }, [dispatch, state.isMetronomeOn]);
 
   // ─── Auto-repaint on BPM/meter change ──────────────────────────────
+  // Flip to true to re-enable the backend latent repaint path. Virtual-edit
+  // playback (services/virtualTrackEdit.js + useAudioPlayback.js) now handles
+  // meter change live against the original source buffer — no backend, no
+  // decode, no audioUrl swap, no pitch shift (rearrange-only rules).
+  const ENABLE_BACKEND_REPAINT = false;
+
   // Snapshot what we last successfully repainted from. The next change
   // remaps every track's cached latent from the snapshot to the current
   // values via stemphonic stage2d-130k.
@@ -531,6 +539,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
   const repaintInFlightRef = React.useRef(false);
 
   const runRepaintNow = useCallback(async () => {
+    if (!ENABLE_BACKEND_REPAINT) return;
     if (repaintInFlightRef.current) return;
     const srcBpm = repaintLastRef.current.bpm;
     const srcBeats = repaintLastRef.current.beatsPerBar;
@@ -784,6 +793,7 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
 
   // Debounce: schedule a repaint 1.2s after the last BPM/meter change
   useEffect(() => {
+    if (!ENABLE_BACKEND_REPAINT) return;
     if (repaintDebounceRef.current) clearTimeout(repaintDebounceRef.current);
     const srcBpm = repaintLastRef.current.bpm;
     const srcBeats = repaintLastRef.current.beatsPerBar;
@@ -1412,7 +1422,30 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                 }
               }
             };
-            const sep = await separateStemsAuto(file, { onMidiReady: swapInBasicPitch });
+            // onDrumTeacher: attach per-substem WAV URLs + onsets to the
+            // drums STEM TRACK's metadata so virtual-edit playback can do
+            // per-substem beat-snap (kick/snare/toms) on meter change
+            // instead of bar-level rearrange across the full drum mix.
+            // mixed via one shared per-track gain so solo/mute keeps working.
+            const onDrumTeacher = ({ drum_substem_urls, drum_substem_onsets }) => {
+              const names = Object.keys(drum_substem_urls || {});
+              if (!names.length) return;
+              console.log('[separate-stems] drum teacher ready:', names);
+              dispatch({
+                type: 'UPDATE_TRACK',
+                payload: {
+                  busId, trackId: `stem-${trackId}-drums`,
+                  updates: { metadata: {
+                    drumSubstems: drum_substem_urls,
+                    drumSubstemOnsets: drum_substem_onsets || {},
+                  } },
+                },
+              });
+            };
+            const sep = await separateStemsAuto(file, {
+              onMidiReady: swapInBasicPitch,
+              onDrumTeacher,
+            });
             console.log(`[separate-stems] stems ready in ${(performance.now() - tSep0).toFixed(0)}ms (BasicPitch continues in background)`);
             const wavUrls = sep?.stems || {};
             const stemNames = Object.keys(wavUrls);
