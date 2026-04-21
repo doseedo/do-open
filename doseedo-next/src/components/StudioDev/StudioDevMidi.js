@@ -393,24 +393,35 @@ export default function StudioDevMidi() {
     }
   };
 
-  const onWheel = (e) => {
-    if (e.ctrlKey || e.metaKey) {
-      // Unified zoom — pxPerSec alone; rowH is derived so cells stay
-      // square. Alt-scroll for Y-only zoom is no longer a thing.
-      e.preventDefault();
-      setPxPerSec((v) => Math.max(20, Math.min(800, v * (e.deltaY < 0 ? 1.15 : 1 / 1.15))));
-    } else if (e.shiftKey) {
-      e.preventDefault();
-      setScrollX((v) => Math.max(0, v + e.deltaY / pxPerSec));
-    } else {
-      // vertical scroll
-      setScrollY((v) => {
-        const contentH = (maxPitch - minPitch + 1) * rowH;
-        const maxS = Math.max(0, contentH - (size.h - RULER_H));
-        return Math.max(0, Math.min(maxS, v + e.deltaY));
-      });
-    }
-  };
+  // Wheel handler attached as a NATIVE non-passive listener. React's
+  // synthetic onWheel is always passive in recent Chrome/Safari, so
+  // preventDefault() inside it throws 'Unable to preventDefault inside
+  // passive event listener invocation' and zoom still scrolls the
+  // page underneath. Using addEventListener('wheel', ..., { passive:
+  // false }) is the supported way to both stop the page scroll and
+  // drive our own X/Y zoom + pan.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const onWheelNative = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        setPxPerSec((v) => Math.max(20, Math.min(800, v * (e.deltaY < 0 ? 1.15 : 1 / 1.15))));
+      } else if (e.shiftKey) {
+        e.preventDefault();
+        setScrollX((v) => Math.max(0, v + e.deltaY / pxPerSec));
+      } else {
+        e.preventDefault();
+        setScrollY((v) => {
+          const contentH = (maxPitch - minPitch + 1) * rowH;
+          const maxS = Math.max(0, contentH - (size.h - RULER_H));
+          return Math.max(0, Math.min(maxS, v + e.deltaY));
+        });
+      }
+    };
+    el.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => el.removeEventListener('wheel', onWheelNative);
+  }, [pxPerSec, rowH, maxPitch, minPitch, size.h]);
 
   // Delete / escape key
   useEffect(() => {
@@ -669,11 +680,12 @@ export default function StudioDevMidi() {
         </div>
       </div>
 
-      {/* Canvas area */}
+      {/* Canvas area — wheel is attached natively via useEffect above
+       * with { passive: false } so ctrl-scroll zoom can preventDefault
+       * the page's own scroll. */}
       <div
         ref={wrapRef}
         className="sd-midi-canvas-wrap"
-        onWheel={onWheel}
         onMouseLeave={() => setHoverCell(null)}
       >
         <canvas
