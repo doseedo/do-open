@@ -104,11 +104,16 @@ body.workbench-theme button {
   color: inherit;
 }
 
-body.workbench-theme a {
+/* Wrapped in :where() so selector specificity stays at 0 — any
+ * class-module rule (e.g. .ctaPrimary with color:var(--wb-bg)) wins
+ * over this default without needing !important. Without :where(),
+ * `body.workbench-theme a` (0,1,2) would beat `.ctaPrimary` (0,1,0)
+ * and buttons styled as <a> tags would inherit the accent color. */
+:where(body.workbench-theme) a {
   color: var(--wb-accent);
   text-decoration: none;
 }
-body.workbench-theme a:hover {
+:where(body.workbench-theme) a:hover {
   text-decoration: underline;
 }
 
@@ -204,7 +209,10 @@ body.workbench-theme {
  * via specificity, so intentional dark buttons (e.g. the primary
  * create-button with background:var(--wb-ink)) are unaffected.
  * ------------------------------------------------------------------ */
-body.workbench-theme button {
+/* :where() keeps these defaults at specificity 0, so any class-module
+ * style (e.g. .createBtn with background:var(--wb-ink) + color:var(--wb-bg))
+ * wins without needing !important. */
+:where(body.workbench-theme) button {
   background-color: var(--wb-surface);
   color: var(--wb-ink);
   border: var(--wb-border);
@@ -212,18 +220,18 @@ body.workbench-theme button {
   font-family: var(--wb-font-mono);
 }
 
-body.workbench-theme button:hover {
+:where(body.workbench-theme) button:hover {
   color: var(--wb-ink);
   background-color: var(--wb-surface-2);
 }
 
-body.workbench-theme input[type="text"],
-body.workbench-theme input[type="search"],
-body.workbench-theme input[type="email"],
-body.workbench-theme input[type="password"],
-body.workbench-theme input[type="number"],
-body.workbench-theme textarea,
-body.workbench-theme select {
+:where(body.workbench-theme) input[type="text"],
+:where(body.workbench-theme) input[type="search"],
+:where(body.workbench-theme) input[type="email"],
+:where(body.workbench-theme) input[type="password"],
+:where(body.workbench-theme) input[type="number"],
+:where(body.workbench-theme) textarea,
+:where(body.workbench-theme) select {
   background: var(--wb-surface);
   color: var(--wb-ink);
   border: var(--wb-border);
@@ -231,28 +239,26 @@ body.workbench-theme select {
   font-family: var(--wb-font-mono);
 }
 
-body.workbench-theme input:focus,
-body.workbench-theme textarea:focus,
-body.workbench-theme select:focus {
+:where(body.workbench-theme) input:focus,
+:where(body.workbench-theme) textarea:focus,
+:where(body.workbench-theme) select:focus {
   outline: none;
   border-color: var(--wb-ink);
 }
 
-/* Common text elements get the ink color so headings/paragraphs that
- * rely on `color: white` in App.css default (or hardcode white in
- * their CSS modules) still flip to dark text. */
-body.workbench-theme h1,
-body.workbench-theme h2,
-body.workbench-theme h3,
-body.workbench-theme h4,
-body.workbench-theme h5,
-body.workbench-theme h6 {
+/* Headings get the ink color by default; modules can still override. */
+:where(body.workbench-theme) h1,
+:where(body.workbench-theme) h2,
+:where(body.workbench-theme) h3,
+:where(body.workbench-theme) h4,
+:where(body.workbench-theme) h5,
+:where(body.workbench-theme) h6 {
   color: var(--wb-ink);
 }
 
-body.workbench-theme p,
-body.workbench-theme span,
-body.workbench-theme li,
-body.workbench-theme label {
+:where(body.workbench-theme) p,
+:where(body.workbench-theme) span,
+:where(body.workbench-theme) li,
+:where(body.workbench-theme) label {
   color: inherit;
 }
