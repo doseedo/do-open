@@ -421,15 +421,22 @@ export default function StudioDevMidi() {
         // Only zoom when cursor is over the grid region.
         if (mx < KEYS_W || my < RULER_H) return;
 
-        // Zoom factor scales exponentially with deltaY magnitude so a
-        // trackpad pinch (deltaY ±1..5 per tick) feels continuous while
-        // a mouse-wheel notch (±100) still gives a proper step. 0.0015
-        // tunes a wheel click to ≈1.16× and a trackpad tick to ≈1.005×.
-        // Clamp factor per event so a runaway deltaY can't bottom/top
-        // out the zoom range in a single tick.
-        const raw = Math.exp(-e.deltaY * 0.0015);
-        const factor = Math.max(0.5, Math.min(2, raw));
+        // Normalize deltaY across deltaMode (0=pixels, 1=lines, 2=pages)
+        // then clamp per-event magnitude so a huge deltaY from a fast
+        // scroll doesnt saturate the zoom in one tick. Linear zoom
+        // sensitivity feels predictable across mouse-wheel and trackpad:
+        //   mouse wheel notch: deltaPx ≈ 100 → step 0.15 → factor 1.15
+        //   trackpad pinch:    deltaPx ≈ 10  → step 0.015 → factor 1.015
+        const deltaPx = e.deltaMode === 1 ? e.deltaY * 16
+                       : e.deltaMode === 2 ? e.deltaY * 400
+                       : e.deltaY;
+        const step = Math.max(-0.25, Math.min(0.25, -deltaPx * 0.0015));
+        const factor = 1 + step;
         const newPxPerSec = Math.max(20, Math.min(800, pxPerSec * factor));
+        // If the clamped factor rounded to a no-op, bail early so we
+        // dont schedule a state update that re-runs this useEffect for
+        // nothing.
+        if (Math.abs(newPxPerSec - pxPerSec) < 0.01) return;
         // Derive the new cellSec + rowH the same way the render body does.
         let newSub = 1;
         while (newSub < 8 && (beatSec / newSub) * newPxPerSec > SUBDIVIDE_AT_PX * 2) newSub *= 2;
