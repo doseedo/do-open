@@ -1,11 +1,14 @@
 /*
- * StudioDevChords — themed chord-grid overlay for /studio-dev.
+ * StudioDevChords — themed chord grid for /studio-dev.
  *
- * Pinned inside the canvas area (not shown when mode = 'fx'). Shows
- * state.chords as a row of per-beat cells with editable chord symbols.
- * Click empty cell → add chord (opens inline picker). Click existing →
- * edit. Right-click → delete. Dispatches UPDATE_CHORD / DELETE_CHORD to
- * match the production reducer.
+ * Reads and writes state.chordTrack.chords (the same field the tier-1/2/3
+ * detection populates + the polypitch chord-sync effect watches), so
+ * auto-detected chords after upload show up here and manual edits flow
+ * back to the resynth pipeline.
+ *
+ * Click empty cell → open inline picker. Click filled cell → edit. Right-
+ * click → delete. Delete via right-click or picker fires SET_CHORD_FOR_BEAT
+ * with a falsy payload, which the reducer treats as a removal.
  */
 import React, { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
@@ -18,15 +21,18 @@ const BARS_VISIBLE = 8;
 export default function StudioDevChords() {
   const { state, dispatch } = useApp();
   const [editingBeat, setEditingBeat] = useState(null);
-  const chords = state.chords || {};
+  const chords = state.chordTrack?.chords || {};
   const runChordRegen = useChordRegen();
-  // Helper: dispatch a chord edit + kick off smart per-stem regen so any
-  // analyzed stems overlapping the bar get repitched to match the new chord.
+
   const setChord = (beatIndex, newChord) => {
     const oldChord = chords[beatIndex] || '';
-    dispatch({ type: 'UPDATE_CHORD', payload: { beatIndex, chord: newChord } });
+    dispatch({ type: 'SET_CHORD_FOR_BEAT', payload: { beatIndex, chord: newChord } });
     runChordRegen({ beatIndex, oldChord, newChord }).catch((e) =>
       console.warn('[studio-dev] chord regen failed:', e?.message || e));
+  };
+
+  const deleteChord = (beatIndex) => {
+    dispatch({ type: 'SET_CHORD_FOR_BEAT', payload: { beatIndex, chord: null } });
   };
 
   const currentBeat = useMemo(() => {
@@ -60,7 +66,7 @@ export default function StudioDevChords() {
               onClick={() => setEditingBeat(b)}
               onContextMenu={(e) => {
                 e.preventDefault();
-                if (chord) dispatch({ type: 'DELETE_CHORD', payload: { beatIndex: b } });
+                if (chord) deleteChord(b);
               }}
             >
               <span className="sd-chord-barlabel">{isBarStart ? bar + 1 : ''}</span>
@@ -100,7 +106,7 @@ export default function StudioDevChords() {
           <div className="sd-chord-picker-row">
             <button className="sd-midi-btn sd-midi-danger"
                     onClick={() => {
-                      dispatch({ type: 'DELETE_CHORD', payload: { beatIndex: editingBeat } });
+                      deleteChord(editingBeat);
                       setEditingBeat(null);
                     }}>Delete chord</button>
           </div>

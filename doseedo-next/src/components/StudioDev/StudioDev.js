@@ -37,7 +37,6 @@ import StudioDevWaveform from './StudioDevWaveform';
 import StudioDevFX from './StudioDevFX';
 import StudioDevVideo from './StudioDevVideo';
 import StudioDevChords from './StudioDevChords';
-import StudioDevChordRow from './StudioDevChordRow';
 import { applyChordChange as polypitchApplyChordChange } from '../../services/polypitchChordSync';
 import StudioDevGenerate from './StudioDevGenerate';
 import StudioDevChat from './StudioDevChat';
@@ -2241,10 +2240,6 @@ export default function StudioDev() {
                 ))}
               </div>
               <div className="sd-lanes" onClick={onLaneClick}>
-                <StudioDevChordRow
-                  visibleSec={TIMELINE_SECONDS / timelineZoom}
-                  timelineOffsetSec={0}
-                />
                 <div
                   className="sd-ruler"
                   onClick={(e) => {

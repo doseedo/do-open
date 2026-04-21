@@ -1307,17 +1307,20 @@ function appReducer(state, action) {
         chordTrack: { ...state.chordTrack, chords: {} }
       };
 
-    case 'SET_CHORD_FOR_BEAT':
+    case 'SET_CHORD_FOR_BEAT': {
+      // Writing a falsy chord (null / '' / undefined) deletes the cell —
+      // lets UIs use one action for both set and clear.
+      const next = { ...(state.chordTrack?.chords || {}) };
+      if (action.payload.chord) {
+        next[action.payload.beatIndex] = action.payload.chord;
+      } else {
+        delete next[action.payload.beatIndex];
+      }
       return {
         ...state,
-        chordTrack: {
-          ...state.chordTrack,
-          chords: {
-            ...state.chordTrack.chords,
-            [action.payload.beatIndex]: action.payload.chord
-          }
-        }
+        chordTrack: { ...state.chordTrack, chords: next },
       };
+    }
 
     // Video actions
     case 'SET_VIDEO_INFO':
