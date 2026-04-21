@@ -30,6 +30,13 @@ let lastCloudSaveTime = null;
 // to cloud" log spam that never completes.
 let cloudSaveInFlight = false;
 
+// Cache of the Neon session row id keyed by projectName so subsequent
+// autosaves go through sessionAPI.updateSession instead of re-creating.
+// The Fly rate limit is 20 session CREATEs per user per hour — an 8s
+// autosave would burn that in 2.5 minutes without this.
+const _projectSessionRowId = new Map();
+const _projectSessionId = new Map();
+
 /**
  * Subscribe to save status changes
  */
@@ -111,14 +118,30 @@ export async function saveToCloud(projectName, state, options = {}) {
     updateSaveStatus(SaveStatus.SAVING);
     console.log(`☁️ Saving to cloud: ${projectName}`);
 
-    // Check if session already exists in cloud
-    let existingSession = null;
-    try {
-      const sessions = await sessionAPI.getUserSessions({ name: projectName });
-      existingSession = sessions.sessions?.find(s => s.name === projectName);
-    } catch (error) {
-      // Session doesn't exist yet, that's fine
-      console.log('No existing cloud session found');
+    // Look up the existing session row. Cached first — the Fly
+    // list_sessions endpoint doesn't filter by name and the response
+    // shape is {items, total}, not {sessions, ...}, so the original
+    // round-trip was silently always returning null and creating a
+    // brand-new session on every autosave tick (burning the 20/hour
+    // rate limit in ~3 minutes). If the cache is empty we fall through
+    // to a one-shot paginated match by name.
+    let existingRowId = _projectSessionRowId.get(projectName) || null;
+    let cachedSessionId = _projectSessionId.get(projectName) || null;
+
+    if (!existingRowId) {
+      try {
+        const list = await sessionAPI.getUserSessions({ limit: 200 });
+        const items = list?.items || list?.sessions || [];
+        const match = items.find((s) => s.name === projectName);
+        if (match) {
+          existingRowId = match.id;
+          cachedSessionId = match.session_id || null;
+          _projectSessionRowId.set(projectName, existingRowId);
+          if (cachedSessionId) _projectSessionId.set(projectName, cachedSessionId);
+        }
+      } catch (_) {
+        // First-ever save for this project — ok to fall through to create.
+      }
     }
 
     // Export session to R2 (endpoint path kept as /api/upload/gcs for
@@ -127,8 +150,8 @@ export async function saveToCloud(projectName, state, options = {}) {
       state,
       projectName,
       {
-        sessionId: existingSession?.session_id || options.sessionId,
-        overwrite: !!existingSession
+        sessionId: cachedSessionId || options.sessionId,
+        overwrite: !!existingRowId,
       }
     );
 
@@ -152,11 +175,15 @@ export async function saveToCloud(projectName, state, options = {}) {
       }
     };
 
-    if (existingSession) {
-      await sessionAPI.updateSession(existingSession.id, sessionData);
+    if (existingRowId) {
+      await sessionAPI.updateSession(existingRowId, sessionData);
       console.log(`✅ Updated cloud session: ${projectName}`);
     } else {
-      await sessionAPI.createSession(sessionData);
+      const created = await sessionAPI.createSession(sessionData);
+      // Remember the row id + R2 session_id so future autosaves
+      // UPDATE this same row instead of creating another.
+      if (created?.id) _projectSessionRowId.set(projectName, created.id);
+      if (exportResult.sessionId) _projectSessionId.set(projectName, exportResult.sessionId);
       console.log(`✅ Created cloud session: ${projectName}`);
     }
 
