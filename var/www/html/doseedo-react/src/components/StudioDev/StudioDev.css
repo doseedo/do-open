@@ -722,6 +722,46 @@
 .sd-palette-create {
   align-self: stretch;
 }
+
+/* Selected-track card below the Sources tile row. Shows which track the
+ * Generate panel is pointed at. Sits between the tiles and the
+ * instrument list, replaces the need for a second track panel. */
+.sd-selected-source {
+  margin: 10px 0 8px;
+  padding: 10px 12px;
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-left: 2px solid var(--wb-accent);
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+}
+.sd-selected-source-head {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 6px;
+}
+.sd-selected-source-dot {
+  width: 8px; height: 8px; border-radius: 1px;
+  flex-shrink: 0;
+}
+.sd-selected-source-label {
+  font-size: 9px; font-weight: 500;
+  color: var(--wb-ink-mute);
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+}
+.sd-selected-source-name {
+  font-size: 11px; font-weight: 600;
+  color: var(--wb-ink);
+  letter-spacing: var(--wb-tracking-label);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sd-selected-source-meta {
+  margin-top: 2px;
+  font-size: 9px;
+  color: var(--wb-ink-soft);
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+}
 .sd-palette-toggle {
   display: flex; gap: 2px;
   border: 1px solid var(--hifi-rule); border-radius: 4px;

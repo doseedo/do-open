@@ -1741,6 +1741,36 @@ export default function StudioDev() {
               <input ref={fileInputRef} type="file" accept="audio/*"
                      style={{ display: 'none' }} onChange={onFilePick} />
 
+              {/* Currently selected track — auto-loaded as the generation
+               * input so Generate acts on whatever the user has selected
+               * in the timeline. */}
+              {selectedTrack && (
+                <div className="sd-selected-source">
+                  <div className="sd-selected-source-head">
+                    <span className="sd-selected-source-dot"
+                          style={{ background: colorFor(
+                            (selectedTrack.metadata?.stemType
+                              || selectedTrack.metadata?.instrument
+                              || selectedTrack.name || '').toLowerCase()
+                          ) }} />
+                    <span className="sd-selected-source-label">Selected</span>
+                  </div>
+                  <div className="sd-selected-source-name" title={selectedTrack.name || selectedTrack.id}>
+                    {selectedTrack.name || selectedTrack.id}
+                  </div>
+                  <div className="sd-selected-source-meta">
+                    {selectedTrack.metadata?.instrumentLabel
+                      || selectedTrack.metadata?.stemType
+                      || selectedTrack.metadata?.instrument
+                      || selectedTrack.metadata?.type
+                      || 'track'}
+                    {selectedTrack.duration
+                      ? ` · ${selectedTrack.duration.toFixed(1)}s`
+                      : ''}
+                  </div>
+                </div>
+              )}
+
               <div className="sd-inst-palette sd-inst-list">
                 {/* Source sub-tabs — Live = built-in instrument list,
                  * Custom = user-curated collection (empty placeholder). */}
@@ -2348,21 +2378,6 @@ export default function StudioDev() {
                          onChange={(e) => selectedBusId && setTrackPan(selectedTrack.id, selectedBusId, parseFloat(e.target.value))} />
                   <span className="sd-ctrl-v">{((selectedTrack.pan ?? 0) >= 0 ? '+' : '') + (selectedTrack.pan ?? 0).toFixed(2)}</span>
                 </div>
-                <div className="sd-ctrl-row">
-                  <span className="sd-ctrl-k">M / S</span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      className="sd-ms-btn sd-ms-lg"
-                      style={selectedTrack.isMuted ? { color: 'var(--hifi-accent)', borderColor: 'var(--hifi-accent)' } : {}}
-                      onClick={() => selectedBusId && toggleMute(selectedTrack.id, selectedBusId)}
-                    >M</button>
-                    <button
-                      className="sd-ms-btn sd-ms-lg"
-                      style={selectedTrack.isSolo ? { background: 'var(--hifi-accent)', color: 'var(--hifi-bg)', borderColor: 'var(--hifi-accent)' } : {}}
-                      onClick={() => selectedBusId && toggleSolo(selectedTrack.id, selectedBusId)}
-                    >S</button>
-                  </div>
-                </div>
               </div>
 
               <div className="sd-label">FX</div>
@@ -2421,30 +2436,6 @@ export default function StudioDev() {
                 </button>
                 <button className="sd-btn ghost" onClick={duplicateSelected}>
                   <i className="fa-solid fa-clone" style={{ fontSize: 10 }} /> Duplicate (⌘D)
-                </button>
-                <button className="sd-btn ghost" disabled={detectingChords} onClick={runDetectChords}>
-                  <i className="fa-solid fa-music" style={{ fontSize: 10 }} /> {detectingChords ? 'Detecting…' : 'Detect chords'}
-                </button>
-                <button className="sd-btn ghost" disabled={stemSepRunning} onClick={runStemSep}>
-                  <i className="fa-solid fa-layer-group" style={{ fontSize: 10 }} /> {stemSepRunning ? 'Separating…' : 'Separate stems'}
-                </button>
-                <button className="sd-btn ghost" disabled={trackActions.busy.a2m}
-                        onClick={() => trackActions.audioToMidi().catch((e) => console.warn('audio→midi failed:', e?.message || e))}>
-                  <i className="fa-solid fa-file-audio" style={{ fontSize: 10 }} /> {trackActions.busy.a2m ? 'Converting…' : 'Audio → MIDI'}
-                </button>
-                {(selectedTrack.metadata?.params?.instrumentGroup || selectedTrack.instrumentGroup) && (
-                  <button className="sd-btn ghost" disabled={trackActions.busy.clarify}
-                          onClick={() => trackActions.clarify().catch((e) => console.warn('clarify failed:', e?.message || e))}>
-                    <i className="fa-solid fa-sparkles" style={{ fontSize: 10 }} /> {trackActions.busy.clarify ? 'Clarifying…' : 'Clarify timbre'}
-                  </button>
-                )}
-                <button className="sd-btn ghost" disabled={trackActions.busy.mute}
-                        onClick={() => trackActions.applyTrumpetMute(!selectedTrack.metadata?.isMuted)
-                          .catch((e) => console.warn('fx mute failed:', e?.message || e))}>
-                  <i className="fa-solid fa-volume-xmark" style={{ fontSize: 10 }} /> {
-                    trackActions.busy.mute ? 'Processing…'
-                    : selectedTrack.metadata?.isMuted ? 'Remove mute FX' : 'Trumpet mute FX'
-                  }
                 </button>
                 <button className="sd-btn ghost" onClick={() => {
                   // Use the current state.inpaintSelection if set (from waveform),
