@@ -44,6 +44,16 @@ const MIN_NOTE_LEN_FRAMES   = 11;                         // ≈128ms
 let session = null;
 let outputKeys = null;
 let initFailed = false;
+// Concurrency guards:
+//   _initInFlight — first-call mutex for InferenceSession.create. Without it,
+//     two parallel callers race into ORT-Web's session construction and the
+//     second gets "Session already started".
+//   _runQueue — ORT-Web 1.22 sessions serialize run() internally; issuing a
+//     second run() before the first resolves throws the same error. We chain
+//     all runs off this promise so the call sites can still be async-parallel
+//     without having to know about it.
+let _initInFlight = null;
+let _runQueue = Promise.resolve();
 
 /**
  * Lazy-load the ONNX session. Safe to call repeatedly. Returns null if
@@ -53,6 +63,8 @@ let initFailed = false;
 export async function initBasicPitch() {
   if (session) return session;
   if (initFailed) return null;
+  if (_initInFlight) return _initInFlight;
+  _initInFlight = (async () => {
   try {
     // Optional external-data sibling: basic_pitch.onnx.data. If present
     // the loader passes it in; if 404 we load the model alone (assumes
@@ -122,6 +134,24 @@ export async function initBasicPitch() {
     console.warn('[basicPitch] init failed:', err?.message || err);
     return null;
   }
+  })();
+  try {
+    return await _initInFlight;
+  } finally {
+    _initInFlight = null;
+  }
+}
+
+/**
+ * Run a single ORT inference serialized against any other in-flight basic-pitch
+ * runs. ORT-Web 1.22 sessions are not concurrency-safe; multiple overlapping
+ * `run()` calls surface as "Session already started".
+ */
+function runSerialized(sess, feeds) {
+  const next = _runQueue.then(() => sess.run(feeds));
+  // Prevent a rejected run from poisoning the queue forever.
+  _runQueue = next.catch(() => {});
+  return next;
 }
 
 /**
@@ -159,7 +189,7 @@ function mapOutputs(sess) {
 
 async function probeShapes(sess) {
   const zeroIn = new ort.Tensor('float32', new Float32Array(CHUNK_SAMPLES), [1, CHUNK_SAMPLES, 1]);
-  const out = await sess.run({ [sess.inputNames[0]]: zeroIn });
+  const out = await runSerialized(sess, { [sess.inputNames[0]]: zeroIn });
   let onset = null, frame = null, contour = null;
   for (const n of sess.outputNames) {
     const w = out[n].dims[out[n].dims.length - 1];
@@ -226,7 +256,7 @@ export async function transcribeAudio(audio, sr, opts = {}) {
     const end = Math.min(start + CHUNK_SAMPLES, audio22k.length);
     chunk.set(audio22k.subarray(start, end));
     const inputTensor = new ort.Tensor('float32', chunk, [1, CHUNK_SAMPLES, 1]);
-    const out = await sess.run({ [sess.inputNames[0]]: inputTensor });
+    const out = await runSerialized(sess, { [sess.inputNames[0]]: inputTensor });
     // Outputs are already sigmoid'd inside the graph — copy straight in.
     const onset = out[outputKeys.onset].data;
     const frame = out[outputKeys.frame].data;

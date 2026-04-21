@@ -23,7 +23,7 @@
  * differs from the root, the label becomes "C/E" style slash chord.
  */
 
-const CHORD_TEMPLATES = [
+export const CHORD_TEMPLATES = [
   ['maj7',  [0, 4, 7, 11]],
   ['m7',    [0, 3, 7, 10]],
   ['7',     [0, 4, 7, 10]],
@@ -38,7 +38,7 @@ const CHORD_TEMPLATES = [
   ['5',     [0, 7]],          // power chord fallback
 ];
 
-const PITCH_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+export const PITCH_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
 function chordScore(activePcs, templatePcs) {
   const act = new Set(activePcs);
