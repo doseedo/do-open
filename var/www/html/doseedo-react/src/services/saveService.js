@@ -23,6 +23,13 @@ let currentSaveStatus = SaveStatus.SAVED;
 let lastSaveTime = null;
 let lastCloudSaveTime = null;
 
+// Single-flight mutex for cloud save. The autosave loop fires every 8s
+// but a session with 8 stems uploads 8 multi-MB files serially through
+// the Fly R2 gateway — easily longer than the autosave interval. Without
+// this guard, uploads stack up unboundedly and the UI drowns in "Saving
+// to cloud" log spam that never completes.
+let cloudSaveInFlight = false;
+
 /**
  * Subscribe to save status changes
  */
@@ -94,6 +101,13 @@ export async function saveToCloud(projectName, state, options = {}) {
       return { success: false, skipped: 'not-authenticated' };
     }
 
+    // Skip if another cloud save is still uploading. Autosave reruns
+    // every 8s; for multi-stem sessions one upload pass can take longer.
+    if (cloudSaveInFlight) {
+      return { success: false, skipped: 'cloud-save-in-flight' };
+    }
+    cloudSaveInFlight = true;
+
     updateSaveStatus(SaveStatus.SAVING);
     console.log(`☁️ Saving to cloud: ${projectName}`);
 
@@ -160,6 +174,8 @@ export async function saveToCloud(projectName, state, options = {}) {
     console.error('Cloud save error:', error);
     updateSaveStatus(SaveStatus.ERROR);
     return { success: false, error: error.message };
+  } finally {
+    cloudSaveInFlight = false;
   }
 }
 

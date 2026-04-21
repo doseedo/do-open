@@ -57,6 +57,20 @@ const HEAVY_METADATA_FIELDS = [
   'vocalsLyrics',              // whisper word-level timing
 ];
 
+// Heavy fields that can live at the TOP LEVEL of a track, too — the
+// piano roll reads `track.midiData.notes` (not
+// `track.metadata.midiData`), and latentPitch / latentDrumTranscribe
+// all write that top-level path. Same rationale: recompute on reopen
+// from the cached source audio.
+const HEAVY_TOPLEVEL_TRACK_FIELDS = [
+  'midiData',          // {notes[], duration, tempo}
+  'stemOnsets',
+  'drumSubstemOnsets',
+  'drumSubstemOnsetStrengths',
+  'recordingBuffer',   // in-progress recording buffer
+  'audioBuffer',
+];
+
 function stripHeavyTrackMetadata(state) {
   // Shallow-clone the buses spine; deep-clone only the parts that carry
   // the heavy fields. Cheaper than structuredClone on the full tree.
@@ -66,23 +80,56 @@ function stripHeavyTrackMetadata(state) {
     buses: state.buses.map((bus) => ({
       ...bus,
       tracks: (bus.tracks || []).map((track) => {
-        if (!track?.metadata) return track;
-        let metadata = track.metadata;
+        if (!track) return track;
+        let out = track;
         let cloned = false;
-        for (const f of HEAVY_METADATA_FIELDS) {
-          if (metadata[f] != null) {
-            if (!cloned) { metadata = { ...metadata }; cloned = true; }
-            delete metadata[f];
+
+        // Strip top-level heavy fields on the track itself.
+        for (const f of HEAVY_TOPLEVEL_TRACK_FIELDS) {
+          if (out[f] != null) {
+            if (!cloned) { out = { ...out }; cloned = true; }
+            delete out[f];
           }
         }
-        return cloned ? { ...track, metadata } : track;
+
+        // Strip heavy fields inside track.metadata.
+        if (out.metadata) {
+          let metadata = out.metadata;
+          let metaCloned = false;
+          for (const f of HEAVY_METADATA_FIELDS) {
+            if (metadata[f] != null) {
+              if (!metaCloned) { metadata = { ...metadata }; metaCloned = true; }
+              delete metadata[f];
+            }
+          }
+          if (metaCloned) {
+            if (!cloned) { out = { ...out }; cloned = true; }
+            out.metadata = metadata;
+          }
+        }
+
+        return out;
       }),
     })),
   };
 }
 
+// Soft ceiling before we even attempt setItem. localStorage per-origin
+// quota is 5-10 MB across all keys combined; a single 4 MB session
+// already leaves no room for the projects index or peer projects.
+// Going bigger than this is almost always a sign that the strip list
+// missed a newly-added heavy field — we warn once so it's visible in
+// the console without drowning the log on every autosave tick.
+const LOCAL_SESSION_SOFT_MAX_BYTES = 4 * 1024 * 1024;
+let _sawOversizeSession = false;
+
 /**
- * Save a session to localStorage
+ * Save a session to localStorage.
+ *
+ * Returns `false` (instead of throwing) on quota-exceeded or soft-max
+ * overflow so the autosave loop degrades gracefully. The cloud save
+ * tier runs on its own path so full project state still persists to R2
+ * even when the local cache is blocked.
  */
 export function saveSession(projectName, state) {
   try {
@@ -92,14 +139,40 @@ export function saveSession(projectName, state) {
       timestamp: Date.now(),
       state: stripHeavyTrackMetadata(state),
     };
+    const serialized = JSON.stringify(sessionData);
 
-    // Save session data
-    localStorage.setItem(sessionKey, JSON.stringify(sessionData));
+    if (serialized.length > LOCAL_SESSION_SOFT_MAX_BYTES) {
+      if (!_sawOversizeSession) {
+        _sawOversizeSession = true;
+        console.warn(
+          `[session] skipping localStorage save — ${(serialized.length / 1e6).toFixed(1)} MB ` +
+          `exceeds ${(LOCAL_SESSION_SOFT_MAX_BYTES / 1e6).toFixed(1)} MB soft cap. ` +
+          `Cloud save (R2) continues. Likely cause: a new heavy field on track/metadata ` +
+          `that isn't in HEAVY_TOPLEVEL_TRACK_FIELDS or HEAVY_METADATA_FIELDS.`
+        );
+      }
+      return false;
+    }
 
-    // Add to projects list if not already there
+    try {
+      localStorage.setItem(sessionKey, serialized);
+    } catch (quotaErr) {
+      if (quotaErr?.name === 'QuotaExceededError') {
+        if (!_sawOversizeSession) {
+          _sawOversizeSession = true;
+          console.warn(
+            `[session] localStorage quota exceeded for ${projectName}. ` +
+            `Cloud save (R2) continues. Subsequent ticks will silently skip local save.`
+          );
+        }
+        return false;
+      }
+      throw quotaErr;
+    }
+
     const projects = getProjects();
     if (!projects.includes(projectName)) {
-      projects.unshift(projectName); // Add to beginning
+      projects.unshift(projectName);
       localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
     }
 
