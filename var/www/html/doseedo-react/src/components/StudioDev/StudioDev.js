@@ -503,8 +503,99 @@ export default function StudioDev() {
       }));
       dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: stemTracks } });
       dispatch({ type: 'SET_BUS_EXPANDED', payload: { busId, expanded: false } });
+
+      // -- WEBGPU LATENT EXTRACTION + MIDI TRANSCRIPTION --------------
+      // Parallels /studio (DAWOptimized): decode the master audio once,
+      // run sem4Decoder's streamPreviewSeparation to get per-stem oobleck
+      // latents [64, T], then run latentPitch on pitched stems and
+      // latentDrumTranscribe on the drum stem. Each stem gets a latent
+      // reference + a MIDI note list attached to its metadata, which
+      // the piano roll picks up automatically.
+      (async () => {
+        try {
+          const { audioFileToStereo48k } = await import('../../services/latentEncoder');
+          const { streamPreviewSeparation, SEM4_LATENT_CHANS } = await import('../../services/sem4Decoder');
+          const src = await audioFileToStereo48k(file);
+          await streamPreviewSeparation(src.flat, src.numFrames, {
+            onAllLatentsReady: async ({ stemLatents, stemNames, fps }) => {
+              for (let i = 0; i < stemNames.length; i++) {
+                const stemName = stemNames[i];
+                dispatch({
+                  type: 'UPDATE_TRACK',
+                  payload: {
+                    busId, trackId: `stem-${trackId}-${stemName}`,
+                    updates: { metadata: {
+                      latent: stemLatents[i],
+                      latentChans: SEM4_LATENT_CHANS,
+                      latentFps: fps,
+                    } },
+                  },
+                });
+              }
+              console.log(`[sem4Decoder] cached ${stemNames.length} stem latents on track metadata`);
+
+              const tempo = state.bpm || 120;
+              const T = Math.floor(stemLatents[0].length / SEM4_LATENT_CHANS);
+              const pitchedIdx = [];
+              const pitchedLatents = [];
+              for (let i = 0; i < stemNames.length; i++) {
+                if (stemNames[i] !== 'drums') {
+                  pitchedIdx.push(i);
+                  pitchedLatents.push(stemLatents[i]);
+                }
+              }
+
+              const pitchedPromise = (async () => {
+                if (!pitchedLatents.length) return [];
+                const { extractPitchFromLatentsBatch } = await import('../../services/latentPitch');
+                const t0 = performance.now();
+                const results = await extractPitchFromLatentsBatch(pitchedLatents, T);
+                console.log(`[latentPitch] batched ${pitchedLatents.length} pitched stems in ${(performance.now() - t0).toFixed(0)}ms`);
+                return results;
+              })();
+
+              const drumsIdx = stemNames.indexOf('drums');
+              const drumsPromise = (async () => {
+                if (drumsIdx < 0) return null;
+                const { extractDrumMIDI } = await import('../../services/latentDrumTranscribe');
+                const t0 = performance.now();
+                const out = await extractDrumMIDI(stemLatents[drumsIdx], T);
+                console.log(`[latentDrumTranscribe] drums: ${out.notes.length} hits in ${(performance.now() - t0).toFixed(0)}ms`);
+                return out;
+              })();
+
+              const [pitchedResults, drumResult] = await Promise.all([pitchedPromise, drumsPromise]);
+
+              for (let k = 0; k < pitchedIdx.length; k++) {
+                const i = pitchedIdx[k];
+                const stemName = stemNames[i];
+                const { notes, duration } = pitchedResults[k];
+                dispatch({
+                  type: 'UPDATE_TRACK',
+                  payload: {
+                    busId, trackId: `stem-${trackId}-${stemName}`,
+                    updates: { metadata: { midiData: { notes, duration, tempo } } },
+                  },
+                });
+              }
+              if (drumResult && drumsIdx >= 0) {
+                dispatch({
+                  type: 'UPDATE_TRACK',
+                  payload: {
+                    busId, trackId: `stem-${trackId}-drums`,
+                    updates: { metadata: { midiData: { notes: drumResult.notes, duration: drumResult.duration, tempo } } },
+                  },
+                });
+              }
+              console.log(`[latentPitch] applied MIDI to all ${stemNames.length} stems`);
+            },
+          });
+        } catch (err) {
+          console.warn('[webgpu-pipeline] failed (non-fatal):', err?.message || err);
+        }
+      })();
     }).catch((err) => console.warn('stem-sep failed:', err?.message || err));
-  }, [dispatch]);
+  }, [dispatch, state.bpm]);
 
   const onFilePick = useCallback((e) => {
     const file = e.target.files?.[0];
