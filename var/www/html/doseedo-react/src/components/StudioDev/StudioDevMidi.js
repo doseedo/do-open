@@ -328,10 +328,14 @@ export default function StudioDevMidi() {
   useEffect(() => {
     const c = canvasRef.current; if (!c) return;
     const dpr = window.devicePixelRatio || 1;
-    c.width  = size.w * dpr;
-    c.height = size.h * dpr;
-    c.style.width  = size.w + 'px';
-    c.style.height = size.h + 'px';
+    // Only set the bitmap resolution; the visible dimensions come from
+    // CSS (.sd-midi-canvas: width/height: 100%). Previously JS set both
+    // style and bitmap from the measured wrap size, but the measurement
+    // sometimes lagged after a timeline-drag resize, leaving the canvas
+    // narrower than the wrap until the next resize tick. CSS-driven
+    // visible size always matches the parent.
+    c.width  = Math.max(1, size.w) * dpr;
+    c.height = Math.max(1, size.h) * dpr;
     const ctx = c.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 

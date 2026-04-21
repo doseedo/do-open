@@ -1463,11 +1463,15 @@
 .sd-midi-kv-v { color: var(--midi-ink); font-family: var(--wb-font-mono); font-size: 11px; }
 
 .sd-midi-canvas-wrap {
-  flex: 1; min-height: 0;
+  flex: 1; min-width: 0; min-height: 0;
   position: relative; overflow: hidden;
   background: var(--midi-bg);
 }
-.sd-midi-canvas { display: block; cursor: crosshair; }
+.sd-midi-canvas {
+  display: block;
+  width: 100%; height: 100%;
+  cursor: crosshair;
+}
 
 .sd-midi-footer {
   height: 22px; flex-shrink: 0;
