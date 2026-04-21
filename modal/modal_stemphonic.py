@@ -417,10 +417,11 @@ app = modal.App("doseedo-stemphonic")
         modal.Secret.from_name("doseedo-r2"),
     ],
     timeout=60 * 30,           # 30 min per request (long ACE-Step gens)
-    scaledown_window=60 * 15,  # 15 min warm window
-    min_containers=1,          # keep 1 warm so users never hit ~80s cold start
-                               # (Cloud Run inference-proxy still scales to
-                               # zero but its cold start is ~1-3s, not 80s)
+    scaledown_window=60 * 15,  # 15 min warm window — one active user keeps it hot
+    min_containers=0,          # scale to zero when idle — first request in a cold
+                               # window eats ~80s L4 boot + snapshot restore, but
+                               # kills the $1.2k/mo always-on baseline. Memory
+                               # snapshot below trims this vs a naked cold start.
     max_containers=1,          # single container for in-process /task polling
     enable_memory_snapshot=True,
 )
@@ -647,17 +648,18 @@ class Stemphonic:
                 return
 
             # Forward whichever identity the caller sent:
-            #   - Browser: Authorization: Bearer <jwt> or access_token cookie
-            #   - Desktop: X-API-Key: dsk_… (or Authorization: Bearer dsk_…)
-            # The auth-service gate (generation_gate.py) accepts all three
-            # shapes. We accept the request here if ANY of them is present
-            # and let auth-service decide validity.
+            #   - Browser (Clerk):  __session cookie
+            #   - Browser (legacy): Authorization: Bearer <jwt> or access_token cookie
+            #   - Desktop:          X-API-Key: dsk_… (or Authorization: Bearer dsk_…)
+            # The auth-service gate (generation_gate.py) accepts all of these;
+            # we just accept here if any identity shape is present and forward.
             auth_header    = request.headers.get("Authorization", "")
             cookie_header  = request.headers.get("Cookie", "")
             access_token   = request.cookies.get("access_token", "")
+            clerk_session  = request.cookies.get("__session", "")
             api_key_header = request.headers.get("X-API-Key", "")
 
-            if not auth_header and not access_token and not api_key_header:
+            if not (auth_header or access_token or clerk_session or api_key_header):
                 return jsonify({"error": "Authentication required for generation"}), 401
 
             gate_headers = {
