@@ -30,6 +30,8 @@ import * as saveService from '../../services/saveService';
 // Existing production components reused for mode content + overlays.
 // They read/dispatch AppContext directly, so dropping them in Just Works.
 import StudioDevMidi from './StudioDevMidi';
+import PipelineStatus from './PipelineStatus';
+import { logPipeline, clearPipelineLog } from '../../services/pipelineStatus';
 import StudioDevMidiBrowser from './StudioDevMidiBrowser';
 import StudioDevWaveform from './StudioDevWaveform';
 import StudioDevFX from './StudioDevFX';
@@ -476,6 +478,8 @@ export default function StudioDev() {
   // zone so both entry points do exactly the same thing.
   const ingestFile = useCallback((file) => {
     if (!file) return;
+    clearPipelineLog();
+    logPipeline('upload', `${file.name} (${(file.size / 1024).toFixed(0)} KB)`);
     const busId = `bus-${Date.now()}`;
     const trackId = `t-${Date.now()}`;
     const baseName = file.name.replace(/\.[^.]+$/, '');
@@ -515,8 +519,14 @@ export default function StudioDev() {
 
     // Rich rhythm analysis (per-bar tempoMap + beat_map). Fires in parallel
     // with analyze-audio so the UI sees bar lines + correct meter ASAP.
+    logPipeline('rhythm', 'analyzing tempo + meter…');
     analyzeRhythm(file).then((ra) => {
-      if (!ra || !Array.isArray(ra.tempoMap) || ra.tempoMap.length === 0) return;
+      if (!ra || !Array.isArray(ra.tempoMap) || ra.tempoMap.length === 0) {
+        logPipeline('rhythm', 'no tempoMap extracted', 'warn');
+        return;
+      }
+      const first = ra.tempoMap[0];
+      logPipeline('rhythm', `${Math.round(ra.bpm)} BPM · ${first.meter[0]}/${first.meter[1]}${ra.grouping ? ' (' + ra.grouping + ')' : ''}`, 'ok');
       dispatch({ type: 'SET_PROJECT_TEMPO_MAP', payload: ra.tempoMap });
       if (ra.beat_map) dispatch({ type: 'SET_BEAT_MAP', payload: ra.beat_map });
       if (typeof ra.downbeat_offset === 'number') {
@@ -544,7 +554,7 @@ export default function StudioDev() {
       });
       console.log(`🎶 tempoMap extracted (${ra.tempoMap.length} entries, duration ${ra.duration?.toFixed(2)}s):`);
       console.log(formatTempoMap(ra.tempoMap));
-    }).catch((err) => console.warn('[analyze-rhythm] failed:', err?.message || err));
+    }).catch((err) => logPipeline('rhythm', `failed: ${err?.message || err}`, 'error'));
 
     // ── Tier 1: master BasicPitch on-device (in parallel) ─────────────
     // Decodes the file once to stereo@48k (same call the WebGPU pipeline
@@ -563,12 +573,14 @@ export default function StudioDev() {
         for (let i = 0; i < N; i++) mono[i] = (src.flat[i] + src.flat[N + i]) * 0.5;
         const { transcribeAudio } = await import('../../services/basicPitchOnnx');
         const t0 = performance.now();
+        logPipeline('basicPitch', 'transcribing master audio…');
         const { notes, duration } = await transcribeAudio(mono, 48000);
         if (!notes || notes.length === 0) {
+          logPipeline('basicPitch', 'no notes extracted (model disabled or silent audio)', 'warn');
           masterNotesResolve([]);
           return;
         }
-        console.log(`[basicPitch] master: ${notes.length} notes in ${(performance.now() - t0).toFixed(0)}ms (${duration.toFixed(1)}s audio)`);
+        logPipeline('basicPitch', `master: ${notes.length} notes in ${(performance.now() - t0).toFixed(0)}ms`, 'ok');
         const s0 = stateRef.current;
         dispatch({
           type: 'UPDATE_TRACK',
@@ -601,12 +613,12 @@ export default function StudioDev() {
             const num = {};
             Object.entries(chords).forEach(([k, v]) => { num[parseInt(k, 10)] = v; });
             dispatch({ type: 'SET_CHORDS', payload: num });
-            console.log(`[basicPitch] master → ${Object.keys(chords).length} chord changes (first pass)`);
+            logPipeline('chords', `${Object.keys(chords).length} chords from master (tier 1)`, 'ok');
           }
         } catch (_) {}
         masterNotesResolve(notes);
       } catch (err) {
-        console.warn('[basicPitch] master extraction failed:', err?.message || err);
+        logPipeline('basicPitch', `master failed: ${err?.message || err}`, 'error');
         masterNotesResolve([]);   // unblock downstream refinement
       }
     })();
@@ -650,7 +662,11 @@ export default function StudioDev() {
       for (const [stemName, midiUrl] of Object.entries(midi_urls || {})) {
         try {
           const r = await fetch(midiUrl);
-          if (!r.ok) { console.warn(`[basicPitch] ${stemName} fetch ${r.status}`); continue; }
+          if (!r.ok) {
+            console.warn(`[basicPitch] ${stemName} fetch ${r.status}`);
+            logPipeline('basicPitch', `${stemName} fetch ${r.status}`, 'warn');
+            continue;
+          }
           const ab = await r.arrayBuffer();
           const { Midi } = await import('@tonejs/midi');
           const midi = new Midi(ab);
@@ -669,6 +685,7 @@ export default function StudioDev() {
           }
           notes.sort((a, b) => a.time - b.time);
           console.log(`[basicPitch] ${stemName}: ${notes.length} notes (replacing latent_pitch placeholder)`);
+          logPipeline('basicPitch', `${stemName}: ${notes.length} notes (tier 3)`, 'ok');
           dispatch({
             type: 'UPDATE_TRACK',
             payload: {
@@ -692,16 +709,20 @@ export default function StudioDev() {
           if (Object.keys(chordsNum).length > 0) {
             dispatch({ type: 'SET_CHORDS', payload: chordsNum });
             console.log(`[basicPitch] chord row rebuilt from ${Object.keys(bpMidiByStem).length} upgraded stem(s): ${Object.keys(chordsNum).length} chord changes`);
+            logPipeline('chords', `${Object.keys(chordsNum).length} chords from basicPitch stems (tier 3)`, 'ok');
           }
         } catch (err) {
           console.warn('[basicPitch] chord rerun failed:', err?.message || err);
+          logPipeline('chords', `tier-3 rerun failed: ${err?.message || 'error'}`, 'warn');
         }
       }, 400);
     };
 
+    logPipeline('separate', 'posting to backend demucs…');
     separateStemsAuto(file, {
       onMidiReady: swapInBasicPitch,
       onDrumTeacher: ({ drum_substem_urls, drum_substem_onsets, drum_substem_onset_strengths }) => {
+        logPipeline('drumTeacher', `kick/snare/hh/toms/ride/crash ready`, 'ok');
         // Attach per-substem WAV URLs + onset times + per-onset strengths
         // to the drums STEM TRACK's metadata. virtualTrackEdit uses the
         // strengths to weight accent vs ghost when re-quantizing triplets,
@@ -742,7 +763,11 @@ export default function StudioDev() {
         });
       },
     }).then((sep) => {
-      if (!sep?.stems) return;
+      if (!sep?.stems) {
+        logPipeline('separate', 'no stems returned', 'warn');
+        return;
+      }
+      logPipeline('separate', `${Object.keys(sep.stems).length} stems ready`, 'ok');
       const stemOnsets = sep.stem_onsets || {};
       const stemTracks = Object.entries(sep.stems).map(([stemName, audioUrl]) => ({
         id: `stem-${trackId}-${stemName}`,
@@ -786,11 +811,13 @@ export default function StudioDev() {
       // the piano roll picks up automatically.
       (async () => {
         try {
+          logPipeline('webgpu', 'loading demucs latents…');
           const { audioFileToStereo48k } = await import('../../services/latentEncoder');
           const { streamPreviewSeparation, SEM4_LATENT_CHANS } = await import('../../services/sem4Decoder');
           const src = await audioFileToStereo48k(file);
           await streamPreviewSeparation(src.flat, src.numFrames, {
             onAllLatentsReady: async ({ stemLatents, stemNames, fps }) => {
+              logPipeline('webgpu', `${stemNames.length} stem latents ready`, 'ok');
               for (let i = 0; i < stemNames.length; i++) {
                 const stemName = stemNames[i];
                 dispatch({
@@ -833,7 +860,9 @@ export default function StudioDev() {
                 const { extractDrumMIDI } = await import('../../services/latentDrumTranscribe');
                 const t0 = performance.now();
                 const out = await extractDrumMIDI(stemLatents[drumsIdx], T);
-                console.log(`[latentDrumTranscribe] drums: ${out.notes.length} hits in ${(performance.now() - t0).toFixed(0)}ms`);
+                const dt = (performance.now() - t0).toFixed(0);
+                console.log(`[latentDrumTranscribe] drums: ${out.notes.length} hits in ${dt}ms`);
+                logPipeline('drums', `${out.notes.length} drum hits (${dt}ms)`, 'ok');
                 return out;
               })();
 
@@ -859,8 +888,10 @@ export default function StudioDev() {
                   const before = Object.values(stemNotesByName).reduce((s, a) => s + a.length, 0);
                   const after = Object.values(refinedByStem).reduce((s, a) => s + a.length, 0);
                   console.log(`[basicPitch] refined ${Object.keys(stemNotesByName).length} stems with master: ${before} → ${after} notes`);
+                  logPipeline('refine', `${Object.keys(stemNotesByName).length} stems: ${before} → ${after} notes`, 'ok');
                 } catch (err) {
                   console.warn('[basicPitch] refinement failed, using raw latentPitch:', err?.message || err);
+                  logPipeline('refine', `fallback to raw latentPitch (${err?.message || 'error'})`, 'warn');
                   refinedByStem = stemNotesByName;
                 }
               }
@@ -900,9 +931,11 @@ export default function StudioDev() {
                 if (Object.keys(chordsNum).length > 0) {
                   dispatch({ type: 'SET_CHORDS', payload: chordsNum });
                   console.log(`[chords] Tier-2 refined-stem pass: ${Object.keys(chordsNum).length} chord changes`);
+                  logPipeline('chords', `${Object.keys(chordsNum).length} chords from refined stems (tier 2)`, 'ok');
                 }
               } catch (err) {
                 console.warn('[chords] Tier-2 pass failed:', err?.message || err);
+                logPipeline('chords', `tier-2 pass failed: ${err?.message || 'error'}`, 'warn');
               }
             },
           });
@@ -2499,6 +2532,7 @@ export default function StudioDev() {
               </div>
             </>
           )}
+          <PipelineStatus />
         </aside>
       </div>
 

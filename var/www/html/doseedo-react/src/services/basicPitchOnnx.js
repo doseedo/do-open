@@ -22,8 +22,12 @@
 
 import * as ort from 'onnxruntime-web';
 
-const MODEL_URL         = '/static/models/basic_pitch.onnx';
-const MODEL_DATA_URL    = '/static/models/basic_pitch.onnx.data';
+// ?v=1 cache-busts Cloudflare, which aggressively caches 404 HTML pages
+// (max-age 30 days). Before the model file was deployed CF cached an HTML
+// fallback and kept serving it even after the file landed. Bumping this
+// version query string forces CF to treat the request as uncached.
+const MODEL_URL         = '/static/models/basic_pitch.onnx?v=1';
+const MODEL_DATA_URL    = '/static/models/basic_pitch.onnx.data?v=1';
 const TARGET_SR         = 22050;
 const CHUNK_SAMPLES     = 43844;                          // ≈2s chunks
 const CHUNK_FRAMES      = 172;                            // model's time dim

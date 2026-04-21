@@ -1752,3 +1752,75 @@
 }
 .sd-chat-input:focus { outline: none; border-color: var(--hifi-accent); }
 
+/* ---------- Pipeline status bar (bottom of right sidebar) ---------- */
+/* Docked at the bottom of .sd-right via sticky positioning so it stays
+ * visible as the user scrolls through bus/track controls. Click the
+ * current-event row to expand a history log (last ~80 entries). */
+.sd-pipeline-status {
+  position: sticky;
+  bottom: -24px;              /* offset the aside's padding-bottom so it hugs the edge */
+  margin: 24px -20px -24px;   /* negative margins cancel the aside's padding */
+  padding: 10px 12px;
+  background: var(--hifi-surface-2, #1a1a1a);
+  border-top: 1px solid var(--hifi-rule);
+  font-family: var(--hifi-mono);
+  font-size: 10px;
+  z-index: 10;
+}
+.sd-pipeline-current {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 0; border: 0; background: transparent;
+  color: inherit; cursor: pointer; text-align: left;
+}
+.sd-pipeline-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--hifi-accent);
+  flex-shrink: 0;
+  animation: sd-pipe-pulse 1.2s ease-in-out infinite;
+}
+.sd-pipeline-dot[data-kind="ok"]    { background: #5dc97a; animation: none; }
+.sd-pipeline-dot[data-kind="warn"]  { background: #f0a030; animation: none; }
+.sd-pipeline-dot[data-kind="error"] { background: #e04040; animation: none; }
+@keyframes sd-pipe-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.35; transform: scale(0.85); }
+}
+.sd-pipeline-stage {
+  color: var(--hifi-accent);
+  text-transform: uppercase; letter-spacing: .5px;
+  flex-shrink: 0;
+  font-size: 9px;
+  min-width: 68px;
+}
+.sd-pipeline-msg {
+  color: var(--hifi-ink);
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sd-pipeline-toggle {
+  color: var(--hifi-ink-mute);
+  flex-shrink: 0; font-size: 12px;
+}
+.sd-pipeline-log {
+  list-style: none; margin: 8px 0 0; padding: 0;
+  max-height: 180px; overflow-y: auto;
+  border-top: 1px solid var(--hifi-rule);
+  padding-top: 6px;
+}
+.sd-pipeline-log li {
+  display: grid; grid-template-columns: 68px 1fr;
+  gap: 8px; padding: 2px 0;
+  line-height: 1.4;
+}
+.sd-pipeline-log-stage {
+  color: var(--hifi-accent);
+  font-size: 9px; text-transform: uppercase; letter-spacing: .5px;
+}
+.sd-pipeline-log-msg {
+  color: var(--hifi-ink-soft);
+  font-size: 10px; word-break: break-word;
+}
+.sd-pipeline-log li[data-kind="warn"]  .sd-pipeline-log-msg { color: #f0a030; }
+.sd-pipeline-log li[data-kind="error"] .sd-pipeline-log-msg { color: #e04040; }
+.sd-pipeline-log li[data-kind="ok"]    .sd-pipeline-log-msg { color: #7dd89a; }
+

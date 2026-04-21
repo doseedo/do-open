@@ -130,6 +130,7 @@ const nextConfig = {
       { source: '/api/generate-score-from-video',   destination: `${MODAL}/api/generate-score-from-video` },
       { source: '/api/generate-score-from-video/:path*', destination: `${MODAL}/api/generate-score-from-video/:path*` },
       { source: '/api/transcribe-vocals',           destination: `${MODAL}/api/transcribe-vocals` },
+      { source: '/api/analyze-rhythm',              destination: `${MODAL}/api/analyze-rhythm` },
       { source: '/api/vae-version',                 destination: `${MODAL}/api/vae-version` },
       { source: '/health',                          destination: `${MODAL}/health` },
       { source: '/_chat/health',                    destination: `${MODAL}/_chat/health` },

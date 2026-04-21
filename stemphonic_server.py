@@ -2571,13 +2571,26 @@ _latent_pitch_runtime = {"rt": None}
 
 def _get_latent_pitch():
     """Lazy singleton for the latent → BasicPitch student (drop-in
-    replacement for basic_pitch.inference.predict)."""
+    replacement for basic_pitch.inference.predict).
+
+    Returns None if the `latent_pitch` package or checkpoint isn't baked
+    into the Modal image (uses the same sentinel pattern as
+    _get_latent_drumsep / _get_latent_panns) so callers can fall back to
+    the browser-side latentPitch runtime.
+    """
+    if _latent_pitch_runtime["rt"] == "unavailable":
+        return None
     if _latent_pitch_runtime["rt"] is None:
-        from latent_pitch.infer import LatentPitchRuntime
-        _latent_pitch_runtime["rt"] = LatentPitchRuntime(
-            "/scratch/latent_pitch_ckpts/pitch_final.pt"
-        )
-        logger.info("Loaded LatentPitch student (latent → MIDI)")
+        try:
+            from latent_pitch.infer import LatentPitchRuntime
+            _latent_pitch_runtime["rt"] = LatentPitchRuntime(
+                "/scratch/latent_pitch_ckpts/pitch_final.pt"
+            )
+            logger.info("Loaded LatentPitch student (latent → MIDI)")
+        except (ImportError, FileNotFoundError) as e:
+            logger.warning("LatentPitch unavailable — server-side MIDI disabled: %s", e)
+            _latent_pitch_runtime["rt"] = "unavailable"
+            return None
     return _latent_pitch_runtime["rt"]
 
 
@@ -4007,10 +4020,22 @@ def analyze_rhythm():
             logger.info("[analyze-rhythm] using librosa (%d beats → %d downbeats, 4/4 assumed)",
                         len(beat_times), len(downbeat_times))
 
-        # 2. Duration.
-        import soundfile as _sf
-        info = _sf.info(audio_path)
-        duration = float(info.frames / info.samplerate)
+        # 2. Duration. soundfile handles WAV/FLAC/OGG natively but needs
+        # libsndfile >= 1.1 for MP3; on older images it raises. Fall back
+        # to the librosa-loaded length when sf can't read the container.
+        duration = None
+        try:
+            import soundfile as _sf
+            info = _sf.info(audio_path)
+            duration = float(info.frames / info.samplerate)
+        except Exception as se:
+            logger.info("[analyze-rhythm] soundfile.info failed (%s), using librosa length", se)
+            try:
+                import librosa as _lib_len
+                y_len, sr_len = _lib_len.load(audio_path, sr=22050, mono=True)
+                duration = float(len(y_len) / sr_len) if sr_len > 0 else 0.0
+            except Exception:
+                duration = float(beat_times[-1] + 1.0) if len(beat_times) else 0.0
 
         # 3. Per-bar beats_per_bar from downbeat spacing in BEAT INDICES.
         #    This catches in-song meter changes: a song that goes 4/4 for
@@ -4179,6 +4204,14 @@ def extract_midi_endpoint():
     if f is None:
         return jsonify({"error": "No audioFile in request"}), 400
 
+    # Early-exit when the latent_pitch student isn't baked into the image.
+    # Frontend already runs LatentPitch in WebGPU (browser) and BasicPitch
+    # ONNX, so the server-side path is an upgrade-when-available, not a
+    # hard dependency. Return a 200 degraded response so the ingest flow
+    # keeps going on the client-side transcription.
+    if _get_latent_pitch() is None:
+        return jsonify({"midi_url": None, "n_notes": 0, "duration": 0.0, "unavailable": True})
+
     file_id = uuid.uuid4().hex[:12]
     audio_path = os.path.join(EXTRACT_MIDI_DIR, f"in_{file_id}_{f.filename or 'audio.wav'}")
     f.save(audio_path)
@@ -4286,8 +4319,8 @@ def _get_latent_panns():
                 "/scratch/latent_panns_student/ckpts/panns_final.pt"
             )
             logger.info("Loaded LatentPANNs student (latent → instrument classification)")
-        except FileNotFoundError as e:
-            logger.warning("LatentPANNs checkpoint missing — instrument classification disabled: %s", e)
+        except (ImportError, FileNotFoundError) as e:
+            logger.warning("LatentPANNs unavailable — instrument classification disabled: %s", e)
             _latent_panns_runtime["rt"] = "unavailable"
             return None
     return _latent_panns_runtime["rt"]
