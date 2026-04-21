@@ -210,6 +210,26 @@ export default function StudioDevMidi() {
     return Math.max(minPitch, Math.min(maxPitch, p));
   };
 
+  // Active grid cell in seconds. Automatically subdivides as the user
+  // zooms in so cells stay visually comfortable (~32 px min wide).
+  // beat → 8th → 16th → 32nd.
+  //
+  // This is the single source of truth for:
+  //   • note snapping on click/drag
+  //   • hover-cell highlight width
+  //   • subdivision lines drawn in the ruler + grid
+  // which previously each used different definitions (snap was 1/16,
+  // highlight was 1/4-beat, grid only drew beats), so cells never
+  // visually matched the snap.
+  const beatSec = 60 / Math.max(40, state.bpm || 120);
+  const MIN_CELL_PX = 32;
+  let subdivision = 1;  // divisions per beat (1 = quarter, 2 = 8th, 4 = 16th, 8 = 32nd)
+  while (subdivision < 8 && (beatSec / subdivision) * pxPerSec > MIN_CELL_PX * 2) {
+    subdivision *= 2;
+  }
+  const cellSec = beatSec / subdivision;
+  const snapTime = (t) => Math.round(t / cellSec) * cellSec;
+
   // Mouse handlers. Drag uses window-level move/up so React re-renders
   // during commit() can't drop the drag session mid-flight.
   const onMouseDown = (e) => {
@@ -240,18 +260,16 @@ export default function StudioDevMidi() {
         moved: false,
       });
     } else {
-      // Click empty → add a note at clicked position using the user's
-      // last-edited note duration (falls back to a half-beat for the
-      // very first note of a session). Continues into a resize drag so
-      // the user can extend the duration in the same gesture if they
-      // want a different length.
+      // Click empty → add a note at the snapped grid cell, with the
+      // users last-edited duration (falls back to one cell). Continues
+      // into a resize drag so the user can extend duration in the same
+      // gesture if they want a different length.
       const t = Math.max(0, timeAtX(mx));
       const p = pitchAtY(my);
-      const beatSec = 60 / Math.max(40, state.bpm || 120);
-      const defDur = lastNoteDurRef.current ?? (beatSec / 2);
+      const defDur = lastNoteDurRef.current ?? cellSec;
       const newNote = {
         note: p,
-        time: +(Math.round(t / (beatSec / 4)) * (beatSec / 4)).toFixed(4),
+        time: +snapTime(t).toFixed(4),
         duration: defDur, velocity: 100,
       };
       const nxt = [...notes, newNote];
@@ -281,26 +299,25 @@ export default function StudioDevMidi() {
       const dyPx = e.clientY - drag.startClientY;
       if (!drag.moved && Math.abs(dxPx) < DRAG_THRESHOLD_PX && Math.abs(dyPx) < DRAG_THRESHOLD_PX) return;
       drag.moved = true;  // mutate in place — next tick takes this path
-      const dt = dxPx / pxPerSec;
+      // Snap drag delta to the active grid cell so notes always land on
+      // cell boundaries. Pitch is already quantized (row-height integer).
+      const dtSnapped = Math.round((dxPx / pxPerSec) / cellSec) * cellSec;
       const dp = -Math.round(dyPx / rowH);
       const nxt = drag.origNotes.map((n) => ({ ...n }));
       if (drag.mode === 'move') {
         for (const i of drag.indices) {
-          nxt[i].time = Math.max(0, drag.origNotes[i].time + dt);
+          nxt[i].time = Math.max(0, drag.origNotes[i].time + dtSnapped);
           nxt[i].note = Math.max(minPitch, Math.min(maxPitch, drag.origNotes[i].note + dp));
         }
       } else if (drag.mode === 'resize-right') {
         for (const i of drag.indices) {
-          nxt[i].duration = Math.max(0.03, drag.origNotes[i].duration + dt);
+          nxt[i].duration = Math.max(cellSec, drag.origNotes[i].duration + dtSnapped);
         }
       } else if (drag.mode === 'resize-left') {
-        // Drag the start edge: shift time forward, shrink duration by
-        // the same amount so the right edge stays pinned. Don't let
-        // the note get shorter than 0.03s or earlier than t=0.
         for (const i of drag.indices) {
           const orig = drag.origNotes[i];
-          const maxShift = orig.duration - 0.03;
-          const clampedDt = Math.max(-orig.time, Math.min(maxShift, dt));
+          const maxShift = orig.duration - cellSec;
+          const clampedDt = Math.max(-orig.time, Math.min(maxShift, dtSnapped));
           nxt[i].time = orig.time + clampedDt;
           nxt[i].duration = orig.duration - clampedDt;
         }
@@ -333,10 +350,10 @@ export default function StudioDevMidi() {
     const r = canvasRef.current.getBoundingClientRect();
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     setHoverTime(timeAtX(mx));
-    // Cell under cursor (grid-quantized to a quarter-beat column).
+    // Cell under cursor — snapped to the active grid cell (cellSec
+     // auto-subdivides with zoom). Width in the highlight draw will
+     // match this exactly so the hover rect fills the cell.
     if (mx >= KEYS_W && my >= RULER_H) {
-      const beatSec = 60 / Math.max(40, state.bpm || 120);
-      const cellSec = beatSec / 4;
       const t = timeAtX(mx);
       const beatIdx = Math.floor(Math.max(0, t) / cellSec);
       const row = Math.floor((my - RULER_H + scrollY) / rowH);
@@ -451,13 +468,28 @@ export default function StudioDevMidi() {
       }
     }
 
-    // Time-grid (beats + bars)
-    const bpm = state.bpm || 120;
-    const beatSec = 60 / bpm;
-    const barSec  = beatSec * 4;
+    // Time-grid — three tiers:
+    //   bar   → strong rule
+    //   beat  → medium rule
+    //   cell  → very faint (only when subdivision > 1, i.e. zoomed in)
+    // cellSec/subdivision were computed above; reuse here so grid +
+    // snap + hover all share one definition.
+    const barSec = beatSec * 4;
     const startSec = scrollX;
     const endSec = scrollX + (W - KEYS_W) / pxPerSec;
-    // Bar lines
+
+    // Subdivision lines first (so beat/bar lines draw on top).
+    if (subdivision > 1) {
+      ctx.fillStyle = 'rgba(21, 24, 28, 0.07)';  // subtler than C.rule
+      const firstCell = Math.floor(startSec / cellSec);
+      for (let i = firstCell; i * cellSec < endSec; i++) {
+        if (i % subdivision === 0) continue;  // skip beats (drawn below)
+        const x = KEYS_W + (i * cellSec - scrollX) * pxPerSec;
+        ctx.fillRect(x, RULER_H, 1, H - RULER_H);
+      }
+    }
+
+    // Bar lines (strongest)
     for (let b = Math.floor(startSec / barSec); b * barSec < endSec; b++) {
       const x = KEYS_W + (b * barSec - scrollX) * pxPerSec;
       ctx.fillStyle = C.ruleStrong;
@@ -505,16 +537,20 @@ export default function StudioDevMidi() {
       }
     }
 
-    // Hover-cell highlight — faint rectangle showing where a click
-    // would land. Skip while dragging (the note itself is the feedback).
+    // Hover-cell highlight — rectangle exactly matching the active
+    // grid cell so it always fills the cell the click will land in.
+    // Skip while dragging (the note itself is the feedback).
     if (hoverCell && !drag) {
-      const cellSec = beatSec / 4;
-      const hx = KEYS_W + (hoverCell.beatIdx * cellSec - scrollX) * pxPerSec;
+      const hxRaw = KEYS_W + (hoverCell.beatIdx * cellSec - scrollX) * pxPerSec;
       const hy = RULER_H + hoverCell.row * rowH - scrollY;
-      const hw = Math.max(2, cellSec * pxPerSec);
-      if (hx + hw > KEYS_W && hx < W && hy + rowH > RULER_H && hy < H) {
+      // Compute right edge from the NEXT cell boundary so cellsWidth
+      // in pixels exactly matches a grid cell, with no sub-pixel gap.
+      const hxRight = KEYS_W + ((hoverCell.beatIdx + 1) * cellSec - scrollX) * pxPerSec;
+      const hx = Math.max(KEYS_W, hxRaw);
+      const hw = Math.max(2, hxRight - hx);
+      if (hxRight > KEYS_W && hxRaw < W && hy + rowH > RULER_H && hy < H) {
         ctx.fillStyle = C.ink + '14';  // ~8% alpha
-        ctx.fillRect(Math.max(KEYS_W, hx), hy, hw, rowH);
+        ctx.fillRect(hx, hy, hw, rowH);
       }
     }
 

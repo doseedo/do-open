@@ -73,7 +73,33 @@ export async function initBasicPitch() {
       );
       return null;
     }
+    // Vercel + most SPAs return a 200 OK HTML shell when a static path
+    // isn't found (so client routing can handle it). That payload then
+    // fails ORT's protobuf parse deep inside the loader with an opaque
+    // error. Check magic bytes / content-type up front so we fail with
+    // a useful message.
+    const ct = (modelResp.headers.get('content-type') || '').toLowerCase();
     const modelBytes = new Uint8Array(await modelResp.arrayBuffer());
+    const looksHtml = ct.includes('text/html') ||
+      (modelBytes.length >= 5 && (
+        // "<!DOCTYPE" or "<html"
+        (modelBytes[0] === 0x3C && modelBytes[1] === 0x21) ||
+        (modelBytes[0] === 0x3C && modelBytes[1] === 0x68)
+      ));
+    // Minimum sane ONNX protobuf size (nmp.onnx is ~225KB). If we got
+    // <50KB it's either HTML fallback or a truncated response.
+    if (looksHtml || modelBytes.length < 50_000) {
+      initFailed = true;
+      console.warn(
+        `[basicPitch] ${MODEL_URL} returned ${modelBytes.length} bytes with ` +
+        `content-type "${ct || '?'}" — not a valid ONNX model. ` +
+        'Typically means the file isn\'t deployed. Commit basic_pitch.onnx ' +
+        'to public/static/models/ (and run the deploy), or add a rewrite ' +
+        'in next.config.js to serve it from R2. ' +
+        'Client-side BasicPitch disabled; pipeline continues on latentPitch.'
+      );
+      return null;
+    }
     session = await ort.InferenceSession.create(modelBytes, {
       executionProviders: ['webgpu', 'wasm'],
       ...(externalData ? { externalData } : {}),
