@@ -112,26 +112,41 @@ function _pickSafeMetadata(metadata) {
 // hash is computed against the exact shape that actually goes to R2.
 export function _stripForCloud(state) { return stripHeavyTrackMetadata(state); }
 
+// Top-level keys on state that are either recomputed on open or
+// genuinely in-memory-only. Anything listed here gets dropped before
+// we serialize the snapshot. `history` is the big one — undo/redo
+// keeps full state snapshots, and across analysis writes it balloons
+// to 90+ MB (the fingerprint diagnostic showed history=94MB). It
+// doesn't need to persist: undo stack resets on session reopen.
+const DROP_STATE_FIELDS = [
+  'history',          // { past: [...], future: [...] } of full snapshots
+  'playheadPosition', // live transport cursor
+  'isPlaying',        // transient playback flag
+  'recording',        // in-progress capture state
+  'selectedTrack',    // UI selection
+  'selectedBusId',    // UI selection
+];
+
 function stripHeavyTrackMetadata(state) {
   // Allowlist-based prune: we pull only the fields needed to restore
   // the project UI. The rest regenerates from audioUrl + cloud state
   // on next open, so localStorage stays predictably small.
   if (!state || !Array.isArray(state.buses)) return state;
-  return {
-    ...state,
-    buses: state.buses.map((bus) => {
-      const tracks = (bus.tracks || []).map((track) => {
-        if (!track) return track;
-        const out = {};
-        for (const k of Object.keys(track)) {
-          if (SAFE_TRACK_FIELDS.has(k)) out[k] = track[k];
-        }
-        if (track.metadata) out.metadata = _pickSafeMetadata(track.metadata);
-        return out;
-      });
-      return { ...bus, tracks };
-    }),
-  };
+  const out = { ...state };
+  for (const k of DROP_STATE_FIELDS) delete out[k];
+  out.buses = state.buses.map((bus) => {
+    const tracks = (bus.tracks || []).map((track) => {
+      if (!track) return track;
+      const tout = {};
+      for (const k of Object.keys(track)) {
+        if (SAFE_TRACK_FIELDS.has(k)) tout[k] = track[k];
+      }
+      if (track.metadata) tout.metadata = _pickSafeMetadata(track.metadata);
+      return tout;
+    });
+    return { ...bus, tracks };
+  });
+  return out;
 }
 
 // Soft ceiling before we even attempt setItem. localStorage per-origin
