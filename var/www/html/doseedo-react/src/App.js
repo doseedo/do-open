@@ -42,6 +42,7 @@ import DataMonitor from './components/DataMonitor/DataMonitor';
 import AdminUsers from './components/AdminUsers/AdminUsers';
 import DO1 from './components/DO1/DO1';
 import CreationView from './components/CreationView/CreationView';
+import StudioDev from './components/StudioDev/StudioDev';
 // ThemeEditor removed
 import LiquidGlassFilters from './components/LiquidGlassFilters/LiquidGlassFilters';
 
@@ -140,6 +141,17 @@ function AppContent() {
     }
   }, [location]);
 
+  // Workbench theme: /studio is now the workbench-themed StudioDev. Applies
+  // the hi-fi purple body class so global overrides (e.g. password gate)
+  // match. Removed on navigation away so the rest of the app stays default.
+  useEffect(() => {
+    const isHifiPurple = location.pathname === '/studio';
+    if (typeof document !== 'undefined') {
+      document.body.classList.toggle('theme-hifi-purple', isHifiPurple);
+      return () => document.body.classList.remove('theme-hifi-purple');
+    }
+  }, [location.pathname]);
+
   const [contentMode, setContentMode] = useState('video'); // 'video', 'midi', 'audio', 'image', or 'fx'
   const [showMidiBrowser, setShowMidiBrowser] = useState(false); // Toggle between generation panel and MIDI browser
   const [showChatWindow, setShowChatWindow] = useState(false); // Toggle for chat window
@@ -217,6 +229,7 @@ function AppContent() {
                       location.pathname.startsWith('/creation/') ? 'creation' :
                       location.pathname.startsWith('/plugins') ? 'plugins' :
                       location.pathname === '/studio' ? 'daw' :
+                      location.pathname === '/studio-legacy' ? 'daw' :
                       location.pathname === '/demo' ? 'daw' :
                       location.pathname === '/label' ? 'label' :
                       location.pathname === '/monitor' ? 'monitor' :
@@ -445,6 +458,18 @@ function AppContent() {
     setShowChatWindow(prev => !prev);
     setShowMidiBrowser(false); // Hide MIDI browser when showing chat
   };
+
+  // /studio is now the workbench-themed StudioDev: bypasses the classic
+  // navbar/sidebar/DAW chrome and renders the from-scratch studio. Uses
+  // the same AppContext + audio engine so every button here is wired to
+  // the production state. The previous /studio lives at /studio-legacy.
+  if (location.pathname === '/studio') {
+    return (
+      <PasswordGate routeName="Studio">
+        <StudioDev />
+      </PasswordGate>
+    );
+  }
 
   // Show home view with sidebar
   if (currentView === 'home') {
@@ -1037,7 +1062,10 @@ function AppContent() {
     );
   }
 
-  // Show DAW view (original /studio) - password protected
+  // Show legacy DAW view — the classic /studio pre-workbench UI. Now lives
+  // at /studio-legacy; the default /studio renders StudioDev (see early
+  // return above). /demo still lands here because it has its own demo
+  // wiring farther up the tree.
   return (
     <PasswordGate routeName="Studio">
     <div className="App">

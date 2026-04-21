@@ -105,18 +105,6 @@ const CROSS_STEM_RATIO   = 1.5;   // suppress if another stem's normalized
                                    // spot — snare precision 0.91 with minimal
                                    // recall sacrifice.
 const CROSS_STEM_WIN     = 1;     // ±1 frame search for a louder sibling
-//
-// Bleed checks that were tried AND REMOVED after testing against MDX23C
-// teacher GT on tears-for-fears:
-//   • Raw-envelope energy dominance — over-kills real hits landing in a
-//     decay tail (ratio 1.5 → 0.66 → 0.61 macro F1).
-//   • Spectral channel-signature (cosine of per-channel energy) — drumsep
-//     student outputs sub-stems with near-identical channel profiles
-//     (pairwise cos 0.96–0.97), so the signal carries no discriminative
-//     information and the check is either a no-op or kills randomly.
-// The ceiling here is set by the drumsep student, which applies a per-
-// frame MASK rather than a true channel-separating filter. Further bleed
-// reduction needs a better separator, not a smarter post-filter.
 const NOTE_DURATION_S   = 0.10;  // visual duration of each drum note in the piano roll
 const VEL_MIN           = 50;
 const VEL_MAX           = 120;

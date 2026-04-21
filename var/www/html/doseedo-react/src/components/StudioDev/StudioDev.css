@@ -1,0 +1,1609 @@
+/* ============================================================
+   StudioDev — full workbench theme port.
+   Source: /Users/hydroadmin/Downloads/daw/workbench-export/workbench.css
+   Every .wb-* rule is duplicated below, scoped to .studio-dev so it
+   doesn't leak. The old hi-fi sd-* rules live below and use the
+   same tokens via --hifi-* aliases.
+   ============================================================ */
+
+/* ---- Workbench rules, scoped to .studio-dev ------------------------ */
+.studio-dev .wb {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  background: var(--wb-bg); color: var(--wb-ink);
+  font-family: var(--wb-font-mono); font-size: 12px;
+}
+
+/* Menubar */
+.studio-dev .wb-menubar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 8px 16px;
+  background: var(--wb-surface);
+  border-bottom: 1px solid var(--wb-rule-strong);
+  font-size: 11px;
+}
+.studio-dev .wb-brand { display: flex; align-items: center; gap: 8px; }
+.studio-dev .wb-brand__mark {
+  width: 14px; height: 14px; display: grid; place-items: center;
+  background: var(--wb-ink); color: var(--wb-bg);
+  font-weight: 700; font-size: 9px;
+}
+.studio-dev .wb-brand__name { letter-spacing: 0.6px; text-transform: uppercase; font-weight: 500; }
+.studio-dev .wb-brand__version { color: var(--wb-ink-mute); font-size: 10px; }
+.studio-dev .wb-divider { color: var(--wb-ink-mute); }
+.studio-dev .wb-menu { display: flex; gap: 14px; }
+.studio-dev .wb-menu__item {
+  color: var(--wb-ink-soft); cursor: pointer;
+  background: none; border: 0; padding: 0; font: inherit;
+}
+.studio-dev .wb-menu__item:hover { color: var(--wb-ink); }
+.studio-dev .wb-menubar__meta { margin-left: auto; color: var(--wb-ink-mute); font-size: 10px; }
+
+/* Tabs */
+.studio-dev .wb-tabs {
+  display: flex;
+  background: var(--wb-surface);
+  border-bottom: 1px solid var(--wb-rule);
+  font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase;
+}
+.studio-dev .wb-tab {
+  padding: 8px 16px; color: var(--wb-ink-soft);
+  border-right: 1px solid var(--wb-rule);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  background: transparent; cursor: pointer;
+  font-family: var(--wb-font-mono);
+  font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase;
+}
+.studio-dev .wb-tab:hover { color: var(--wb-ink); }
+.studio-dev .wb-tab--active {
+  color: var(--wb-ink);
+  background: var(--wb-bg);
+  border-bottom-color: var(--wb-accent);
+}
+
+/* Empty canvas */
+.studio-dev .wb-canvas {
+  flex: 1; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  padding: 32px; min-height: 0;
+}
+.studio-dev .wb-canvas__grid {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
+  background-image:
+    linear-gradient(to right, var(--wb-rule) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--wb-rule) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.studio-dev .wb-empty {
+  position: relative; max-width: 520px; padding: 36px 44px;
+  background: var(--wb-bg); border: 1px solid var(--wb-rule-strong);
+}
+.studio-dev .wb-empty__status {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+  font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--wb-accent-warm);
+}
+.studio-dev .wb-empty__dot {
+  width: 8px; height: 8px; background: var(--wb-accent-warm);
+}
+.studio-dev .wb-empty__title {
+  margin: 0 0 14px; font-family: var(--wb-font-sans);
+  font-size: 28px; font-weight: 600; letter-spacing: -0.5px; line-height: 1.2;
+}
+.studio-dev .wb-empty__body {
+  margin: 0 0 22px; font-family: var(--wb-font-sans);
+  font-size: 13px; line-height: 1.6; color: var(--wb-ink-soft);
+}
+.studio-dev .wb-empty__actions { display: flex; gap: 6px; }
+
+.studio-dev .wb-btn {
+  padding: 8px 16px; background: var(--wb-bg); color: var(--wb-ink);
+  border: 1px solid var(--wb-rule-strong);
+  font-family: var(--wb-font-mono); font-size: 11px;
+  letter-spacing: 0.6px; text-transform: uppercase; cursor: pointer;
+}
+.studio-dev .wb-btn:hover { background: var(--wb-surface-2); }
+.studio-dev .wb-btn--primary {
+  background: var(--wb-ink); color: var(--wb-bg); border-color: var(--wb-ink);
+}
+.studio-dev .wb-btn--primary:hover { background: #000; }
+.studio-dev .wb-btn--muted { color: var(--wb-ink-soft); border-color: var(--wb-rule); }
+.studio-dev .wb-btn--chip { padding: 3px 10px; font-size: 10px; letter-spacing: 0.5px; }
+
+/* ============================================================
+   Legacy sd-* rules (pre-workbench layout).
+   ============================================================ */
+
+/* Workbench integration. Palette + typography copied directly from
+ * /Users/hydroadmin/Downloads/daw/workbench-export/workbench.css
+ * (Direction 5 — engineer/monospace aesthetic).
+ *
+ * Note: `--wb-surface` (#f2f0ea) is LIGHTER than `--wb-bg` (#e8e6e1) —
+ * menubar/sidebar/dock sit ABOVE the canvas, which is the main grey
+ * paper. The legacy --hifi-* names alias onto the workbench tokens so
+ * existing StudioDev rules pick up the new theme without a rename pass. */
+.studio-dev {
+  /* Workbench tokens (first-class). */
+  --wb-bg:           #e8e6e1;
+  --wb-surface:      #f2f0ea;
+  --wb-surface-2:    #dcd9d1;
+  --wb-ink:          #15181c;
+  --wb-ink-soft:     rgba(21, 24, 28, 0.62);
+  --wb-ink-mute:     rgba(21, 24, 28, 0.38);
+  --wb-rule:         rgba(21, 24, 28, 0.14);
+  --wb-rule-strong:  rgba(21, 24, 28, 0.30);
+  --wb-accent:       #1d4c7a;
+  --wb-accent-warm:  #c94f2c;
+  --wb-ok:           #2f6b4e;
+  --wb-lcd:          #b8e67a;
+  --wb-track-vox:    #c94f2c;
+  --wb-track-key:    #7a5d3a;
+  --wb-track-bass:   #2f6b4e;
+  --wb-track-drum:   #4a3d6b;
+  --wb-track-pad:    #1d4c7a;
+  --wb-font-sans:    "Inter", system-ui, sans-serif;
+  --wb-font-mono:    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* --hifi-* aliases so the existing stylesheet rules still work. */
+  --hifi-bg:          var(--wb-bg);
+  --hifi-surface:     var(--wb-surface);
+  --hifi-surface-2:   var(--wb-surface-2);
+  --hifi-ink:         var(--wb-ink);
+  --hifi-ink-soft:    var(--wb-ink-soft);
+  --hifi-ink-mute:    var(--wb-ink-mute);
+  --hifi-rule:        var(--wb-rule);
+  --hifi-rule-strong: var(--wb-rule-strong);
+  --hifi-accent:      var(--wb-accent);
+  --hifi-accent-deep: #0d2c52;
+  --hifi-accent-soft: rgba(29, 76, 122, 0.12);
+  --hifi-serif:       var(--wb-font-sans);
+  --hifi-sans:        var(--wb-font-sans);
+  --hifi-mono:        var(--wb-font-mono);
+
+  position: fixed; inset: 0;
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);        /* workbench is mono-first */
+  font-size: 12px;                          /* workbench body size */
+  -webkit-font-smoothing: antialiased;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  z-index: 1;
+
+}
+.studio-dev *, .studio-dev *::before, .studio-dev *::after { box-sizing: border-box; }
+.studio-dev button { font-family: inherit; font-size: inherit; color: inherit; }
+
+/* ==========================================================================
+   Header / menubar — ported from workbench.css § Menubar.
+   ========================================================================== */
+.sd-header {
+  height: auto; flex: 0 0 auto; min-height: 36px;
+  background: var(--wb-surface);
+  border-bottom: 1px solid var(--wb-rule-strong);
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+}
+.sd-brand-area { display: flex; align-items: center; gap: 14px; }
+.sd-header-undo-group {
+  display: flex; align-items: center; gap: 2px;
+  padding-left: 4px;
+  border-left: 1px solid var(--hifi-rule);
+  margin-left: -4px;
+}
+.sd-header-undo-group .sd-icon-btn { padding: 6px; }
+.sd-brand { display: flex; align-items: center; gap: 8px; }
+/* Square brand mark — filled ink with the bg-color "d" glyph inside. */
+.sd-brand-dot {
+  width: 14px; height: 14px; border-radius: 0;
+  background: var(--wb-ink); color: var(--wb-bg);
+  display: grid; place-items: center;
+  font-family: var(--wb-font-mono);
+  font-size: 9px; font-weight: 700;
+}
+.sd-brand-dot::before { content: "d"; }
+.sd-brand-name {
+  font-family: var(--wb-font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: 0.6px; text-transform: uppercase;
+  color: var(--wb-ink);
+}
+.sd-brand-tag {
+  font-family: var(--wb-font-mono);
+  font-size: 10px; color: var(--wb-ink-mute);
+  letter-spacing: 0.4px;
+  text-transform: lowercase;
+}
+.sd-brand-tag::before { content: "v0.42.1"; }
+.sd-brand-tag > * { display: none; }  /* hide the "studio" label text — workbench shows version instead */
+
+.sd-doc-title  {
+  text-align: center;
+  font-family: var(--wb-font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: 0.6px; text-transform: uppercase;
+  font-style: normal;
+  color: var(--wb-ink);
+}
+.sd-doc-sub {
+  color: var(--wb-ink-mute); font-style: normal;
+  font-size: 10px; margin-left: 6px; letter-spacing: 0.4px; text-transform: lowercase;
+}
+.sd-header-right { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+.sd-meta {
+  font-family: var(--wb-font-mono); font-size: 10px;
+  color: var(--wb-ink-mute); letter-spacing: 0.4px; text-transform: lowercase;
+}
+.sd-icon-btn {
+  background: none; border: 0; padding: 2px; cursor: pointer;
+  display: inline-flex; color: var(--wb-ink-soft);
+}
+.sd-icon-btn:hover { color: var(--wb-ink); }
+.sd-avatar {
+  width: 18px; height: 18px; border-radius: 0;
+  background: var(--wb-ink); color: var(--wb-bg);
+  font-family: var(--wb-font-mono); font-size: 10px; font-weight: 700;
+  display: grid; place-items: center;
+}
+
+/* ---------- Main split ---------- */
+.sd-main { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+
+/* ---------- Resize handles ---------- */
+.sd-resize { flex-shrink: 0; background: transparent; position: relative; z-index: 10; }
+.sd-resize:hover       { background: rgba(21, 24, 28, 0.08); }
+.sd-resize.active      { background: rgba(21, 24, 28, 0.14); }
+.sd-resize-v {
+  /* Sits between sidebar and canvas. Drag horizontally. */
+  width: 4px; cursor: ew-resize;
+  border-left: 1px solid var(--hifi-rule);
+  border-right: 1px solid var(--hifi-rule);
+}
+.sd-resize-h {
+  /* Sits between canvas content and bottom (transport+timeline). Drag vertically. */
+  height: 4px; cursor: ns-resize;
+  border-top: 1px solid var(--hifi-rule);
+  border-bottom: 1px solid var(--hifi-rule);
+}
+
+/* ============================================================
+   Sidebar — port of the workbench spec (workbench.css § Sidebar).
+   260 px wide, surface cream, JetBrains Mono everywhere, dense rows
+   with a leading 2-digit index. Section heads show `[count]` chips.
+   ============================================================ */
+.sd-sidebar {
+  width: 260px; flex: 0 0 260px;
+  background: var(--wb-surface);
+  border-right: 1px solid var(--wb-rule);
+  padding: 0;
+  overflow: auto;
+  display: flex; flex-direction: column;
+  font-family: var(--wb-font-mono) !important;
+  font-size: 11px;                 /* matches .wb-inst */
+  line-height: 1.5;
+  color: var(--wb-ink);
+  -webkit-font-smoothing: antialiased;
+}
+.sd-sidebar *:not(input):not(textarea):not(select) {
+  font-family: var(--wb-font-mono) !important;
+}
+
+/* Hide the PNG icons — workbench rows are pure text. */
+.sd-sidebar .sd-inst-row-img,
+.sd-sidebar .sd-inst-img { display: none !important; }
+
+/* Top heading slot ("Studio" / sub-line). Workbench doesn't show these
+ * — the sidebar opens straight into section heads. Hide them. */
+.sd-sidebar .sd-side-title,
+.sd-sidebar .sd-side-sub { display: none; }
+
+/* ---------- Tabs (Instruments/Vocals/Drums) — compact text row ---------- */
+.sd-sidebar .sd-tabs {
+  border-bottom: 1px solid var(--wb-rule);
+  border-top: 1px solid var(--wb-rule);
+  margin: 0; gap: 0;
+}
+.sd-sidebar .sd-tab {
+  flex: 1;
+  padding: 8px 0 10px;
+  font-size: 10px;
+  color: var(--wb-ink-soft);
+  text-align: center;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none; cursor: pointer;
+  transition: color 100ms;
+}
+.sd-sidebar .sd-tab:hover { color: var(--wb-ink); }
+.sd-sidebar .sd-tab.active {
+  color: var(--wb-ink);
+  font-weight: 500;
+  border-bottom-color: var(--wb-accent);
+  background: var(--wb-bg);
+}
+
+/* ---------- Section head (SOURCES [N], INSTRUMENTS [N]) — workbench .wb-section-head */
+.sd-sidebar .sd-label {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px;
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--wb-ink-mute);
+  border-bottom: 1px solid var(--wb-rule);
+  margin: 0;
+}
+.sd-sidebar .sd-label + .sd-grid-3,
+.sd-sidebar .sd-label + .sd-inst-palette { border-top: 0; }
+.sd-sidebar .sd-label::after {
+  content: "[" attr(data-count) "]";
+}
+.sd-sidebar .sd-label:not([data-count])::after { content: ""; }
+
+/* ---------- Source tiles (UPL / REC / BRW) — workbench grid ---------- */
+.sd-sidebar .sd-grid-3 {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  padding: 12px;
+  margin: 0;
+}
+.sd-sidebar .sd-tile {
+  padding: 10px 4px;
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-rule);
+  border-radius: 0;
+  text-align: center;
+  cursor: pointer;
+  color: var(--wb-ink);
+  transition: background 100ms;
+}
+.sd-sidebar .sd-tile:hover { background: var(--wb-surface-2); }
+.sd-sidebar .sd-tile svg { width: 14px; height: 14px; }
+.sd-sidebar .sd-tile-label {
+  font-size: 9px;
+  color: var(--wb-ink-soft);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+/* ---------- Instrument list rows (workbench .wb-inst) ---------- */
+.sd-sidebar .sd-inst-palette { min-height: 260px; }
+.sd-sidebar .sd-inst-list {
+  gap: 0;
+  padding: 0;
+}
+.sd-sidebar .sd-inst-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--wb-rule);
+  border-radius: 0;
+  color: var(--wb-ink);
+  cursor: pointer; text-align: left;
+  font-size: 11px;
+  position: relative;
+}
+.sd-sidebar .sd-inst-row:hover,
+.sd-sidebar .sd-inst-row.open { background: var(--wb-surface-2); }
+
+.sd-sidebar .sd-inst-row-caret {
+  width: 10px;
+  font-size: 9px;
+  color: var(--wb-ink-mute);
+  flex-shrink: 0;
+  text-align: right;
+  order: 9;
+}
+.sd-sidebar .sd-inst-row-dot {
+  color: var(--wb-ink-mute);
+  font-size: 12px; line-height: 1;
+}
+
+/* 2-digit numeric prefix, 18 px slot per workbench spec. */
+.sd-sidebar .sd-inst-row-num {
+  font-family: var(--wb-font-mono) !important;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--wb-ink-mute);
+  flex-shrink: 0;
+  width: 18px;
+  letter-spacing: 0;
+  text-align: left;
+}
+.sd-sidebar .sd-inst-row-sub .sd-inst-row-num { width: 36px; }
+
+.sd-sidebar .sd-inst-row-name {
+  flex: 1; min-width: 0;
+  font-family: var(--wb-font-mono) !important;
+  font-size: 11px; font-weight: 400;
+  text-transform: uppercase; letter-spacing: 0.4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: inherit;
+}
+.sd-sidebar .sd-inst-row-meta {
+  font-size: 10px; color: var(--wb-ink-mute);
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+/* Nested subgroups — same type treatment as a normal .wb-inst row, just
+ * indented with a 1-px guide. No dimmed text, no surface tint. */
+.sd-sidebar .sd-inst-row-sub {
+  padding-left: 26px;
+  position: relative;
+  background: transparent;
+}
+.sd-sidebar .sd-inst-row-sub::before {
+  content: "";
+  position: absolute;
+  left: 12px; top: 0; bottom: 0;
+  border-left: 1px solid var(--wb-rule);
+}
+.sd-sidebar .sd-inst-row-sub .sd-inst-row-name {
+  color: var(--wb-ink);
+  font-size: 11px; font-weight: 400;
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+.sd-sidebar .sd-inst-row-sub .sd-inst-row-meta {
+  color: var(--wb-ink-mute);
+  font-size: 10px;
+  font-family: var(--wb-font-mono) !important;
+}
+.sd-sidebar .sd-inst-row-sub .sd-inst-row-num {
+  color: var(--wb-ink-mute);
+  font-size: 10px;
+}
+.sd-sidebar .sd-inst-row-sub:hover {
+  background: var(--wb-surface-2);
+}
+
+/* ---------- Grid-view tile (alternate layout, also workbench-ified) ---------- */
+.sd-sidebar .sd-inst.sd-inst-group {
+  padding: 12px 8px;
+  background: transparent;
+  border: 1px solid var(--hifi-rule);
+  border-radius: 2px;
+}
+.sd-sidebar .sd-inst.sd-inst-group:hover { border-color: var(--hifi-rule-strong); background: rgba(21, 24, 28,0.03); }
+.sd-sidebar .sd-inst-name {
+  font-size: 11px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.6px;
+  margin-top: 8px;
+}
+.sd-sidebar .sd-inst-sub {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--hifi-ink-mute); opacity: 0.7;
+}
+
+/* Layout toggle (list / grid) — small icon pill. */
+.sd-sidebar .sd-palette-toggle { background: transparent; border: 1px solid var(--hifi-rule); }
+.sd-sidebar .sd-palette-toggle button.on {
+  background: transparent;
+  color: var(--hifi-accent);
+}
+/* When the sidebar is hosting a FULL-PANEL component (chat / browse /
+ * standalone generate view), drop the padding so that panel fills edge-to-
+ * edge. `.sd-gen.sd-gen-embedded` is excluded because it's an inline
+ * appendix inside the normal instrument sidebar. */
+.sd-sidebar:has(> .sd-chat),
+.sd-sidebar:has(> .sd-gen:not(.sd-gen-embedded)),
+.sd-sidebar:has(> .sd-sidebar-embed) { padding: 0; overflow: hidden; }
+
+/* Wrapper around MIDIBrowser so it inherits the flex column layout of the sidebar. */
+.sd-sidebar-embed {
+  display: flex; flex-direction: column; height: 100%;
+}
+.sd-sidebar-embed-body { flex: 1; min-height: 0; overflow: auto; }
+
+/* Force the chat / generate / browse components to fill the sidebar
+ * column. They were originally designed for the overlay card, where
+ * they had a fixed height. In the sidebar they need to expand. */
+.sd-sidebar .sd-chat,
+.sd-sidebar .sd-gen,
+.sd-sidebar .sd-midibrowser {
+  position: static;
+  height: 100%;
+  display: flex; flex-direction: column;
+}
+
+/* ---------- Themed MIDI browser ---------- */
+.sd-midibrowser {
+  display: flex; flex-direction: column;
+  background: var(--hifi-surface); color: var(--hifi-ink);
+}
+.sd-midibrowser-search {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--hifi-rule);
+  background: var(--hifi-surface);
+}
+.sd-midibrowser-search > i.fa-magnifying-glass {
+  color: var(--hifi-ink-mute); font-size: 12px;
+}
+.sd-midibrowser-search-input {
+  flex: 1;
+  background: transparent; color: var(--hifi-ink);
+  border: 0; outline: 0;
+  font-family: var(--hifi-sans); font-size: 13px;
+}
+.sd-midibrowser-search-input::placeholder { color: var(--hifi-ink-mute); }
+.sd-midibrowser-search-clear {
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--hifi-ink-mute); padding: 2px 6px;
+}
+.sd-midibrowser-search-clear:hover { color: var(--hifi-ink); }
+
+.sd-midibrowser-list {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 4px 0;
+}
+.sd-midibrowser-row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: 0; border-bottom: 1px solid var(--hifi-rule);
+  color: var(--hifi-ink);
+  font-family: var(--hifi-sans); font-size: 13px;
+  text-align: left; cursor: pointer;
+}
+.sd-midibrowser-row:hover { background: rgba(21, 24, 28, 0.04); }
+.sd-midibrowser-row.selected {
+  background: var(--hifi-accent-soft);
+  border-left: 2px solid var(--hifi-accent);
+  padding-left: 12px;
+}
+.sd-midibrowser-row:disabled { opacity: 0.6; cursor: wait; }
+.sd-midibrowser-chip {
+  width: 4px; height: 22px; border-radius: 1px; flex-shrink: 0;
+}
+.sd-midibrowser-file {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sd-midibrowser-ext {
+  font-family: var(--hifi-mono); font-size: 9px;
+  color: var(--hifi-ink-mute); letter-spacing: .4px;
+  text-transform: uppercase;
+  padding: 2px 6px; border: 1px solid var(--hifi-rule); border-radius: 3px;
+}
+
+.sd-midibrowser-state {
+  padding: 24px 14px; text-align: center;
+  color: var(--hifi-ink-soft); font-size: 12px;
+  font-family: var(--hifi-sans);
+}
+.sd-midibrowser-error { color: #e07556; }
+
+.sd-midibrowser-footer {
+  padding: 12px 14px;
+  border-top: 1px solid var(--hifi-rule);
+  background: var(--hifi-surface);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.sd-midibrowser-selected { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.sd-midibrowser-selected .sd-midi-kv-v {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 220px;
+}
+
+.sd-midibrowser-hint {
+  padding: 8px 14px;
+  border-top: 1px solid var(--hifi-rule);
+  background: var(--hifi-bg);
+  font-family: var(--hifi-mono); font-size: 10px;
+  color: var(--hifi-ink-mute); letter-spacing: .3px;
+  text-align: center;
+}
+.sd-side-title { font-family: var(--hifi-serif); font-size: 22px; font-weight: 400; letter-spacing: -.3px; }
+.sd-side-sub   { font-size: 12px; color: var(--hifi-ink-soft); margin: 4px 0 22px; }
+
+.sd-tabs { display: flex; border-bottom: 1px solid var(--hifi-rule); margin-bottom: 20px; }
+.sd-tab  {
+  flex: 1;
+  padding: 8px 14px 10px; font-size: 12px; color: var(--hifi-ink-soft); font-weight: 400;
+  border-bottom: 1.5px solid transparent; margin-bottom: -1px; cursor: pointer;
+  background: none; border-left: 0; border-right: 0; border-top: 0;
+  text-align: center;
+}
+.sd-tab.active { color: var(--hifi-ink); font-weight: 500; border-bottom-color: var(--hifi-accent); }
+
+.sd-label   { font-size: 11px; color: var(--hifi-ink-mute); font-family: var(--hifi-mono); letter-spacing: .4px; text-transform: uppercase; margin-bottom: 10px; }
+/* Palette header labels — group label vs subgroup breadcrumb — must be
+ * the same height so the grid below doesn't jump when toggling tiers. */
+.sd-inst-palette > .sd-label,
+.sd-inst-palette > .sd-inst-crumb {
+  min-height: 22px;
+  display: flex; align-items: center;
+}
+.sd-grid-3  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 24px; }
+.sd-grid-2  { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.sd-tile {
+  background: var(--hifi-surface-2); border: 1px solid var(--hifi-rule); border-radius: 6px;
+  padding: 16px 10px; text-align: center; cursor: pointer; color: var(--hifi-ink);
+}
+.sd-tile:hover { border-color: var(--hifi-rule-strong); }
+.sd-tile-label { font-size: 11px; color: var(--hifi-ink-soft); margin-top: 8px; }
+
+.sd-inst {
+  background: var(--hifi-surface-2); border: 1px solid var(--hifi-rule); border-radius: 6px;
+  padding: 14px 12px; cursor: pointer; color: var(--hifi-ink); text-align: left;
+}
+.sd-inst.active { border-color: rgba(29, 76, 122, .33); }
+.sd-inst.active .sd-inst-icon { color: var(--hifi-accent); }
+.sd-inst-name { font-family: var(--hifi-serif); font-size: 15px; font-weight: 500; margin-top: 10px; }
+.sd-inst-sub  { font-size: 11px; color: var(--hifi-ink-soft); margin-top: 2px; }
+.sd-inst-img  {
+  width: 34px; height: 34px;
+  object-fit: contain;
+  opacity: 0.9;
+  /* PNGs are mostly white on black; invert so they match the hi-fi palette. */
+  filter: brightness(0) saturate(0%) invert(90%) sepia(18%) saturate(420%) hue-rotate(346deg) brightness(94%) contrast(87%);
+  display: block; margin: 0 auto;
+}
+.sd-inst:hover .sd-inst-img,
+.sd-inst.active .sd-inst-img { opacity: 1; }
+.sd-inst-group { padding: 12px 8px; }
+.sd-inst-group .sd-inst-name { margin-top: 8px; font-size: 13px; }
+
+.sd-inst-crumb {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--hifi-ink-soft);
+  text-transform: none; letter-spacing: 0; font-size: 12px;
+  font-family: var(--hifi-sans);
+}
+.sd-inst-back {
+  width: 20px; height: 20px; padding: 0;
+  background: transparent; border: 1px solid var(--hifi-rule);
+  border-radius: 3px;
+  color: var(--hifi-ink-soft);
+  display: grid; place-items: center;
+  font-size: 10px; cursor: pointer;
+}
+.sd-inst-back:hover { color: var(--hifi-ink); border-color: var(--hifi-rule-strong); }
+
+/* Fixed-height container around the group/subgroup grids so switching
+ * tiers (or tabs) doesn't shift the Generate form below it. Uses explicit
+ * `height` (not min-height) so the container is ALWAYS the same size —
+ * smaller tier views leave whitespace at the bottom rather than collapsing. */
+.sd-inst-palette { min-height: 280px; }
+
+/* Palette header — section-head label on the left, list/grid toggle
+   tucked at the right. Full-bleed to match workbench's .wb-section-head. */
+.sd-sidebar .sd-inst-palette-head {
+  position: relative;
+  margin: 0;
+}
+.sd-sidebar .sd-inst-palette-head > .sd-label {
+  padding-right: 64px;   /* room for the toggle */
+}
+.sd-sidebar .sd-inst-palette-head .sd-palette-toggle {
+  position: absolute;
+  right: 8px; top: 50%;
+  transform: translateY(-50%);
+}
+.sd-palette-toggle {
+  display: flex; gap: 2px;
+  border: 1px solid var(--hifi-rule); border-radius: 4px;
+  background: var(--hifi-surface-2); padding: 2px;
+}
+.sd-palette-toggle button {
+  width: 22px; height: 22px; padding: 0;
+  background: transparent; border: 0; border-radius: 3px;
+  color: var(--hifi-ink-mute); cursor: pointer;
+  display: grid; place-items: center;
+  font-size: 10px;
+}
+.sd-palette-toggle button:hover { color: var(--hifi-ink); }
+.sd-palette-toggle button.on {
+  background: var(--hifi-accent-soft);
+  color: var(--hifi-accent);
+}
+
+/* --- List-style palette (workbench-inspired) --- */
+.sd-inst-list {
+  display: flex; flex-direction: column;
+  gap: 1px;
+  padding-bottom: 8px;
+}
+.sd-inst-list .sd-label { margin-bottom: 8px; }
+
+.sd-inst-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px;
+  width: 100%;
+  background: transparent; border: 0;
+  color: var(--hifi-ink);
+  cursor: pointer; text-align: left;
+  font-family: var(--hifi-sans); font-size: 13px;
+  border-radius: 3px;
+  transition: background 120ms;
+}
+.sd-inst-row:hover        { background: rgba(21, 24, 28, 0.04); }
+.sd-inst-row.open         { background: rgba(29, 76, 122, 0.08); }
+.sd-inst-row-caret {
+  width: 12px; text-align: center;
+  color: var(--hifi-ink-mute); font-size: 10px; flex-shrink: 0;
+}
+.sd-inst-row-dot { color: var(--hifi-ink-mute); font-weight: 600; }
+.sd-inst-row-img {
+  width: 20px; height: 20px; object-fit: contain; flex-shrink: 0;
+  /* Same cream-tint filter the tile icons use. */
+  filter: brightness(0) saturate(0%) invert(90%) sepia(18%) saturate(420%) hue-rotate(346deg) brightness(94%) contrast(87%);
+  opacity: 0.85;
+}
+.sd-inst-row:hover .sd-inst-row-img { opacity: 1; }
+.sd-inst-row-name {
+  flex: 1; min-width: 0;
+  font-family: var(--hifi-serif); font-size: 14px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sd-inst-row-meta {
+  font-family: var(--hifi-mono); font-size: 10px;
+  color: var(--hifi-ink-mute); letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+.sd-inst-row-sub {
+  padding-left: 26px;
+  background: rgba(0, 0, 0, 0.14);
+}
+.sd-inst-row-sub .sd-inst-row-name { font-size: 13px; color: var(--hifi-ink-soft); }
+.sd-inst-row-sub:hover { background: rgba(29, 76, 122, 0.12); }
+.sd-inst-row-sub:hover .sd-inst-row-name { color: var(--hifi-ink); }
+
+/* ---------- Canvas ---------- */
+.sd-canvas-col {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column;
+  background: var(--hifi-bg);
+  overflow: hidden;                /* allow flex children to shrink */
+}
+.sd-canvas {
+  flex: 1; position: relative;
+  display: flex; align-items: stretch; justify-content: stretch;
+  min-height: 0; overflow: hidden;
+}
+/* Mode components fill this flex-1 column. They're absolute inset:0
+ * inside it, so they reach every edge without overlapping the rail. */
+.sd-canvas-main { flex: 1; min-width: 0; position: relative; overflow: hidden; }
+.sd-canvas-main .sd-hero { padding: 40px; margin: auto; }
+.sd-mode-rail {
+  flex-shrink: 0;
+  width: 60px;
+  padding: 10px 0; gap: 2px;
+  display: flex; flex-direction: column; align-items: center;
+  background: transparent;
+  border-right: 1px solid var(--hifi-rule);
+}
+/* Top-bar variant: horizontal strip above the canvas, like workbench. */
+.sd-mode-rail.sd-mode-rail-top {
+  width: auto; height: 40px;
+  flex-direction: row; align-items: center;
+  gap: 4px; padding: 6px 12px;
+  border-right: 0;
+  border-bottom: 1px solid var(--hifi-rule);
+  background: var(--hifi-surface);
+}
+.sd-mode-rail.sd-mode-rail-top .sd-mode {
+  flex-direction: row; width: auto; gap: 6px;
+  padding: 5px 10px;
+  min-width: 72px;
+}
+.sd-mode-rail.sd-mode-rail-top .sd-mode-label { font-size: 10px; }
+.sd-mode {
+  width: 52px; padding: 8px 6px;
+  text-align: center; cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--hifi-ink-soft);     /* same cream as sidebar inactive tabs */
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  transition: color 120ms, background 120ms, border-color 120ms;
+}
+.sd-mode svg,
+.sd-mode svg path {
+  stroke: var(--hifi-ink-soft) !important;
+  fill: none !important;
+}
+.sd-mode.active svg,
+.sd-mode.active svg path { stroke: var(--hifi-accent) !important; }
+.sd-mode:hover svg,
+.sd-mode:hover svg path { stroke: var(--hifi-ink) !important; }
+.sd-mode:hover {
+  color: var(--hifi-ink);
+  background: rgba(21, 24, 28, 0.04);
+}
+.sd-mode.active {
+  color: var(--hifi-accent);
+  background: var(--hifi-accent-soft);
+  border-color: rgba(29, 76, 122, 0.35);
+}
+.sd-mode.active .sd-mode-label { color: var(--hifi-accent); }
+.sd-mode-label {
+  font-size: 9px; font-family: var(--hifi-mono);
+  letter-spacing: .6px; text-transform: uppercase;
+  color: var(--hifi-ink-soft);
+}
+.sd-mode:hover .sd-mode-label      { color: var(--hifi-ink); }
+.sd-mode.active .sd-mode-label     { color: var(--hifi-accent); }
+
+.sd-hero { text-align: center; max-width: 420px; }
+.sd-hero-eyebrow { font-family: var(--hifi-serif); font-size: 13px; font-style: italic; color: var(--hifi-ink-mute); letter-spacing: .3px; margin-bottom: 18px; }
+.sd-hero-title   { font-family: var(--hifi-serif); font-size: 34px; font-weight: 400; letter-spacing: -.8px; line-height: 1.15; margin-bottom: 14px; color: var(--hifi-ink); }
+.sd-hero-title em { font-style: italic; }
+.sd-hero-body    { font-size: 14px; color: var(--hifi-ink-soft); line-height: 1.55; margin-bottom: 28px; }
+.sd-hero-cta     { display: inline-flex; gap: 10px; }
+
+.sd-btn {
+  padding: 11px 22px; border-radius: 4px; font-size: 13px; font-weight: 500; cursor: pointer;
+  border: 0; background: var(--hifi-accent-deep); color: var(--hifi-ink);
+  font-family: var(--hifi-sans); letter-spacing: 0.1px;
+  transition: background 120ms;
+}
+.sd-btn:hover:not(:disabled) { background: var(--hifi-accent); color: var(--hifi-bg); }
+.sd-btn:disabled             { opacity: 0.55; cursor: not-allowed; }
+.sd-btn.secondary { background: transparent; color: var(--hifi-ink); border: 1px solid var(--hifi-rule-strong); padding: 11px 18px; }
+.sd-btn.ghost     { background: transparent; color: var(--hifi-ink); border: 1px solid var(--hifi-rule); padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+.sd-btn.ghost.on  { border-color: var(--hifi-accent); color: var(--hifi-accent); }
+
+/* Master meter */
+.sd-meter {
+  width: 56px; height: 6px; border-radius: 3px;
+  background: var(--hifi-surface-2); overflow: hidden; position: relative;
+}
+.sd-meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--hifi-accent-deep) 0%, var(--hifi-accent) 100%);
+  transition: width 0.15s ease-out;
+}
+
+/* ---------- Bottom (transport + timeline) ---------- */
+.sd-bottom {
+  border-top: 1px solid var(--hifi-rule);
+  background: var(--hifi-surface);
+  flex-shrink: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+.sd-transport {
+  display: flex; align-items: center; gap: 16px; padding: 10px 20px;
+  border-bottom: 1px solid var(--hifi-rule);
+}
+.sd-transport-group { display: flex; gap: 6px; }
+.sd-tbtn {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1px solid var(--hifi-rule); background: var(--hifi-surface-2);
+  display: grid; place-items: center; cursor: pointer; color: var(--hifi-ink); padding: 0;
+}
+.sd-tbtn.rec { color: var(--hifi-accent); }
+.sd-time { font-family: var(--hifi-mono); font-size: 22px; font-weight: 500; letter-spacing: -.5px; min-width: 92px; }
+.sd-divider { width: 1px; height: 22px; background: var(--hifi-rule); }
+.sd-kv { display: flex; align-items: center; gap: 8px; }
+.sd-kv-k { font-size: 10px; color: var(--hifi-ink-mute); font-family: var(--hifi-mono); letter-spacing: .5px; text-transform: uppercase; }
+.sd-kv-v { font-family: var(--hifi-mono); font-size: 14px; color: var(--hifi-ink); }
+.sd-kv-u { font-size: 11px; color: var(--hifi-ink-soft); }
+.sd-kv-input {
+  width: 50px; background: var(--hifi-surface-2); color: var(--hifi-ink);
+  border: 1px solid var(--hifi-rule); border-radius: 3px;
+  padding: 2px 6px; text-align: center; font-family: var(--hifi-mono); font-size: 13px;
+}
+.sd-spacer { flex: 1; }
+
+/* ---- Timeline (workbench .wb-timeline spec: 35 px rows, 230 px tracklist, blue accent on ruler, warm-orange playhead) */
+.sd-timeline {
+  display: flex; flex: 1; min-height: 0;
+  --row-h: 35px;
+  background: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+}
+.sd-tracks-col {
+  width: 230px; flex: 0 0 230px;
+  border-right: 1px solid var(--wb-rule);
+  background: var(--wb-surface);
+  overflow-y: auto; overflow-x: hidden;
+}
+.sd-tracks-header {
+  height: 22px; border-bottom: 1px solid var(--wb-rule);
+  display: flex; align-items: center; padding: 0 10px;
+  font-family: var(--wb-font-mono);
+  font-size: 9px; letter-spacing: 0.8px; text-transform: uppercase;
+  color: var(--wb-ink-mute);
+}
+/* Track + bus rows share a fixed 28 px "gutter" on the left so the color
+   swatches line up whether or not there's a caret in front. The bus row
+   puts a 20 px caret inside an 8-px-padded slot; the track row uses a
+   28 px padding-left (no caret). Both land the color at exactly x = 28 px. */
+.sd-track-row {
+  height: var(--row-h, 35px); border-bottom: 1px solid var(--wb-rule);
+  display: flex; align-items: center;
+  padding: 0 10px;
+  font-family: var(--wb-font-mono);
+  font-size: 10px; letter-spacing: 0.3px;
+  color: var(--wb-ink);
+}
+.sd-track-row.indented { padding-left: 22px; background: transparent; }
+.sd-track-row .sd-track-color {
+  width: 3px; height: 18px; margin-right: 6px; border-radius: 0;
+  flex-shrink: 0; position: relative;
+}
+.sd-track-row .sd-track-name  {
+  margin-right: 10px; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 10px; font-weight: 500; color: var(--wb-ink);
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+.sd-track-pan input[type=range] { width: 42px; accent-color: var(--hifi-accent); }
+.sd-track-pan { margin-right: 8px; }
+.sd-track-meter {
+  width: 36px; height: 6px; border-radius: 3px;
+  background: var(--hifi-surface-2); overflow: hidden; margin-right: 8px;
+}
+.sd-track-meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--hifi-accent-deep) 0%, var(--hifi-accent) 70%, #e07556 100%);
+  transition: width 66ms linear;
+}
+
+/* Color picker popover — anchored under the color swatch. */
+.sd-color-picker {
+  position: absolute; left: 28px; top: 30px; z-index: 40;
+  background: var(--hifi-surface); border: 1px solid var(--hifi-rule-strong);
+  border-radius: 4px; padding: 4px;
+  display: grid; grid-template-columns: repeat(7, 16px); gap: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.sd-color-swatch {
+  width: 16px; height: 16px; border-radius: 2px;
+  border: 1px solid rgba(21, 24, 28, 0.2);
+  cursor: pointer; padding: 0;
+}
+.sd-color-swatch:hover { border-color: var(--hifi-ink); }
+
+/* Bus reverb send */
+.sd-bus-reverb {
+  display: flex; align-items: center; gap: 4px;
+  margin-right: 8px;
+}
+
+/* Bus header row — sits flush against the tracks column.
+ * The caret is absolute-positioned inside the 28 px gutter so it can be
+ * visually centered between the row edge and the color strip without
+ * pushing the color out of the 28 px alignment it shares with tracks. */
+.sd-bus-row {
+  position: relative;
+  height: var(--row-h, 35px); border-bottom: 1px solid var(--wb-rule-strong);
+  display: flex; align-items: center;
+  padding: 0 10px 0 22px;
+  background: var(--wb-surface);
+  cursor: pointer;
+  font-family: var(--wb-font-mono);
+}
+.sd-bus-caret {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 20px; height: 20px;
+  background: transparent; border: 0; cursor: pointer; padding: 0;
+  color: var(--wb-ink-soft); display: grid; place-items: center;
+}
+.sd-bus-caret:hover { color: var(--wb-ink); }
+.sd-bus-color {
+  width: 3px; height: 18px; margin-right: 6px; border-radius: 0;
+  flex-shrink: 0;
+}
+.sd-bus-name {
+  flex: 1;
+  background: transparent; color: var(--wb-ink);
+  border: 0; outline: 0;
+  font-family: var(--wb-font-mono);
+  font-size: 10px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.4px;
+  padding: 2px 4px; min-width: 0; margin: 0 6px;
+}
+.sd-bus-name:focus { background: var(--wb-bg); }
+.sd-bus-row.selected { background: var(--wb-surface-2); border-bottom-color: var(--wb-accent); }
+
+/* Bus-level lane — workbench keeps this same grey as the paper bg so the
+   bus master reads as a distinct strip from the track lanes below. */
+.sd-lane.bus-lane {
+  background: var(--wb-surface);
+  border-bottom: 1px solid var(--wb-rule-strong);
+}
+.sd-clip.sd-summary {
+  top: 4px; bottom: 4px;
+  cursor: pointer;
+  opacity: 0.95;
+  padding: 2px 4px;
+}
+.sd-clip.sd-summary .sd-clip-label { margin-bottom: 0; }
+.sd-clip.sd-summary.master {
+  top: 2px; bottom: 2px;
+  padding: 2px 6px;
+}
+.sd-track-color { width: 4px; height: 22px; border-radius: 1px; }
+.sd-track-name  { flex: 1; font-size: 13px; font-weight: 500; color: var(--hifi-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sd-track-ms    { display: flex; gap: 4px; }
+.sd-ms-btn {
+  width: 20px; height: 20px; border-radius: 3px;
+  border: 1px solid var(--hifi-rule);
+  display: grid; place-items: center;
+  font-size: 9px; font-family: var(--hifi-mono); color: var(--hifi-ink-soft);
+  background: transparent; cursor: pointer;
+}
+
+.sd-lanes {
+  flex: 1; min-width: 0; min-height: 0;
+  overflow-y: auto; overflow-x: hidden;
+  position: relative; cursor: pointer;
+  /* Vertical bar divisions every 12.5 % (same repeating gradient workbench
+     uses for .wb-grid). */
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(12.5% - 1px),
+    var(--wb-rule) calc(12.5% - 1px),
+    var(--wb-rule) 12.5%
+  );
+}
+.sd-ruler {
+  height: 22px; border-bottom: 1px solid var(--wb-rule);
+  display: flex; align-items: flex-end; padding-bottom: 3px;
+  position: relative;
+}
+.sd-ruler .sd-tick {
+  flex: 1; padding-left: 3px;
+  font-family: var(--wb-font-mono);
+  font-size: 9px; color: var(--wb-ink-mute);
+  letter-spacing: 0;
+}
+.sd-ruler .sd-tick:nth-child(2n+1) { color: var(--wb-ink-soft); }
+
+.sd-lane { height: var(--row-h, 35px); border-bottom: 1px solid var(--wb-rule); position: relative; background: transparent; }
+.sd-lane.even, .sd-lane.odd { background: transparent; }
+
+.sd-clip {
+  position: absolute; top: 2px; bottom: 2px; border-radius: 0; overflow: hidden;
+  padding: 2px; box-sizing: border-box; cursor: grab;
+  user-select: none;
+}
+.sd-clip:active { cursor: grabbing; }
+.sd-clip-resize {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 5px; cursor: ew-resize;
+  background: rgba(21, 24, 28, 0.06);
+  border-left: 1px solid rgba(21, 24, 28, 0.15);
+}
+.sd-clip-resize:hover { background: rgba(21, 24, 28, 0.20); }
+.sd-clip-label {
+  font-family: var(--wb-font-mono);
+  font-size: 8px; letter-spacing: 0.4px;
+  text-transform: uppercase;
+  margin-bottom: 1px;
+}
+
+.sd-playhead {
+  position: absolute; top: 0; bottom: 0;
+  width: 1px; margin-left: 0;
+  background: var(--wb-accent-warm);
+  box-shadow: none;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Loop region painted on the ruler (and spilling into all lanes). */
+.sd-loop-region {
+  position: absolute; top: 0; bottom: -9999px;
+  background: rgba(29, 76, 122, 0.08);
+  border-left: 1px dashed rgba(29, 76, 122, 0.55);
+  border-right: 1px dashed rgba(29, 76, 122, 0.55);
+  pointer-events: none;
+  z-index: 3;
+}
+.sd-loop-region.active {
+  background: rgba(29, 76, 122, 0.15);
+  border-left-style: solid;
+  border-right-style: solid;
+}
+.sd-playhead::before { display: none; }   /* workbench omits the flag */
+.sd-playhead.ghost { opacity: .35; box-shadow: none; }
+
+/* Ruler section markers (Intro / Verse / Chorus …). */
+.sd-marker {
+  position: absolute; top: 0; height: 100%;
+  border-left: 1.5px solid var(--hifi-accent);
+  padding-left: 4px; padding-top: 2px;
+  cursor: pointer; pointer-events: auto;
+  z-index: 4;
+}
+.sd-marker:hover .sd-marker-label { text-decoration: underline; }
+.sd-marker-label {
+  font-family: var(--hifi-mono); font-size: 9px;
+  letter-spacing: .3px; text-transform: uppercase;
+  white-space: nowrap; user-select: none;
+}
+
+/* Record tile — red tint + subtle pulse while capturing. */
+.sd-tile-rec { border-color: rgba(224, 117, 86, 0.6); }
+.sd-tile-rec .sd-tile-label { color: #e07556; }
+@keyframes sdRecPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224,117,86,0); }
+  50%      { box-shadow: 0 0 0 4px rgba(224,117,86,0.25); }
+}
+.sd-tile-rec { animation: sdRecPulse 1.2s ease-in-out infinite; }
+
+.sd-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ---------- Right sidebar (track info) ---------- */
+.sd-right {
+  width: 300px; flex: 0 0 300px;
+  background: var(--hifi-surface);
+  border-left: 1px solid var(--hifi-rule);
+  padding: 24px 20px;
+  overflow: auto;
+}
+.sd-info-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 22px; }
+.sd-info-row  { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+.sd-info-k    { color: var(--hifi-ink-mute); font-family: var(--hifi-mono); font-size: 10px; letter-spacing: .5px; text-transform: uppercase; }
+.sd-info-v    { color: var(--hifi-ink); font-size: 12px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sd-info-mono { font-family: var(--hifi-mono); font-size: 10px; color: var(--hifi-ink-soft); }
+
+.sd-ctrl-block { display: flex; flex-direction: column; gap: 10px; margin-bottom: 22px; }
+.sd-ctrl-row   { display: grid; grid-template-columns: 56px 1fr 36px; align-items: center; gap: 10px; }
+.sd-ctrl-k     { color: var(--hifi-ink-mute); font-family: var(--hifi-mono); font-size: 10px; letter-spacing: .5px; text-transform: uppercase; }
+.sd-ctrl-v     { color: var(--hifi-ink); font-family: var(--hifi-mono); font-size: 11px; text-align: right; }
+.sd-ctrl-row input[type=range] { accent-color: var(--hifi-accent); width: 100%; }
+.sd-ms-lg      { width: 28px !important; height: 24px !important; }
+
+.sd-right-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 20px; }
+.sd-right-actions .sd-btn { justify-content: center; }
+.sd-btn-danger { color: #e07556 !important; border-color: rgba(224,117,86,0.4) !important; }
+
+/* ---------- Selected track row ---------- */
+.sd-track-row { cursor: pointer; }
+.sd-track-row.selected { background: var(--hifi-accent-soft); }
+
+/* ---------- Mode content host ---------- */
+/* Existing MIDIChart / AudioWaveform / VideoUpload / FXView fill this
+   pane. They bring their own CSS; we just make the host the right size
+   and neutralise any bleed from the surrounding .studio-dev scope. */
+.sd-mode-host {
+  position: absolute; inset: 0; left: 76px; /* leave mode rail visible */
+  display: flex; overflow: hidden;
+  background: var(--hifi-bg);
+}
+.sd-mode-host > * { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+
+/* Hero CTA visibility when canvas contains a mode component */
+.sd-canvas { overflow: hidden; }
+
+/* ---------- Browse overlay ---------- */
+.sd-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  display: grid; place-items: center; z-index: 50;
+  backdrop-filter: blur(2px);
+}
+.sd-overlay-card {
+  width: min(80vw, 1040px); height: min(80vh, 720px);
+  background: var(--hifi-surface); border: 1px solid var(--hifi-rule-strong);
+  border-radius: 8px; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.sd-overlay-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--hifi-rule);
+}
+.sd-overlay-body { flex: 1; overflow: auto; background: var(--hifi-bg); }
+
+/* ---------- Left nav rail ---------- */
+.sd-nav {
+  width: 56px; flex: 0 0 56px;
+  background: var(--hifi-surface);
+  border-right: 1px solid var(--hifi-rule);
+  display: flex; flex-direction: column;
+  padding: 12px 0;
+  transition: width 150ms ease, flex-basis 150ms ease;
+  overflow: hidden;
+}
+.sd-nav.expanded { width: 200px; flex: 0 0 200px; }
+.sd-nav-toggle {
+  margin: 0 8px 8px; padding: 10px 12px;
+  background: transparent; border: 1px solid var(--hifi-rule); border-radius: 6px;
+  color: var(--hifi-ink-soft); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.sd-nav-toggle:hover { color: var(--hifi-ink); border-color: var(--hifi-rule-strong); }
+.sd-nav-section { display: flex; flex-direction: column; padding: 4px 8px; gap: 2px; }
+.sd-nav-divider {
+  height: 1px; background: var(--hifi-rule); margin: 8px 14px;
+}
+.sd-nav-spacer { flex: 1; }
+.sd-nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 6px;
+  background: transparent; border: 0; color: var(--hifi-ink-soft);
+  font-family: var(--hifi-sans); font-size: 13px;
+  cursor: pointer; text-align: left; min-height: 40px;
+}
+.sd-nav-item:hover { background: rgba(21, 24, 28,0.04); color: var(--hifi-ink); }
+.sd-nav-item.active {
+  background: var(--hifi-accent-soft); color: var(--hifi-accent);
+  border: 1px solid rgba(29, 76, 122, 0.3);
+}
+.sd-nav-item i { width: 16px; text-align: center; flex-shrink: 0; }
+.sd-nav-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* "More" submenu — float outward so it's visible even when collapsed */
+.sd-nav-more {
+  position: absolute; left: 100%; top: 0; margin-left: 6px;
+  background: var(--hifi-surface); border: 1px solid var(--hifi-rule-strong);
+  border-radius: 6px; padding: 4px; min-width: 140px;
+  z-index: 40; box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+}
+.sd-nav-more-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 4px;
+  background: transparent; border: 0; color: var(--hifi-ink);
+  width: 100%; font-family: var(--hifi-sans); font-size: 12px;
+  cursor: pointer; text-align: left;
+}
+.sd-nav-more-item:hover { background: var(--hifi-surface-2); }
+.sd-nav-more-item i { width: 14px; text-align: center; }
+
+/* ---------- File menu ---------- */
+.sd-filemenu { position: relative; }
+.sd-filemenu-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; background: transparent; color: var(--hifi-ink);
+  border: 1px solid var(--hifi-rule); border-radius: 4px;
+  font-family: var(--hifi-sans); font-size: 12px; font-weight: 500;
+  cursor: pointer;
+}
+.sd-filemenu-btn:hover, .sd-filemenu-btn.open {
+  border-color: var(--hifi-rule-strong);
+  background: var(--hifi-surface-2);
+}
+.sd-filemenu-dropdown {
+  position: absolute; top: 100%; left: 0; margin-top: 6px;
+  background: var(--hifi-surface); border: 1px solid var(--hifi-rule-strong);
+  border-radius: 6px; padding: 4px; min-width: 220px; z-index: 40;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.55);
+}
+.sd-filemenu-item {
+  display: grid; grid-template-columns: 16px 1fr auto;
+  align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 4px;
+  background: transparent; border: 0; color: var(--hifi-ink);
+  width: 100%; font-family: var(--hifi-sans); font-size: 13px;
+  cursor: pointer; text-align: left;
+}
+.sd-filemenu-item:hover:not(:disabled) { background: var(--hifi-surface-2); }
+.sd-filemenu-item:disabled { color: var(--hifi-ink-mute); cursor: default; }
+.sd-filemenu-item i { text-align: center; }
+.sd-filemenu-kbd {
+  font-family: var(--hifi-mono); font-size: 10px;
+  color: var(--hifi-ink-mute); letter-spacing: .4px;
+}
+.sd-filemenu-div { height: 1px; background: var(--hifi-rule); margin: 4px 8px; }
+.sd-filemenu-status {
+  position: absolute; top: 100%; left: 0; margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--hifi-surface); border: 1px solid var(--hifi-rule);
+  border-radius: 4px; font-family: var(--hifi-mono); font-size: 10px;
+  color: var(--hifi-ink-soft); white-space: nowrap;
+}
+
+/* ---------- MIDI window — cream workbench theme throughout.
+ * Local tokens mirror --wb-* so the JS canvas constants (StudioDevMidi.js::C)
+ * agree with the CSS surfaces around it. */
+.sd-midi {
+  --midi-bg:           var(--wb-bg);
+  --midi-surf:         var(--wb-surface);
+  --midi-surf2:        var(--wb-surface-2);
+  --midi-ink:          var(--wb-ink);
+  --midi-ink-soft:     var(--wb-ink-soft);
+  --midi-ink-mute:     var(--wb-ink-mute);
+  --midi-rule:         var(--wb-rule);
+  --midi-rule-strong:  var(--wb-rule-strong);
+  --midi-accent:       var(--wb-accent-warm);   /* playhead */
+
+  display: flex; flex-direction: column;
+  position: absolute; inset: 0;
+  background: var(--midi-bg);
+  color: var(--midi-ink);
+  font-family: var(--wb-font-mono);
+}
+.sd-midi-toolbar {
+  height: 32px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 12px; padding: 0 12px;
+  background: var(--midi-surf);
+  border-bottom: 1px solid var(--midi-rule);
+}
+.sd-midi-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sd-midi-color { width: 3px; height: 14px; border-radius: 0; flex-shrink: 0; }
+.sd-midi-name {
+  font-family: var(--wb-font-mono); font-size: 11px; font-weight: 500;
+  color: var(--midi-ink);
+  letter-spacing: 0.4px; text-transform: uppercase;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sd-midi-meta {
+  font-family: var(--wb-font-mono); font-size: 10px;
+  color: var(--midi-ink-mute);
+  letter-spacing: 0.4px; text-transform: uppercase;
+}
+.sd-midi-spacer { flex: 1; }
+.sd-midi-group { display: flex; align-items: center; gap: 4px; }
+.sd-midi-btn {
+  background: transparent; color: var(--midi-ink);
+  border: 1px solid var(--midi-rule-strong);
+  border-radius: 0;
+  padding: 3px 10px;
+  font-family: var(--wb-font-mono); font-size: 10px;
+  letter-spacing: 0.6px; text-transform: uppercase;
+  cursor: pointer;
+}
+.sd-midi-btn:hover { background: var(--midi-surf2); }
+.sd-midi-btn.sd-midi-danger {
+  color: var(--midi-accent);
+  border-color: rgba(201, 79, 44, 0.40);
+}
+.sd-midi-kv-k {
+  color: var(--midi-ink-mute); font-family: var(--wb-font-mono);
+  font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase;
+}
+.sd-midi-kv-v { color: var(--midi-ink); font-family: var(--wb-font-mono); font-size: 11px; }
+
+.sd-midi-canvas-wrap {
+  flex: 1; min-height: 0;
+  position: relative; overflow: hidden;
+  background: var(--midi-bg);
+}
+.sd-midi-canvas { display: block; cursor: crosshair; }
+
+.sd-midi-footer {
+  height: 22px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 10px; padding: 0 12px;
+  background: var(--midi-surf);
+  border-top: 1px solid var(--midi-rule);
+}
+
+/* ---------- Waveform view ---------- */
+.sd-wave { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--hifi-bg); }
+.sd-wave-canvas { display: block; cursor: text; }
+.sd-wave-empty {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  background: var(--hifi-bg); color: var(--hifi-ink); padding: 40px;
+}
+.sd-wave-empty-eyebrow { font-family: var(--hifi-serif); font-style: italic; font-size: 13px;
+                         color: var(--hifi-ink-mute); margin-bottom: 14px; }
+.sd-wave-empty-title   { font-family: var(--hifi-serif); font-size: 30px; font-weight: 400;
+                         letter-spacing: -.6px; margin-bottom: 12px; color: var(--hifi-ink); }
+.sd-wave-empty-body    { font-size: 13px; color: var(--hifi-ink-soft); max-width: 420px; line-height: 1.5; }
+
+/* ---------- FX strip ---------- */
+.sd-fx { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--hifi-bg); }
+.sd-fx-strip {
+  flex: 1; min-height: 0; overflow: auto;
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr);
+  gap: 1px; padding: 16px;
+}
+.sd-fx-module {
+  background: var(--hifi-surface); border: 1px solid var(--hifi-rule);
+  border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 14px;
+  min-width: 200px;
+}
+.sd-fx-module-title {
+  font-family: var(--hifi-serif); font-size: 17px; font-weight: 500; color: var(--hifi-ink);
+  border-bottom: 1px solid var(--hifi-rule); padding-bottom: 8px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.sd-fx-bypass {
+  background: transparent; color: var(--hifi-accent);
+  border: 1px solid var(--hifi-rule); border-radius: 3px;
+  padding: 2px 8px; font-family: var(--hifi-mono); font-size: 9px;
+  letter-spacing: .5px; text-transform: uppercase; cursor: pointer;
+}
+.sd-fx-bypass.on { color: var(--hifi-ink-mute); border-color: var(--hifi-rule-strong); }
+.sd-fx-module.bypassed { opacity: 0.45; }
+.sd-fx-module-knobs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.sd-fx-knob { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.sd-fx-knob-label {
+  font-family: var(--hifi-mono); font-size: 9px; color: var(--hifi-ink-mute);
+  letter-spacing: .5px; text-transform: uppercase;
+}
+.sd-fx-knob-outer {
+  width: 56px; height: 56px; border-radius: 50%;
+  position: relative; background: var(--hifi-surface-2);
+  border: 1px solid var(--hifi-rule);
+  overflow: hidden;
+}
+.sd-fx-knob-fill { position: absolute; inset: 4px; border-radius: 50%; opacity: 0.7; }
+.sd-fx-knob-value {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-family: var(--hifi-mono); font-size: 10px; color: var(--hifi-ink);
+}
+.sd-fx-knob-range { width: 60px; accent-color: var(--hifi-accent); }
+.sd-fx-empty { position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; background: var(--hifi-bg); color: var(--hifi-ink); padding: 40px; }
+
+/* ---------- Video viewer ---------- */
+.sd-video { position: absolute; inset: 0; display: flex; flex-direction: column; background: #000; }
+.sd-video-el { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; }
+.sd-video-bar {
+  height: 32px; padding: 0 14px; display: flex; align-items: center; gap: 10px;
+  background: var(--hifi-surface); border-top: 1px solid var(--hifi-rule);
+}
+.sd-video-empty {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  background: var(--hifi-bg); color: var(--hifi-ink); padding: 40px;
+}
+
+/* ---------- Chord row ---------- */
+.sd-chords {
+  flex-shrink: 0; border-top: 1px solid var(--hifi-rule); background: var(--hifi-surface);
+  padding: 8px 14px; display: flex; flex-direction: column; gap: 8px;
+}
+.sd-chords-head { display: flex; align-items: center; gap: 10px; }
+.sd-chords-grid { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; }
+.sd-chord-cell {
+  position: relative; height: 40px; padding: 4px; cursor: pointer;
+  background: var(--hifi-surface-2); border: 1px solid var(--hifi-rule); border-radius: 3px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  font-family: var(--hifi-serif); color: var(--hifi-ink-soft);
+  transition: border-color 80ms, background 80ms;
+}
+.sd-chord-cell:hover    { border-color: var(--hifi-rule-strong); }
+.sd-chord-cell.bar-start{ border-left: 1px solid var(--hifi-accent-soft); }
+.sd-chord-cell.playing  { background: var(--hifi-accent-soft); border-color: var(--hifi-accent); }
+.sd-chord-cell.filled   { color: var(--hifi-ink); background: rgba(29, 76, 122, 0.08); }
+.sd-chord-barlabel      { font-family: var(--hifi-mono); font-size: 9px; color: var(--hifi-ink-mute); letter-spacing: .4px; }
+.sd-chord-symbol        { font-size: 14px; font-weight: 500; }
+.sd-chords-picker {
+  position: absolute; left: 320px; bottom: 260px; z-index: 40;
+  background: var(--hifi-surface); border: 1px solid var(--hifi-rule-strong);
+  border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 10px;
+  min-width: 420px; box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+}
+.sd-chord-picker-head { display: flex; align-items: center; gap: 10px; }
+.sd-chord-picker-row  { display: flex; gap: 6px; flex-wrap: wrap; }
+.sd-chord-picker-btn {
+  background: transparent; color: var(--hifi-ink);
+  border: 1px solid var(--hifi-rule); border-radius: 4px;
+  padding: 6px 10px; font-family: var(--hifi-mono); font-size: 11px;
+  cursor: pointer;
+}
+.sd-chord-picker-btn:hover { border-color: var(--hifi-accent); color: var(--hifi-accent); }
+
+/* ---------- Generate + Chat panels ---------- */
+.sd-overlay-narrow { width: min(60vw, 680px); height: min(75vh, 640px); }
+
+.sd-gen, .sd-chat {
+  position: relative; display: flex; flex-direction: column; height: 100%;
+  background: var(--hifi-surface); color: var(--hifi-ink);
+}
+/* Embedded mode — drops the full-height shell so the form can flow
+ * inline below the instrument palette in the instruments sidebar. */
+.sd-gen.sd-gen-embedded {
+  height: auto; display: block;
+  margin-top: 18px; padding-top: 14px;
+  border-top: 1px solid var(--hifi-rule);
+  background: transparent;
+}
+.sd-gen.sd-gen-embedded .sd-gen-body { padding: 0; }
+
+.sd-gen-body { padding: 16px 20px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.sd-gen-textarea, .sd-gen-input, .sd-gen-select {
+  background: var(--hifi-surface-2); color: var(--hifi-ink);
+  border: 1px solid var(--hifi-rule); border-radius: 4px;
+  padding: 10px; font-family: var(--hifi-sans); font-size: 13px; width: 100%;
+}
+.sd-gen-select { appearance: none; padding-right: 24px; }
+.sd-gen-row { display: flex; gap: 12px; }
+.sd-gen-col { flex: 1; }
+.sd-gen-check {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px;
+  font-size: 12px; color: var(--hifi-ink-soft);
+  cursor: pointer;
+}
+.sd-gen-error {
+  color: #e07556; font-family: var(--hifi-mono); font-size: 11px;
+  padding: 8px 10px; border: 1px solid rgba(224,117,86,0.4); border-radius: 4px;
+}
+/* Generate CTA — workbench primary button, full-width within the sidebar. */
+.sd-gen-actions { display: flex; margin-top: 14px; }
+.sd-gen-submit {
+  flex: 1;
+  padding: 10px 16px;      /* slightly taller than the 8-px wb-btn default */
+  text-align: center;
+}
+.sd-gen-submit:disabled {
+  opacity: 0.55; cursor: wait;
+  background: var(--wb-ink-soft); border-color: var(--wb-ink-soft);
+}
+.sd-gen-hint { font-family: var(--hifi-mono); font-size: 10px; color: var(--hifi-ink-mute); margin-top: 6px; }
+
+/* ---------- Generate · Advanced section ---------- */
+.sd-adv-toggle {
+  margin-top: 14px; padding: 10px 12px;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--hifi-surface-2);
+  border: 1px solid var(--hifi-rule); border-radius: 4px;
+  color: var(--hifi-ink); cursor: pointer;
+  font-family: var(--hifi-sans); font-size: 12px; font-weight: 500;
+}
+.sd-adv-toggle:hover { border-color: var(--hifi-rule-strong); }
+.sd-adv-chip {
+  margin-left: auto;
+  font-family: var(--hifi-mono); font-size: 10px;
+  color: var(--hifi-accent); background: var(--hifi-accent-soft);
+  padding: 2px 8px; border-radius: 3px; letter-spacing: .4px;
+}
+.sd-adv {
+  margin-top: 10px;
+  padding: 14px; background: var(--hifi-surface-2);
+  border: 1px solid var(--hifi-rule); border-radius: 4px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.sd-adv-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+.sd-adv-slider {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.sd-adv-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-family: var(--hifi-mono); font-size: 10px; color: var(--hifi-ink-mute);
+  letter-spacing: .3px; text-transform: uppercase;
+}
+.sd-adv-label { color: var(--hifi-ink-mute); }
+.sd-adv-value { color: var(--hifi-ink); }
+.sd-adv-slider input[type=range] { accent-color: var(--hifi-accent); width: 100%; }
+.sd-adv-rows { display: flex; flex-direction: column; gap: 10px; }
+.sd-adv-inline {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--hifi-sans); font-size: 12px; color: var(--hifi-ink);
+}
+
+.sd-chat-messages {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 14px 20px; display: flex; flex-direction: column; gap: 12px;
+}
+.sd-chat-empty {
+  color: var(--hifi-ink-mute); font-style: italic; font-family: var(--hifi-serif);
+  text-align: center; padding: 20px;
+}
+.sd-chat-msg { display: flex; flex-direction: column; gap: 4px; }
+.sd-chat-msg.user { align-items: flex-end; }
+.sd-chat-msg-role {
+  font-family: var(--hifi-mono); font-size: 9px; letter-spacing: .5px;
+  color: var(--hifi-ink-mute); text-transform: uppercase;
+}
+.sd-chat-msg-body {
+  background: var(--hifi-surface-2); border: 1px solid var(--hifi-rule);
+  border-radius: 6px; padding: 10px 12px; max-width: 80%; white-space: pre-wrap;
+}
+.sd-chat-msg.user .sd-chat-msg-body { background: var(--hifi-accent-soft); border-color: rgba(29, 76, 122, 0.3); }
+.sd-chat-typing { font-family: var(--hifi-mono); font-size: 10px; color: var(--hifi-ink-mute); }
+.sd-chat-input-row {
+  display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--hifi-rule);
+  background: var(--hifi-surface);
+}
+.sd-chat-input {
+  flex: 1; background: var(--hifi-surface-2); color: var(--hifi-ink);
+  border: 1px solid var(--hifi-rule); border-radius: 4px;
+  padding: 8px 12px; font-family: var(--hifi-sans); font-size: 13px;
+}
+.sd-chat-input:focus { outline: none; border-color: var(--hifi-accent); }
+

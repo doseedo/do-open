@@ -1419,6 +1419,24 @@ function appReducer(state, action) {
         projectName: action.payload?.projectName || initialState.projectName
       };
 
+    case 'REORDER_TRACK_IN_BUS': {
+      // Move a track within its bus. payload = { busId, trackId, toIndex }
+      const { busId: rBusId, trackId: rTrackId, toIndex } = action.payload;
+      return {
+        ...state,
+        buses: state.buses.map((bus) => {
+          if (bus.id !== rBusId) return bus;
+          const idx = (bus.tracks || []).findIndex((t) => t.id === rTrackId);
+          if (idx < 0) return bus;
+          const next = bus.tracks.slice();
+          const [moved] = next.splice(idx, 1);
+          const dest = Math.max(0, Math.min(next.length, toIndex));
+          next.splice(dest, 0, moved);
+          return { ...bus, tracks: next };
+        }),
+      };
+    }
+
     case 'COPY_TRACK':
       // Store track for copying (Cmd+C)
       return {

@@ -1,0 +1,155 @@
+/* doseedo · Hi-Fi Purple theme
+ *
+ * Drop-in override for the unified color system in ./colors.css.
+ * Activated by adding `theme-hifi-purple` to <body> (App.js does this
+ * when on /studio-dev). Remaps every `--color-*` and `--gradient-*`
+ * token that existing DAW/panel components consume, so buttons, knobs,
+ * waveforms, timelines re-theme with no component edits.
+ *
+ * Source tokens: home/newtheme/theme-hifi-purple.js
+ *   bg       #1f1a15 (warm near-black)
+ *   surface  #2a241d
+ *   surface2 #36302a
+ *   ink      #e8dfc8 (warm cream)
+ *   accent   #a88adc (doseedo purple)
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;1,400&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
+body.theme-hifi-purple {
+  /* Hi-Fi Purple tokens (exposed alongside the remapped --color-* vars
+   * so any new component can `var(--hifi-accent)` directly.)           */
+  --hifi-bg:         #1f1a15;
+  --hifi-surface:    #2a241d;
+  --hifi-surface-2:  #36302a;
+  --hifi-ink:        #e8dfc8;
+  --hifi-ink-soft:   rgba(232, 223, 200, 0.68);
+  --hifi-ink-mute:   rgba(232, 223, 200, 0.42);
+  --hifi-rule:       rgba(232, 223, 200, 0.10);
+  --hifi-rule-strong:rgba(232, 223, 200, 0.24);
+  --hifi-accent:     #a88adc;
+  --hifi-accent-deep:#6a4e9e;
+  --hifi-accent-soft:rgba(168, 138, 220, 0.16);
+
+  --font-hifi-serif: "Newsreader", Georgia, serif;
+  --font-hifi-sans:  "Inter", system-ui, sans-serif;
+  --font-hifi-mono:  "JetBrains Mono", ui-monospace, monospace;
+
+  /* ===== Remap the app's canonical color vars ===== */
+
+  /* Brand / accent: purple replaces blue */
+  --color-primary-blue:         var(--hifi-accent);
+  --color-primary-blue-light:   #c1abe8;
+  --color-primary-purple:       var(--hifi-accent);
+  --color-primary-purple-alt:   #c1abe8;
+  --color-primary-purple-dark:  var(--hifi-accent-deep);
+
+  /* Backgrounds: warm charcoal replaces true black */
+  --color-bg-darkest:   var(--hifi-bg);
+  --color-bg-very-dark: var(--hifi-bg);
+  --color-bg-dark:      var(--hifi-surface);
+  --color-bg-dark-alt:  var(--hifi-surface);
+  --color-bg-darker:    var(--hifi-bg);
+  --color-bg-medium:    var(--hifi-surface-2);
+  --color-bg-light:     var(--hifi-surface-2);
+  --color-bg-lighter:   #3f3830;
+  --color-bg-midi:      var(--hifi-surface);
+
+  /* Borders: warm hairlines */
+  --color-border-dark:  var(--hifi-rule);
+  --color-border:       var(--hifi-rule-strong);
+  --color-border-light: var(--hifi-rule-strong);
+  --color-border-midi:  var(--hifi-rule);
+
+  /* Text: warm cream replaces stark white */
+  --color-text-primary:    var(--hifi-ink);
+  --color-text-secondary:  var(--hifi-ink-soft);
+  --color-text-muted:      var(--hifi-ink-mute);
+  --color-text-light:      #d4c7ec;
+  --color-text-very-light: var(--hifi-ink);
+
+  /* Accents + selection */
+  --color-accent-light-purple: var(--hifi-accent);
+  --color-accent-white:        var(--hifi-ink);
+  --color-selection-bg:        rgba(168, 138, 220, 0.28);
+  --color-hover-bg:            rgba(232, 223, 200, 0.08);
+
+  /* Button states — mute stays dark, solo picks up accent */
+  --color-button-mute-bg:   #000000;
+  --color-button-mute-text: var(--hifi-accent);
+  --color-button-solo-bg:   var(--hifi-accent);
+  --color-button-solo-text: #1f1a15;
+
+  /* Opacity variants that used to key off blue/purple — re-derive from accent */
+  --color-primary-blue-08: rgba(168, 138, 220, 0.08);
+  --color-primary-blue-10: rgba(168, 138, 220, 0.10);
+  --color-primary-blue-15: rgba(168, 138, 220, 0.15);
+  --color-primary-blue-20: rgba(168, 138, 220, 0.20);
+  --color-primary-blue-30: rgba(168, 138, 220, 0.30);
+  --color-primary-blue-50: rgba(168, 138, 220, 0.50);
+  --color-selection-blue-15: rgba(168, 138, 220, 0.15);
+  --color-purple-15: rgba(168, 138, 220, 0.15);
+  --color-purple-30: rgba(168, 138, 220, 0.30);
+  --color-purple-50: rgba(168, 138, 220, 0.50);
+
+  /* Whites — remap onto cream ink for dark-on-dark readability */
+  --color-white-05: rgba(232, 223, 200, 0.05);
+  --color-white-10: rgba(232, 223, 200, 0.10);
+  --color-white-15: rgba(232, 223, 200, 0.15);
+  --color-white-40: rgba(232, 223, 200, 0.40);
+  --color-white-60: rgba(232, 223, 200, 0.60);
+  --color-white-90: rgba(232, 223, 200, 0.90);
+
+  /* Special accents */
+  --color-highlight: #2e1f3a;
+
+  /* Gradients — desaturated purple replaces blue→purple */
+  --gradient-primary:
+    linear-gradient(135deg, var(--hifi-accent) 0%, var(--hifi-accent-deep) 100%);
+  --gradient-primary-reverse:
+    linear-gradient(135deg, var(--hifi-accent-deep) 0%, var(--hifi-accent) 100%);
+  --gradient-primary-horizontal:
+    linear-gradient(90deg, var(--hifi-accent-deep) 0%, var(--hifi-accent) 100%);
+
+  --gradient-glow-10:
+    linear-gradient(135deg, rgba(168, 138, 220, 0.10) 0%, rgba(106, 78, 158, 0.10) 100%);
+  --gradient-glow-20:
+    linear-gradient(135deg, rgba(168, 138, 220, 0.20) 0%, rgba(106, 78, 158, 0.20) 100%);
+  --gradient-glow-subtle:
+    linear-gradient(135deg, rgba(168, 138, 220, 0.08) 0%, rgba(106, 78, 158, 0.08) 100%);
+  --gradient-glow-hover:
+    linear-gradient(135deg, rgba(168, 138, 220, 0.15) 0%, rgba(106, 78, 158, 0.15) 100%);
+
+  --gradient-dark: linear-gradient(135deg, var(--hifi-surface) 0%, var(--hifi-bg) 100%);
+  --gradient-knob: linear-gradient(145deg, #34302b, #211d18);
+  --gradient-knob-active: linear-gradient(145deg, #3b362f, #272320);
+  --gradient-knob-indicator:
+    linear-gradient(180deg, var(--hifi-accent), var(--hifi-accent) 70%, transparent);
+  --gradient-progress: linear-gradient(
+    90deg,
+    var(--hifi-accent-deep) 0%,
+    var(--hifi-accent) 50%,
+    #c1abe8 100%
+  );
+
+  /* Shadows — tune glows to purple */
+  --shadow-large: 0 1.6px 4.8px rgba(168, 138, 220, 0.30);
+  --shadow-glow:  0 4px 16px rgba(168, 138, 220, 0.30);
+  --shadow-glow-strong: 0 8px 32px rgba(168, 138, 220, 0.50);
+
+  /* Page baseline */
+  background: var(--hifi-bg);
+  color: var(--hifi-ink);
+  font-family: var(--font-hifi-sans);
+}
+
+/* Lift the serif on page / panel titles while in this theme. */
+body.theme-hifi-purple h1,
+body.theme-hifi-purple h2,
+body.theme-hifi-purple .page-title,
+body.theme-hifi-purple .panel-title {
+  font-family: var(--font-hifi-serif);
+  font-weight: 400;
+  letter-spacing: -0.2px;
+}
+

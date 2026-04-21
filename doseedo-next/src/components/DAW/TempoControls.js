@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React from 'react';
 import { useApp } from '../../context/AppContext';
-import { repaintMeter } from '../../services/trackAnalysisAPI';
+import useAutoRepaintMeter from '../../hooks/useAutoRepaintMeter';
 import styles from './TempoControls.module.css';
 
 /**
@@ -24,13 +24,8 @@ function TempoControls() {
   const meterStr = `${beatsPerBar}/${meterDen}`;
   const isMetronomeOn = state.isMetronomeOn;
 
-  // Snapshot of the last bpm/meter we successfully repainted from.
-  // The next auto-trigger will use these as the source meter.
-  const lastAppliedRef = useRef({ bpm, beatsPerBar, meterDen });
-  const debounceRef = useRef(null);
-  const inFlightRef = useRef(false);
-  const [applying, setApplying] = useState(false);
-  const [lastResult, setLastResult] = useState(null);
+  // Shared auto-repaint hook — same one /studio-dev uses.
+  const { applying } = useAutoRepaintMeter();
 
   const handleBPMChange = (e) => {
     dispatch({ type: 'UPDATE_BPM', payload: parseInt(e.target.value, 10) });
@@ -41,104 +36,6 @@ function TempoControls() {
   };
 
   const toggleMetronome = () => dispatch({ type: 'TOGGLE_METRONOME' });
-
-  // Auto-repaint dispatcher
-  const runRepaint = async () => {
-    if (inFlightRef.current) return;
-    const { bpm: srcBpm, beatsPerBar: srcBeats, meterDen: srcDen } = lastAppliedRef.current;
-    const tgtBpm = bpm;
-    const tgtBeats = beatsPerBar;
-    const tgtDen = meterDen;
-    if (srcBpm === tgtBpm && srcBeats === tgtBeats && srcDen === tgtDen) return;
-
-    // Collect every track with a cached latent
-    const stems = [];
-    const trackRefs = [];
-    state.buses?.forEach((bus) => {
-      bus.tracks?.forEach((track) => {
-        const latentId = track.metadata?.latentId;
-        if (!latentId) return;
-        stems.push({
-          latent_id: latentId,
-          stem_type: track.metadata?.instrument || track.metadata?.stemType || 'other',
-        });
-        trackRefs.push({ busId: bus.id, trackId: track.id });
-      });
-    });
-
-    if (stems.length === 0) {
-      // No latents yet — silently bump the snapshot so we don't keep retrying
-      lastAppliedRef.current = { bpm: tgtBpm, beatsPerBar: tgtBeats };
-      return;
-    }
-
-    inFlightRef.current = true;
-    setApplying(true);
-    try {
-      const result = await repaintMeter({
-        stems,
-        srcMeter: [srcBeats, srcDen],
-        tgtMeter: [tgtBeats, tgtDen],
-        srcBpm,
-        tgtBpm,
-        coverNoise: 0.55,
-        prompt: 'preserve original style and instrument timbre',
-      });
-      console.log(`🎚️ auto-repaint ${srcBeats}/${srcDen} ${srcBpm} → ${tgtBeats}/${tgtDen} ${tgtBpm} for ${stems.length} stems`, result);
-      setLastResult(`${stems.length} stems → ${tgtBeats}/${tgtDen} ${tgtBpm} BPM`);
-
-      // Poll each task and swap track audioUrl when done
-      (result.results || []).forEach((r, i) => {
-        if (r.error || !r.task_id) return;
-        const ref = trackRefs[i];
-        const taskId = r.task_id;
-        (async () => {
-          for (let p = 0; p < 120; p++) {
-            await new Promise((res) => setTimeout(res, 2500));
-            const tr = await fetch(`/api/generate-stemphonic/task/${taskId}`);
-            if (!tr.ok) continue;
-            const td = await tr.json();
-            if (td.state === 'SUCCESS' && td.result?.file_paths?.[0]) {
-              dispatch({
-                type: 'UPDATE_TRACK',
-                payload: {
-                  busId: ref.busId,
-                  trackId: ref.trackId,
-                  updates: {
-                    audioUrl: td.result.file_paths[0],
-                    metadata: { latentId: r.new_latent_id },
-                  },
-                },
-              });
-              return;
-            }
-            if (td.state === 'FAILURE') return;
-          }
-        })();
-      });
-
-      lastAppliedRef.current = { bpm: tgtBpm, beatsPerBar: tgtBeats, meterDen: tgtDen };
-    } catch (err) {
-      console.error('auto-repaint failed', err);
-      setLastResult(`error: ${err.message}`);
-    } finally {
-      inFlightRef.current = false;
-      setApplying(false);
-    }
-  };
-
-  // Debounce: when BPM or meter changes, schedule a repaint after 1.2s
-  // of inactivity so dragging the BPM input doesn't fire 100 jobs.
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    const { bpm: srcBpm, beatsPerBar: srcBeats, meterDen: srcDen } = lastAppliedRef.current;
-    if (bpm === srcBpm && beatsPerBar === srcBeats && meterDen === srcDen) return;
-    debounceRef.current = setTimeout(runRepaint, 1200);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bpm, beatsPerBar, meterDen]);
 
   return (
     <div className={styles.container} style={{ float: 'right', display: 'flex', alignItems: 'center', gap: 6 }}>
