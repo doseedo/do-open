@@ -71,9 +71,154 @@ Known limitations for launch version:
 """
 
 import os
+import platform
+from pathlib import Path
+
 import modal
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+
+# ---------------------------------------------------------------------------
+# Build-time path resolution — Mac vs GPU server
+# ---------------------------------------------------------------------------
+# This file is deployed from two machines:
+#   GPU server (my-a100-80gb-vm): /home/arlo/do2   + /scratch/ACE-Step-1.5
+#   Mac (doseedo-desktop):        ~/Downloads/Do   + ~/Downloads/ACE-Step
+#
+# Soundfonts + latent checkpoints no longer need to be present on the deploy
+# machine — they live on the `stemphonic-models` Modal volume and get
+# symlinked into /scratch/... at container start (see @enter below).
+_IS_MAC = platform.system() == "Darwin"
+
+if _IS_MAC:
+    _DO2      = Path.home() / "Downloads/Do"
+    _ACE_STEP = Path.home() / "Downloads/ACE-Step"
+    # On Mac the harmonymodule tree lives inside the Do repo.
+    _HARMONYMODULE = _DO2 / "home/arlo/harmonymodule"
+else:
+    _DO2      = Path("/home/arlo/do2")
+    _ACE_STEP = Path("/scratch/ACE-Step-1.5")
+    _HARMONYMODULE = Path("/scratch/Do/harmonymodule")
+
+
+# ---------------------------------------------------------------------------
+# R2 (Cloudflare S3-compatible) helper — lazy-init client + upload + presign.
+# ---------------------------------------------------------------------------
+# Why here (module scope, not inside the class):
+#   Modal images are monolithic — a single .py file defines both the build
+#   graph (image.pip_install, secrets, etc.) AND the container runtime entry
+#   points. Keeping R2 helpers at module scope means the exact same code
+#   object runs inside the container (via setup_gpu_state importing us as
+#   __main__) and is trivially testable from a local REPL when AWS_* or R2_*
+#   env vars happen to be set.
+#
+# Env vars (set via the `doseedo-r2` Modal secret):
+#   R2_ACCESS_KEY_ID      — Cloudflare R2 token access key
+#   R2_SECRET_ACCESS_KEY  — Cloudflare R2 token secret
+#   R2_ENDPOINT_URL       — https://<account>.r2.cloudflarestorage.com
+#   R2_BUCKET             — bucket name (e.g. doseedo-media)
+#
+# If ANY of these is missing we log a warning and no-op. This keeps staging
+# deployments without the secret from crashing generation on every request —
+# they just skip persistence and continue to serve via send_file.
+#
+# Mirrors the client config used in auth-service/app/storage.py:_r2_client.
+_r2_client_cache = {"client": None, "checked": False}
+
+
+def _r2_enabled() -> bool:
+    return bool(
+        os.environ.get("R2_ACCESS_KEY_ID")
+        and os.environ.get("R2_SECRET_ACCESS_KEY")
+        and os.environ.get("R2_ENDPOINT_URL")
+        and os.environ.get("R2_BUCKET")
+    )
+
+
+def _r2_client():
+    """Lazy boto3 S3 client targeting R2. Returns None when unconfigured."""
+    if _r2_client_cache["client"] is not None:
+        return _r2_client_cache["client"]
+    if _r2_client_cache["checked"]:
+        # We already checked and R2 is unconfigured — don't spam warnings.
+        return None
+    _r2_client_cache["checked"] = True
+    if not _r2_enabled():
+        import logging
+        logging.getLogger("stemphonic.r2").warning(
+            "R2 env vars missing (need R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, "
+            "R2_ENDPOINT_URL, R2_BUCKET) — generation persistence disabled"
+        )
+        return None
+    try:
+        import boto3
+        from botocore.config import Config
+        _r2_client_cache["client"] = boto3.client(
+            "s3",
+            endpoint_url=os.environ["R2_ENDPOINT_URL"],
+            aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+            region_name="auto",
+            config=Config(
+                signature_version="s3v4",
+                retries={"max_attempts": 3},
+            ),
+        )
+        return _r2_client_cache["client"]
+    except Exception as e:
+        import logging
+        logging.getLogger("stemphonic.r2").exception(
+            "R2 client init failed: %s — persistence disabled for this container", e
+        )
+        return None
+
+
+def _r2_upload_file(local_path: str, key: str, content_type: str) -> str | None:
+    """Upload a local file to R2 at `key` with the given Content-Type.
+
+    Returns the key on success, None on failure or when R2 is unconfigured.
+    Intended to be called inline from Flask after_request hooks — every
+    failure is logged and swallowed so generation responses are never
+    blocked on R2 availability.
+    """
+    client = _r2_client()
+    if client is None:
+        return None
+    bucket = os.environ.get("R2_BUCKET")
+    if not bucket:
+        return None
+    try:
+        extra = {"ContentType": content_type} if content_type else {}
+        client.upload_file(local_path, bucket, key, ExtraArgs=extra)
+        return key
+    except Exception as e:
+        import logging
+        logging.getLogger("stemphonic.r2").exception(
+            "R2 upload failed key=%s local=%s: %s", key, local_path, e
+        )
+        return None
+
+
+def _r2_generate_download_url(key: str, expires: int = 3600) -> str | None:
+    """Presigned GET URL for `key`. Returns None when unconfigured/errored."""
+    client = _r2_client()
+    if client is None:
+        return None
+    bucket = os.environ.get("R2_BUCKET")
+    if not bucket:
+        return None
+    try:
+        return client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=expires,
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger("stemphonic.r2").exception(
+            "R2 presign failed key=%s: %s", key, e
+        )
+        return None
 
 # ---------------------------------------------------------------------------
 # Volumes
@@ -143,6 +288,11 @@ image = (
     # satisfied and skip rebuilding it.
     .pip_install("Cython==3.2.4", "numpy==1.26.4")
     .pip_install("madmom==0.16.1", extra_options="--no-build-isolation")
+    # boto3 — R2 (S3-compatible) client for persisting user-facing generation
+    # outputs to Cloudflare R2 so they survive Modal container recycles.
+    # Pinned to match auth-service/requirements.txt so behavior is identical
+    # across services (presigned URL format, retry policy, etc.).
+    .pip_install("boto3==1.35.80")
     # Frozen pip deps minus torch/nvidia — installed with --no-deps.
     #
     # WHY --no-deps: stemphonic_requirements_modal.txt is a full pip freeze,
@@ -195,90 +345,36 @@ image = (
     )
     # ACE-Step source — exclude the 14 GB checkpoints subdir (goes on volume)
     .add_local_dir(
-        "/scratch/ACE-Step-1.5",
+        str(_ACE_STEP),
         remote_path="/opt/ACE-Step-1.5",
         ignore=_ignore_patterns("checkpoints", "checkpoints/**"),
         copy=True,
     )
     # do2 source (32 MB) — stemphonic_trainer, time-sig-editor, harmony, etc.
     .add_local_dir(
-        "/home/arlo/do2",
+        str(_DO2),
         remote_path="/opt/do2",
         ignore=_ignore_patterns(),
         copy=True,
     )
-    # harmonymodule (420 KB) — legacy /scratch/Do/harmonymodule import path
+    # harmonymodule (420 KB) — legacy /scratch/Do/harmonymodule import path.
+    # On Mac this lives inside the Do git repo at home/arlo/harmonymodule;
+    # on the GPU server it's /scratch/Do/harmonymodule.
     .add_local_dir(
-        "/scratch/Do/harmonymodule",
+        str(_HARMONYMODULE),
         remote_path="/opt/harmonymodule",
         ignore=_ignore_patterns(),
         copy=True,
     )
-    # soundfonts dir (334 MB of .pt preset files). These are loaded at
-    # module import time with map_location='cpu', so they need to be on the
-    # cold-start path without a volume roundtrip.
-    .add_local_dir(
-        "/scratch/soundfonts",
-        remote_path="/opt/soundfonts",
-        ignore=_ignore_patterns(),
-        copy=True,
-    )
-    # Pin the live server file from /home/arlo/do2. The earlier convention
-    # pinned /scratch/stemphonic/stemphonic_server.py as "the running prod
-    # version", but /scratch is a local SSD and gets wiped on any VM stop,
-    # taking server edits with it — exactly what happened on 2026-04-11.
-    # /home/arlo/do2 lives on a persistent disk and is the single source
-    # of truth, so edits survive reboots and the two-copy footgun is gone.
+    # Soundfonts, latent checkpoints, and the PANNs label CSV all live in
+    # the `stemphonic-models` Modal volume (uploaded once from GCS).
+    # @enter symlinks `/scratch/soundfonts`, `/scratch/latent_*_ckpts/*`,
+    # and `/root/panns_data/` into the volume so the container sees the
+    # same filesystem layout that stemphonic_server.py expects — without
+    # requiring any of those files on the deploy machine.
     .add_local_file(
-        "/home/arlo/do2/stemphonic_server.py",
+        str(_DO2 / "stemphonic_server.py"),
         remote_path="/opt/do2/stemphonic_server.py",
-        copy=True,
-    )
-    # Latent student model checkpoints — small enough (78 MB total) to
-    # bake directly into the image so there's no runtime volume read.
-    # Runtime code expects these at /scratch/latent_*_ckpts/*_final.pt;
-    # setup_cpu_state symlinks those paths to /opt/latent_ckpts/*.
-    .add_local_file(
-        "/scratch/latent_pitch_ckpts/pitch_054000.pt",
-        remote_path="/opt/latent_ckpts/latent_pitch/pitch_final.pt",
-        copy=True,
-    )
-    # TODO(post-2026-04-11 wipe): drumsep_018000.pt was lost when /scratch
-    # was wiped and is not in any GCS backup or Modal volume we can find.
-    # Skipping the bake means the latent_drumsep drum-substem path fails
-    # gracefully at runtime (separate-stems still returns the 4 main stems,
-    # just without drum_substem_latents). Re-add once the ckpt is recovered
-    # or re-trained from /home/arlo/do2/latent_drumsep/train.py.
-    # .add_local_file(
-    #     "/scratch/latent_drumsep_ckpts/drumsep_018000.pt",
-    #     remote_path="/opt/latent_ckpts/latent_drumsep/drumsep_final.pt",
-    #     copy=True,
-    # )
-    .add_local_file(
-        "/scratch/latent_visual_ckpts/latent_visual_final.pt",
-        remote_path="/opt/latent_ckpts/latent_visual/latent_visual_final.pt",
-        copy=True,
-    )
-    # latent_demucs distill student (325 MB) — loaded by
-    # latent_demucs.runtime.LatentDemucsRuntime from this exact path.
-    .add_local_file(
-        "/scratch/latent_demucs/distill_final.pt",
-        remote_path="/opt/latent_ckpts/latent_demucs/distill_final.pt",
-        copy=True,
-    )
-    # TODO(post-2026-04-11 wipe): panns_final.pt same story as drumsep.
-    # Instrument classification endpoint (/api/classify) will 500 until
-    # re-trained from /home/arlo/do2/latent_panns_student/. Generation
-    # path doesn't use this model.
-    # .add_local_file(
-    #     "/scratch/latent_panns_student/ckpts/panns_final.pt",
-    #     remote_path="/opt/latent_ckpts/latent_panns/panns_final.pt",
-    #     copy=True,
-    # )
-    # panns_inference package expects /root/panns_data/class_labels_indices.csv
-    .add_local_file(
-        "/scratch/cache/panns_data/class_labels_indices.csv",
-        remote_path="/root/panns_data/class_labels_indices.csv",
         copy=True,
     )
     # TODO(post-2026-04-11 wipe): latent whisper/lyric student vocal (190 MB)
@@ -312,6 +408,13 @@ app = modal.App("doseedo-stemphonic")
         #     INTERNAL_SECRET=<same value as auth-service INTERNAL_SECRET secret> \
         #     DISABLE_ALL_GENERATION=false
         modal.Secret.from_name("doseedo-gate"),
+        # Provides R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT_URL,
+        # R2_BUCKET. Used by _r2_upload_file / _r2_generate_download_url in
+        # the after_request hooks to persist generation outputs to Cloudflare
+        # R2 so users can replay them cross-device after the Modal container
+        # recycles. The same INTERNAL_SECRET from doseedo-gate is reused to
+        # call the auth-service POST /api/generations registration endpoint.
+        modal.Secret.from_name("doseedo-r2"),
     ],
     timeout=60 * 30,           # 30 min per request (long ACE-Step gens)
     scaledown_window=60 * 15,  # 15 min warm window
@@ -386,8 +489,8 @@ class Stemphonic:
         # harmless, and the default ckpt loads via
         # /scratch/stemphonic/checkpoints/stage2d-130k.pt instead).
 
-        # Soundfonts: .pt preset files baked into image
-        link("/scratch/soundfonts", "/opt/soundfonts")
+        # Soundfonts: served from volume (latent-soundfonts), not baked.
+        link("/scratch/soundfonts", "/models/latent-soundfonts")
 
         # Other weight dirs on volume
         link("/scratch/piper_voices",           "/models/piper-voices")
@@ -397,27 +500,32 @@ class Stemphonic:
         link("/scratch/latent_soundfonts",      "/models/latent-soundfonts")
         link("/scratch/onnx",                   "/models/onnx")
 
-        # Latent student model checkpoints — baked into image at
-        # /opt/latent_ckpts/*. Symlink the paths that the runtime code
-        # expects into /scratch.
+        # Latent student model checkpoints — served from volume
+        # (latent-ckpts/*), not baked. The runtime still reads them from
+        # /scratch/latent_*_ckpts/*_final.pt, so we mirror the expected
+        # layout with per-file symlinks into /models/latent-ckpts/.
         os.makedirs("/scratch/latent_pitch_ckpts",   exist_ok=True)
         os.makedirs("/scratch/latent_drumsep_ckpts", exist_ok=True)
         os.makedirs("/scratch/latent_visual_ckpts",  exist_ok=True)
         os.makedirs("/scratch/latent_demucs",        exist_ok=True)
         link("/scratch/latent_pitch_ckpts/pitch_final.pt",
-             "/opt/latent_ckpts/latent_pitch/pitch_final.pt")
+             "/models/latent-ckpts/latent_pitch/pitch_final.pt")
         link("/scratch/latent_drumsep_ckpts/drumsep_final.pt",
-             "/opt/latent_ckpts/latent_drumsep/drumsep_final.pt")
+             "/models/latent-ckpts/latent_drumsep/drumsep_final.pt")
         link("/scratch/latent_visual_ckpts/latent_visual_final.pt",
-             "/opt/latent_ckpts/latent_visual/latent_visual_final.pt")
+             "/models/latent-ckpts/latent_visual/latent_visual_final.pt")
         link("/scratch/latent_demucs/distill_final.pt",
-             "/opt/latent_ckpts/latent_demucs/distill_final.pt")
+             "/models/latent-ckpts/latent_demucs/distill_final.pt")
         os.makedirs("/scratch/latent_panns_student/ckpts", exist_ok=True)
         link("/scratch/latent_panns_student/ckpts/panns_final.pt",
-             "/opt/latent_ckpts/latent_panns/panns_final.pt")
+             "/models/latent-ckpts/latent_panns/panns_final.pt")
         os.makedirs("/scratch/latent_whisper_student/ckpts_vocal", exist_ok=True)
         link("/scratch/latent_whisper_student/ckpts_vocal/student_final.pt",
-             "/opt/latent_ckpts/latent_whisper/student_final.pt")
+             "/models/latent-ckpts/latent_whisper/student_final.pt")
+        # panns_inference loads its label CSV from /root/panns_data/.
+        os.makedirs("/root/panns_data", exist_ok=True)
+        link("/root/panns_data/class_labels_indices.csv",
+             "/models/latent-ckpts/panns_data/class_labels_indices.csv")
 
         # User-durable writable dirs (volume)
         link("/scratch/cache/latents",      "/user_data/latents")
@@ -520,7 +628,7 @@ class Stemphonic:
 
         @stemphonic_server.app.before_request
         def _generation_gate():
-            from flask import request, jsonify
+            from flask import request, jsonify, g
 
             if request.method != "POST":
                 return
@@ -575,8 +683,17 @@ class Stemphonic:
                     method="POST",
                 )
                 with urllib.request.urlopen(req, timeout=5) as resp:
-                    _json.loads(resp.read())
-                    # 200 → allowed, continue normally
+                    gate_body = _json.loads(resp.read())
+                    # 200 → allowed, continue normally. Stash the user_id
+                    # on flask.g so the after_request persistence hook can
+                    # associate generated files with this user when
+                    # registering rows in the auth-service POST /api/generations.
+                    try:
+                        g.gate_user_id = int(gate_body.get("user_id"))
+                    except (TypeError, ValueError):
+                        # Shouldn't happen — auth-service always returns an int —
+                        # but don't fail the request if it ever does.
+                        g.gate_user_id = None
                     return
 
             except urllib.error.HTTPError as e:
@@ -659,6 +776,378 @@ class Stemphonic:
                     _t.cuda.reset_peak_memory_stats()
             except Exception:
                 pass
+
+        # ---------------------------------------------------------------------------
+        # R2 persistence + auth-service generation registration
+        # ---------------------------------------------------------------------------
+        # Today every generation output WAV/MIDI dies with the Modal container
+        # (served inline via send_file from /scratch/stemphonic_outputs). This
+        # hook mirrors each successful output to Cloudflare R2 and registers
+        # a row in the Fly auth-service so users can replay generations from
+        # any device.
+        #
+        # Architecture:
+        #   1. Gate accepts → stash user_id on flask.g.gate_user_id (above).
+        #   2. POST create-task endpoint returns {task_id} → before the response
+        #      leaves, we record user_id ↔ task_id in _task_owners[task_id].
+        #   3. Polling endpoint (or synchronous endpoint) response includes
+        #      file URLs under /scratch/stemphonic_outputs/<task_id>/<filename>.
+        #      When we observe status==completed we iterate those files, upload
+        #      to R2 at generations/<user_id>/<task_id>/<filename>, then call
+        #      POST /api/generations on auth-service to register each row, and
+        #      inject an "r2" block into the response body.
+        #   4. Per-task cache in _task_r2_cache avoids re-uploading on every
+        #      subsequent poll once a task is fully persisted.
+        #
+        # Every failure path logs + swallows: the user's request NEVER blocks
+        # on R2. Files stay on /user_data for ~7 days (cleanup_old_outputs),
+        # so a failed persist cycle just means the user gets the original
+        # send_file URLs with no r2 block and the frontend falls back to the
+        # Modal download route.
+        import json as _gj, urllib.error as _gue, urllib.request as _gur, time as _gt
+        from threading import Lock as _GLock
+
+        # Default: POST /api/generations on the Fly auth-service
+        # (doseedo-api.fly.dev), which owns the generations table. Keep the
+        # GENERATION_REGISTER_URL override for forward compat in case the
+        # endpoint moves. The quota gate may still live on a different host
+        # via AUTH_SERVICE_URL — these two do not need to agree.
+        _GEN_REGISTER_URL = (
+            os.environ.get("GENERATION_REGISTER_URL", "").rstrip("/")
+            or "https://doseedo-api.fly.dev/api/generations"
+        )
+        # Map path → (kind label, create-task? True, polling? False).
+        # Separate-stems and repaint-meter create multiple tasks per request
+        # so their kind label is applied per task_id that pops out of the
+        # response body. transcribe-vocals returns text-only (no audio) so
+        # it does not participate in R2 persistence.
+        _KIND_BY_CREATE_PATH = {
+            "/api/generate-stemphonic":       "stemphonic",
+            "/api/separate-stemphonic":       "separate-stems",
+            "/separate-stems":                "separate-stems",
+            "/api/repaint-meter":             "repaint",
+            "/api/regen-stem-for-chord":      "regen-stem",
+            "/api/generate-score-from-video": "video-score",
+        }
+        # For polling endpoints we need to know which route family they
+        # belong to so the after_request hook can find the right task dict
+        # and output dir on the server module.
+        #   path_prefix → (task_dict_attr, output_dir, kind_label)
+        # The task dict lives on stemphonic_server as either `tasks` (generate
+        # family) or `DEMUCS_TASKS` (separate-stems family). OUTPUT_DIR
+        # constants on the server module point at the on-disk dirs.
+        _POLL_FAMILIES = [
+            # (path_prefix, dict_attr, output_dir_attr, kind)
+            ("/api/generate-stemphonic/task/", "tasks",        "OUTPUT_DIR",        "stemphonic"),
+            ("/separate-stems/status/",        "DEMUCS_TASKS", "DEMUCS_OUTPUT_DIR", "separate-stems"),
+        ]
+
+        _task_owners: dict[str, dict] = {}  # task_id → {user_id, kind, created_at}
+        _task_r2_cache: dict[str, list] = {}  # task_id → [{key, url, generation_id, filename}, ...]
+        _task_lock = _GLock()
+        _r2_log = logging.getLogger("stemphonic.r2")
+
+        def _gc_task_owners():
+            """Drop owner entries older than 24h to keep the map bounded."""
+            cutoff = _gt.time() - 86400
+            with _task_lock:
+                stale = [tid for tid, meta in _task_owners.items() if meta.get("created_at", 0) < cutoff]
+                for tid in stale:
+                    _task_owners.pop(tid, None)
+                    _task_r2_cache.pop(tid, None)
+
+        def _register_generation(user_id, task_id, kind, r2_key, content_type,
+                                 filename, duration_sec=None, metadata=None):
+            """POST to auth-service /api/generations. Returns dict or None."""
+            if not _GEN_REGISTER_URL or not _INTERNAL_SECRET:
+                return None
+            body = _gj.dumps({
+                "user_id": int(user_id),
+                "task_id": task_id,
+                "kind": kind,
+                "r2_key": r2_key,
+                "content_type": content_type,
+                "filename": filename,
+                "duration_sec": duration_sec,
+                "metadata": metadata or {},
+            }).encode()
+            try:
+                req = _gur.Request(
+                    _GEN_REGISTER_URL,
+                    data=body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Internal-Secret": _INTERNAL_SECRET,
+                    },
+                    method="POST",
+                )
+                with _gur.urlopen(req, timeout=5) as resp:
+                    return _gj.loads(resp.read())
+            except _gue.HTTPError as e:
+                _r2_log.error(
+                    "auth-service /api/generations HTTP %d for task=%s key=%s",
+                    e.code, task_id, r2_key,
+                )
+                return None
+            except Exception as e:
+                _r2_log.exception(
+                    "auth-service /api/generations unreachable for task=%s: %s",
+                    task_id, e,
+                )
+                return None
+
+        def _guess_content_type(filename: str) -> str:
+            fn = filename.lower()
+            if fn.endswith(".wav"):  return "audio/wav"
+            if fn.endswith(".mp3"):  return "audio/mpeg"
+            if fn.endswith(".flac"): return "audio/flac"
+            if fn.endswith(".ogg"):  return "audio/ogg"
+            if fn.endswith(".mid") or fn.endswith(".midi"):
+                return "audio/midi"
+            if fn.endswith(".pt"):   return "application/octet-stream"
+            return "application/octet-stream"
+
+        def _persist_task_outputs(user_id, task_id, kind, output_dir):
+            """Walk the on-disk output dir for a completed task, upload each
+            file to R2, register each with auth-service, and return a list of
+            {key, url, generation_id, filename} dicts. Caches per-task so we
+            only do this once even if the polling endpoint is hit repeatedly.
+            """
+            import os as _os, pathlib as _pl
+            with _task_lock:
+                if task_id in _task_r2_cache:
+                    return _task_r2_cache[task_id]
+
+            task_dir = _pl.Path(output_dir) / task_id
+            if not task_dir.exists():
+                return []
+
+            persisted = []
+            for fp in task_dir.rglob("*"):
+                if not fp.is_file():
+                    continue
+                # Skip intermediate / per-task private artifacts. Anything
+                # named input_*, stem_input*, midi_*, or under drum_substems/
+                # is a pre-generation input or a sub-stem cache — the user-
+                # facing output is the top-level WAV/MIDI written by the
+                # route itself.
+                if fp.name.startswith("input_") or fp.name.startswith("stem_input"):
+                    continue
+                if fp.name.startswith("midi_") and fp.suffix.lower() not in (".mid", ".midi"):
+                    continue
+                # Only audio / MIDI outputs are user-facing — skip .pt, .json
+                # intermediates but keep .wav, .mid, .mp3 etc.
+                if fp.suffix.lower() not in (".wav", ".mp3", ".flac", ".ogg",
+                                             ".mid", ".midi"):
+                    continue
+                rel = fp.relative_to(task_dir)
+                key = f"generations/{user_id}/{task_id}/{rel}"
+                ct = _guess_content_type(fp.name)
+                try:
+                    uploaded_key = _r2_upload_file(str(fp), key, ct)
+                except Exception as e:
+                    _r2_log.exception(
+                        "R2 upload crashed for task=%s file=%s: %s", task_id, fp, e
+                    )
+                    uploaded_key = None
+
+                if uploaded_key is None:
+                    # R2 upload failed — skip registration but continue. The
+                    # existing send_file route still works.
+                    continue
+
+                reg = _register_generation(
+                    user_id=user_id,
+                    task_id=task_id,
+                    kind=kind,
+                    r2_key=uploaded_key,
+                    content_type=ct,
+                    filename=fp.name,
+                )
+                if reg is None:
+                    # Registration failed — we already uploaded, but the row
+                    # didn't land. Include the key anyway so frontend can
+                    # presign later if it wants; skip the generation_id.
+                    persisted.append({
+                        "key": uploaded_key,
+                        "url": _r2_generate_download_url(uploaded_key) or "",
+                        "generation_id": None,
+                        "filename": fp.name,
+                    })
+                    continue
+
+                persisted.append({
+                    "key": reg.get("r2_key", uploaded_key),
+                    "url": reg.get("download_url") or _r2_generate_download_url(uploaded_key) or "",
+                    "generation_id": reg.get("id"),
+                    "filename": fp.name,
+                })
+
+            with _task_lock:
+                _task_r2_cache[task_id] = persisted
+            return persisted
+
+        @stemphonic_server.app.after_request
+        def _r2_persist_and_register(response):
+            from flask import request, g
+
+            # Opportunistic GC — cheap, no-op if there's nothing to drop.
+            try:
+                _gc_task_owners()
+            except Exception:
+                pass
+
+            # Only touch JSON responses. send_file binary downloads pass
+            # through untouched.
+            ct = (response.content_type or "").lower()
+            if not ct.startswith("application/json"):
+                return response
+
+            path = request.path
+
+            # -----------------------------------------------------------------
+            # (A) POST create-task endpoints — remember user_id for each task_id
+            #     that appears in the response body.
+            # -----------------------------------------------------------------
+            if request.method == "POST" and path in _KIND_BY_CREATE_PATH:
+                user_id = getattr(g, "gate_user_id", None)
+                kind = _KIND_BY_CREATE_PATH[path]
+                if user_id is not None:
+                    try:
+                        body = response.get_json(silent=True) or {}
+                    except Exception:
+                        body = {}
+                    task_ids = []
+                    if isinstance(body, dict):
+                        if body.get("task_id"):
+                            task_ids.append(body["task_id"])
+                        if body.get("audio_task_id"):
+                            # /api/generate-score-from-video spawns a stemphonic
+                            # audio render — treat its downstream outputs as
+                            # stemphonic kind (it goes through run_generation).
+                            task_ids.append(body["audio_task_id"])
+                        # repaint-meter returns {"results": [{task_id, ...}, ...]}
+                        for entry in (body.get("results") or []):
+                            if isinstance(entry, dict) and entry.get("task_id"):
+                                task_ids.append(entry["task_id"])
+                    for tid in task_ids:
+                        # video-score spawns into the `tasks` dict as kind
+                        # "stemphonic" (shared run_generation), so the poll
+                        # family resolver maps it correctly.
+                        resolved_kind = "stemphonic" if path == "/api/generate-score-from-video" else kind
+                        with _task_lock:
+                            _task_owners[tid] = {
+                                "user_id": user_id,
+                                "kind": resolved_kind,
+                                "created_at": _gt.time(),
+                            }
+
+                    # /api/generate-score-from-video also produces a MIDI file
+                    # synchronously at SCORE_OUTPUT_DIR/<score_id>/score.mid.
+                    # Persist it inline (not via the polling-task machinery
+                    # since score_id is not a task_id in the `tasks` dict).
+                    if path == "/api/generate-score-from-video" and isinstance(body, dict):
+                        score_id = body.get("score_id")
+                        if score_id:
+                            try:
+                                score_dir_root = getattr(
+                                    self._server_module, "SCORE_OUTPUT_DIR",
+                                    "/scratch/stemphonic_outputs/scores",
+                                )
+                                # Reuse _persist_task_outputs by passing the
+                                # score_id as task_id — R2 key becomes
+                                # generations/<user_id>/<score_id>/score.mid
+                                # which is still unique per user.
+                                persisted = _persist_task_outputs(
+                                    user_id, score_id, "video-score", score_dir_root,
+                                )
+                                if persisted:
+                                    body["r2"] = persisted if len(persisted) > 1 else persisted[0]
+                                    response.set_data(_gj.dumps(body))
+                            except Exception as e:
+                                _r2_log.exception(
+                                    "inline persist (video-score) crashed score_id=%s: %s",
+                                    score_id, e,
+                                )
+
+                # Synchronous /api/separate-stemphonic returns the audio_url
+                # and task_id inline — persist immediately.
+                if path == "/api/separate-stemphonic" and user_id is not None:
+                    try:
+                        body = response.get_json(silent=True) or {}
+                    except Exception:
+                        body = {}
+                    task_id = body.get("task_id")
+                    if task_id and body.get("status") == "completed":
+                        try:
+                            output_dir = getattr(
+                                self._server_module, "OUTPUT_DIR",
+                                "/scratch/stemphonic_outputs",
+                            )
+                            persisted = _persist_task_outputs(
+                                user_id, task_id, "separate-stems", output_dir,
+                            )
+                            if persisted:
+                                body["r2"] = persisted if len(persisted) > 1 else persisted[0]
+                                response.set_data(_gj.dumps(body))
+                        except Exception as e:
+                            _r2_log.exception(
+                                "inline persist (separate-stemphonic) crashed task=%s: %s",
+                                task_id, e,
+                            )
+
+            # -----------------------------------------------------------------
+            # (B) Polling endpoints — on first sighting of status==completed,
+            #     upload outputs + register + inject "r2" block into response.
+            # -----------------------------------------------------------------
+            if request.method == "GET":
+                for prefix, dict_attr, output_dir_attr, default_kind in _POLL_FAMILIES:
+                    if not path.startswith(prefix):
+                        continue
+                    task_id = path[len(prefix):].split("/", 1)[0]
+                    if not task_id:
+                        return response
+
+                    try:
+                        body = response.get_json(silent=True) or {}
+                    except Exception:
+                        body = {}
+
+                    status = (body.get("status") or "").lower()
+                    if status != "completed":
+                        return response
+
+                    with _task_lock:
+                        owner = _task_owners.get(task_id)
+                    if not owner:
+                        # Pre-existing task from before the gate started
+                        # stashing, or gate was configured fail-open. Skip
+                        # persistence but keep original response intact.
+                        return response
+
+                    try:
+                        output_dir = getattr(
+                            self._server_module, output_dir_attr,
+                            "/scratch/stemphonic_outputs",
+                        )
+                        persisted = _persist_task_outputs(
+                            owner["user_id"], task_id,
+                            owner.get("kind", default_kind),
+                            output_dir,
+                        )
+                    except Exception as e:
+                        _r2_log.exception(
+                            "persist on poll crashed task=%s: %s", task_id, e
+                        )
+                        persisted = []
+
+                    if persisted:
+                        # Use an array when multiple files, object when one.
+                        body["r2"] = persisted if len(persisted) > 1 else persisted[0]
+                        response.set_data(_gj.dumps(body))
+                    return response
+
+            return response
 
         self.flask_app = stemphonic_server.app
 

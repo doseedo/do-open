@@ -196,18 +196,20 @@ export async function saveEverywhere(projectName, state, options = {}) {
 }
 
 /**
- * Quick save - saves locally and queues cloud save
- * Good for Cmd+S / Ctrl+S shortcut
+ * Quick save — local + debounced backend autosave.
+ *
+ * Heavy GCS/R2 file re-uploads (`saveToCloud`) no longer run per tick; they
+ * only fire from the explicit "Post" / "Save As…" flows. Autosave pushes
+ * the project-state JSON to R2 via PUT /api/sessions/{id}/state, which is
+ * cheap and keeps the user's work synced across devices.
  */
 export async function quickSave(projectName, state) {
-  // Save locally immediately
   const localResult = await saveLocal(projectName, state);
-
-  // Queue cloud save in background (don't wait)
-  saveToCloud(projectName, state, { background: true }).catch(error => {
-    console.warn('Background cloud save failed:', error);
-  });
-
+  try {
+    queueBackendAutosave(projectName, state);
+  } catch (e) {
+    console.warn('[saveService] queueBackendAutosave threw:', e?.message);
+  }
   return localResult;
 }
 
@@ -229,6 +231,130 @@ export function markUnsaved() {
   updateSaveStatus(SaveStatus.UNSAVED);
 }
 
+// ── Backend autosave (cross-device) ────────────────────────────────────
+//
+// Debounced PUT /api/sessions/{id}/state. The state JSON gets written to R2
+// so opening the project on another device restores exactly what the user
+// left behind — audio URLs embedded in the state still resolve via the same
+// R2 keys, so no per-file re-upload is needed.
+//
+//   • 2.5s idle debounce, 750ms leading edge on the first edit burst.
+//   • Requires a remote session id — `ensureSessionIdFor` must run on the
+//     user's first explicit save (Save / Save As) so autosave has something
+//     to target.
+//   • No-ops when signed out or when there's no remote id yet.
+
+const AUTOSAVE_IDLE_MS = 2500;
+const AUTOSAVE_LEADING_MS = 750;
+
+let _autosaveTimer = null;
+let _autosaveLeadingTimer = null;
+let _autosaveLastFiredAt = 0;
+let _autosaveInFlight = false;
+let _lastQueuedState = null;
+let _lastQueuedName = null;
+
+async function performBackendAutosave(projectName, state) {
+  const user = getCurrentUser();
+  if (!user || !user.id) return { skipped: 'not-authenticated' };
+
+  const remoteId = sessionService.getSessionIdForName(projectName);
+  if (!remoteId) return { skipped: 'no-remote-session' };
+
+  try {
+    _autosaveInFlight = true;
+    updateSaveStatus(SaveStatus.SAVING);
+    await sessionAPI.putSessionState(remoteId, state);
+    _autosaveLastFiredAt = Date.now();
+    const now = new Date();
+    updateSaveStatus(SaveStatus.SAVED, lastSaveTime, now);
+    return { success: true, savedAt: now };
+  } catch (err) {
+    console.warn('[saveService] backend autosave failed', err?.message);
+    updateSaveStatus(SaveStatus.ERROR);
+    return { success: false, error: err?.message };
+  } finally {
+    _autosaveInFlight = false;
+  }
+}
+
+export function queueBackendAutosave(projectName, state) {
+  if (!projectName || !state) return;
+  _lastQueuedName = projectName;
+  _lastQueuedState = state;
+  const now = Date.now();
+
+  if (
+    !_autosaveLeadingTimer &&
+    !_autosaveInFlight &&
+    now - _autosaveLastFiredAt > AUTOSAVE_IDLE_MS
+  ) {
+    _autosaveLeadingTimer = setTimeout(() => {
+      _autosaveLeadingTimer = null;
+      if (_lastQueuedName && _lastQueuedState) {
+        performBackendAutosave(_lastQueuedName, _lastQueuedState).catch(() => {});
+      }
+    }, AUTOSAVE_LEADING_MS);
+  }
+
+  if (_autosaveTimer) clearTimeout(_autosaveTimer);
+  _autosaveTimer = setTimeout(() => {
+    _autosaveTimer = null;
+    if (_lastQueuedName && _lastQueuedState) {
+      performBackendAutosave(_lastQueuedName, _lastQueuedState).catch(() => {});
+    }
+  }, AUTOSAVE_IDLE_MS);
+}
+
+export async function flushBackendAutosave() {
+  if (_autosaveTimer) { clearTimeout(_autosaveTimer); _autosaveTimer = null; }
+  if (_autosaveLeadingTimer) {
+    clearTimeout(_autosaveLeadingTimer);
+    _autosaveLeadingTimer = null;
+  }
+  if (_lastQueuedName && _lastQueuedState) {
+    return performBackendAutosave(_lastQueuedName, _lastQueuedState);
+  }
+  return { skipped: 'nothing-queued' };
+}
+
+/**
+ * Ensure a remote session id exists for `projectName`. Creates one on the
+ * backend via POST /api/sessions + seeds the initial state via
+ * PUT /api/sessions/{id}/state. Call from the Save / Save As UI flow.
+ */
+export async function ensureSessionIdFor(projectName, initialState, options = {}) {
+  if (!projectName) return null;
+  const existing = sessionService.getSessionIdForName(projectName);
+  if (existing) return existing;
+
+  const user = getCurrentUser();
+  if (!user || !user.id) return null;
+
+  try {
+    const created = await sessionAPI.createSession({
+      name: projectName,
+      description: options.description || '',
+      type: options.type || 'project',
+      is_public: !!options.isPublic,
+    });
+    const id = created?.id || created?.session_id;
+    if (!id) return null;
+    sessionService.rememberSessionId(projectName, id);
+    if (initialState) {
+      try {
+        await sessionAPI.putSessionState(id, initialState);
+      } catch (e) {
+        console.warn('[saveService] initial state upload failed', e?.message);
+      }
+    }
+    return id;
+  } catch (err) {
+    console.warn('[saveService] ensureSessionIdFor failed', err?.message);
+    return null;
+  }
+}
+
 export default {
   saveLocal,
   saveToCloud,
@@ -237,5 +363,8 @@ export default {
   onSaveStatusChange,
   getSaveStatus,
   markUnsaved,
+  queueBackendAutosave,
+  flushBackendAutosave,
+  ensureSessionIdFor,
   SaveStatus
 };
