@@ -193,6 +193,9 @@ export class Pipeline {
       return base;
     }
 
+    const inputRms = rmsOf(base.samples);
+    console.log(`[polypitch.render] ${edits.length} edits, input rms=${inputRms.toFixed(5)}`);
+
     const editedNotes = this.notes.filter((n) => edits.some((e) => e.noteId === n.id));
     const needIds = editedNotes.map((n) => n.id).filter((id) => !this.noteAudioCache.has(id));
     if (needIds.length > 0) {
@@ -209,6 +212,8 @@ export class Pipeline {
       const original = this.noteAudioCache.get(note.id);
       if (!original) continue;
 
+      const extractedRms = rmsOf(original.samples);
+
       if (includeUnedited) this.subtractNoteFromMix(base, original);
 
       const totalSemis = edit.semitones + edit.cents / 100;
@@ -224,10 +229,19 @@ export class Pipeline {
       const ratio = Math.pow(2, totalSemis / 12);
       const shifted = await this.pitchShiftPhaseVocoder(note, ratio);
       if (shifted) {
+        const shiftedRms = rmsOf(shifted.samples);
+        const deltaRms = rmsOf2(original.samples, shifted.samples);
+        console.log(`  [edit ${i}/${edits.length}] note=${note.id} ±${totalSemis.toFixed(2)}st ratio=${ratio.toFixed(4)}`
+          + ` extract.rms=${extractedRms.toFixed(5)} shifted.rms=${shiftedRms.toFixed(5)}`
+          + ` |shifted-extract|.rms=${deltaRms.toFixed(5)}`);
         if (gain !== 1) scaleInPlace(shifted.samples, gain);
         this.addNoteToMix(base, shifted);
       }
     }
+
+    const outputRms = rmsOf(base.samples);
+    const deltaIO = rmsOf2Audio(this.cachedStft!.audio.samples, base.samples);
+    console.log(`[polypitch.render] done. output rms=${outputRms.toFixed(5)} |output-input|.rms=${deltaIO.toFixed(5)}`);
 
     this.diagnostics.lastTimingsMs.render = nowMs() - t0;
     this.setStage("ready", 1);
@@ -505,6 +519,24 @@ function cpuPhaseVocoder(
 
 function nowMs(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+function rmsOf(buf: Float32Array): number {
+  let s = 0;
+  const N = Math.min(buf.length, 500000);
+  for (let i = 0; i < N; i++) s += buf[i] * buf[i];
+  return Math.sqrt(s / Math.max(1, N));
+}
+function rmsOf2(a: Float32Array, b: Float32Array): number {
+  let s = 0;
+  const N = Math.min(a.length, b.length, 500000);
+  for (let i = 0; i < N; i++) { const d = a[i] - b[i]; s += d * d; }
+  return Math.sqrt(s / Math.max(1, N));
+}
+function rmsOf2Audio(a: Float32Array, b: Float32Array): number {
+  let s = 0;
+  const N = Math.min(a.length, b.length, 500000);
+  for (let i = 0; i < N; i++) { const d = a[i] - b[i]; s += d * d; }
+  return Math.sqrt(s / Math.max(1, N));
 }
 function extractChannel(audio: AudioBuffer, c: number): Float32Array {
   const off = c * audio.frames;
