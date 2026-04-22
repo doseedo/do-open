@@ -793,6 +793,87 @@ export default function StudioDev() {
         },
       }));
       dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: stemTracks } });
+
+      // ── Per-stem BasicPitch (in-browser, WebGPU WASM, serialized by
+      // the transcribeAudio mutex) — the final-quality pitched MIDI pass.
+      // Runs on each stem's demucs-separated WAV independently so the
+      // transcription reflects only that stem's content (no master-mix
+      // cross-contamination). Overwrites the latentPitch placeholder
+      // that the WebGPU latent-extraction IIFE below fills in.
+      //
+      // We start this RIGHT AFTER stem WAVs are in state so it runs in
+      // parallel with the sem4Decoder + latentPitch pass — usually
+      // basic-pitch wins on the first 1–2 stems before latentPitch
+      // dispatches, giving the piano roll accurate notes from the start.
+      // Drums are skipped: basic-pitch detects pitched onsets, not drum
+      // hits — drums stay on latentDrumTranscribe.
+      (async () => {
+        const { transcribeAudio } = await import('../../services/basicPitchOnnx');
+        const tempo = stateRef.current.bpm || 120;
+        const bpMidiByStem = {};
+        for (const [stemName, audioUrl] of Object.entries(sep.stems)) {
+          if (stemName === 'drums') continue;
+          try {
+            const resp = await fetch(audioUrl);
+            if (!resp.ok) {
+              logPipeline('basicPitch', `${stemName}: fetch ${resp.status}`, 'warn');
+              continue;
+            }
+            const ab = await resp.arrayBuffer();
+            const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+            // Decode into mono at the native sample rate. transcribeAudio
+            // resamples to 22050 internally, so we just need mono PCM.
+            const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const decoded = await tmpCtx.decodeAudioData(ab.slice(0));
+            try { tmpCtx.close(); } catch (_) {}
+            const mono = decoded.numberOfChannels === 1
+              ? decoded.getChannelData(0).slice()
+              : (() => {
+                  const l = decoded.getChannelData(0);
+                  const r = decoded.getChannelData(1);
+                  const m = new Float32Array(l.length);
+                  for (let i = 0; i < l.length; i++) m[i] = 0.5 * (l[i] + r[i]);
+                  return m;
+                })();
+            const t0 = performance.now();
+            logPipeline('basicPitch', `${stemName}: transcribing…`);
+            const { notes, duration } = await transcribeAudio(mono, decoded.sampleRate);
+            const dt = (performance.now() - t0).toFixed(0);
+            if (!notes || notes.length === 0) {
+              logPipeline('basicPitch', `${stemName}: no notes (${dt}ms)`, 'warn');
+              continue;
+            }
+            logPipeline('basicPitch', `${stemName}: ${notes.length} notes (${dt}ms)`, 'ok');
+            dispatch({
+              type: 'UPDATE_TRACK',
+              payload: {
+                busId, trackId: `stem-${trackId}-${stemName}`,
+                updates: { metadata: { midiData: { notes, duration, tempo } } },
+              },
+            });
+            bpMidiByStem[stemName] = notes;
+          } catch (err) {
+            logPipeline('basicPitch', `${stemName}: ${err?.message || 'failed'}`, 'warn');
+          }
+        }
+        // Re-detect chords from all per-stem BasicPitch transcriptions.
+        if (Object.keys(bpMidiByStem).length > 0) {
+          try {
+            const { rerunChordDetection } = await import('../../services/detectChordsFromMIDI');
+            const s = stateRef.current;
+            const chordsNum = rerunChordDetection(bpMidiByStem, {
+              beatMap: s.beatMap, bpm: s.bpm || tempo,
+            });
+            if (Object.keys(chordsNum).length > 0) {
+              dispatch({ type: 'SET_CHORDS', payload: chordsNum });
+              logPipeline('chords', `${Object.keys(chordsNum).length} chords from per-stem basic-pitch`, 'ok');
+            }
+          } catch (err) {
+            logPipeline('chords', `per-stem chord rerun failed: ${err?.message || 'error'}`, 'warn');
+          }
+        }
+      })();
+
       // Promote the parent uploaded-mix track to the bus MASTER: it
       // keeps all its audio + analysis metadata (lyrics, latents, MIDI)
       // so playback + regen still have it, but the render code filters
@@ -875,38 +956,19 @@ export default function StudioDev() {
 
               const [pitchedResults, drumResult] = await Promise.all([pitchedPromise, drumsPromise]);
 
-              // ── Tier 2: refine per-stem latentPitch with master BasicPitch ──
-              // Wait for master BasicPitch (may have already resolved). If
-              // it returned empty (disabled / failed), fall through and use
-              // raw latentPitch for each stem. Drums stay on the
-              // latentDrumTranscribe path — BasicPitch doesn't do drums.
-              let masterNotes = [];
-              try { masterNotes = await masterNotesPromise; } catch (_) { masterNotes = []; }
-              const stemNotesByName = {};
-              for (let k = 0; k < pitchedIdx.length; k++) {
-                const stemName = stemNames[pitchedIdx[k]];
-                stemNotesByName[stemName] = pitchedResults[k].notes;
-              }
-              let refinedByStem = stemNotesByName;
-              if (masterNotes.length > 0) {
-                try {
-                  const { combineForStems } = await import('../../services/midiRefine');
-                  refinedByStem = combineForStems(masterNotes, stemNotesByName);
-                  const before = Object.values(stemNotesByName).reduce((s, a) => s + a.length, 0);
-                  const after = Object.values(refinedByStem).reduce((s, a) => s + a.length, 0);
-                  console.log(`[basicPitch] refined ${Object.keys(stemNotesByName).length} stems with master: ${before} → ${after} notes`);
-                  logPipeline('refine', `${Object.keys(stemNotesByName).length} stems: ${before} → ${after} notes`, 'ok');
-                } catch (err) {
-                  console.warn('[basicPitch] refinement failed, using raw latentPitch:', err?.message || err);
-                  logPipeline('refine', `fallback to raw latentPitch (${err?.message || 'error'})`, 'warn');
-                  refinedByStem = stemNotesByName;
-                }
-              }
+              // LatentPitch is the placeholder transcription — fast but
+              // noisy (octave ghosts, harmonic fires). It paints the piano
+              // roll immediately so the user sees something. Per-stem
+              // BasicPitch runs next in a separate async block (see the
+              // IIFE after this one) and overwrites these notes as each
+              // stem finishes transcribing. The master-refinement pass
+              // (midiRefine.combineForStems) was removed — with a sparse
+              // master transcription it dropped legitimate inner-voice
+              // chord tones on every stem.
               for (let k = 0; k < pitchedIdx.length; k++) {
                 const i = pitchedIdx[k];
                 const stemName = stemNames[i];
-                const { duration } = pitchedResults[k];
-                const notes = refinedByStem[stemName] || pitchedResults[k].notes;
+                const { notes, duration } = pitchedResults[k];
                 dispatch({
                   type: 'UPDATE_TRACK',
                   payload: {
@@ -924,26 +986,7 @@ export default function StudioDev() {
                   },
                 });
               }
-              console.log(`[latentPitch] applied MIDI to all ${stemNames.length} stems`);
-
-              // Chord pass from REFINED stems (supersedes the master-only
-              // first pass). Same pool-then-detect pipeline; the notes
-              // are now timing-snapped + false-positive-filtered.
-              try {
-                const { rerunChordDetection } = await import('../../services/detectChordsFromMIDI');
-                const s = stateRef.current;
-                const chordsNum = rerunChordDetection(refinedByStem, {
-                  beatMap: s.beatMap, bpm: s.bpm || tempo,
-                });
-                if (Object.keys(chordsNum).length > 0) {
-                  dispatch({ type: 'SET_CHORDS', payload: chordsNum });
-                  console.log(`[chords] Tier-2 refined-stem pass: ${Object.keys(chordsNum).length} chord changes`);
-                  logPipeline('chords', `${Object.keys(chordsNum).length} chords from refined stems (tier 2)`, 'ok');
-                }
-              } catch (err) {
-                console.warn('[chords] Tier-2 pass failed:', err?.message || err);
-                logPipeline('chords', `tier-2 pass failed: ${err?.message || 'error'}`, 'warn');
-              }
+              console.log(`[latentPitch] applied MIDI to all ${stemNames.length} stems (placeholder — basic-pitch follows)`);
             },
           });
         } catch (err) {
