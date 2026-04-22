@@ -8,6 +8,27 @@ import { getStretchedBuffer } from '../services/wsolaStretch';
 // Global audio buffer cache (shared across all instances)
 const audioBufferCache = new Map();
 
+function normalizeStemForMaskPlayback(track) {
+  const raw = (
+    track?.metadata?.stemType ||
+    track?.metadata?.instrument ||
+    track?.metadata?.instrumentGroup ||
+    ''
+  ).toLowerCase();
+
+  if (!raw) return null;
+  if (raw === 'drums' || raw === 'drum_kit' || raw === 'percussion') return 'drums';
+  if (raw === 'bass' || raw === 'electric_bass' || raw === 'upright_bass') return 'bass';
+  if (
+    raw === 'vocals' ||
+    raw === 'lead_vox' ||
+    raw === 'bg_vox' ||
+    raw === 'choir' ||
+    raw === 'voice'
+  ) return 'vocals';
+  return 'other';
+}
+
 /**
  * Custom hook for managing audio playback across multiple tracks
  * Integrates with global state via dispatch
@@ -129,7 +150,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       const stemTracks = allTracks.filter(t => t.metadata?.type === 'stem');
       const hasStemSolo = stemTracks.some(t => t.isSolo);
       for (const t of stemTracks) {
-        const stemName = t.metadata?.stemType || t.metadata?.instrument;
+        const stemName = normalizeStemForMaskPlayback(t);
         if (!stemName) continue;
         const busMuted = t._busMuted || false;
         const busGain = t._busGain || 1.0;
@@ -521,7 +542,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
 
         let activeSolo = null;
         for (const t of maskStemTracks) {
-          const stemName = t.metadata?.stemType || t.metadata?.instrument;
+          const stemName = normalizeStemForMaskPlayback(t);
           if (!stemName) continue;
           const busGain = t._busGain || 1.0;
           const busMuted = t._busMuted || false;
@@ -539,7 +560,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         // Polypitch-edited stems: 0 gain in the mask path (they'll play via
         // the regular scheduler below from their new audioUrl).
         for (const t of polypitchStemTracks) {
-          const stemName = t.metadata?.stemType || t.metadata?.instrument;
+          const stemName = normalizeStemForMaskPlayback(t);
           if (stemName) stemGains[stemName] = 0;
         }
 
@@ -556,7 +577,8 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             const url = (t.audioUrl || '').slice(0, 60);
             const cached = audioBufferCache.has(t.audioUrl);
             const stem = t.metadata?.stemType || t.metadata?.instrument || '?';
-            console.log(`  🎹 polypitch stem: id=${t.id} stem=${stem} gain(mask)=0 url=${url}… cached=${cached}`);
+            const maskStem = normalizeStemForMaskPlayback(t) || '?';
+            console.log(`  🎹 polypitch stem: id=${t.id} stem=${stem} maskStem=${maskStem} gain(mask)=0 url=${url}… cached=${cached}`);
           }
         }
 
