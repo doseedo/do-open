@@ -172,6 +172,15 @@ function AppContent() {
     if (typeof document !== 'undefined') {
       document.body.classList.toggle('workbench-theme', isWorkbench);
       document.body.classList.toggle('theme-hifi-purple', isHifiPurple);
+      // Lazy-load the legacy pre-workbench stylesheet ONLY when the
+      // user is actually on the legacy DAW route. Keeps 3.5k lines of
+      // input[type=range] / button / body rules out of the workbench
+      // bundle. Once loaded it stays in the document (fine — only
+      // side-affects /studio-legacy styling which already needs it).
+      if (p === '/studio-legacy') {
+        import(/* webpackChunkName: "legacy-style" */ './assets/css/original-style5.css')
+          .catch((err) => console.warn('[legacy-style] load failed:', err?.message || err));
+      }
       return () => {
         document.body.classList.remove('workbench-theme');
         document.body.classList.remove('theme-hifi-purple');

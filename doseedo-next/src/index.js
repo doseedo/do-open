@@ -6,7 +6,10 @@ import './styles/theme-workbench.css'; // Master workbench theme — body.workbe
 import './styles/theme-hifi-purple.css'; // Dev variant override (body.theme-hifi-purple on /studio)
 import './styles/glass-theme-background.css'; // Glass theme backgrounds
 import './styles/liquid-glass.css'; // Glass theme button & panel effects
-import './assets/css/original-style5.css';
+// original-style5.css (3.5k lines, pre-workbench DAW chrome) is now
+// dynamic-imported by App.js ONLY on the /studio-legacy route — the
+// workbench routes get to load without its button/range/body rules
+// bleeding in. Kept out of this eager bundle intentionally.
 import './assets/css/App.css';
 import App from './App';
 

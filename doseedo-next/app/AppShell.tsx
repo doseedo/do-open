@@ -10,7 +10,9 @@ import '@/styles/theme-workbench.css'; // Master workbench theme — body.workbe
 import '@/styles/theme-hifi-purple.css'; // Dev variant — scoped to body.theme-hifi-purple (applied on /studio)
 import '@/styles/glass-theme-background.css';
 import '@/styles/liquid-glass.css';
-import '@/assets/css/original-style5.css';
+// original-style5.css (3.5k lines, pre-workbench DAW chrome) is lazy-
+// loaded on /studio-legacy by src/App.js so the workbench routes
+// don't inherit its legacy input[type=range] / body / button rules.
 import '@/assets/css/App.css';
 // :root blocks extracted from *.module.css files (Next.js CSS modules forbid
 // non-pure selectors, so they live globally here instead).
