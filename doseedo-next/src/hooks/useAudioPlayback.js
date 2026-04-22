@@ -8,6 +8,42 @@ import { getStretchedBuffer } from '../services/wsolaStretch';
 // Global audio buffer cache (shared across all instances)
 const audioBufferCache = new Map();
 
+function serializeEditSchedule(editSchedule) {
+  if (!Array.isArray(editSchedule) || editSchedule.length === 0) return '';
+  return editSchedule.map((seg) => [
+    seg.srcStart ?? 0,
+    seg.srcEnd ?? 0,
+    seg.dstStart ?? 0,
+    seg.dstEnd ?? 0,
+    seg.rate ?? 1,
+    seg.kind || '',
+  ].join(':')).join('|');
+}
+
+function buildPlaybackGraphSignature(trackGroups) {
+  const buckets = ['vo', 'music', 'sfx', 'drums', 'midi', 'audio'];
+  return buckets.flatMap((bucket) => {
+    const group = trackGroups?.[bucket] || [];
+    return group.map((track) => {
+      const hitSig = Array.isArray(track.drumHits)
+        ? track.drumHits.map((hit) => `${hit.startTime || 0}:${hit.audioUrl || ''}`).join('|')
+        : '';
+      return [
+        bucket,
+        track.id || '',
+        track.audioUrl || '',
+        track.f0Audio || '',
+        track.startPosition || 0,
+        track.cropStart || 0,
+        track.duration || track.length || 0,
+        track.metadata?.polypitchRendered ? 'poly' : '',
+        serializeEditSchedule(track.editSchedule),
+        hitSig,
+      ].join('~');
+    });
+  }).join('||');
+}
+
 function normalizeStemForMaskPlayback(track) {
   const raw = (
     track?.metadata?.stemType ||
@@ -762,6 +798,37 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
   // Keep a ref to the latest play() fn so the meter-change effect below
   // can re-invoke it without bloating its own dep list.
   useEffect(() => { playRef.current = play; }, [play]);
+
+  // Live reschedule on track graph changes while playing. This is the
+  // browser-side equivalent of "swap in the new rendered file now" when
+  // polypitch updates a stem's audioUrl mid-transport.
+  const playbackGraphSignature = buildPlaybackGraphSignature(tracks);
+  const lastPlaybackGraphRef = useRef(playbackGraphSignature);
+  useEffect(() => {
+    const prev = lastPlaybackGraphRef.current;
+    const changed = prev !== playbackGraphSignature;
+    lastPlaybackGraphRef.current = playbackGraphSignature;
+    if (!changed) return;
+    if (!isPlayingRef.current || !audioContextRef.current || !hasStartedPlaybackRef.current) return;
+
+    const t = audioContextRef.current.currentTime - startTimeRef.current;
+    if (t >= 0 && t <= totalDuration + 1) {
+      pauseTimeRef.current = t;
+    }
+    sourceNodesRef.current.forEach((s) => { try { s.stop(); } catch (_) {} });
+    sourceNodesRef.current = [];
+    gainNodesRef.current.clear();
+    if (isMaskPlaybackReady()) {
+      maskStop();
+    }
+    hasStartedPlaybackRef.current = false;
+
+    const fn = playRef.current;
+    if (fn) {
+      console.log(`🔄 live reschedule: track graph changed at t=${pauseTimeRef.current.toFixed(2)}s`);
+      Promise.resolve().then(() => { if (isPlayingRef.current) fn(); });
+    }
+  }, [playbackGraphSignature, totalDuration]);
 
   // Live reschedule on bpm / meter change while playing. Schedules are
   // derived from (project bpm, project meter, track metadata), so when the
