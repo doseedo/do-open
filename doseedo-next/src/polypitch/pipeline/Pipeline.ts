@@ -615,10 +615,14 @@ function cpuIfft(re: Float32Array, im: Float32Array): void {
       const ti = im[i]; im[i] = im[j]; im[j] = ti;
     }
   }
-  // Cooley-Tukey, inverse direction.
+  // Cooley-Tukey, INVERSE direction — twiddle angle is POSITIVE 2π/len.
+  // (Forward FFT uses -2π/len. The previous code had `angle = -2 * Math.PI / len`
+  // which is the forward direction; combined with the N division at the end
+  // that produced time-reversed output at ~1/N² amplitude — explained why
+  // extract.rms was 10000× smaller than the Python reproduction.)
   for (let len = 2; len <= n; len <<= 1) {
     const half = len >> 1;
-    const angle = -2 * Math.PI / len;
+    const angle = 2 * Math.PI / len;
     const wRe0 = Math.cos(angle), wIm0 = Math.sin(angle);
     for (let i = 0; i < n; i += len) {
       let cRe = 1, cIm = 0;
