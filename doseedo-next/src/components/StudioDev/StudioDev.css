@@ -1523,8 +1523,7 @@
 }
 
 /* Per-note bend + curve sliders, overlaid on the canvas next to the
- * selected multi-row note. Both are native range inputs with tight
- * appearance overrides so they read as part of the note chrome. */
+ * selected multi-row note. */
 .sd-midi-note-bend,
 .sd-midi-note-curve {
   position: absolute;
@@ -1534,28 +1533,70 @@
   pointer-events: auto;
   z-index: 4;
   cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
-}
-.sd-midi-note-bend {
-  /* vertical slider on the right side of the note */
-  width: 14px;
-  transform: rotate(180deg);
-  writing-mode: vertical-lr;
-  -webkit-appearance: slider-vertical;
 }
 .sd-midi-note-curve {
   /* horizontal slider directly below the note */
-  height: 12px;
+  height: 10px;
+  -webkit-appearance: none;
+  appearance: none;
 }
-.sd-midi-note-bend::-webkit-slider-runnable-track,
 .sd-midi-note-curve::-webkit-slider-runnable-track {
-  background: rgba(21, 24, 28, 0.2);
-  border-radius: 2px;
+  height: 2px;
+  background: rgba(21, 24, 28, 0.35);
+  border-radius: 1px;
 }
-.sd-midi-note-bend::-webkit-slider-thumb,
 .sd-midi-note-curve::-webkit-slider-thumb {
   -webkit-appearance: none;
+  width: 10px; height: 10px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--wb-ink);
+  border: 1px solid var(--wb-surface);
+  cursor: pointer;
+}
+.sd-midi-note-curve::-moz-range-track {
+  height: 2px;
+  background: rgba(21, 24, 28, 0.35);
+  border-radius: 1px;
+}
+.sd-midi-note-curve::-moz-range-thumb {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--wb-ink);
+  border: 1px solid var(--wb-surface);
+  cursor: pointer;
+}
+
+/* Vertical bend slider — use the native slider-vertical appearance
+ * (Chromium/WebKit) + orient attribute (Firefox) instead of rotating
+ * a horizontal slider, which gave a huge black UA-default track.
+ * Width kept thin so it sits snugly against the note's right edge. */
+.sd-midi-note-bend {
+  width: 12px;
+  -webkit-appearance: slider-vertical;
+       appearance: slider-vertical;
+  writing-mode: bt-lr;  /* Firefox cue — actual orient via attr */
+}
+.sd-midi-note-bend::-webkit-slider-runnable-track {
+  width: 2px;
+  background: rgba(21, 24, 28, 0.35);
+  border-radius: 1px;
+}
+.sd-midi-note-bend::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 10px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--wb-ink);
+  border: 1px solid var(--wb-surface);
+  cursor: pointer;
+}
+.sd-midi-note-bend::-moz-range-track {
+  width: 2px;
+  background: rgba(21, 24, 28, 0.35);
+  border-radius: 1px;
+}
+.sd-midi-note-bend::-moz-range-thumb {
   width: 10px; height: 10px;
   border-radius: 50%;
   background: var(--wb-ink);

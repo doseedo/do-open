@@ -915,6 +915,7 @@ export default function StudioDevMidi() {
               <input
                 type="range"
                 className="sd-midi-note-bend"
+                orient="vertical"
                 style={{ left: x + w + 2, top: y, height: h }}
                 min={0} max={1} step={0.01}
                 value={bend}
