@@ -396,31 +396,22 @@ export class Pipeline {
     // per-note {startFrame, endFrame, f0Hz, energy}. Basic-pitch gives us
     // a constant midi pitch per note (no vibrato track), so f0Hz is
     // constant for the note's duration.
+    // Frame indices are derived purely from seconds at the STFT hop rate.
+    // basicPitchOnnx emits `startFrame`/`endFrame` at its own ~86 FPS, not at
+    // the STFT hop rate (~93.75 FPS at 48 kHz / hop=512) — using those as
+    // STFT frame indices placed extracted audio ~0.4 s before the note,
+    // so windowRms at [startSec, endSec] returned 0 and every edit silently
+    // became a no-op.
     const portionNotes: PortionNote[] = this.notes.map((n) => {
-      const fallbackStartFrame = Math.round((n.startSec * sr) / hop);
-      const startFrame = Math.max(
-        0,
-        Number.isFinite(n.startFrame) ? Math.round(n.startFrame) : fallbackStartFrame,
-      );
-      const fallbackEndFrame = Math.round((n.endSec * sr) / hop);
+      const startFrame = Math.max(0, Math.round((n.startSec * sr) / hop));
       const endFrame = Math.min(
         nFrames - 1,
-        Math.max(
-          startFrame,
-          Number.isFinite(n.endFrame) ? Math.round(n.endFrame) : fallbackEndFrame,
-        ),
+        Math.max(startFrame, Math.round((n.endSec * sr) / hop)),
       );
       const midi = n.pitchMidi + (n.pitchCents || 0) / 100;
       const f0Hz = 440 * Math.pow(2, (midi - 69) / 12);
       const energy = Math.max(0.01, Math.min(1, n.velocity));
-      return {
-        startFrame,
-        endFrame,
-        f0Hz,
-        energy,
-        pitchTrack: n.pitchTrack,
-        energyCurve: n.energyCurve,
-      };
+      return { startFrame, endFrame, f0Hz, energy };
     });
 
     // Figure out which portion-notes we're extracting (indices into
@@ -472,20 +463,15 @@ export class Pipeline {
         const pn = portionNotes[nIdx];
         if (t < pn.startFrame || t > pn.endFrame) continue;
         if (idxToEdit[nIdx] >= 0) anyEdited = true;
-        const relFrame = t - pn.startFrame;
-        const energy = energyForPortionFrame(pn, relFrame);
-        if (!Number.isFinite(energy) || energy <= 0) continue;
-        const f0Hz = f0ForPortionFrame(pn, relFrame);
-        if (!Number.isFinite(f0Hz) || f0Hz <= 0) continue;
         // Accumulate harmonic demand into demand[nIdx, :]
         const noteOff = nIdx * nBins;
         for (let k = 1; k <= HARMONICS; k++) {
-          const fk = k * f0Hz;
+          const fk = k * pn.f0Hz;
           const binK = fk * binPerHz;
           if (binK >= nBins) break;
           let halfWidthBins = binK * halfRatio;
           if (halfWidthBins < 1) halfWidthBins = 1;
-          const amp = (1 / k) * energy;
+          const amp = (1 / k) * pn.energy;
           const lo = Math.max(0, Math.floor(binK - halfWidthBins));
           const hi = Math.min(nBins - 1, Math.ceil(binK + halfWidthBins));
           for (let b = lo; b <= hi; b++) {
@@ -756,8 +742,6 @@ interface PortionNote {
   endFrame: number;
   f0Hz: number;
   energy: number;
-  pitchTrack?: Float32Array;
-  energyCurve?: Float32Array;
 }
 
 /**
@@ -878,28 +862,3 @@ function pitchShiftByResample(
   return { samples: out, channels, sampleRate, frames };
 }
 
-function energyForPortionFrame(note: PortionNote, relFrame: number): number {
-  if (note.energyCurve && note.energyCurve.length > 0) {
-    const idx = Math.max(0, Math.min(note.energyCurve.length - 1, relFrame));
-    const energy = note.energyCurve[idx];
-    if (Number.isFinite(energy) && energy > 0) return energy;
-  }
-  return note.energy;
-}
-
-function f0ForPortionFrame(note: PortionNote, relFrame: number): number {
-  if (note.pitchTrack && note.pitchTrack.length > 0) {
-    const totalFrames = Math.max(1, note.endFrame - note.startFrame + 1);
-    const srcPos = totalFrames <= 1 || note.pitchTrack.length === 1
-      ? 0
-      : (relFrame * (note.pitchTrack.length - 1)) / Math.max(1, totalFrames - 1);
-    const i0 = Math.floor(srcPos);
-    const i1 = Math.min(note.pitchTrack.length - 1, i0 + 1);
-    const frac = srcPos - i0;
-    const midi = note.pitchTrack[i0] + (note.pitchTrack[i1] - note.pitchTrack[i0]) * frac;
-    if (Number.isFinite(midi)) {
-      return 440 * Math.pow(2, (midi - 69) / 12);
-    }
-  }
-  return note.f0Hz;
-}
