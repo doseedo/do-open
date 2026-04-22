@@ -1621,7 +1621,45 @@ export default function StudioDev() {
   }, [dispatch, seek, timelineZoom]);
 
   const playIcon = state.isPlaying ? 'pause' : 'play';
-  const ticks = Array.from({ length: 16 }, (_, i) => i * 2 + 1);
+  // Bar markers for the ruler. When the rhythm analyzer has populated
+  // state.beatMap we place each bar's downbeat at its real time; when
+  // not, we fall back to constant-BPM + tempoMap[0].t offset so the
+  // grid still lines up with the song's first downbeat.
+  //
+  // Clips on the timeline keep their literal time position — we're
+  // only changing what the bar numbers POINT to, not where audio lives.
+  // A pickup "bar 0" is rendered at t=0 whenever the first real
+  // downbeat is offset from t=0.
+  const barMarkers = React.useMemo(() => {
+    const beatsPerBar = state.beatsPerBar || 4;
+    const bpm = state.bpm || 120;
+    const secPerBar = (60 / bpm) * beatsPerBar;
+    const pickupTime = (state.beatMap?.[0]?.t) ?? (state.tempoMap?.[0]?.t) ?? 0;
+    const out = [];
+    if (pickupTime > 0) out.push({ bar: 0, t: 0, isPickup: true });
+
+    const bm = state.beatMap;
+    if (Array.isArray(bm) && bm.length > 0) {
+      for (let bar = 1; bar < 200; bar++) {
+        const beatIdx = (bar - 1) * beatsPerBar;
+        const t = beatIdx < bm.length ? bm[beatIdx]?.t : null;
+        // Extrapolate past the end of beatMap at constant tempo so the
+        // ruler keeps showing bars even if analyze-rhythm truncated.
+        const tt = Number.isFinite(t)
+          ? t
+          : bm[bm.length - 1].t + (beatIdx - (bm.length - 1)) * (60 / bpm);
+        if (tt > TIMELINE_SECONDS) break;
+        out.push({ bar, t: tt, isPickup: false });
+      }
+    } else {
+      for (let bar = 1; bar < 200; bar++) {
+        const t = pickupTime + (bar - 1) * secPerBar;
+        if (t > TIMELINE_SECONDS) break;
+        out.push({ bar, t, isPickup: false });
+      }
+    }
+    return out;
+  }, [state.bpm, state.beatsPerBar, state.beatMap, state.tempoMap]);
 
   /* ---------- Timeline buses: real if present, spec demo otherwise ----------
      Each bus is a collapsible group: header row (name + M/S + gain) plus, when
@@ -2246,6 +2284,20 @@ export default function StudioDev() {
                 ))}
               </div>
               <div className="sd-lanes" onClick={onLaneClick}>
+                {/* Vertical bar lines at real downbeat times — positioned
+                    using the same barMarkers array that drives the ruler,
+                    so the gridlines and labels share one source of truth
+                    instead of the fixed 12.5% gradient that drifts off
+                    bar boundaries as BPM diverges from 120. */}
+                <div className="sd-barlines">
+                  {barMarkers.map(({ bar, t, isPickup }) => (
+                    <div
+                      key={bar}
+                      className={`sd-barline ${isPickup ? 'pickup' : ''}`}
+                      style={{ left: `${(t / TIMELINE_SECONDS) * 100 * timelineZoom}%` }}
+                    />
+                  ))}
+                </div>
                 <div
                   className="sd-ruler"
                   onClick={(e) => {
@@ -2269,7 +2321,16 @@ export default function StudioDev() {
                     setLoopRegion({ start: t, end: t });
                   }}
                 >
-                  {ticks.map((n, i) => <div key={i} className="sd-tick">{Math.round(n * timelineZoom)}</div>)}
+                  {barMarkers.map(({ bar, t, isPickup }) => (
+                    <div
+                      key={bar}
+                      className={`sd-bar-tick ${isPickup ? 'pickup' : ''}`}
+                      style={{ left: `${(t / TIMELINE_SECONDS) * 100 * timelineZoom}%` }}
+                      title={isPickup ? `Pickup — bar 1 starts at ${barMarkers[1]?.t.toFixed(2)}s` : `Bar ${bar} · ${t.toFixed(2)}s`}
+                    >
+                      {bar}
+                    </div>
+                  ))}
                   {loopRegion && (loopRegion.end > loopRegion.start) && (
                     <div className={`sd-loop-region ${loopEnabled ? 'active' : ''}`} style={{
                       left: `${(loopRegion.start / TIMELINE_SECONDS) * 100 * timelineZoom}%`,

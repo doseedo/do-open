@@ -1140,21 +1140,49 @@
 .sd-lanes {
   flex: 1; min-width: 0;
   position: relative; cursor: pointer;
-  /* Vertical bar divisions every 12.5 % (same repeating gradient workbench
-     uses for .wb-grid). */
-  background: repeating-linear-gradient(
-    to right,
-    transparent 0,
-    transparent calc(12.5% - 1px),
-    var(--wb-rule) calc(12.5% - 1px),
-    var(--wb-rule) 12.5%
-  );
+  /* Bar divisions are drawn as .sd-barline divs positioned from the
+     barMarkers array so they honor state.beatMap. The old
+     repeating-linear-gradient was fixed at 12.5 % (4 s at 32 s viewport)
+     regardless of actual tempo, so it visibly drifted off downbeats. */
+}
+.sd-barlines {
+  position: absolute; inset: 22px 0 0 0;  /* below the sticky ruler */
+  pointer-events: none; z-index: 0;
+}
+.sd-barline {
+  position: absolute; top: 0; bottom: 0; width: 1px;
+  background: var(--wb-rule);
+}
+.sd-barline.pickup {
+  background: transparent;
+  border-left: 1px dashed var(--wb-rule-strong);
+  opacity: 0.6;
 }
 .sd-ruler {
   position: sticky; top: 0; z-index: 3;
   height: 22px; border-bottom: 1px solid var(--wb-rule);
   display: flex; align-items: flex-end; padding-bottom: 3px;
   background: var(--wb-bg);
+}
+/* Bar-number ticks placed at real beat times (state.beatMap) — absolute
+   so a variable-width "bar 0" pickup can sit ahead of bar 1 without
+   compressing the rest of the ruler. The legacy even-spaced .sd-tick
+   (seconds-based flex layout) lives alongside these while the ruler
+   transitions bar-by-bar. */
+.sd-ruler .sd-bar-tick {
+  position: absolute; bottom: 3px;
+  padding-left: 3px;
+  font-family: var(--wb-font-mono);
+  font-size: 9px; color: var(--wb-ink-soft);
+  letter-spacing: 0;
+  pointer-events: none;
+}
+.sd-ruler .sd-bar-tick.pickup {
+  color: var(--wb-ink-mute); font-style: italic;
+}
+.sd-ruler .sd-bar-tick.pickup::before {
+  content: 'pickup ';
+  font-size: 8px; opacity: 0.7;
 }
 
 /* Empty-state upload field. Shown inside .sd-lanes when the project has
