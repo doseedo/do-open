@@ -22,6 +22,7 @@ import DAWOptimized from './components/DAW/DAWOptimized';
 import ResizeBar from './components/ResizeBar/ResizeBar';
 import VerticalResizeBar from './components/ResizeBar/VerticalResizeBar';
 import Dashboard from './components/Dashboard/Dashboard';
+import Projects from './components/Projects/Projects';
 import Home from './components/Home/Home';
 import Search from './components/Search/Search';
 import UserInfo from './components/UserInfo/UserInfo';
@@ -249,11 +250,12 @@ function AppContent() {
     }
   }, [state.pluginMode]);
 
-  // Determine current view from URL. Both /dashboard and /projects render the
-  // same <Dashboard /> component now — /dashboard was previously the <Home />
-  // slideshow, but the workbench template owns that URL going forward.
-  const currentView = location.pathname === '/dashboard' ? 'dashboard' :
-                      location.pathname === '/projects' ? 'dashboard' :
+  // Determine current view from URL. /dashboard is the workbench "home"
+  // (slideshow + Jump Back In + community feeds), /projects is the full
+  // sessions table. Distinct routes → distinct components → distinct
+  // sidebar highlights (Home vs Projects).
+  const currentView = location.pathname === '/dashboard' ? 'home' :
+                      location.pathname === '/projects' ? 'projects' :
                       location.pathname === '/search' ? 'search' :
                       location.pathname.startsWith('/profile/') && location.pathname.split('/').length >= 3 ? 'publicProfile' :
                       location.pathname === '/profile' ? 'userinfo' :
@@ -517,7 +519,9 @@ function AppContent() {
     );
   }
 
-  // Show home view with sidebar
+  // Show home view with sidebar. /dashboard now renders the workbench
+  // Dashboard template (slideshow + Jump Back In + Activity + Trending +
+  // Your Week) with the sidebar's Home entry highlighted.
   if (currentView === 'home') {
     return (
       <div className="App">
@@ -541,7 +545,44 @@ function AppContent() {
           showChatWindow={showChatWindow}
           isHomeView={true}
         />
-        <Home />
+        <Dashboard
+          onCreateNew={handleCreateNew}
+          onLoadProject={handleLoadProject}
+        />
+      </div>
+    );
+  }
+
+  // Show projects view (flat sessions table). Distinct from /dashboard —
+  // the full project list lives here, with ProjectCard rows for rename /
+  // delete / load.
+  if (currentView === 'projects') {
+    return (
+      <div className="App">
+        <LiquidGlassFilters />
+        <LeftSidebar
+          onBackToDashboard={handleBackToDashboard}
+          onGoToHome={handleGoToHome}
+          onGoToSearch={handleGoToSearch}
+          onGoToUserInfo={handleGoToUserInfo}
+          onGoToTools={handleGoToTools}
+          onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
+          onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
+          onToggleSearch={handleToggleSearch}
+          onShowGenerationPanel={handleShowGenerationPanel}
+          onShowMidiBrowser={handleShowMidiBrowser}
+          showMidiBrowser={showMidiBrowser}
+          onToggleChat={handleToggleChat}
+          showChatWindow={showChatWindow}
+          isDashboardView={true}
+        />
+        <Projects
+          onCreateNew={handleCreateNew}
+          onLoadProject={handleLoadProject}
+        />
       </div>
     );
   }

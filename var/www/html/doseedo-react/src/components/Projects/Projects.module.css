@@ -1,0 +1,322 @@
+/* Projects — sessions table. Uses ProjectCard for rows, so the class
+ * names below intentionally mirror the legacy Dashboard.module.css
+ * contract (.sessionRow, .sessionNumber, .playBtn, .waveformPreview,
+ * .waveformBar, .sessionName, .sessionTracks, .sessionDate,
+ * .sessionDuration, .postBtn, .sessionMenu, .menuBtn, .menuDropdown,
+ * .deleteOption, .sessionNameInput). See ../Dashboard/ProjectCard.js. */
+
+.projects {
+  margin-left: 220px;
+  min-height: 100vh;
+  padding: 40px;
+  padding-top: 48px;
+  color: var(--wb-ink);
+  background: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.title {
+  font-family: var(--wb-font-sans);
+  font-size: 32px;
+  font-weight: 600;
+  color: var(--wb-ink);
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+
+.createBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--wb-ink);
+  border: 1px solid var(--wb-ink);
+  border-radius: var(--wb-radius);
+  color: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  white-space: nowrap;
+}
+.createBtn:hover { background: #000; }
+.createBtn i { font-size: 11px; }
+
+.sessionInputContainer { margin-bottom: 20px; }
+.sessionInput {
+  padding: 10px 14px;
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  border-radius: var(--wb-radius);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: 13px;
+  width: 400px;
+  max-width: 100%;
+}
+.sessionInput:focus {
+  outline: none;
+  border-color: var(--wb-ink);
+  background: #fff;
+}
+.sessionInput::placeholder { color: var(--wb-ink-mute); }
+
+.sessionsContainer { width: 100%; }
+.sessionsList { width: 100%; }
+
+.sessionsHeader {
+  display: grid;
+  grid-template-columns: 40px minmax(200px, 1fr) 80px 140px 100px 50px;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--wb-rule);
+  margin-bottom: 6px;
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+.headerNumber { text-align: center; }
+.headerTitle { text-align: left; }
+.headerTracks { text-align: center; }
+.headerDate { text-align: left; }
+.headerDuration { text-align: right; }
+
+.sessionRow {
+  display: grid;
+  grid-template-columns: 40px minmax(200px, 1fr) 80px 140px 100px 50px;
+  gap: 12px;
+  padding: 8px 14px;
+  border-radius: var(--wb-radius);
+  cursor: pointer;
+  transition: background 0.12s ease;
+  align-items: center;
+  min-height: 56px;
+}
+.sessionRow:hover { background: var(--wb-surface-2); }
+
+.sessionNumber {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+}
+
+.playBtn {
+  width: 32px;
+  height: 32px;
+  background: var(--wb-ink);
+  border: none;
+  border-radius: 50%;
+  color: var(--wb-bg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease;
+}
+.playBtn:hover { background: var(--wb-accent); }
+.playBtn i { font-size: 11px; margin-left: 2px; }
+
+.sessionTitle {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.waveformPreview {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 36px;
+  width: 80px;
+  flex-shrink: 0;
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  border-radius: var(--wb-radius-sm);
+  padding: 3px;
+}
+.waveformBar {
+  flex: 1;
+  background: var(--wb-ink-soft);
+  border-radius: 1px;
+  transition: background 0.12s ease;
+}
+.sessionRow:hover .waveformBar { background: var(--wb-accent); }
+
+.sessionName {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sessionNameInput {
+  background: #fff;
+  border: 1.5px solid var(--wb-ink);
+  border-radius: var(--wb-radius);
+  padding: 6px 10px;
+  font-family: var(--wb-font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--wb-ink);
+  width: 100%;
+  max-width: 300px;
+}
+.sessionNameInput:focus { outline: none; border-color: var(--wb-accent); }
+
+.sessionTracks,
+.sessionDate,
+.sessionDuration {
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+}
+.sessionTracks { text-align: center; }
+.sessionDate { text-align: left; }
+.sessionDuration {
+  text-align: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.postBtn {
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: 1px solid var(--wb-rule);
+  border-radius: 50%;
+  color: var(--wb-ink-soft);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s ease;
+  opacity: 0;
+  flex-shrink: 0;
+}
+.sessionRow:hover .postBtn { opacity: 1; }
+.postBtn:hover {
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+  color: var(--wb-bg);
+}
+.postBtn i { font-size: 11px; }
+
+.sessionMenu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.menuBtn {
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--wb-ink-mute);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s ease;
+  opacity: 0;
+}
+.sessionRow:hover .menuBtn { opacity: 1; }
+.menuBtn:hover {
+  background: var(--wb-surface);
+  color: var(--wb-ink);
+}
+.menuBtn i { font-size: 15px; }
+
+.menuDropdown {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  border-radius: var(--wb-radius);
+  padding: 6px;
+  min-width: 160px;
+  box-shadow: var(--wb-shadow-lg);
+  z-index: 1000;
+}
+.menuDropdown button {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--wb-ink);
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--wb-radius-sm);
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.12s ease;
+}
+.menuDropdown button:hover { background: var(--wb-surface-2); }
+.menuDropdown button i { font-size: 12px; color: var(--wb-ink-soft); }
+.menuDropdown .deleteOption:hover {
+  background: rgba(201, 79, 44, 0.10);
+  color: var(--wb-accent-warm);
+}
+.menuDropdown .deleteOption:hover i { color: var(--wb-accent-warm); }
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 40px;
+  text-align: center;
+  color: var(--wb-ink-mute);
+}
+.emptyState h3 {
+  margin: 16px 0 8px;
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+  font-size: 18px;
+}
+.emptyState p { margin: 0; font-size: 13px; }
+.emptyState i { font-size: 40px; color: var(--wb-ink-faint); }
+
+@media (max-width: 900px) {
+  .projects {
+    margin-left: 0;
+    padding: 20px 16px 60px;
+    padding-top: 70px;
+  }
+  .header { flex-direction: column; align-items: flex-start; gap: 16px; }
+  .sessionsHeader { display: none; }
+  .sessionRow { grid-template-columns: 40px 1fr auto; gap: 12px; }
+  .sessionTracks, .sessionDate { display: none; }
+  .title { font-size: 28px; }
+}

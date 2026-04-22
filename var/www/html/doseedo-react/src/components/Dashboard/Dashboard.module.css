@@ -725,14 +725,12 @@
 
 /* ---- Feature slideshow (workbench deck) ---- */
 .slideshowSect {
-  margin: 0 -40px 36px;
-  padding: 0 40px;
+  margin: 0 0 36px;
 }
 .slides {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: 620px;
+  height: clamp(360px, 40vw, 560px);
   background: var(--wb-bg);
   border: 1px solid var(--wb-rule);
   overflow: hidden;
