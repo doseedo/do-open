@@ -1275,9 +1275,17 @@ export default function StudioDev() {
         pitchedStemTracks,
         tempo: { beatMap: state.beatMap, bpm: state.bpm || 120, beatsPerBar: state.beatsPerBar || 4 },
         onTrackAudioReady: (trackId, busId, newUrl) => {
+          // metadata.polypitchRendered tells useAudioPlayback to route this
+          // stem through the regular audioUrl path instead of mask-playback.
+          // Without this flag, the audio engine keeps synthesising the stem
+          // from master × latent-derived mask and never reads the blob URL
+          // polypitch just rendered — so the edit is silently discarded.
           dispatch({
             type: 'UPDATE_TRACK',
-            payload: { busId, trackId, updates: { audioUrl: newUrl } },
+            payload: {
+              busId, trackId,
+              updates: { audioUrl: newUrl, metadata: { polypitchRendered: true } },
+            },
           });
         },
         onTrackMidiReady: (trackId, busId, newMidiData) => {

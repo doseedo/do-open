@@ -465,14 +465,25 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       // This gives master-quality audio with no decoder overhead.
       const useMaskPlayback = isMaskPlaybackReady();
       if (useMaskPlayback) {
-        // Collect stem track gains and solo/mute state
+        // Collect stem track gains and solo/mute state.
+        // Stems that polypitch has re-rendered carry metadata.polypitchRendered:
+        // route them through the regular audioUrl scheduling path (so their
+        // new blob WAV is actually played), AND force their mask gain to 0
+        // so the worklet doesn't ALSO emit the original version of that stem
+        // from the master × mask path. Net: (master × non-edited-stem masks)
+        // from the worklet + polypitch blob from the regular graph = edited mix.
         const stemGains = {};
-        const stemTracks = allTracks.filter(t => t.metadata?.type === 'stem');
+        const maskStemTracks = allTracks.filter(t =>
+          t.metadata?.type === 'stem' && !t.metadata?.polypitchRendered
+        );
+        const polypitchStemTracks = allTracks.filter(t =>
+          t.metadata?.type === 'stem' && t.metadata?.polypitchRendered
+        );
         const nonStemTracks = allTracks.filter(t => t.metadata?.type !== 'stem');
-        const hasStemSolo = stemTracks.some(t => t.isSolo);
+        const hasStemSolo = [...maskStemTracks, ...polypitchStemTracks].some(t => t.isSolo);
 
         let activeSolo = null;
-        for (const t of stemTracks) {
+        for (const t of maskStemTracks) {
           const stemName = t.metadata?.stemType || t.metadata?.instrument;
           if (!stemName) continue;
           const busGain = t._busGain || 1.0;
@@ -488,16 +499,25 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
           }
         }
 
+        // Polypitch-edited stems: 0 gain in the mask path (they'll play via
+        // the regular scheduler below from their new audioUrl).
+        for (const t of polypitchStemTracks) {
+          const stemName = t.metadata?.stemType || t.metadata?.instrument;
+          if (stemName) stemGains[stemName] = 0;
+        }
+
         // Send gains to worklet — instant, no re-render
         setMaskGains(stemGains);
         setActiveStem(activeSolo);
         maskSeek(currentPlayheadTime);
         maskPlay();
-        console.log(`🎭 Mask playback: ${Object.keys(stemGains).length} stems, solo=${activeSolo || 'none'}`);
+        console.log(`🎭 Mask playback: ${Object.keys(stemGains).length} stems`
+          + (polypitchStemTracks.length ? ` (${polypitchStemTracks.length} routed to audioUrl)` : '')
+          + `, solo=${activeSolo || 'none'}`);
 
-        // Only schedule non-stem tracks normally below
-        // (parent track is muted when stems exist, so it won't double-play)
-        var tracksToSchedule = nonStemTracks;
+        // Schedule non-stem tracks + polypitch-rendered stems via audioUrl.
+        // (Parent track is muted when stems exist, so it won't double-play.)
+        var tracksToSchedule = [...nonStemTracks, ...polypitchStemTracks];
       } else {
         var tracksToSchedule = allTracks;
       }
