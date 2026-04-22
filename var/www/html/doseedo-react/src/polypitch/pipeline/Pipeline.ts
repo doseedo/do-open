@@ -194,7 +194,11 @@ export class Pipeline {
     }
 
     const inputRms = rmsOf(base.samples);
-    console.log(`[polypitch.render] ${edits.length} edits, input rms=${inputRms.toFixed(5)}`);
+    // Also log cached STFT RMS — if this is 0 the GPU STFT pipeline isn't
+    // producing valid output despite the input audio being non-zero.
+    const stftRms = this.cachedStft ? rmsOf(this.cachedStft.complexByChannel[0]) : 0;
+    const magRms = this.cachedStft ? rmsOf(this.cachedStft.magByChannel[0]) : 0;
+    console.log(`[polypitch.render] ${edits.length} edits, input rms=${inputRms.toFixed(5)} cachedSTFT.rms=${stftRms.toFixed(5)} cachedMag.rms=${magRms.toFixed(5)} sr=${this.cachedStft?.audio.sampleRate} frames=${this.cachedStft?.audio.frames}`);
 
     const editedNotes = this.notes.filter((n) => edits.some((e) => e.noteId === n.id));
     const needIds = editedNotes.map((n) => n.id).filter((id) => !this.noteAudioCache.has(id));
