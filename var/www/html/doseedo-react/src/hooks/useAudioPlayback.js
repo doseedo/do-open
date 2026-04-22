@@ -413,13 +413,17 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         // protected schedule, bass gets melodic-protected, others fall
         // through to bar rearrange.
         const schedule = dispatchStrategy(track, projectMeter);
-        // Visibility: when meter change actually rearranges the track,
-        // the schedule has multiple segments. Identity (src meter =
-        // tgt meter) collapses to a single keep-all segment.
-        if (schedule && schedule.length > 1) {
-          const src = `${track.metadata?.detectedMeter || '?'}/${track.metadata?.detectedMeterDenominator || '?'}`;
-          const tgt = `${projectMeter.beatsPerBar}/${projectMeter.meterDenominator}`;
-          console.log(`🎚️ [meter] ${track.name || track.id}: ${src} → ${tgt} — ${schedule.length} segments`);
+        // Visibility: only log when the meter actually changed. A
+        // tempoMap alone can produce multi-segment schedules at the
+        // same meter (identity-stretch); those aren't meter changes
+        // and were spamming the console on every play/seek.
+        const srcN = track.metadata?.detectedMeter;
+        const srcD = track.metadata?.detectedMeterDenominator;
+        const tgtN = projectMeter.beatsPerBar;
+        const tgtD = projectMeter.meterDenominator;
+        const meterChanged = srcN && srcD && (srcN !== tgtN || srcD !== tgtD);
+        if (schedule && schedule.length > 1 && meterChanged) {
+          console.log(`🎚️ [meter] ${track.name || track.id}: ${srcN}/${srcD} → ${tgtN}/${tgtD} — ${schedule.length} segments`);
         }
         if (audioBufferCache.has(url)) {
           const { sources, gainNode } = scheduleTrackWithSchedule(
