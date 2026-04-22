@@ -30,11 +30,14 @@
   --wb-ink:         #15181c;  /* primary text + borders */
   --wb-ink-soft:    #3a3d44;  /* secondary text */
   --wb-ink-mute:    #7c7e85;  /* tertiary / meta text */
+  --wb-ink-faint:   rgba(21, 24, 28, 0.22); /* barely-there dividers / tick marks */
   --wb-rule:        #c8c5bd;  /* 1px dividers */
   --wb-rule-strong: #a5a29a;  /* 1.5px dividers / focus outlines */
   --wb-accent:      #1d4c7a;  /* cool accent — links, active states */
   --wb-accent-warm: #c94f2c;  /* warm accent — playhead, destructive */
   --wb-accent-soft: rgba(29, 76, 122, 0.08); /* tinted hover */
+  --wb-ok:          #2f6b4e;  /* status green — "live", ready, synced */
+  --wb-lcd:         #b8e67a;  /* LCD green for timecode readouts */
 
   /* Per-track / per-instrument color palette (workbench-matched) */
   --wb-track-vox:     #c94f2c;

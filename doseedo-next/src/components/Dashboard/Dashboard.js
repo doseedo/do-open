@@ -1,37 +1,130 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import * as sessionService from '../../services/sessionService';
+import * as dashboardService from '../../services/dashboardService';
 import ProjectCard from './ProjectCard';
 import styles from './Dashboard.module.css';
 
+// Deterministic 0..1 pseudo-random from a numeric seed. Used to keep the
+// waveform bars stable across renders for the same session name.
+const seedRand = (s) => {
+  const x = Math.sin(s) * 10000;
+  return x - Math.floor(x);
+};
+
+// Hash a string to a stable positive int for seeding waveforms + swatches.
+const stringHash = (str) => {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h) || 1;
+};
+
+// Matches --wb-track-* tokens in theme-workbench.css.
+const TRACK_SWATCHES = ['#c94f2c', '#7a5d3a', '#2f6b4e', '#4a3d6b', '#1d4c7a', '#5c7a8a'];
+
+const makeWave = ({ seed, bars = 44, envPad = 0.05, envFloor = 0.35, noiseFloor = 0.55 }) => {
+  const out = new Array(bars);
+  for (let i = 0; i < bars; i++) {
+    const t = i / bars;
+    const env = envFloor + (1 - envFloor) * Math.pow(
+      Math.sin(Math.PI * (t * (1 - 2 * envPad) + envPad)), 2
+    );
+    const noise = noiseFloor + seedRand(seed * 13 + i * 3.1) * (1 - noiseFloor);
+    out[i] = (env * noise * 100).toFixed(1) + '%';
+  }
+  return out;
+};
+
+const Wave = ({ seed, className }) => {
+  const heights = useMemo(() => makeWave({ seed }), [seed]);
+  return (
+    <div className={className}>
+      {heights.map((h, i) => (<i key={i} style={{ height: h }} />))}
+    </div>
+  );
+};
+
+// A session card in the Jump Back In rail. Backed by real session data from
+// dashboardService (local + cloud dedup), clicking anywhere loads the session.
+const SessionCard = ({ session, onLoad }) => {
+  const seed = useMemo(() => stringHash(session.name), [session.name]);
+  const swatch = TRACK_SWATCHES[seed % TRACK_SWATCHES.length];
+  const tracks = session.trackCount || 0;
+  const meta = `${session.daw || 'Doseedo'} · ${tracks} track${tracks === 1 ? '' : 's'} · ${session.time || '—'}`;
+
+  return (
+    <div
+      className={styles.sessCard}
+      style={{ '--swatch': swatch }}
+      onClick={() => onLoad(session.name)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter') onLoad(session.name); }}
+    >
+      <div className={styles.sessCover}>
+        <div className={styles.sessSwatch} />
+        <div className={styles.sessMark}>DSD</div>
+        <Wave seed={seed} className={styles.sessWave} />
+      </div>
+      <div className={styles.sessBody}>
+        <div className={styles.sessName}>{session.name}</div>
+        <div className={styles.sessMeta}>{meta}</div>
+      </div>
+      <div className={styles.sessActions}>
+        <button
+          className={`${styles.chip} ${styles.chipPrimary}`}
+          onClick={(e) => { e.stopPropagation(); onLoad(session.name); }}
+        >
+          <svg width="7" height="7" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l13 8-13 8z" /></svg>
+          Resume
+        </button>
+      </div>
+    </div>
+  );
+};
+
 /**
- * Dashboard Component
- * Shows list of saved projects, allows creating new sessions
+ * Dashboard — workbench home.
+ *
+ * Top:    Jump Back In rail (new) — themed session cards sourced from
+ *         dashboardService.getRecentSessions() (local + cloud, deduped).
+ * Below:  My Sessions table (unchanged) — full project list with the original
+ *         create / load / delete / rename handlers.
  */
 const Dashboard = ({ onCreateNew, onLoadProject }) => {
   const { state, dispatch } = useApp();
   const [projects, setProjects] = useState([]);
+  const [recent, setRecent] = useState([]);
   const [newProjectName, setNewProjectName] = useState('');
 
-  // Load projects on mount
   useEffect(() => {
     refreshProjects();
+    loadRecent();
   }, []);
 
   const refreshProjects = useCallback(() => {
-    const projectList = sessionService.getProjects();
-    setProjects(projectList);
+    setProjects(sessionService.getProjects());
+  }, []);
+
+  const loadRecent = useCallback(async () => {
+    try {
+      const list = await dashboardService.getRecentSessions();
+      setRecent(list);
+    } catch {
+      setRecent([]);
+    }
   }, []);
 
   const handleCreateNew = useCallback((e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
 
     // Auto-generate unique project name like legacy dashboard
     let baseName = newProjectName.trim() || 'Untitled';
     let projectName = baseName;
     let counter = 2;
 
-    // If user didn't provide a name, use Untitled numbering
     if (!newProjectName.trim()) {
       projectName = 'Untitled';
       while (projects.includes(projectName)) {
@@ -39,7 +132,6 @@ const Dashboard = ({ onCreateNew, onLoadProject }) => {
         counter++;
       }
     } else {
-      // User provided name - add number if it exists
       while (projects.includes(projectName)) {
         projectName = `${baseName} (${counter})`;
         counter++;
@@ -47,95 +139,87 @@ const Dashboard = ({ onCreateNew, onLoadProject }) => {
     }
 
     console.log(`🆕 Creating project: ${projectName}`);
-
-    // Reset to fresh session state
     dispatch({ type: 'RESET_SESSION', payload: { projectName } });
-
-    // Set as active project
     sessionService.setActiveProject(projectName);
-
-    // Save initial empty session
-    sessionService.saveSession(projectName, {
-      ...state,
-      projectName,
-      buses: []
-    });
-
-    // Refresh project list
+    sessionService.saveSession(projectName, { ...state, projectName, buses: [] });
     refreshProjects();
-
-    // Clear input
+    loadRecent();
     setNewProjectName('');
-
-    // Notify parent (to switch to DAW view)
-    if (onCreateNew) {
-      onCreateNew(projectName);
-    }
-  }, [newProjectName, projects, state, dispatch, refreshProjects, onCreateNew]);
+    if (onCreateNew) onCreateNew(projectName);
+  }, [newProjectName, projects, state, dispatch, refreshProjects, loadRecent, onCreateNew]);
 
   const handleLoadProject = useCallback((projectName) => {
     const sessionData = sessionService.loadSession(projectName);
-
     if (!sessionData) {
       alert('Could not load project');
       return;
     }
-
-    // Set as active project
     sessionService.setActiveProject(projectName);
-
-    // Load state into app
-    // We'll dispatch a LOAD_SESSION action to restore the full state
     dispatch({ type: 'LOAD_SESSION', payload: sessionData.state });
-
-    // Notify parent to switch to DAW view
-    if (onLoadProject) {
-      onLoadProject(projectName);
-    }
+    if (onLoadProject) onLoadProject(projectName);
   }, [dispatch, onLoadProject]);
 
   const handleDeleteProject = useCallback((projectName) => {
     if (window.confirm(`Delete project "${projectName}"? This cannot be undone.`)) {
       sessionService.deleteProject(projectName);
       refreshProjects();
+      loadRecent();
     }
-  }, [refreshProjects]);
+  }, [refreshProjects, loadRecent]);
 
   const handleRenameProject = useCallback((oldName, newName) => {
     if (!newName || newName.trim() === '') {
       alert('Project name cannot be empty');
       return;
     }
-
     const trimmedName = newName.trim();
-    if (trimmedName === oldName) {
-      return; // No change
-    }
-
-    // Check if name already exists
+    if (trimmedName === oldName) return;
     if (projects.includes(trimmedName)) {
       alert('A project with this name already exists');
       return;
     }
-
     sessionService.renameProject(oldName, trimmedName);
     refreshProjects();
-  }, [projects, refreshProjects]);
+    loadRecent();
+  }, [projects, refreshProjects, loadRecent]);
 
   return (
     <div className={styles.dashboard}>
-      {/* Header */}
+
+      {/* ============ Jump Back In rail ============ */}
+      <section className={styles.sect}>
+        <div className={styles.sectHead}>
+          <h2 className={styles.sectTitle}>Jump Back In</h2>
+          <span className={styles.sectCount}>last touched</span>
+          <div className={styles.sectSpacer} />
+        </div>
+
+        <div className={styles.jbi}>
+          <button
+            className={`${styles.sessCard} ${styles.newCard}`}
+            onClick={handleCreateNew}
+            type="button"
+          >
+            <div className={styles.newCardPlus}>＋</div>
+            <div className={styles.newCardTitle}>Start a new session</div>
+            <div className={styles.newCardSub}>blank · or from a memo</div>
+          </button>
+
+          {recent.map((s) => (
+            <SessionCard key={s.id || s.name} session={s} onLoad={handleLoadProject} />
+          ))}
+        </div>
+      </section>
+
+      {/* ============ My Sessions table (unchanged) ============ */}
       <div className={styles.header}>
         <h1 className={styles.title}>My Sessions</h1>
-
-        {/* Create New Session Button */}
         <button onClick={handleCreateNew} className={styles.createBtn}>
           <i className="fa-solid fa-plus"></i>
           <span>New Session</span>
         </button>
       </div>
 
-      {/* Session Input (when creating) */}
       {newProjectName !== null && (
         <div className={styles.sessionInputContainer}>
           <input
@@ -153,7 +237,6 @@ const Dashboard = ({ onCreateNew, onLoadProject }) => {
         </div>
       )}
 
-      {/* Sessions List */}
       <div className={styles.sessionsContainer}>
         {projects.length === 0 ? (
           <div className={styles.emptyState}>
@@ -163,7 +246,6 @@ const Dashboard = ({ onCreateNew, onLoadProject }) => {
           </div>
         ) : (
           <div className={styles.sessionsList}>
-            {/* Table Header */}
             <div className={styles.sessionsHeader}>
               <div className={styles.headerNumber}>#</div>
               <div className={styles.headerTitle}>Title</div>
@@ -172,7 +254,6 @@ const Dashboard = ({ onCreateNew, onLoadProject }) => {
               <div className={styles.headerDuration}>Duration</div>
             </div>
 
-            {/* Sessions */}
             {projects.map((projectName, index) => (
               <ProjectCard
                 key={projectName}

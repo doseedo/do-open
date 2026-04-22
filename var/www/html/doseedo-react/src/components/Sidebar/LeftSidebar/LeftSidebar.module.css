@@ -1,416 +1,337 @@
-/* LeftSidebar Styles */
+/* LeftSidebar — workbench cream theme, modeled after
+ * /Users/hydroadmin/Downloads/daw 2/dashboard/styles.css (.side).
+ *
+ * All colors / fonts read from src/styles/theme-workbench.css. Legacy DAW
+ * routes don't toggle body.workbench-theme, but the sidebar now uses the
+ * cream palette everywhere by reading the tokens directly (not scoped
+ * under :global(body.workbench-theme)). If the DAW route needs a dark
+ * sidebar back, add a body-scoped override there — don't fork this file.
+ */
 
-.sidebar {
+.side {
   position: fixed;
   left: 0;
   top: 0;
   bottom: 0;
   width: 48px;
-  background: linear-gradient(180deg, rgb(28, 28, 28) 0%, rgb(18, 18, 18) 100%);
-  border-right: 1.6px solid rgb(40, 40, 40);
+  background: var(--wb-surface);
+  border-right: 1px solid var(--wb-rule);
   z-index: 1000;
-  transition: width 0.3s ease;
+  transition: width 0.2s ease;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-
-.sidebar.expanded {
-  width: 200px;
-}
-
-/* Toggle Button */
-.toggleBtn {
-  padding: 14.4px;
-  margin: 0;
-  text-align: center;
-  cursor: pointer;
-  border-bottom: 0.8px solid rgb(40, 40, 40);
-  transition: background 0.2s ease, opacity 0.3s ease;
-  color: #ccc;
-  height: 48px;
+  font-family: var(--wb-font-mono);
+  padding: 14px 0;
   box-sizing: border-box;
+}
+
+.sideExpanded {
+  width: 220px;
+}
+
+/* ---- Brand header (expanded) ---- */
+.sideBrand {
   display: flex;
   align-items: center;
-  justify-content: center;
-  opacity: 1;
-}
-
-.sidebar.expanded .toggleBtn {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.toggleBtn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: white;
-}
-
-/* Logo Header */
-.logoHeader {
-  padding: 4px 10px;
-  margin: 0;
-  border-bottom: 0.8px solid rgb(40, 40, 40);
-  background: rgba(0, 0, 0, 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: auto;
-  box-sizing: border-box;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-}
-
-.sidebar.expanded .logoHeader {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.logo {
-  width: auto;
-  height: 38px;
-  max-width: 130px;
-  object-fit: contain;
-  display: block;
-}
-
-.collapseBtn {
-  background: transparent;
-  border: none;
-  color: #ccc;
-  cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 4px;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-}
-
-.collapseBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-}
-
-/* User Info Header (old, can be removed) */
-.userInfoHeader {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 12px;
-  border-bottom: 0.8px solid rgb(40, 40, 40);
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.userAvatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, rgba(186, 156, 255, 0.3), rgba(156, 130, 200, 0.2));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 18px;
+  gap: 8px;
+  padding: 6px 18px 22px;
   flex-shrink: 0;
 }
 
-.userDetails {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
+.sideMark {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+  font-weight: 700;
+  font-size: 10px;
+  flex-shrink: 0;
 }
 
-.userName {
-  color: #fff;
-  font-size: 13px;
+.sideBrandname {
+  font-family: var(--wb-font-mono);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
   font-weight: 500;
+  font-size: 11px;
+  color: var(--wb-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.userPlan {
-  color: #888;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* User Info Header Collapsed */
-.userInfoHeaderCollapsed {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 14.4px;
-  border-bottom: 0.8px solid rgb(40, 40, 40);
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.userAvatarSmall {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, rgba(186, 156, 255, 0.3), rgba(156, 130, 200, 0.2));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 16px;
-}
-
-/* Menu Links Container */
-.menuLinks {
-  display: flex;
-  flex-direction: column;
-  gap: 6.4px;
-  padding: 12px 8px;
-  overflow-y: visible;
-  min-height: 0;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-  flex: 0;
-}
-
-.sidebar.expanded .menuLinks {
-  opacity: 1;
-  pointer-events: auto;
   flex: 1;
-  overflow-y: visible;
+}
+.sideBrandname span {
+  color: var(--wb-ink-mute);
 }
 
-/* Nav Links */
-.navLink,
-.navLinkHighlighted {
+.sideCollapseBtn {
+  background: transparent;
+  border: 0;
+  color: var(--wb-ink-soft);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 2px;
+  display: grid;
+  place-items: center;
+  transition: background 0.12s, color 0.12s;
+}
+.sideCollapseBtn:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+/* ---- Collapsed-state toggle button ---- */
+.sideToggle {
+  padding: 14px;
+  margin: 0;
+  text-align: center;
+  cursor: pointer;
+  border: 0;
+  border-bottom: 1px solid var(--wb-rule);
+  color: var(--wb-ink-soft);
+  height: 48px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+.sideToggle:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+/* ---- Menu groups ---- */
+.sideGroup {
+  padding: 10px 0;
+}
+.sideGroup + .sideGroup {
+  border-top: 1px solid var(--wb-rule);
+}
+
+.sideLabel {
+  padding: 0 18px 8px;
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--wb-ink-mute);
+}
+
+/* ---- Single nav item ---- */
+.sideItem {
   display: flex;
   align-items: center;
-  gap: 9.6px;
-  padding: 8px 12px;
-  color: #ccc;
-  text-decoration: none;
-  border-radius: 4.8px;
-  transition: all 0.2s ease;
-  font-size: 11.2px;
-}
-
-.navLink:hover,
-.navLinkHighlighted:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-}
-
-.navLink i {
-  width: 16px;
-  text-align: center;
-  font-size: 12.8px;
-}
-
-.navLinkHighlighted i {
-  width: auto;
-}
-
-.navLinkText {
-  white-space: nowrap;
-}
-
-/* Disabled Nav Link */
-.navLinkDisabled {
-  opacity: 0.4;
-  cursor: default;
-  pointer-events: auto;
-  position: relative;
-}
-
-.navLinkDisabled:hover {
+  gap: 12px;
+  width: 100%;
+  padding: 8px 18px;
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--wb-ink-soft);
+  border: 0;
+  border-left: 2px solid transparent;
   background: transparent;
-  color: #ccc;
+  margin: 1px 0;
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  transition: background 0.12s, color 0.12s;
+}
+.sideItem:hover {
+  color: var(--wb-ink);
+  background: var(--wb-surface-2);
+}
+.sideItemActive {
+  color: var(--wb-ink);
+  background: var(--wb-bg);
+  border-left-color: var(--wb-accent);
+}
+.sideItemMuted {
+  color: var(--wb-ink-mute);
+}
+.sideItemDisabled {
+  color: var(--wb-ink-mute);
+  cursor: default;
+  opacity: 0.7;
+}
+.sideItemDisabled:hover {
+  background: transparent;
+  color: var(--wb-ink-mute);
 }
 
-.tooltip {
+/* ---- Icon slot ---- */
+.sideIcon {
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+/* ---- Tooltip for disabled items ---- */
+.sideTooltip {
   display: none;
   position: absolute;
   left: calc(100% + 8px);
   top: 50%;
   transform: translateY(-50%);
-  background: rgba(30, 30, 30, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 11px;
-  padding: 5px 10px;
-  border-radius: 6px;
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  padding: 4px 8px;
+  border-radius: 2px;
   white-space: nowrap;
   z-index: 2000;
   pointer-events: none;
 }
-
-.navLinkDisabled:hover .tooltip {
+.sideItemDisabled:hover .sideTooltip {
   display: block;
 }
 
-/* Section Title */
-.sectionTitle {
-  color: #888;
-  font-size: 8.8px;
-  font-weight: 600;
+/* ---- "More" dropdown ---- */
+.moreMenu {
+  position: relative;
+}
+.moreDropdown {
+  margin-top: 4px;
+  margin-left: 18px;
+  margin-right: 12px;
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: var(--wb-shadow);
+  z-index: 1001;
+}
+.moreItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
+  color: var(--wb-ink-soft);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.12s, color 0.12s;
+}
+.moreItem:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+/* ---- Spacer + user chip ---- */
+.sideSpacer {
+  flex: 1;
+}
+
+.sideUser {
+  border: 0;
+  border-top: 1px solid var(--wb-rule);
+  background: transparent;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.12s;
+}
+.sideUser:hover {
+  background: var(--wb-surface-2);
+}
+.sideAvatar {
+  width: 28px;
+  height: 28px;
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  display: grid;
+  place-items: center;
+  font-family: var(--wb-font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+.sideUserName {
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
   letter-spacing: 0.4px;
-  margin: 20px 0 6.4px 12px;
+  text-transform: uppercase;
+  color: var(--wb-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sideUserTier {
+  font-family: var(--wb-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--wb-ink-mute);
+  margin-top: 2px;
 }
 
-/* Divider */
-.divider {
-  border: none;
-  height: 0.8px;
-  background-color: rgba(90, 90, 90, 0.3);
-  margin: 16px 12px;
-  width: auto;
-}
-
-/* Toolbar (collapsed state) */
+/* ---- Collapsed-state toolbar (DAW quick-toggles) ---- */
 .toolbar {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding-top: 80px;
+  gap: 14px;
+  padding-top: 36px;
   opacity: 1;
-  transition: opacity 0.3s ease;
-  pointer-events: auto;
+  transition: opacity 0.2s ease;
 }
-
-.sidebar.expanded .toolbar {
-  opacity: 0;
-  pointer-events: none;
+.sideExpanded .toolbar {
+  display: none;
 }
-
 .toolbarBtn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 0.8px solid rgb(40, 40, 40);
-  color: #ccc;
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-rule);
+  color: var(--wb-ink-soft);
   width: 32px;
   height: 32px;
-  border-radius: 4.8px;
+  border-radius: 0;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
+  display: grid;
+  place-items: center;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-
 .toolbarBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: var(--color-primary-blue);
-  color: white;
+  background: var(--wb-surface-2);
+  border-color: var(--wb-rule-strong);
+  color: var(--wb-ink);
+}
+.toolbarBtnActive {
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+  color: var(--wb-bg);
+}
+.toolbarBtnActive:hover {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
 }
 
-.toolbarBtn i {
-  font-size: 12.8px;
-}
-
-.toolbarBtn.active {
-  background: var(--color-bg-light);
-  border-color: var(--color-primary-blue);
-  color: white;
-}
-
-/* Scrollbar Styling */
-.menuLinks::-webkit-scrollbar {
-  width: 4.8px;
-}
-
-.menuLinks::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 2.4px;
-}
-
-.menuLinks::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 2.4px;
-}
-
-.menuLinks::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-/* User Info Footer */
-.userInfoFooter {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 12px;
-  border-top: 0.8px solid rgb(40, 40, 40);
-  background: rgba(0, 0, 0, 0.2);
-  cursor: pointer;
-  transition: all 0.3s ease, opacity 0.3s ease;
-  margin-top: auto;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.sidebar.expanded .userInfoFooter {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.userInfoFooter:hover {
-  background: rgba(0, 0, 0, 0.35);
-}
-
-/* More Menu */
-.moreMenu {
-  position: relative;
-}
-
-.moreDropdown {
-  position: relative;
-  left: 0;
-  top: 0;
-  margin-top: 8px;
-  margin-left: 12px;
-  background: rgba(28, 28, 28, 0.98);
-  border: 1px solid rgba(186, 156, 255, 0.3);
-  border-radius: 8px;
-  padding: 8px;
-  width: calc(100% - 24px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  z-index: 1000;
-  backdrop-filter: blur(10px);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.moreItem {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  color: rgba(255, 255, 255, 0.8);
-  text-decoration: none;
-  border-radius: 6px;
-  font-size: 13px;
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-
-.moreItem:hover {
-  background: rgba(186, 156, 255, 0.2);
-  color: white;
-}
-
-.moreItem i {
-  font-size: 14px;
-  width: 16px;
-  text-align: center;
-  color: rgba(186, 156, 255, 0.8);
-}
-
-/* Mobile hamburger button */
+/* ---- Mobile ---- */
 .mobileMenuBtn {
   display: none;
   position: fixed;
@@ -419,39 +340,32 @@
   z-index: 1001;
   width: 40px;
   height: 40px;
-  border-radius: 8px;
-  background: rgba(28, 28, 28, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #ccc;
-  font-size: 18px;
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  color: var(--wb-ink);
   cursor: pointer;
   align-items: center;
   justify-content: center;
 }
 
-/* Mobile overlay backdrop */
 .mobileOverlay {
   display: none;
 }
 
-/* Mobile styles */
 @media (max-width: 768px) {
   .mobileMenuBtn {
     display: flex;
   }
-
-  .sidebar {
+  .side {
     width: 0;
     transform: translateX(-100%);
-    transition: transform 0.3s ease, width 0.3s ease;
+    transition: transform 0.25s ease, width 0.25s ease;
   }
-
-  .sidebar.expanded {
-    width: 220px;
+  .sideExpanded {
+    width: 240px;
     transform: translateX(0);
     z-index: 1002;
   }
-
   .mobileOverlay {
     display: none;
     position: fixed;
@@ -459,177 +373,13 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.35);
     z-index: 1001;
   }
-
-  .mobileOverlay.visible {
+  .mobileOverlayVisible {
     display: block;
   }
-
   .toolbar {
     display: none;
   }
-}
-
-/* ------------------------------------------------------------------
- * Workbench cream theme overrides.
- *
- * Active only when <body> has the workbench-theme class (applied by
- * App.js on /dashboard, /projects, /profile, ...). Legacy routes keep
- * the dark sidebar above. Every color/background uses a workbench
- * token from src/styles/theme-workbench.css.
- * ------------------------------------------------------------------ */
-:global(body.workbench-theme) .sidebar {
-  background: var(--wb-surface);
-  border-right: var(--wb-border);
-  font-family: var(--wb-font-mono);
-}
-
-:global(body.workbench-theme) .toggleBtn {
-  border-bottom: var(--wb-border);
-  color: var(--wb-ink);
-}
-
-:global(body.workbench-theme) .toggleBtn:hover {
-  background: var(--wb-surface-2);
-  color: var(--wb-ink);
-}
-
-:global(body.workbench-theme) .logoHeader {
-  border-bottom: var(--wb-border);
-  background: var(--wb-bg);
-}
-
-:global(body.workbench-theme) .collapseBtn {
-  color: var(--wb-ink-soft);
-}
-
-:global(body.workbench-theme) .collapseBtn:hover {
-  background: var(--wb-surface-2);
-  color: var(--wb-ink);
-}
-
-:global(body.workbench-theme) .userInfoHeader,
-:global(body.workbench-theme) .userInfoHeaderCollapsed {
-  border-bottom: var(--wb-border);
-  background: var(--wb-bg);
-}
-
-:global(body.workbench-theme) .userAvatar,
-:global(body.workbench-theme) .userAvatarSmall {
-  background: var(--wb-surface-2);
-  color: var(--wb-ink);
-}
-
-:global(body.workbench-theme) .userName {
-  color: var(--wb-ink);
-  font-family: var(--wb-font-mono);
-  letter-spacing: var(--wb-tracking-label);
-}
-
-:global(body.workbench-theme) .userPlan {
-  color: var(--wb-ink-mute);
-  font-family: var(--wb-font-mono);
-  letter-spacing: var(--wb-tracking-caps);
-}
-
-:global(body.workbench-theme) .navLink,
-:global(body.workbench-theme) .navLinkHighlighted {
-  color: var(--wb-ink-soft);
-  font-family: var(--wb-font-mono);
-  text-transform: uppercase;
-  letter-spacing: var(--wb-tracking-caps);
-}
-
-:global(body.workbench-theme) .navLink:hover,
-:global(body.workbench-theme) .navLinkHighlighted:hover {
-  background: var(--wb-surface-2);
-  color: var(--wb-ink);
-}
-
-:global(body.workbench-theme) .navLinkDisabled:hover {
-  background: transparent;
-  color: var(--wb-ink-soft);
-}
-
-:global(body.workbench-theme) .tooltip {
-  background: var(--wb-ink);
-  border-color: var(--wb-ink);
-  color: var(--wb-bg);
-  font-family: var(--wb-font-mono);
-}
-
-:global(body.workbench-theme) .sectionTitle {
-  color: var(--wb-ink-mute);
-  font-family: var(--wb-font-mono);
-  letter-spacing: var(--wb-tracking-caps);
-}
-
-:global(body.workbench-theme) .divider {
-  background-color: var(--wb-rule);
-}
-
-:global(body.workbench-theme) .toolbarBtn {
-  background: var(--wb-bg);
-  border: var(--wb-border);
-  color: var(--wb-ink-soft);
-}
-
-:global(body.workbench-theme) .toolbarBtn:hover {
-  background: var(--wb-surface-2);
-  border-color: var(--wb-rule-strong);
-  color: var(--wb-ink);
-}
-
-:global(body.workbench-theme) .toolbarBtn.active {
-  background: var(--wb-ink);
-  border-color: var(--wb-ink);
-  color: var(--wb-bg);
-}
-
-:global(body.workbench-theme) .menuLinks::-webkit-scrollbar-track {
-  background: var(--wb-bg);
-}
-:global(body.workbench-theme) .menuLinks::-webkit-scrollbar-thumb {
-  background: var(--wb-rule);
-}
-:global(body.workbench-theme) .menuLinks::-webkit-scrollbar-thumb:hover {
-  background: var(--wb-rule-strong);
-}
-
-:global(body.workbench-theme) .userInfoFooter {
-  border-top: var(--wb-border);
-  background: var(--wb-bg);
-}
-
-:global(body.workbench-theme) .userInfoFooter:hover {
-  background: var(--wb-surface-2);
-}
-
-:global(body.workbench-theme) .moreDropdown {
-  background: var(--wb-surface);
-  border: var(--wb-border);
-  box-shadow: var(--wb-shadow-lg);
-  backdrop-filter: none;
-}
-
-:global(body.workbench-theme) .moreItem {
-  color: var(--wb-ink);
-  font-family: var(--wb-font-mono);
-}
-
-:global(body.workbench-theme) .moreItem:hover {
-  background: var(--wb-surface-2);
-  color: var(--wb-ink);
-}
-
-:global(body.workbench-theme) .moreItem i {
-  color: var(--wb-ink-soft);
-}
-
-:global(body.workbench-theme) .mobileMenuBtn {
-  background: var(--wb-surface);
-  border: var(--wb-border);
-  color: var(--wb-ink);
 }
