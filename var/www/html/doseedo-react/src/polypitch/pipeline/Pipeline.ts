@@ -24,7 +24,6 @@ import { HCQTKernel } from "../worker/kernels/HCQTKernel";
 import { FFTKernel } from "../worker/kernels/FFTKernel";
 import { PhaseVocoderKernel } from "../worker/kernels/PhaseVocoderKernel";
 import { MaskUNet } from "../models/MaskUNet";
-import { NoteExtractor } from "./NoteExtractor";
 import {
   AnalysisResult,
   AudioBuffer,
@@ -193,13 +192,13 @@ export class Pipeline {
       return base;
     }
 
-    const inputRms = rmsOf(base.samples);
-    // Also log cached STFT RMS — if this is 0 the GPU STFT pipeline isn't
-    // producing valid output despite the input audio being non-zero.
-    const stftRms = this.cachedStft ? rmsOf(this.cachedStft.complexByChannel[0]) : 0;
-    const magRms = this.cachedStft ? rmsOf(this.cachedStft.magByChannel[0]) : 0;
-    console.log(`[polypitch.render] ${edits.length} edits, input rms=${inputRms.toFixed(5)} cachedSTFT.rms=${stftRms.toFixed(5)} cachedMag.rms=${magRms.toFixed(5)} sr=${this.cachedStft?.audio.sampleRate} frames=${this.cachedStft?.audio.frames}`);
-
+    // Extract per-note time signals via spectral-portion allocation. This
+    // ports polypitch-research's `resynthesize_notes`: each STFT bin's
+    // magnitude gets distributed across overlapping notes by their
+    // normalised harmonic demand, so Σ note.time_signal ≈ input_audio.
+    // Unlike the earlier hann4-mask extract (~5 % energy capture) or the
+    // broadband copy (couldn't separate overlapping notes), this yields
+    // clean per-note isolation.
     const editedNotes = this.notes.filter((n) => edits.some((e) => e.noteId === n.id));
     const needIds = editedNotes.map((n) => n.id).filter((id) => !this.noteAudioCache.has(id));
     if (needIds.length > 0) {
@@ -216,8 +215,6 @@ export class Pipeline {
       const original = this.noteAudioCache.get(note.id);
       if (!original) continue;
 
-      const extractedRms = rmsOf(original.samples);
-
       if (includeUnedited) this.subtractNoteFromMix(base, original);
 
       const totalSemis = edit.semitones + edit.cents / 100;
@@ -231,21 +228,15 @@ export class Pipeline {
         continue;
       }
       const ratio = Math.pow(2, totalSemis / 12);
-      const shifted = await this.pitchShiftPhaseVocoder(note, ratio);
-      if (shifted) {
-        const shiftedRms = rmsOf(shifted.samples);
-        const deltaRms = rmsOf2(original.samples, shifted.samples);
-        console.log(`  [edit ${i}/${edits.length}] note=${note.id} ±${totalSemis.toFixed(2)}st ratio=${ratio.toFixed(4)}`
-          + ` extract.rms=${extractedRms.toFixed(5)} shifted.rms=${shiftedRms.toFixed(5)}`
-          + ` |shifted-extract|.rms=${deltaRms.toFixed(5)}`);
-        if (gain !== 1) scaleInPlace(shifted.samples, gain);
-        this.addNoteToMix(base, shifted);
-      }
+      // Pitch-shift the isolated note's time signal by resampling its
+      // audio segment. Clean shift with no phasiness artefacts because
+      // the signal is already single-note-isolated. Duration shortens by
+      // 1/ratio for pitch-up; the gap at the note's tail is imperceptible
+      // at chord-edit granularity.
+      const shifted = pitchShiftByResample(note, original, ratio, PUBLIC_SR);
+      if (gain !== 1) scaleInPlace(shifted.samples, gain);
+      this.addNoteToMix(base, shifted);
     }
-
-    const outputRms = rmsOf(base.samples);
-    const deltaIO = rmsOf2Audio(this.cachedStft!.audio.samples, base.samples);
-    console.log(`[polypitch.render] done. output rms=${outputRms.toFixed(5)} |output-input|.rms=${deltaIO.toFixed(5)}`);
 
     this.diagnostics.lastTimingsMs.render = nowMs() - t0;
     this.setStage("ready", 1);
@@ -325,80 +316,153 @@ export class Pipeline {
     const idSet = new Set(noteIds);
     const selected = this.notes.filter((n) => idSet.has(n.id));
     if (selected.length === 0) return new Map();
-    const queries = selected.map((n) =>
-      NoteExtractor.noteToQuery(n, { sampleRate: PUBLIC_SR, hop: STFT_HOP, nFrames: cache.nFrames }),
-    );
     const channels = cache.complexByChannel.length as 1 | 2;
-    const midMag = channels === 2
-      ? averageMag(cache.magByChannel[0], cache.magByChannel[1])
-      : cache.magByChannel[0];
-    const masks = await this.maskUNet.predict(midMag, queries, PUBLIC_SR, cache.nFft);
+    const nFrames = cache.nFrames;
+    const nBins = cache.bins;
+    const nFft = cache.nFft;
+    const hop = cache.hop;
+    const sr = PUBLIC_SR;
 
+    // Build the portion-factor input shape the Python algorithm wants:
+    // per-note {startFrame, endFrame, f0Hz, energy}. Basic-pitch gives us
+    // a constant midi pitch per note (no vibrato track), so f0Hz is
+    // constant for the note's duration.
+    const portionNotes: PortionNote[] = this.notes.map((n) => {
+      const startFrame = Math.max(0, Math.round((n.startSec * sr) / hop));
+      const endFrame = Math.min(
+        nFrames - 1,
+        Math.max(startFrame, Math.round((n.endSec * sr) / hop)),
+      );
+      const midi = n.pitchMidi + (n.pitchCents || 0) / 100;
+      const f0Hz = 440 * Math.pow(2, (midi - 69) / 12);
+      const energy = Math.max(0.01, Math.min(1, n.velocity));
+      return { startFrame, endFrame, f0Hz, energy };
+    });
+
+    // Figure out which portion-notes we're extracting (indices into
+    // portionNotes that correspond to the requested noteIds).
+    const selectedIdxs: number[] = [];
+    const selectedByIdx = new Map<number, Note>();
+    this.notes.forEach((n, i) => {
+      if (idSet.has(n.id)) {
+        selectedIdxs.push(i);
+        selectedByIdx.set(i, n);
+      }
+    });
+
+    // Per-edited-note scratch STFT buffers. Sized to each note's local frame
+    // window rather than full-track length — a 0.5 s note at 48 kHz/hop=512 is
+    // ~48 frames vs ~2900 for a 30 s track. Drops peak memory from ~200 MB to
+    // ~MB-scale for typical chord edits.
+    const editedCount = selectedIdxs.length;
+    type LocalBuf = { startFrame: number; localFrames: number; byChannel: Float32Array[] };
+    const perEditLocal: LocalBuf[] = selectedIdxs.map((nIdx) => {
+      const pn = portionNotes[nIdx];
+      const localFrames = Math.max(1, pn.endFrame - pn.startFrame + 1);
+      return {
+        startFrame: pn.startFrame,
+        localFrames,
+        byChannel: Array.from({ length: channels }, () => new Float32Array(localFrames * nBins * 2)),
+      };
+    });
+    const demand = new Float32Array(portionNotes.length * nBins);  // per-frame, reused
+    const colSum = new Float32Array(nBins);
+
+    // Sweep frames: compute demand for all notes active at t, normalise
+    // by col-sum per bin, and for each *edited* note write its share of
+    // the complex STFT into that edit's scratch buffer.
+    const HARMONICS = 20;
+    const halfRatio = Math.pow(2, 2 / 12 / 2) - 1;  // "2-semitone full width" in bin terms
+    const binPerHz = nFft / sr;
+
+    // Map: portionNote idx → edit slot (or -1 if not edited)
+    const idxToEdit = new Int32Array(portionNotes.length).fill(-1);
+    selectedIdxs.forEach((nIdx, editSlot) => { idxToEdit[nIdx] = editSlot; });
+
+    for (let t = 0; t < nFrames; t++) {
+      // Figure out which notes are active at frame t. Skip the whole
+      // frame if no edit-candidate is among them.
+      let anyEdited = false;
+      demand.fill(0);
+      for (let nIdx = 0; nIdx < portionNotes.length; nIdx++) {
+        const pn = portionNotes[nIdx];
+        if (t < pn.startFrame || t > pn.endFrame) continue;
+        if (idxToEdit[nIdx] >= 0) anyEdited = true;
+        // Accumulate harmonic demand into demand[nIdx, :]
+        const noteOff = nIdx * nBins;
+        for (let k = 1; k <= HARMONICS; k++) {
+          const fk = k * pn.f0Hz;
+          const binK = fk * binPerHz;
+          if (binK >= nBins) break;
+          let halfWidthBins = binK * halfRatio;
+          if (halfWidthBins < 1) halfWidthBins = 1;
+          const amp = (1 / k) * pn.energy;
+          const lo = Math.max(0, Math.floor(binK - halfWidthBins));
+          const hi = Math.min(nBins - 1, Math.ceil(binK + halfWidthBins));
+          for (let b = lo; b <= hi; b++) {
+            const u = (b - binK) / halfWidthBins;
+            if (u <= -1 || u >= 1) continue;
+            // hann⁴: (0.5 + 0.5 cos(πu))⁴
+            const hann = 0.5 + 0.5 * Math.cos(Math.PI * u);
+            const w = hann * hann * hann * hann;
+            demand[noteOff + b] += amp * w;
+          }
+        }
+      }
+      if (!anyEdited) continue;
+
+      // col_sum across all notes for normalisation
+      colSum.fill(0);
+      for (let nIdx = 0; nIdx < portionNotes.length; nIdx++) {
+        const noteOff = nIdx * nBins;
+        for (let b = 0; b < nBins; b++) colSum[b] += demand[noteOff + b];
+      }
+
+      // For each edited note active at this frame, write its share of the
+      // STFT into its (local) buffer.
+      for (let editSlot = 0; editSlot < editedCount; editSlot++) {
+        const nIdx = selectedIdxs[editSlot];
+        const pn = portionNotes[nIdx];
+        if (t < pn.startFrame || t > pn.endFrame) continue;
+        const noteOff = nIdx * nBins;
+        const local = perEditLocal[editSlot];
+        const localT = t - local.startFrame;
+        const frameStartSrc = t * nBins * 2;
+        const frameStartDst = localT * nBins * 2;
+        for (let c = 0; c < channels; c++) {
+          const stftC = cache.complexByChannel[c];
+          const buf = local.byChannel[c];
+          for (let b = 0; b < nBins; b++) {
+            const cs = colSum[b];
+            if (cs < 1e-12) continue;
+            const factor = demand[noteOff + b] / cs;
+            if (factor === 0) continue;
+            const iSrc = frameStartSrc + b * 2;
+            const iDst = frameStartDst + b * 2;
+            buf[iDst] = factor * stftC[iSrc];
+            buf[iDst + 1] = factor * stftC[iSrc + 1];
+          }
+        }
+      }
+    }
+
+    // ISTFT each edited note's local spectrum → per-channel time signal,
+    // placed back into a full-length output buffer at startFrame * hop.
     const out = new Map<string, AudioBuffer>();
-    for (let qi = 0; qi < queries.length; qi++) {
-      const q = queries[qi];
-      const note = selected[qi];
-      const mask = masks[qi];
-      if (!mask) continue;
-      const maskFrames = Math.max(1, q.endFrame - q.startFrame);
-
-      // Diag: what does the mask actually look like? If sum/peak=0 the
-      // extract is silent before ISTFT even runs → classicalMasks didn't
-      // populate. If mask is non-zero but maskedRfft rms=0, it's a layout
-      // mismatch between mask and STFT. Either way we'll know.
-      let maskSum = 0, maskPeak = 0, maskNonzero = 0;
-      for (let j = 0; j < mask.length; j++) {
-        const v = mask[j]; if (v > 0) { maskSum += v; maskNonzero++; if (v > maskPeak) maskPeak = v; }
-      }
-
-      // RMS of the cached STFT WITHIN the note's window. If this is 0 while
-      // the global cachedSTFT.rms (first ~244 frames) is non-zero, the STFT
-      // pipeline only populated the intro — most of the song's STFT is
-      // empty. That'd make mask × STFT = 0 for any note past frame ~244.
-      let stftWinSumSq = 0, magWinSumSq = 0, winSamples = 0;
-      const bins_ = cache.bins;
-      const sEnd = Math.min(q.endFrame, cache.nFrames);
-      for (let t = q.startFrame; t < sEnd; t++) {
-        for (let b = 0; b < bins_; b++) {
-          const re = cache.complexByChannel[0][t * bins_ * 2 + b * 2];
-          const im = cache.complexByChannel[0][t * bins_ * 2 + b * 2 + 1];
-          stftWinSumSq += re * re + im * im;
-          const mv = cache.magByChannel[0][t * bins_ + b];
-          magWinSumSq += mv * mv;
-          winSamples++;
-        }
-      }
-      const stftWinRms = Math.sqrt(stftWinSumSq / Math.max(1, winSamples));
-      const magWinRms = Math.sqrt(magWinSumSq / Math.max(1, winSamples));
-
-      const perChannelTime: Float32Array[] = [];
-      let firstMaskedRfftRms = 0;
+    const fullFrames = cache.audio.frames;
+    for (let editSlot = 0; editSlot < editedCount; editSlot++) {
+      const nIdx = selectedIdxs[editSlot];
+      const note = selectedByIdx.get(nIdx)!;
+      const local = perEditLocal[editSlot];
+      const sampleOffset = local.startFrame * hop;
+      const samples = new Float32Array(fullFrames * channels);
       for (let c = 0; c < channels; c++) {
-        // Broadband extraction: pass `null` instead of `mask` so ALL bins in
-        // the note's time window get copied, not just harmonic bands. The
-        // narrow hann4 mask was attenuating the extract ~20× below audibility.
-        const maskedRfft = NoteExtractor.applyMaskToComplex(
-          cache.complexByChannel[c], null, cache.nFrames, cache.bins, q.startFrame, maskFrames,
-        );
-        if (c === 0) {
-          let s = 0; const N = Math.min(maskedRfft.length, 500000);
-          for (let i = 0; i < N; i++) s += maskedRfft[i] * maskedRfft[i];
-          firstMaskedRfftRms = Math.sqrt(s / Math.max(1, N));
-        }
-        const time = await this.istftToTime(maskedRfft, cache.nFrames);
-        perChannelTime.push(fitLength(time, cache.audio.frames));
+        const localTime = cpuIstft(local.byChannel[c], local.localFrames, nFft, hop);
+        const dstBase = c * fullFrames + sampleOffset;
+        const copyLen = Math.min(localTime.length, fullFrames - sampleOffset);
+        if (copyLen > 0) samples.set(localTime.subarray(0, copyLen), dstBase);
       }
-      console.log(`  [extract] note=${note.id} vel=${q.velocity.toFixed(2)} `
-        + `startF=${q.startFrame} endF=${q.endFrame} maskFrames=${maskFrames} `
-        + `mask{sum=${maskSum.toFixed(2)}, peak=${maskPeak.toFixed(4)}, nonzero=${maskNonzero}} `
-        + `stft@win.rms=${stftWinRms.toFixed(5)} mag@win.rms=${magWinRms.toFixed(5)} `
-        + `maskedRfft.rms=${firstMaskedRfftRms.toFixed(6)}`);
-
-      const frames = cache.audio.frames;
-      const samples = new Float32Array(frames * channels);
-      samples.set(perChannelTime[0], 0);
-      if (channels === 2) samples.set(perChannelTime[1], frames);
-      out.set(note.id, { samples, channels, sampleRate: PUBLIC_SR, frames });
+      out.set(note.id, { samples, channels, sampleRate: PUBLIC_SR, frames: fullFrames });
     }
     return out;
   }
@@ -708,4 +772,66 @@ function expandRfftToFullComplex(rfft: Float32Array, nFrames: number, nFft: numb
     }
   }
   return out;
+}
+
+// ---- spectral-portion + resample pitch shift (Python parity) --------------
+
+interface PortionNote {
+  startFrame: number;
+  endFrame: number;
+  f0Hz: number;
+  energy: number;
+}
+
+/**
+ * Pitch-shift a note's isolated time signal by resampling its [startSec, endSec]
+ * window. Clean shift — no phase-vocoder artefacts — because the signal is
+ * already single-note-isolated by spectral portion allocation.
+ *
+ * For pitch-up the resampled segment is shorter by 1/ratio, so the note tail
+ * ends ~1/ratio earlier; the gap is inaudible at chord-edit granularity.
+ * For pitch-down the segment is longer by ratio and the tail runs past the
+ * original endSec into following silence.
+ */
+function pitchShiftByResample(
+  note: Note,
+  original: AudioBuffer,
+  ratio: number,
+  sampleRate: number,
+): AudioBuffer {
+  const frames = original.frames;
+  const channels = original.channels;
+  const startSample = Math.max(0, Math.floor(note.startSec * sampleRate));
+  const endSample = Math.min(frames, Math.ceil(note.endSec * sampleRate));
+  const segLen = Math.max(0, endSample - startSample);
+
+  const out = new Float32Array(frames * channels);
+  if (segLen === 0) {
+    return { samples: out, channels, sampleRate, frames };
+  }
+
+  // Resampled segment length. Pitch-up (ratio > 1) compresses time.
+  const shiftedLen = Math.max(1, Math.round(segLen / ratio));
+
+  for (let c = 0; c < channels; c++) {
+    const srcOff = c * frames;
+    const dstOff = c * frames;
+    // Linear-interp resample: out[n] = src[start + n*ratio]. Cheap and
+    // sufficient — the note signal is already band-limited by the STFT/ISTFT.
+    for (let n = 0; n < shiftedLen; n++) {
+      const t = n * ratio;
+      const i0 = Math.floor(t);
+      const frac = t - i0;
+      const s0 = startSample + i0;
+      const s1 = s0 + 1;
+      if (s0 >= endSample) break;
+      const a = original.samples[srcOff + s0];
+      const b = s1 < endSample ? original.samples[srcOff + s1] : 0;
+      const writeIdx = dstOff + startSample + n;
+      if (writeIdx >= dstOff + frames) break;
+      out[writeIdx] = a + (b - a) * frac;
+    }
+  }
+
+  return { samples: out, channels, sampleRate, frames };
 }

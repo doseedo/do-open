@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 // CSS import chain ported from src/index.js — order matters.
 import '@/styles/colors.css';
 import '@/styles/theme-workbench.css'; // Master workbench theme — body.workbench-theme on /studio, /dashboard, ...
+import '@/styles/workbench-slides.css'; // Text-only feature slideshow on /dashboard — scoped under .wbDeck
 import '@/styles/theme-hifi-purple.css'; // Dev variant — scoped to body.theme-hifi-purple (applied on /studio)
 import '@/styles/glass-theme-background.css';
 import '@/styles/liquid-glass.css';

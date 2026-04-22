@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import styles from './WorkbenchSlides.module.css';
-
-// Required so the bundler pulls in the module.css even though the selectors
-// are all `:global`. styles is otherwise unused.
-if (styles) { /* side-effect */ }
 
 /* =====================================================================
+ * Styles live in src/styles/workbench-slides.css (plain global CSS,
+ * imported once from AppShell.tsx). No CSS-module wrapper — Next.js
+ * App Router rejects modules whose only selectors are `:global(...)`,
+ * and the `.wbDeck` ancestor already scopes the rules.
+ *
  * Slide text blocks — lifted verbatim from /Users/hydroadmin/Downloads/Do/home/stage2.
  * Only .slide__eyebrow / .slide__h / .slide__copy / .slide__meta are kept;
  * the mock DAW stage, brand strip, slide marker, and foot bar are dropped
