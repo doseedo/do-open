@@ -18,6 +18,20 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import midiPlayer from '../../utils/midiPlayer';
+
+// Safe expression evaluator for the axis settings. Allows arithmetic +
+// `BPM` / `SR` variables, converts `^` to `**`, returns NaN on parse
+// error. Kept small — no access to globals, just numeric eval.
+function evalAxisExpr(expr, vars = { BPM: 120, SR: 48000 }) {
+  if (typeof expr !== 'string') return NaN;
+  try {
+    const js = expr.replace(/\^/g, '**');
+    const fn = new Function(...Object.keys(vars), `"use strict"; return (${js});`);
+    const v = fn(...Object.values(vars));
+    return Number.isFinite(v) ? v : NaN;
+  } catch (_) { return NaN; }
+}
 
 // ---- Pitch helpers ----
 const NOTE_NAMES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -238,7 +252,31 @@ export default function StudioDevMidi() {
   //   • note snapping on click/drag
   //   • hover-cell highlight width
   //   • subdivision lines drawn in the ruler + grid
-  const beatSec = 60 / Math.max(40, state.bpm || 120);
+  // beatSec is the user-configurable seconds-per-beat value. Default
+  // expr is `60/BPM`; evaluating any other expression (e.g. `60/BPM/2`,
+  // `1`) replaces it cleanly. Falls back to the standard formula if
+  // parsing fails.
+  const bpmVal = Math.max(40, state.bpm || 120);
+  const xEval = evalAxisExpr(xAxisExpr, { BPM: bpmVal });
+  const beatSec = Number.isFinite(xEval) && xEval > 0 ? xEval : 60 / bpmVal;
+
+  // Y-axis ratio — frequency multiplier per MIDI-pitch row. Default is
+  // 12-EDO (2^(1/12)); 2^(1/24) gives quarter-tones; 3/2 gives just-
+  // intonation fifths. Evaluated + pushed to the sine synth below.
+  const yAxisRatio = useMemo(() => {
+    const v = evalAxisExpr(yAxisExpr, { BPM: bpmVal });
+    return Number.isFinite(v) && v > 1 ? v : Math.pow(2, 1 / 12);
+  }, [yAxisExpr, bpmVal]);
+
+  // Push the current axis values into the shared midiPlayer so it uses
+  // them for pitch frequency + time scaling on every playNote /
+  // scheduleNotes. Default beatSec is 60/BPM; timeScale = beatSec /
+  // default captures any user override of the X-axis expression.
+  useEffect(() => {
+    midiPlayer.initialize().catch(() => {});
+    midiPlayer.setYAxisRatio(yAxisRatio);
+    midiPlayer.setTimeScale(beatSec / (60 / bpmVal));
+  }, [yAxisRatio, beatSec, bpmVal]);
   // Subdivide as soon as a beat is wider than ~48 px (threshold for
   // halving into eighths). The loop halves again whenever the CURRENT
   // cell is still wider than that, so the grid keeps up with zoom
@@ -281,6 +319,12 @@ export default function StudioDevMidi() {
         nextSel = selected.has(hit.idx) ? selected : new Set([hit.idx]);
       }
       setSelected(nextSel);
+      // Audition the clicked note through the sine synth so users can
+      // hear what they just selected at the current axis ratio.
+      midiPlayer.resume().then(() => {
+        if (isDrum) midiPlayer.playDrum(hit.note.note, 0.7);
+        else midiPlayer.playNote(hit.note.note, 0.7, 0.3);
+      }).catch(() => {});
       const mode =
         hit.edge === 'right' ? 'resize-right'
         : hit.edge === 'left' ? 'resize-left'
@@ -316,6 +360,11 @@ export default function StudioDevMidi() {
       const nxt = [...notes, newNote];
       commit(nxt);
       setSelected(new Set([nxt.length - 1]));
+      // Audition the freshly placed note.
+      midiPlayer.resume().then(() => {
+        if (isDrum) midiPlayer.playDrum(p, 0.7);
+        else midiPlayer.playNote(p, 0.7, 0.3);
+      }).catch(() => {});
       setDrag({
         mode: 'resize-right',
         startClientX: e.clientX, startClientY: e.clientY,
