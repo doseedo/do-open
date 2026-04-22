@@ -430,6 +430,10 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             audioContext, url, schedule, finalGain, trackStartTime,
             currentPlayheadTime, schedulingStartTime, masterGainNodeRef.current,
           );
+          if (track.metadata?.polypitchRendered) {
+            const buf = audioBufferCache.get(url);
+            console.log(`  🎹 scheduled polypitch ${track.metadata?.stemType || '?'} dur=${buf.duration.toFixed(2)}s gain=${finalGain.toFixed(2)} segs=${sources.length} from=${url.slice(0, 40)}…`);
+          }
           if (gainNode) {
             sourceNodesRef.current.push(...sources);
             gainNodesRef.current.set(track.id, gainNode);
@@ -451,7 +455,8 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             if (gainNode) {
               sourceNodesRef.current.push(...sources);
               gainNodesRef.current.set(track.id, gainNode);
-              console.log(`  🔈 Late-scheduled: ${track.name || url} at live playhead ${livePlayhead.toFixed(2)}s (${sources.length} seg(s))`);
+              const tag = track.metadata?.polypitchRendered ? '🎹 Late-scheduled polypitch' : '🔈 Late-scheduled';
+              console.log(`  ${tag}: ${track.metadata?.stemType || track.name || url} at live playhead ${livePlayhead.toFixed(2)}s (${sources.length} seg(s))`);
             }
           } catch (error) {
             console.warn(`  ❌ Late-load failed for ${url}:`, error?.message || error);
@@ -514,6 +519,14 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         console.log(`🎭 Mask playback: ${Object.keys(stemGains).length} stems`
           + (polypitchStemTracks.length ? ` (${polypitchStemTracks.length} routed to audioUrl)` : '')
           + `, solo=${activeSolo || 'none'}`);
+        if (polypitchStemTracks.length > 0) {
+          for (const t of polypitchStemTracks) {
+            const url = (t.audioUrl || '').slice(0, 60);
+            const cached = audioBufferCache.has(t.audioUrl);
+            const stem = t.metadata?.stemType || t.metadata?.instrument || '?';
+            console.log(`  🎹 polypitch stem: id=${t.id} stem=${stem} gain(mask)=0 url=${url}… cached=${cached}`);
+          }
+        }
 
         // Schedule non-stem tracks + polypitch-rendered stems via audioUrl.
         // (Parent track is muted when stems exist, so it won't double-play.)
