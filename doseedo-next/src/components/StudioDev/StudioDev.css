@@ -1567,18 +1567,24 @@
   cursor: pointer;
 }
 
-/* Vertical bend slider — use the native slider-vertical appearance
- * (Chromium/WebKit) + orient attribute (Firefox) instead of rotating
- * a horizontal slider, which gave a huge black UA-default track.
- * Width kept thin so it sits snugly against the note's right edge. */
+/* Vertical bend slider — modern spec is writing-mode: vertical-lr on
+ * the input itself. (-webkit-appearance: slider-vertical was removed
+ * from Chrome; the orient=vertical attribute alone is Firefox-only.)
+ * With vertical writing-mode, width/height roles FLIP for pseudo-els:
+ * `-webkit-slider-runnable-track { width }` becomes the horizontal
+ * thickness of the track, `height` becomes the vertical travel.
+ * direction: rtl puts value 0 at the bottom so up = more bend. */
 .sd-midi-note-bend {
-  width: 12px;
-  -webkit-appearance: slider-vertical;
-       appearance: slider-vertical;
-  writing-mode: bt-lr;  /* Firefox cue — actual orient via attr */
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 14px;
+  background: transparent;
+  -webkit-appearance: none;
+       appearance: none;
 }
 .sd-midi-note-bend::-webkit-slider-runnable-track {
   width: 2px;
+  height: 100%;
   background: rgba(21, 24, 28, 0.35);
   border-radius: 1px;
 }
