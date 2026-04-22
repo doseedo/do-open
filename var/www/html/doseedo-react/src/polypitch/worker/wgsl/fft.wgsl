@@ -62,9 +62,10 @@ fn main(
   // flow, so early-returning here would crash every FFT dispatch where
   // half_n*batch isn't a multiple of the workgroup size with the exact
   // "Must only be called from uniform control flow" validation error.
-  // Gate the read/write work on `active` but let all threads reach each
-  // barrier.
-  let active = (pair_idx < half_n) && (row < batch);
+  // Gate the read/write work on `in_bounds` but let all threads reach
+  // each barrier. (`active` would also fit semantically but it's a WGSL
+  // reserved keyword — using it renders the shader uncompilable.)
+  let in_bounds = (pair_idx < half_n) && (row < batch);
 
   // Stockham writes are structured so stage s reads stride M = 1<<s and writes
   // with output stride 2*M. We ping-pong: stage 0 reads buf_a, writes buf_b;
@@ -72,7 +73,7 @@ fn main(
   //
   // All threads participate in every stage; the barrier between stages keeps
   // ordering consistent. We use a tiny helper to index complex elements.
-  let row_offset = select(0u, row * n * 2u, active);
+  let row_offset = select(0u, row * n * 2u, in_bounds);
 
   // Prepare: pre-scale inverse input by nothing (division happens at the end).
   // Stockham variable definitions:
@@ -110,7 +111,7 @@ fn main(
     let out1_base = row_offset + 2u * (group_idx * m2 + k + m);
 
     var ar: f32 = 0.0; var ai: f32 = 0.0; var br: f32 = 0.0; var bi: f32 = 0.0;
-    if (active) {
+    if (in_bounds) {
       if ((s & 1u) == 0u) {
         ar = buf_a[in_a_base]; ai = buf_a[in_a_base + 1u];
         br = buf_a[in_b_base]; bi = buf_a[in_b_base + 1u];
@@ -129,7 +130,7 @@ fn main(
     let y1r = ar - tr;
     let y1i = ai - ti;
 
-    if (active) {
+    if (in_bounds) {
       if ((s & 1u) == 0u) {
         buf_b[out0_base]      = y0r;
         buf_b[out0_base + 1u] = y0i;
@@ -145,7 +146,7 @@ fn main(
 
     // Ensure every thread has written its pair before the next stage reads.
     // All threads (including out-of-bounds) reach this unconditionally so
-    // the barrier is in uniform control flow — see the `active` note above.
+    // the barrier is in uniform control flow — see the `in_bounds` note above.
     workgroupBarrier();
     storageBarrier();
   }
@@ -160,7 +161,7 @@ fn main(
   let off0 = row_offset + 2u * pair_idx;
   let off1 = row_offset + 2u * (pair_idx + half_n);
 
-  if (!active) {
+  if (!in_bounds) {
     return;
   }
 
