@@ -61,8 +61,15 @@ export function getPipeline() {
  */
 export function notesFromMidiData(midiData) {
   if (!midiData || !Array.isArray(midiData.notes)) return [];
-  return midiData.notes.map((n, i) => ({
-    id: `n${i}-${n.note}-${n.time.toFixed(3)}`,
+  // IDs are deterministic on pitch+time so the same note produces the
+  // same id whether it came through a windowed slice or the full track
+  // array. polypitchChordSync computes newPitches from a ~2-note window
+  // and then hands renderWithNewPitches the full ~200-note array — if
+  // we index-prefixed the id, "n0-69-10.234" in newPitches wouldn't
+  // match "n47-69-10.234" in the full array and every render silently
+  // noop'd with "no pitch changes".
+  return midiData.notes.map((n) => ({
+    id: `${n.note | 0}@${n.time.toFixed(3)}`,
     startSec: n.time,
     endSec: n.time + Math.max(0.01, n.duration || 0.1),
     pitchMidi: n.note | 0,

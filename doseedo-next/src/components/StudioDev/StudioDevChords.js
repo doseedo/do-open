@@ -12,7 +12,6 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import useChordRegen from '../../hooks/useChordRegen';
 
 const ROOTS = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const QUALS = ['', 'm', '7', 'maj7', 'm7', 'sus4', 'sus2', 'dim', 'aug', '9'];
@@ -23,13 +22,15 @@ export default function StudioDevChords() {
   const [editingBeat, setEditingBeat] = useState(null);
   const [pageStartBar, setPageStartBar] = useState(0);
   const chords = state.chordTrack?.chords || {};
-  const runChordRegen = useChordRegen();
 
+  // SET_CHORD_FOR_BEAT is picked up by StudioDev.js's polypitch chord-diff
+  // effect, which re-voices pitched stems on the client via the WebGPU
+  // polypitch pipeline. The legacy /api/regen-stem-for-chord path (A100
+  // stemphonic runtime) is not deployed in the current Modal setup — it
+  // used to be wired here via useChordRegen but consistently returned
+  // HTTP 500. Polypitch is the current source of truth for chord edits.
   const setChord = (beatIndex, newChord) => {
-    const oldChord = chords[beatIndex] || '';
     dispatch({ type: 'SET_CHORD_FOR_BEAT', payload: { beatIndex, chord: newChord } });
-    runChordRegen({ beatIndex, oldChord, newChord }).catch((e) =>
-      console.warn('[studio-dev] chord regen failed:', e?.message || e));
   };
 
   const deleteChord = (beatIndex) => {
