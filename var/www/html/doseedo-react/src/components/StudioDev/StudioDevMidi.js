@@ -158,6 +158,11 @@ export default function StudioDevMidi() {
         duration: n.duration,
         velocity: Math.max(1, Math.min(127, n.velocity ?? 100)),
         lyric: n.lyric,
+        // Preserve vertical stretch (default 1 = normal single-row
+        // note). Dropping this was why Y-resize appeared to do nothing:
+        // commit() stored the new span, but the very next render
+        // stripped it before draw + hit-test saw it.
+        pitchSpan: Math.max(1, n.pitchSpan | 0 || 1),
       }));
   }, [selectedTrack]);
 
