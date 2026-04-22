@@ -106,14 +106,16 @@ const UserInfo = ({ onLogout }) => {
   }, []);
 
   const handleLogout = async () => {
-    if (window.confirm('Are you sure you want to logout?')) {
-      await logoutUser();
-      if (onLogout) {
-        onLogout();
-      } else {
-        window.location.href = '/login';
-      }
+    if (!window.confirm('Are you sure you want to logout?')) return;
+    await logoutUser();
+    if (onLogout) {
+      onLogout();
+      return;
     }
+    // Full reload (not SPA navigation): resets the Clerk context and any
+    // in-memory user state. Landing on `/` shows the public home which
+    // renders sign-in affordances for unauthenticated visitors.
+    window.location.href = '/';
   };
 
   return (

@@ -215,47 +215,87 @@ export async function liteClaimPlugin(email, pluginSlug) {
 }
 
 /**
- * Logout current user by calling backend to clear cookies
+ * Logout current user. Clerk is the live auth system; we also expire the
+ * legacy auth cookies (username/ispro/userpic/auth_token) that the
+ * pre-Clerk backend used to set, otherwise `getCurrentUser` will re-read
+ * them on reload and the UI insists the user is still signed in.
  */
 export async function logoutUser() {
+  // 1. Sign out of Clerk. `window.Clerk` is exposed by ClerkProvider in the
+  //    Next shell; calling signOut here gives us the same behaviour as
+  //    useClerk().signOut without having to hook-ify every caller.
   try {
-    await fetch(`${API_BASE_URL}/logout`, {
-      method: 'POST',
-      credentials: 'include' // Include cookies
-    });
+    if (typeof window !== 'undefined' && window.Clerk?.signOut) {
+      await window.Clerk.signOut();
+    }
   } catch (error) {
-    console.error('Logout failed:', error);
+    console.error('Clerk signOut failed:', error);
   }
-  // Cookies are cleared by backend
+
+  // 2. Expire legacy cookies on every plausible scope (host + apex + sub).
+  //    Some old cookies were set with Domain=.doseedo.com, others without.
+  if (typeof document !== 'undefined') {
+    const past = 'Thu, 01 Jan 1970 00:00:00 GMT';
+    for (const name of ['username', 'ispro', 'userpic', 'auth_token', 'access_token', 'clerk_token']) {
+      document.cookie = `${name}=; expires=${past}; path=/`;
+      document.cookie = `${name}=; expires=${past}; path=/; domain=.doseedo.com`;
+      document.cookie = `${name}=; expires=${past}; path=/; domain=doseedo.com`;
+    }
+  }
+
+  // 3. Drop any cached Clerk JWT snapshot from older ClerkTokenBridge
+  //    builds + legacy `token` key. Current builds don't write these, but
+  //    older tabs may still have them.
+  try { window.localStorage?.removeItem('clerk_token'); } catch {}
+  try { window.localStorage?.removeItem('token'); } catch {}
 }
 
 /**
- * Check if user is authenticated by checking for auth_token cookie
- * @returns {boolean}
+ * Check if user is authenticated. Clerk is the source of truth when it's
+ * loaded; the legacy-cookie check only runs when Clerk hasn't mounted yet.
+ * Trusting the cookie first would flash the stale profile on logout for a
+ * paint — which is the "logout shows same user" bug.
  */
 export function isAuthenticated() {
-  // Check if username cookie exists (auth_token is HTTP-only so we can't read it)
+  if (typeof window !== 'undefined' && window.Clerk) {
+    if (window.Clerk.user) return true;
+    if (window.Clerk.loaded) return false; // Clerk says no — don't fall back.
+  }
   return getCookie('username') !== null;
 }
 
 /**
- * Get current user data from cookies
- * @returns {Object|null} User data or null if not authenticated
+ * Get current user data. Clerk first; legacy cookies only as a pre-mount
+ * fallback.
  */
 export function getCurrentUser() {
-  if (!isAuthenticated()) {
+  if (typeof window !== 'undefined' && window.Clerk?.user) {
+    const u = window.Clerk.user;
+    const primary = u.primaryEmailAddress?.emailAddress || '';
+    const username = u.username || primary.split('@')[0] || 'user';
+    return {
+      id: u.id,
+      username,
+      email: primary,
+      subscriptionStatus: 'Free',
+      isPro: false,
+      picture: u.imageUrl || 'user.png',
+    };
+  }
+  if (typeof window !== 'undefined' && window.Clerk?.loaded && !window.Clerk.user) {
     return null;
   }
+  if (!isAuthenticated()) return null;
 
   const username = getCookie('username');
   const ispro = getCookie('ispro');
   const userpic = getCookie('userpic') || 'user.png';
 
   return {
-    id: username, // Use username as id for cloud save operations
+    id: username,
     username,
     subscriptionStatus: ispro || 'Free',
     isPro: ispro === 'Pro+',
-    picture: userpic
+    picture: userpic,
   };
 }
