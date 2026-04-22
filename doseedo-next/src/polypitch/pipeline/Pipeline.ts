@@ -24,7 +24,6 @@ import { HCQTKernel } from "../worker/kernels/HCQTKernel";
 import { FFTKernel } from "../worker/kernels/FFTKernel";
 import { PhaseVocoderKernel } from "../worker/kernels/PhaseVocoderKernel";
 import { MaskUNet } from "../models/MaskUNet";
-import { NoteExtractor } from "./NoteExtractor";
 import {
   AnalysisResult,
   AudioBuffer,
@@ -248,8 +247,16 @@ export class Pipeline {
         continue;
       }
       const ratio = Math.pow(2, totalSemis / 12);
-      const shifted = await this.pitchShiftPhaseVocoder(note, ratio);
-      const shiftedNoteRms = windowRms(shifted, note.startSec, note.endSec, PUBLIC_SR);
+      // Pitch-shift the isolated note's time signal by resampling its
+      // audio segment. Clean shift with no phasiness artefacts because
+      // the signal is already single-note-isolated. Duration shortens by
+      // 1/ratio for pitch-up; the gap at the note's tail is imperceptible
+      // at chord-edit granularity.
+      const shifted = pitchShiftByResample(note, original, ratio, PUBLIC_SR);
+      // Shifted-note RMS is measured over the post-resample active window:
+      // length shrinks to (noteDur/ratio) for pitch-up, grows for pitch-down.
+      const shiftedEnd = note.startSec + (note.endSec - note.startSec) / ratio;
+      const shiftedNoteRms = windowRms(shifted, note.startSec, shiftedEnd, PUBLIC_SR);
       if (gain !== 1) scaleInPlace(shifted.samples, gain);
       this.addNoteToMix(base, shifted);
       console.log(`[polypitch.render] edit ${i}/${edits.length} midi=${note.pitchMidi} semis=${totalSemis.toFixed(2)} ratio=${ratio.toFixed(4)} gain=${gain.toFixed(3)} origRms=${origNoteRms.toExponential(2)} shiftedRms=${shiftedNoteRms.toExponential(2)} t=[${note.startSec.toFixed(2)},${note.endSec.toFixed(2)}]s`);
@@ -600,47 +607,6 @@ export class Pipeline {
     }
   }
 
-  private async pitchShiftPhaseVocoder(note: Note, ratio: number): Promise<AudioBuffer> {
-    const cache = this.cachedStft!;
-    const channels = cache.complexByChannel.length as 1 | 2;
-    const fullBins = STFT_N_FFT;
-    const nFrames = cache.nFrames;
-    const bins = cache.bins;
-
-    const query = NoteExtractor.noteToQuery(note, { sampleRate: PUBLIC_SR, hop: STFT_HOP, nFrames });
-    const midMag = channels === 2
-      ? averageMag(cache.magByChannel[0], cache.magByChannel[1])
-      : cache.magByChannel[0];
-    const masks = await this.maskUNet.predict(midMag, [query], PUBLIC_SR, cache.nFft);
-    const mask = masks[0];
-    if (!mask) return silence(cache.audio.frames, channels);
-    const maskFrames = Math.max(1, query.endFrame - query.startFrame);
-
-    const outChannels: Float32Array[] = [];
-    for (let c = 0; c < channels; c++) {
-      const maskedRfft = NoteExtractor.applyMaskToComplex(
-        cache.complexByChannel[c], mask, nFrames, bins, query.startFrame, maskFrames,
-      );
-      const rotatedRfft = cpuPhaseVocoder(maskedRfft, nFrames, bins, ratio, cache.hop, cache.nFft);
-      const rotatedFull = expandRfftToFullComplex(rotatedRfft, nFrames, fullBins);
-      const stftBuf = createStorageBuffer(this.device, nFrames * fullBins * 8, "Pipeline.pv.full");
-      uploadFloat32(this.device, stftBuf, rotatedFull);
-      const outLen = this.istft.outputSamplesFor(nFrames);
-      const pcmBuf = createStorageBuffer(this.device, outLen * 4, "Pipeline.pv.out");
-      this.istft.run(stftBuf, pcmBuf, nFrames);
-      const time = await readbackFloat32(this.device, pcmBuf, outLen * 4);
-      stftBuf.destroy();
-      pcmBuf.destroy();
-      outChannels.push(fitLength(time, cache.audio.frames));
-    }
-
-    const frames = cache.audio.frames;
-    const samples = new Float32Array(frames * channels);
-    samples.set(outChannels[0], 0);
-    if (channels === 2) samples.set(outChannels[1], frames);
-    return { samples, channels, sampleRate: PUBLIC_SR, frames };
-  }
-
 }
 
 // ---- CPU ISTFT — Cooley-Tukey radix-2 iFFT + sqrt-Hann overlap-add ---------
@@ -745,12 +711,6 @@ function extractChannel(audio: AudioBuffer, c: number): Float32Array {
   return audio.samples.subarray(off, off + audio.frames);
 }
 
-function averageMag(a: Float32Array, b: Float32Array): Float32Array {
-  const out = new Float32Array(a.length);
-  for (let i = 0; i < a.length; i++) out[i] = 0.5 * (a[i] + b[i]);
-  return out;
-}
-
 function compactComplexToRfftBins(full: Float32Array, nFrames: number, nFft: number, rfftBins: number): Float32Array {
   const out = new Float32Array(nFrames * rfftBins * 2);
   for (let t = 0; t < nFrames; t++) {
@@ -760,85 +720,11 @@ function compactComplexToRfftBins(full: Float32Array, nFrames: number, nFft: num
   return out;
 }
 
-function fitLength(src: Float32Array, targetLen: number): Float32Array {
-  if (src.length === targetLen) return src;
-  const out = new Float32Array(targetLen);
-  out.set(src.subarray(0, Math.min(src.length, targetLen)), 0);
-  return out;
-}
-
-function expandRfftToFullComplex(rfft: Float32Array, nFrames: number, nFft: number): Float32Array {
-  const rfftBins = nFft / 2 + 1;
-  const out = new Float32Array(nFrames * nFft * 2);
-  for (let t = 0; t < nFrames; t++) {
-    const srcOff = t * rfftBins * 2;
-    const dstOff = t * nFft * 2;
-    out.set(rfft.subarray(srcOff, srcOff + rfftBins * 2), dstOff);
-    for (let b = 1; b < nFft / 2; b++) {
-      const srcRe = rfft[srcOff + b * 2];
-      const srcIm = rfft[srcOff + b * 2 + 1];
-      const mirrorBin = nFft - b;
-      out[dstOff + mirrorBin * 2] = srcRe;
-      out[dstOff + mirrorBin * 2 + 1] = -srcIm;
-    }
-  }
-  return out;
-}
-
 function rmsOfArray(buf: Float32Array): number {
   if (buf.length === 0) return 0;
   let s = 0;
   for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
   return Math.sqrt(s / buf.length);
-}
-
-function cpuPhaseVocoder(
-  rfftComplex: Float32Array,
-  nFrames: number,
-  nBins: number,
-  ratio: number,
-  hop: number,
-  nFft: number,
-): Float32Array {
-  const out = new Float32Array(rfftComplex.length);
-  const prevInPhase = new Float32Array(nBins);
-  const accumOutPhase = new Float32Array(nBins);
-  const tau = 2 * Math.PI;
-  const omegaExpected = new Float32Array(nBins);
-  for (let b = 0; b < nBins; b++) omegaExpected[b] = (tau * b * hop) / nFft;
-
-  for (let b = 0; b < nBins; b++) {
-    const base = b * 2;
-    const re = rfftComplex[base];
-    const im = rfftComplex[base + 1];
-    out[base] = re;
-    out[base + 1] = im;
-    const phase = Math.atan2(im, re);
-    prevInPhase[b] = phase;
-    accumOutPhase[b] = phase;
-  }
-
-  for (let f = 1; f < nFrames; f++) {
-    const rowOff = f * nBins * 2;
-    for (let b = 0; b < nBins; b++) {
-      const base = rowOff + b * 2;
-      const re = rfftComplex[base];
-      const im = rfftComplex[base + 1];
-      const mag = Math.sqrt(re * re + im * im);
-      const phase = Math.atan2(im, re);
-      let delta = phase - prevInPhase[b] - omegaExpected[b];
-      delta = delta - tau * Math.floor((delta + Math.PI) / tau);
-      const instOmega = (omegaExpected[b] + delta) / hop;
-      const shiftedOmega = instOmega * ratio;
-      const newOutPhase = accumOutPhase[b] + shiftedOmega * hop;
-      accumOutPhase[b] = newOutPhase;
-      prevInPhase[b] = phase;
-      out[base] = mag * Math.cos(newOutPhase);
-      out[base + 1] = mag * Math.sin(newOutPhase);
-    }
-  }
-
-  return out;
 }
 
 // RMS over a time window [startSec, endSec], averaged across channels.
