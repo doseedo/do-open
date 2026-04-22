@@ -264,6 +264,46 @@ export class Pipeline {
 
     this.diagnostics.lastTimingsMs.render = nowMs() - t0;
     this.setStage("ready", 1);
+
+    // Click detection: scan the rendered output for sample discontinuities
+    // well above the calm baseline. This runs INSIDE the algorithm, so any
+    // click it reports is from our math (not downstream playback). If this
+    // logs zero clicks but the browser still sounds clicky, the click is
+    // added by the scheduler/worklet/playback path after this point.
+    const calmStart = Math.floor(0 * PUBLIC_SR);
+    const calmEnd = Math.min(base.frames, Math.floor(2 * PUBLIC_SR));
+    let calmMax = 0;
+    for (let c = 0; c < base.channels; c++) {
+      const off = c * base.frames;
+      for (let i = calmStart + 1; i < calmEnd; i++) {
+        const d = Math.abs(base.samples[off + i] - base.samples[off + i - 1]);
+        if (d > calmMax) calmMax = d;
+      }
+    }
+    // Threshold: 6× the biggest diff in the calm first 2s (captures peaks,
+    // not average — avoids false positives from legitimate transients).
+    const clickThreshold = Math.max(calmMax * 6, 0.1);
+    const clicks: Array<{ t: number; d: number; c: number }> = [];
+    for (const edit of edits) {
+      const note = this.notes.find((n) => n.id === edit.noteId);
+      if (!note) continue;
+      const s0 = Math.max(0, Math.floor((note.startSec - 0.05) * PUBLIC_SR));
+      const s1 = Math.min(base.frames, Math.ceil((note.endSec + 0.1) * PUBLIC_SR));
+      for (let c = 0; c < base.channels; c++) {
+        const off = c * base.frames;
+        for (let i = s0 + 1; i < s1; i++) {
+          const d = Math.abs(base.samples[off + i] - base.samples[off + i - 1]);
+          if (d > clickThreshold) clicks.push({ t: i / PUBLIC_SR, d, c });
+        }
+      }
+    }
+    if (clicks.length > 0) {
+      const sorted = clicks.sort((a, b) => b.d - a.d).slice(0, 10);
+      console.warn(`[polypitch.render] ⚠️  ${clicks.length} in-algorithm click(s) found. calmMax=${calmMax.toExponential(2)} threshold=${clickThreshold.toExponential(2)}. Top 10:`);
+      for (const c of sorted) console.warn(`    t=${c.t.toFixed(4)}s ch=${c.c} diff=${c.d.toFixed(4)}`);
+    } else {
+      console.log(`[polypitch.render] no clicks detected inside algorithm output (calmMax=${calmMax.toExponential(2)} threshold=${clickThreshold.toExponential(2)})`);
+    }
     console.log(`[polypitch.render] complete in ${(nowMs() - t0).toFixed(0)}ms, baseFrames=${base.frames}`);
     return base;
   }

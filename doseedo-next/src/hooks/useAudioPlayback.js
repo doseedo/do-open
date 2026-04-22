@@ -438,6 +438,33 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             for (let i = 0; i < N; i++) { const v = ch[i]; sum += v*v; const a = Math.abs(v); if (a > peak) peak = a; }
             const rms = Math.sqrt(sum / Math.max(1, N));
             console.log(`  🎹 scheduled polypitch ${track.metadata?.stemType || '?'} dur=${buf.duration.toFixed(2)}s rms(2s)=${rms.toFixed(5)} peak(2s)=${peak.toFixed(4)} gain=${finalGain.toFixed(2)} segs=${sources.length} from=${url.slice(0, 40)}…`);
+            // Post-decode click scan: measure sample discontinuities on the
+            // decoded AudioBuffer (after WAV→AudioBuffer conversion by
+            // audioContext.decodeAudioData). This confirms the blob content
+            // at the point it's handed to the graph. A clean algorithm output
+            // should decode to a clean AudioBuffer — any click here would be
+            // from the WAV encoder or decoder.
+            let calmMax = 0;
+            for (let i = 1; i < N; i++) {
+              const d = Math.abs(ch[i] - ch[i - 1]);
+              if (d > calmMax) calmMax = d;
+            }
+            const clickThresh = Math.max(calmMax * 6, 0.1);
+            let clickCount = 0;
+            let firstClickT = -1;
+            const scanLen = ch.length;
+            for (let i = 1; i < scanLen; i++) {
+              const d = Math.abs(ch[i] - ch[i - 1]);
+              if (d > clickThresh) {
+                clickCount++;
+                if (firstClickT < 0) firstClickT = i / buf.sampleRate;
+              }
+            }
+            if (clickCount > 0) {
+              console.warn(`  🎹 post-decode click scan: ${clickCount} click(s) in AudioBuffer, first @ ${firstClickT.toFixed(3)}s (calmMax=${calmMax.toExponential(2)} threshold=${clickThresh.toExponential(2)})`);
+            } else {
+              console.log(`  🎹 post-decode click scan: clean (calmMax=${calmMax.toExponential(2)})`);
+            }
           }
           if (gainNode) {
             sourceNodesRef.current.push(...sources);
