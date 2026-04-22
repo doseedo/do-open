@@ -36,7 +36,6 @@ async function initDB() {
 
     request.onsuccess = () => {
       db = request.result;
-      console.log('Audio cache database initialized');
       resolve(db);
     };
 
@@ -94,7 +93,6 @@ export async function getCachedAudio(url) {
           const maxAgeMs = MAX_CACHE_AGE_DAYS * 24 * 60 * 60 * 1000;
 
           if (ageMs < maxAgeMs) {
-            console.log(`Cache hit for: ${url.substring(0, 50)}...`);
             resolve(result.blob);
           } else {
             console.log(`Cache expired for: ${url.substring(0, 50)}...`);
@@ -141,7 +139,6 @@ export async function cacheAudio(url, blob) {
       const request = store.put(entry);
 
       request.onsuccess = () => {
-        console.log(`Cached audio: ${url.substring(0, 50)}... (${(blob.size / 1024).toFixed(1)} KB)`);
         resolve(true);
       };
 
@@ -201,7 +198,6 @@ export async function fetchAudioWithCache(url) {
   }
 
   // Fetch from network
-  console.log(`Fetching audio: ${url.substring(0, 50)}...`);
 
   const promise = (async () => {
     try {

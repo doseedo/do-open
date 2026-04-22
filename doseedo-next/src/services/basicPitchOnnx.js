@@ -227,12 +227,21 @@ async function toMono22050(audio, sr) {
  * @param {number} [opts.minNoteLenFrames=11]
  * @returns {Promise<{notes: Array, duration: number}>}
  */
+// Module-level queue: ORT-Web sessions (WASM or WebGPU) throw
+// "Session already started" when a second sess.run() enters while the
+// first is still in flight. basic-pitch is a singleton, so the global
+// chain is the right granularity — chunks within one transcribe are
+// already serialized by their awaited loop, but two concurrent
+// callers (prewarm race + user upload + chord-detect pass) would
+// collide without this.
+let _transcribeQueue = Promise.resolve();
+
 export async function transcribeAudio(audio, sr, opts = {}) {
-  // Per-run serialization is handled by runWebGpu at the sess.run level;
-  // a separate transcribe-level mutex would just double-queue the same
-  // work. Do a single cross-check against the init path so we don't
-  // start chunking while the session is still being built.
-  return _transcribeAudioImpl(audio, sr, opts);
+  const next = _transcribeQueue.then(() => _transcribeAudioImpl(audio, sr, opts));
+  // Keep the queue alive on failure — a thrown run shouldn't poison
+  // every subsequent transcribe.
+  _transcribeQueue = next.catch(() => {});
+  return next;
 }
 
 async function _transcribeAudioImpl(audio, sr, opts = {}) {

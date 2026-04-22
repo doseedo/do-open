@@ -50,8 +50,6 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     }
     masterGainNodeRef.current.connect(audioContextRef.current.destination);
 
-    console.log(`🎚️ Master gain initialized: ${(masterGain * 100).toFixed(0)}%`);
-    console.log('🎛️ Signal chain: Tracks → FX Bus → Reverb → Delay → Chorus → Compressor → Filter → Phaser → Master → Output');
 
     // Initialize MIDI player
     midiPlayer.initialize().catch(err => {
@@ -155,7 +153,6 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       // Only update when not seeking and not playing
       pauseTimeRef.current = currentPlayheadPosition;
       lastKnownPlayheadRef.current = currentPlayheadPosition;
-      console.log('🔄 Synced pauseTime to external playhead:', currentPlayheadPosition.toFixed(2), 's');
     }
   }, [currentPlayheadPosition, isPlaying]);
 
@@ -200,12 +197,10 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
           const arrayBuffer = await blob.arrayBuffer();
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
           audioBufferCache.set(url, audioBuffer);
-          console.log(`✅ Pre-loaded audio: ${url}, duration: ${audioBuffer.duration.toFixed(2)}s`);
 
           // Update track duration if it's 0
           const trackWithThisUrl = allTracks.find(t => t.audioUrl === url);
           if (trackWithThisUrl && (trackWithThisUrl.duration === 0 || !trackWithThisUrl.duration)) {
-            console.log(`📏 Updating track duration for ${trackWithThisUrl.name}: ${audioBuffer.duration.toFixed(2)}s`);
 
             // Use the busId attached to the track
             const busId = trackWithThisUrl._busId;
@@ -218,7 +213,6 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
                   updates: { duration: audioBuffer.duration }
                 }
               });
-              console.log(`✅ Dispatched duration update: ${audioBuffer.duration.toFixed(2)}s for track ${trackWithThisUrl.id} in bus ${busId}`);
             } else {
               console.warn(`⚠️ No busId found for track ${trackWithThisUrl.id}`);
             }
@@ -718,7 +712,6 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
 
     // Stop all MIDI playback immediately
     midiPlayer.stopAll();
-    console.log('🎹 Stopped all MIDI notes');
 
     // Store current playhead position for resume (unless seeking)
     // ONLY calculate from AudioContext if playback has actually started
@@ -740,7 +733,6 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       cancelAnimationFrame(animationFrameRef.current);
     }
 
-    console.log('⏸ Playback paused at', pauseTimeRef.current.toFixed(2), 's');
   }, [dispatch, totalDuration]);
 
   /**

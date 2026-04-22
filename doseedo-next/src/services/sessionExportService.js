@@ -215,10 +215,8 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
     const sessionId = options.sessionId || generateSessionId();
     const basePath = `users/${user.id}/sessions/${sessionId}`;
 
-    console.log(`📤 Exporting session: ${projectName} to ${basePath}`);
 
     // Step 1: Extract all track files (audio and MIDI)
-    console.log('📦 Extracting track files...');
     const trackFiles = await extractTrackFiles(state.buses);
 
     // Step 2: Extract video file if exists
@@ -232,7 +230,6 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
     }
 
     // Step 3: Prepare session metadata JSON
-    console.log('📝 Preparing session data...');
     const sessionData = prepareSessionData(state, projectName);
     const sessionJsonBlob = new Blob([JSON.stringify(sessionData, null, 2)], {
       type: 'application/json'
@@ -338,7 +335,6 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
       }
     };
 
-    console.log('✅ Session exported successfully:', result);
     return result;
 
   } catch (error) {

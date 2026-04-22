@@ -35,7 +35,6 @@ class MIDIPlayer {
       this.masterGain.gain.value = 1.0;
       this.masterGain.connect(this.audioContext.destination);
       this.isLoaded = true;
-      console.log('🎹 MIDI sine synth ready');
     } catch (error) {
       console.error('❌ Failed to init audio context:', error);
       throw error;
@@ -233,7 +232,6 @@ class MIDIPlayer {
       try { n.osc.stop(ct); } catch (_) {}
     }
     this.activeNodes = [];
-    console.log(`🔇 Stopped ${count} MIDI sine notes`);
   }
 
   /**

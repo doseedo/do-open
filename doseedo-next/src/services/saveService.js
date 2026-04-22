@@ -112,7 +112,6 @@ export async function saveLocal(projectName, state) {
     if (success) {
       const now = new Date();
       updateSaveStatus(SaveStatus.SAVED, now);
-      console.log(`💾 Saved locally: ${projectName}`);
       return { success: true, savedAt: now };
     } else {
       updateSaveStatus(SaveStatus.ERROR);
@@ -158,7 +157,6 @@ export async function saveToCloud(projectName, state, options = {}) {
     cloudSaveInFlight = true;
 
     updateSaveStatus(SaveStatus.SAVING);
-    console.log(`☁️ Saving to cloud: ${projectName}`);
 
     // Look up the existing session row. Cached first — the Fly
     // list_sessions endpoint doesn't filter by name and the response
@@ -218,7 +216,6 @@ export async function saveToCloud(projectName, state, options = {}) {
 
     if (existingRowId) {
       await sessionAPI.updateSession(existingRowId, sessionData);
-      console.log(`✅ Updated cloud session: ${projectName}`);
     } else {
       const created = await sessionAPI.createSession(sessionData);
       // Remember the row id + R2 session_id so future autosaves

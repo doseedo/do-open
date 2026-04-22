@@ -47,7 +47,6 @@ class TunaFXService {
     this.connectFXChain();
 
     this.initialized = true;
-    console.log('🎛️ Tuna FX initialized with signal chain');
   }
 
   /**
@@ -112,7 +111,6 @@ class TunaFXService {
       bypass: true
     });
 
-    console.log('✅ All Tuna effects initialized');
   }
 
   /**
@@ -312,7 +310,6 @@ class TunaFXService {
     this.tuna = null;
     this.audioContext = null;
     this.initialized = false;
-    console.log('🗑️ Tuna FX destroyed');
   }
 }
 

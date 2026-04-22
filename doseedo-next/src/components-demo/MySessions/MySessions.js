@@ -194,7 +194,6 @@ const UploadModal = ({ onClose, onUploadComplete }) => {
       setUploadProgress(10);
 
       // Upload files to GCS
-      console.log('Uploading files to GCS...');
       const uploadResults = await r2UploadService.uploadMultipleToR2(
         files,
         formData.type,

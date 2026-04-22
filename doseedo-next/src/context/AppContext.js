@@ -462,15 +462,6 @@ function appReducer(state, action) {
       }
 
       const updatedBus = updatedBuses.find(b => b.id === busId);
-      console.log(`🔄 ADD_TRACK reducer: busId=${busId}, track=${track.name}, new track count=${updatedBus?.tracks.length}`);
-      console.log(`📊 Track details:`, {
-        id: track.id,
-        name: track.name,
-        type: track.type,
-        audioUrl: track.audioUrl,
-        duration: track.duration,
-        hasAudioUrl: !!track.audioUrl
-      });
 
       // Calculate the longest track duration across all buses
       let maxTrackDuration = 10; // Default minimum
@@ -485,7 +476,6 @@ function appReducer(state, action) {
         });
       });
 
-      console.log(`📏 Timeline duration updated: ${maxTrackDuration.toFixed(2)}s (longest track)`);
 
       return {
         ...state,
@@ -1608,13 +1598,11 @@ export function AppProvider({ children }) {
     const needsMigration = state.buses.some(bus => bus.reverbSend === 0.15);
 
     if (needsMigration) {
-      console.log(`🔧 Running bus reverb migration on ${state.buses.length} buses...`);
       migrationRan.current = true;
 
       // Migrate each bus individually to trigger proper updates
       state.buses.forEach((bus, index) => {
         if (bus.reverbSend === 0.15) {
-          console.log(`  🔧 Migrating bus "${bus.name}" reverb from 0.15 to 0`);
           dispatch({
             type: 'UPDATE_BUS_REVERB',
             payload: { busId: bus.id, reverbSend: 0 }
@@ -1646,7 +1634,6 @@ export function AppProvider({ children }) {
     // Set new timeout for autosave (3 seconds after last change)
     autoSaveTimeoutRef.current = setTimeout(() => {
       sessionService.saveSession(activeProject, state);
-      console.log(`💾 Auto-saved: ${activeProject}`);
     }, 3000);
 
     // Cleanup

@@ -217,7 +217,6 @@ export function saveSession(projectName, state) {
       localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
     }
 
-    console.log(`✅ Session saved: ${projectName}`);
     return true;
   } catch (error) {
     console.error('Error saving session:', error);
@@ -347,7 +346,6 @@ export function createAutoSave(projectName, delay = 3000) {
 
     timeout = setTimeout(() => {
       saveSession(projectName, state);
-      console.log(`💾 Auto-saved: ${projectName}`);
     }, delay);
   };
 }

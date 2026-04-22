@@ -87,7 +87,6 @@ export async function compressAudioForUpload(blob, opts = {}) {
   const maxBytes = opts.maxBytes || 25 * 1024 * 1024;
 
   if (blob.size <= maxBytes) {
-    console.log(`🎚️ compressAudioForUpload: input ${(blob.size / 1024 / 1024).toFixed(1)}MB ≤ ${(maxBytes / 1024 / 1024).toFixed(0)}MB — passthrough`);
     return blob;
   }
 

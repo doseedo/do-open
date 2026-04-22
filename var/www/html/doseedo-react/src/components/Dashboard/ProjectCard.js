@@ -218,7 +218,6 @@ const UploadModal = ({ sessionName, onClose }) => {
       setUploadProgress(10);
 
       // Export session to GCS
-      console.log('Exporting session to GCS...');
       const exportResult = await sessionExportService.exportSessionToGCS(
         session.state,
         formData.name || sessionName

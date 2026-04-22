@@ -569,7 +569,6 @@ const Timeline = React.memo(({
             const formData = new FormData();
             formData.append('audioFile', file);
 
-            console.log('📤 Uploading file to server in background...');
             const response = await fetch('/api/upload-audio', {
               method: 'POST',
               body: formData

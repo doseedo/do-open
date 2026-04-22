@@ -1144,8 +1144,13 @@ export default function StudioDev() {
 
     // Bulk rewrites (detection passes) touch tens of cells at once; skip
     // those, only resynth on single-cell user edits. If we later want to
-    // re-voice on full-song key changes, lift this threshold.
-    if (changedKeys.length > 3) return;
+    // re-voice on full-song key changes, lift this threshold. Log the
+    // skip so the pipeline status pane shows polypitch is wired and
+    // waiting on a user edit instead of going silent.
+    if (changedKeys.length > 3) {
+      logPipeline('polypitch', `${changedKeys.length} chord cells changed — bulk pass, skipping resynth (edit one cell to trigger)`, 'info');
+      return;
+    }
 
     const pitchedStemTracks = [];
     for (const bus of state.buses || []) {
