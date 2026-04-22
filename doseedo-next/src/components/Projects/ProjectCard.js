@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import * as sessionService from '../../services/sessionService';
 import * as sessionAPI from '../../services/sessionAPI';
 import * as sessionExportService from '../../services/sessionExportService';
-import styles from './Dashboard.module.css';
+import styles from './Projects.module.css';
 import modalStyles from '../MySessions/MySessions.module.css';
 
 /**

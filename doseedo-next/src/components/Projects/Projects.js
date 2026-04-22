@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import * as sessionService from '../../services/sessionService';
-import ProjectCard from '../Dashboard/ProjectCard';
+import ProjectCard from './ProjectCard';
 import styles from './Projects.module.css';
 
 /**

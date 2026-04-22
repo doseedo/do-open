@@ -78,7 +78,7 @@ export class NoteExtractor {
    */
   static applyMaskToComplex(
     stftComplex: Float32Array,
-    mask: Float32Array,
+    mask: Float32Array | null,
     totalFrames: number,
     bins: number,
     maskFrameOffset = 0,
@@ -92,16 +92,27 @@ export class NoteExtractor {
         continue;
       }
       const rowC = t * bins * 2;
-      // Mask is full-sized [totalFrames, bins] — index by ABSOLUTE frame t.
-      // (The previous `rel * bins` treated mask as [maskFrames, bins] and
-      // read the first `maskFrames` rows — which are all zeros for any note
-      // that doesn't start at frame 0. Net effect was silent extraction:
-      // mask × STFT ≈ 0, subtract no-op, add no-op, render ≈ identity.)
-      const rowM = t * bins;
-      for (let b = 0; b < bins; b++) {
-        const m = mask[rowM + b];
-        out[rowC + b * 2] = stftComplex[rowC + b * 2] * m;
-        out[rowC + b * 2 + 1] = stftComplex[rowC + b * 2 + 1] * m;
+      if (mask === null) {
+        // Broadband mode: copy ALL bins of the STFT within the note's time
+        // window, no harmonic filtering. The classical hann4 mask only
+        // claims ~5% of a note's spectral energy, which makes the
+        // subtract-then-add cycle inaudible against the full stem. For a
+        // chord edit where the user wants the bar to sound shifted, we
+        // want 100% of the audio in the note's window to move, not just
+        // narrow harmonic bands. Downside: if multiple overlapping notes
+        // have different shift ratios the edits clash — but typical chord
+        // edits assign the same (or uniform) shift across the bar, so this
+        // is the right behaviour for the common case.
+        for (let k = 0; k < bins * 2; k++) {
+          out[rowC + k] = stftComplex[rowC + k];
+        }
+      } else {
+        const rowM = t * bins;
+        for (let b = 0; b < bins; b++) {
+          const m = mask[rowM + b];
+          out[rowC + b * 2] = stftComplex[rowC + b * 2] * m;
+          out[rowC + b * 2 + 1] = stftComplex[rowC + b * 2 + 1] * m;
+        }
       }
     }
     return out;

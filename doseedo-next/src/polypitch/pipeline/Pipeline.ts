@@ -374,8 +374,11 @@ export class Pipeline {
       const perChannelTime: Float32Array[] = [];
       let firstMaskedRfftRms = 0;
       for (let c = 0; c < channels; c++) {
+        // Broadband extraction: pass `null` instead of `mask` so ALL bins in
+        // the note's time window get copied, not just harmonic bands. The
+        // narrow hann4 mask was attenuating the extract ~20× below audibility.
         const maskedRfft = NoteExtractor.applyMaskToComplex(
-          cache.complexByChannel[c], mask, cache.nFrames, cache.bins, q.startFrame, maskFrames,
+          cache.complexByChannel[c], null, cache.nFrames, cache.bins, q.startFrame, maskFrames,
         );
         if (c === 0) {
           let s = 0; const N = Math.min(maskedRfft.length, 500000);
@@ -472,8 +475,11 @@ export class Pipeline {
 
     const outChannels: Float32Array[] = [];
     for (let c = 0; c < channels; c++) {
+      // Broadband: ALL bins in the note's window, not just harmonic bands —
+      // matches the extract path above so subtract + add operate on the
+      // same signal.
       const maskedRfft = NoteExtractor.applyMaskToComplex(
-        cache.complexByChannel[c], mask, nFrames, bins, query.startFrame, maskFrames,
+        cache.complexByChannel[c], null, nFrames, bins, query.startFrame, maskFrames,
       );
       const rotatedRfft = cpuPhaseVocoder(maskedRfft, nFrames, bins, ratio, hop, cache.nFft);
       // CPU ISTFT (see istftToTime note). Also removes the GPU roundtrip
