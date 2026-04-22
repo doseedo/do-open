@@ -84,10 +84,13 @@ const KEYS_W   = 54;
 function hitTestNote(notes, mx, my, cfg) {
   for (let i = notes.length - 1; i >= 0; i--) {
     const n = notes[i];
+    const span = Math.max(1, n.pitchSpan || 1);
+    const topPitch = n.note + span - 1;
     const x = KEYS_W + (n.time - cfg.scrollX) * cfg.pxPerSec;
-    const y = RULER_H + (cfg.maxPitch - n.note) * cfg.rowH - cfg.scrollY;
+    // y = top edge of the note rectangle (higher pitch → lower y).
+    const y = RULER_H + (cfg.maxPitch - topPitch) * cfg.rowH - cfg.scrollY;
     const w = Math.max(6, n.duration * cfg.pxPerSec);
-    const h = cfg.rowH - 1;
+    const h = span * cfg.rowH - 1;
     if (mx >= x && mx <= x + w && my >= y && my <= y + h) {
       // Edge grabs — resize duration (L/R) or stretch into a pitch chord (T/B):
       //   right 6 px  → resize-right (extend duration)
@@ -349,38 +352,29 @@ export default function StudioDevMidi() {
           nxt[i].time = orig.time + clampedDt;
           nxt[i].duration = orig.duration - clampedDt;
         }
-      } else if (drag.mode === 'stretch-up' || drag.mode === 'stretch-down') {
-        // Vertical stretch — extend the anchor note into a chord by
-        // ADDING notes at adjacent pitches. dp (delta pitch in rows,
-        // positive = up) from the cursor delta. We rebuild the "extras"
-        // set every tick so dragging back collapses the chord cleanly.
-        const anchor = drag.origNotes[drag.anchorIdx];
-        if (anchor) {
-          const upwards = drag.mode === 'stretch-up';
-          const extraCount = upwards
-            ? Math.max(0, dp)          // dp > 0 when dragging up
-            : Math.max(0, -dp);        // -dp > 0 when dragging down
-          // Strip any prior extras from this gesture — we rebuild them.
-          const priorIds = new Set(drag.stretchExtras);
-          const base = nxt.filter((_, i) => !priorIds.has(i));
-          const freshExtras = [];
-          for (let k = 1; k <= extraCount; k++) {
-            const p = upwards
-              ? Math.min(maxPitch, anchor.note + k)
-              : Math.max(minPitch, anchor.note - k);
-            if (p === anchor.note) continue;  // clamped to existing pitch
-            freshExtras.push({
-              note: p,
-              time: anchor.time,
-              duration: anchor.duration,
-              velocity: anchor.velocity,
-            });
-          }
-          const rebuilt = [...base, ...freshExtras];
-          // Record the new extra indices (appended at the end).
-          drag.stretchExtras = freshExtras.map((_, k) => base.length + k);
-          commit(rebuilt);
-          return;
+      } else if (drag.mode === 'stretch-up') {
+        // Drag the top edge up → grow pitchSpan; base.note pinned.
+        // pitchSpan=1 is a normal single-row note. The anchor's base
+        // note stays and the note visually covers multiple rows.
+        for (const i of drag.indices) {
+          const orig = drag.origNotes[i];
+          const baseSpan = orig.pitchSpan || 1;
+          const newSpan = Math.max(1, Math.min(maxPitch - orig.note + 1, baseSpan + dp));
+          nxt[i].pitchSpan = newSpan;
+        }
+      } else if (drag.mode === 'stretch-down') {
+        // Drag the bottom edge down → grow pitchSpan downward. base.note
+        // decreases so the TOP stays pinned at (origNote + origSpan - 1).
+        for (const i of drag.indices) {
+          const orig = drag.origNotes[i];
+          const baseSpan = orig.pitchSpan || 1;
+          const origTop = orig.note + baseSpan - 1;
+          // dp is positive when dragging up; bottom-edge wants the
+          // inverse — dragging DOWN (dp < 0) should extend the note.
+          const grow = -dp;
+          const newSpan = Math.max(1, Math.min(origTop - minPitch + 1, baseSpan + grow));
+          nxt[i].pitchSpan = newSpan;
+          nxt[i].note = origTop - newSpan + 1;
         }
       }
       commit(nxt);
@@ -695,13 +689,17 @@ export default function StudioDevMidi() {
       }
     }
 
-    // Notes
+    // Notes — pitchSpan (default 1) stretches the note over multiple
+    // rows; the rect's top sits at (maxPitch - topPitch) and the
+    // height is span*rowH.
     for (let i = 0; i < notes.length; i++) {
       const n = notes[i];
+      const span = Math.max(1, n.pitchSpan || 1);
+      const topPitch = n.note + span - 1;
       const x = KEYS_W + (n.time - scrollX) * pxPerSec;
-      const y = RULER_H + (maxPitch - n.note) * rowH - scrollY;
+      const y = RULER_H + (maxPitch - topPitch) * rowH - scrollY;
       const w = Math.max(3, n.duration * pxPerSec);
-      const h = rowH - 2;
+      const h = span * rowH - 2;
       if (x + w < KEYS_W || x > W || y + h < RULER_H || y > H) continue;
       const alpha = 0.6 + (n.velocity / 127) * 0.4;
       ctx.fillStyle = trackColor + Math.floor(alpha * 255).toString(16).padStart(2, '0');
