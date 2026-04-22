@@ -1,77 +1,194 @@
 # Launch Runbook
 
-Operational procedures for the doseedo production stack. Keep this
-file terse — one section per procedure, each reproducible from a
-cold start.
+Operational procedures for the doseedo production stack. Keep this file
+terse — one section per procedure, each reproducible from a cold start.
 
-## Rotating `internal-secret`
+## Stack
 
-The `INTERNAL_SECRET` value gates Modal's `before_request` → auth's
-`/internal/generation/consume` call. It lives in two stores that
-must hold the **byte-identical** value: GCP Secret Manager secret
-`internal-secret` (consumed by the `doseedo-auth` Cloud Run service
-via env binding `INTERNAL_SECRET=secretKeyRef:internal-secret/latest`)
-and Modal secret `doseedo-gate` key `INTERNAL_SECRET` (consumed by
-the `doseedo-stemphonic` Modal app's `before_request` hook).
+| Tier | Service | Host | Code |
+|---|---|---|---|
+| Auth / data | `doseedo-api` | `doseedo-api.fly.dev` (Fly) | `~/Downloads/doseedo-desktop/auth-service` |
+| Frontend | Next 14 | `doseedo.com` (Vercel, GitHub integration) | `doseedo-next/` (mirror of `var/www/html/doseedo-react/src`) |
+| Audio GPU | Modal app `doseedo-stemphonic` | `arlo--doseedo-stemphonic-stemphonic-wsgi.modal.run`, fronted by `doseedo.com/<path>` via Vercel rewrites | `modal/modal_stemphonic.py` + `stemphonic_server.py` |
+| Identity | Clerk production instance | `clerk.doseedo.com` (JWKS), `accounts.doseedo.com`, `clkmail.doseedo.com` | `pk_live_…` / `sk_live_…` |
+| DB | Neon Postgres | via `DATABASE_URL` on Fly | — |
+| Redis | Upstash | via `REDIS_URL` on Fly (**db=0 only**) | — |
+| Blob storage | Cloudflare R2 | via `R2_*` env on Fly | — |
 
-### The trailing-newline foot-gun
-`gcloud secrets versions add internal-secret --data-file=-` will
-store whatever you pipe in, including any trailing newline. Cloud
-Run injects the raw bytes into the env var, so the auth router
-compares `"abcdef…\n"` to the header `"abcdef…"` (HTTP header clients
-strip trailing whitespace) and returns `403 Forbidden` on every call
-— which Modal then fail-closes into a blanket `503 Service Unavailable`
-for users. Diagnosis signal in Modal logs:
-`gate: unexpected HTTP 403 from auth-service — failing closed`.
-Verify byte count with `gcloud secrets versions access latest
---secret=internal-secret | wc -c` — for a 64-char hex value, 64
-is correct, 65 means you have a newline.
+## Request lifecycle for gated routes (`/separate-stems`, `/api/generate-stemphonic`, etc.)
 
-### Correct rotation procedure
-Generate a fresh 64-char hex value, write it to a file without a
-trailing newline, create a new Secret Manager version, update the
-Modal secret to the same value, force-restart both services, then
-disable prior SM versions so they can't be accidentally pinned:
-```bash
-# 1. Generate and store (no trailing newline — use printf, not echo)
-NEW=$(openssl rand -hex 32)
-printf %s "$NEW" > /tmp/internal-secret.clean
-[ $(wc -c < /tmp/internal-secret.clean) -eq 64 ] || { echo "bad length"; exit 1; }
-gcloud secrets versions add internal-secret --data-file=/tmp/internal-secret.clean
-
-# 2. Sync Modal
-modal secret create doseedo-gate --force \
-  "AUTH_SERVICE_URL=https://doseedo-auth-wd7h2yezlq-uc.a.run.app" \
-  "INTERNAL_SECRET=$NEW" \
-  "DISABLE_ALL_GENERATION=false"
-
-# 3. Force auth Cloud Run to pick up the new SM version
-gcloud run services update doseedo-auth --region=us-central1 \
-  --update-env-vars=_RESTART=$(date +%s)
-
-# 4. Force Modal to pick up the new secret value
-cd $REPO/modal && modal deploy modal_stemphonic.py
-
-# 5. Smoke test
-curl -s -o /dev/null -w "%{http_code}\n" \
-  -X POST https://doseedo-auth-wd7h2yezlq-uc.a.run.app/internal/generation/consume \
-  -H "X-Internal-Secret: $NEW" -H "Content-Type: application/json" -d '{}'
-# Expected: 401 (missing JWT). 403 means the secret still doesn't match.
-
-# 6. Disable prior SM versions after verification so no client can pin them
-for v in $(gcloud secrets versions list internal-secret --format="value(name)" \
-           | grep -v ^$(gcloud secrets versions list internal-secret --limit=1 --format="value(name)")$); do
-  gcloud secrets versions disable --secret=internal-secret $v
-done
-rm /tmp/internal-secret.clean
+```
+Browser ─► doseedo.com ─► Modal (stemphonic_server.py)
+                           │
+                           ▼ before_request gate (modal_stemphonic.py)
+                           │  forwards Authorization / Cookie / X-API-Key
+                           │  + X-Internal-Secret (from Modal secret doseedo-gate)
+                           ▼
+                           Fly doseedo-api /internal/generation/consume
+                           ├─► verify_clerk_token (Clerk JWT) OR decode_access_token (legacy)
+                           ├─► Upstash INCR gen:daily:{env}:{user_id}:{YYYY-MM-DD}
+                           └─► returns 200 {allowed, remaining} / 401 / 429 / 503
 ```
 
-## Related verification
-After rotation, run the 11-shot smoke test against
-`/api/generate-stemphonic` with a fresh free-tier user token. Expect
-`200×10` then `429` on the 11th. Any `503` response means the secret
-chain is broken — check Modal logs with `modal app logs
-doseedo-stemphonic` for the `gate: unexpected HTTP 403 …` line. The
-kill switch is a separate vector: `DISABLE_ALL_GENERATION=true` in
-the same `doseedo-gate` secret returns `503 {"error":"Generation is
-temporarily disabled"}` with no auth call made.
+**Fail-open invariants** (things that *must* hold):
+
+- Modal's `doseedo-gate` secret `INTERNAL_SECRET` **byte-exact matches** Fly's `INTERNAL_SECRET`. Use `printf`, never `echo`, when piping (trailing newline footgun).
+- `AUTH_SERVICE_URL` in Modal secret → `https://doseedo-api.fly.dev`. If this points at a dead URL, every gated request fails closed with 503.
+- Fly has `CLERK_PUBLISHABLE_KEY` (`pk_live_…`) + `CLERK_SECRET_KEY` (`sk_live_…`) set. The publishable key is what the JWT verifier decodes to recover the JWKS issuer; if it's missing/stale, `verify_clerk_token` returns `None` and everything falls through to legacy JWT, which Clerk-only users don't have → 401.
+- `REDIS_URL` points at Upstash. Upstash only supports `db=0`. Never pass `db=N` to `aioredis.from_url` — namespace by key prefix instead.
+
+## Routine deploy
+
+Each tier ships independently. Changes to shared contract (gate headers, Clerk claims, internal-secret format) require deploying in order: Fly → Modal → Vercel.
+
+### Fly auth-service
+```bash
+cd ~/Downloads/doseedo-desktop/auth-service
+flyctl deploy --app doseedo-api
+# Smoke: returns 200 {allowed:true,…}
+SECRET=$(flyctl ssh console --app doseedo-api -C 'printenv INTERNAL_SECRET' | tail -1)
+TOKEN="<valid JWT — see below>"
+curl -sS -X POST https://doseedo-api.fly.dev/internal/generation/consume \
+  -H "Content-Type: application/json" -H "X-Internal-Secret: $SECRET" \
+  -H "Authorization: Bearer $TOKEN" -d '{"endpoint":"/separate-stems"}'
+```
+
+Minting a test legacy JWT (for smoke tests, not user flows):
+```bash
+flyctl ssh console --app doseedo-api --command 'sh -c "python -c \"import asyncio, sys; sys.path.insert(0,\\\"/app\\\"); from app.security import create_access_token; from app.database import get_session_factory; from app.models import User; from sqlalchemy import select
+async def m():
+    async with get_session_factory()() as db:
+        r = await db.execute(select(User).where(User.is_active==True).limit(1))
+        u = r.scalar_one_or_none()
+        print(create_access_token({\\\"sub\\\": str(u.id)}))
+asyncio.run(m())
+\""'
+```
+
+### Modal stemphonic
+```bash
+cd ~/Downloads/Do/modal && modal deploy modal_stemphonic.py
+```
+Image rebuilds run 3–7 min. The deploy CLI occasionally crashes with `H2Connection` gRPC errors mid-build — the server-side build usually still completes; re-run `modal deploy` once to let it finish. Smoke test:
+```bash
+curl -sS -o /dev/null -w "HTTP %{http_code}\n" -X POST \
+  https://arlo--doseedo-stemphonic-stemphonic-wsgi.modal.run/separate-stems \
+  -H "Authorization: Bearer $TOKEN"
+# 400 "No audioFile in request" = gate passed, reached handler ✓
+# 401 "Authentication required for generation" = gate rejected (bad)
+# 503 "Generation service unavailable" = auth-service 5xx (bad)
+```
+
+### Vercel frontend
+Push to `main` — Vercel's GitHub integration auto-deploys. Manual deploy from repo root (the project's root-dir setting *insists on being run from `Do/`, not `Do/doseedo-next/`*):
+```bash
+cd ~/Downloads/Do && vercel --prod --yes
+```
+
+## Secrets & rotation
+
+### Coordinates
+
+| Secret | Fly (`doseedo-api`) | Modal (`doseedo-gate`) | Vercel |
+|---|---|---|---|
+| `INTERNAL_SECRET` | ✓ | ✓ | — |
+| `AUTH_SERVICE_URL` | — | ✓ (`https://doseedo-api.fly.dev`) | — |
+| `DISABLE_ALL_GENERATION` | — | ✓ (`"true"` → kill switch) | — |
+| `CLERK_PUBLISHABLE_KEY` | ✓ | — | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` |
+| `CLERK_SECRET_KEY` | ✓ | — | ✓ |
+| `DATABASE_URL` | ✓ | — | — |
+| `REDIS_URL` | ✓ | — | — |
+| `R2_*` (4 keys) | ✓ | — | — |
+
+### Rotating `INTERNAL_SECRET`
+Must be byte-identical on Fly *and* Modal. Use `printf`, not `echo`:
+```bash
+NEW=$(openssl rand -hex 32)
+[ ${#NEW} -eq 64 ] || { echo "bad length"; exit 1; }
+
+# 1. Fly
+flyctl secrets set --app doseedo-api INTERNAL_SECRET="$NEW"
+# (Fly auto-restarts both machines)
+
+# 2. Modal — preserve the other two keys
+modal secret create doseedo-gate --force \
+  "AUTH_SERVICE_URL=https://doseedo-api.fly.dev" \
+  "INTERNAL_SECRET=$NEW" \
+  "DISABLE_ALL_GENERATION=false"
+cd ~/Downloads/Do/modal && modal deploy modal_stemphonic.py
+
+# 3. Verify (no JWT → expect 401 "Authentication required", NOT 403)
+curl -sS -o /dev/null -w "%{http_code}\n" -X POST https://doseedo-api.fly.dev/internal/generation/consume \
+  -H "X-Internal-Secret: $NEW" -H "Content-Type: application/json" -d '{}'
+```
+**403 after rotation = the secret doesn't match.** Recheck length (64) and re-run. **503 in the browser after rotation = Modal didn't pick up the new value** — redeploy Modal.
+
+### Rotating Clerk keys (dev → prod or prod → prod)
+```bash
+# 1. Fly
+flyctl secrets set --app doseedo-api \
+  CLERK_PUBLISHABLE_KEY="pk_live_…" \
+  CLERK_SECRET_KEY="sk_live_…"
+
+# 2. Vercel — needs rm + add for each of (production, preview, development)
+cd ~/Downloads/Do/doseedo-next
+for env in production preview development; do
+  vercel env rm NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY $env --yes 2>/dev/null
+  # NOTE: `vercel env add` needs an empty branch arg after `preview`, else it 500s silently
+  vercel env add NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY $env "" --value "pk_live_…" --yes
+done
+vercel env rm CLERK_SECRET_KEY production --yes
+vercel env add CLERK_SECRET_KEY production --value "sk_live_…" --yes
+
+# 3. Verify JWKS resolves before redeploy
+curl -sS https://clerk.doseedo.com/.well-known/jwks.json | head -c 80
+# Should start with {"keys":[{"use":"sig",...
+
+# 4. Redeploy
+cd ~/Downloads/Do && vercel --prod --yes
+```
+Email linking: existing local users auto-link to their new Clerk `sub` via `resolve_user_from_clerk_claims` → email match → `users.clerk_user_id` update. No manual migration needed.
+
+## Pre-merge checklist
+
+Before merging anything that touches these files:
+
+- [ ] **`modal/modal_stemphonic.py` image deps** — if removing a `pip_install` line, `grep -rn "import <pkg>\|from <pkg>" stemphonic_server.py modal/` must return zero hits. Past incident: demucs was removed from the image with a comment saying "replaced by latent student models", but `stemphonic_server.py:2997` still does `import demucs.api` → every `/separate-stems` call 500'd with `ModuleNotFoundError`.
+- [ ] **`app/routers/generation_gate.py`** — any change to the identity-resolution block must mirror `app/deps.py:get_current_user`'s Clerk-first → legacy-JWT-fallback order. Drifting here re-breaks Clerk users.
+- [ ] **`modal_stemphonic.py` `before_request` hook** — the pre-check must accept any of: `Authorization`, `X-API-Key`, `access_token` cookie, `__session` cookie. If you add another cookie/header shape on the frontend, add it here too or users 401 at Modal's door.
+- [ ] **Removing a `.pip_install` or `.apt_install` line** — run `modal app logs doseedo-stemphonic` for a minute after deploying to catch cold-start import errors. They don't surface until the first real request hits that code path.
+- [ ] **`aioredis.from_url` calls in auth-service** — never pass `db=N`. Past incident: `db=1` in `generation_gate.py` → `ResponseError: Only 0th database is supported` → 500 → every `/separate-stems` call 503'd.
+
+## Debugging a failed gated request
+
+Symptom → what to check first:
+
+| User sees | Modal logs (`modal app logs doseedo-stemphonic`) | Fly logs (`flyctl logs --app doseedo-api`) | Likely cause |
+|---|---|---|---|
+| `503 Generation service unavailable` | `gate: unexpected HTTP 500 from auth-service` | traceback near `/internal/generation/consume` | auth-service bug — check `db=N` on aioredis, Clerk setting, DB connection |
+| `503 Generation service unavailable` | `gate: unexpected HTTP 403 from auth-service` | 403s on `POST /internal/generation/consume` | `INTERNAL_SECRET` mismatch — re-run rotation |
+| `503 Generation service unavailable` | `gate: auth-service unreachable` | (no traffic) | `AUTH_SERVICE_URL` in Modal secret points at a dead host |
+| `401 Authentication required for generation` | `POST /separate-stems -> 401` | (no traffic — pre-check fired) | Browser sent no accepted auth shape — check Modal's pre-check & frontend attaching `Authorization: Bearer <clerk_jwt>` from `window.__clerkGetToken()` |
+| `401 Authentication required for generation` | `POST /separate-stems -> 401` | `/internal/generation/consume -> 401` | Clerk JWT invalid or `CLERK_PUBLISHABLE_KEY` on Fly points at wrong instance (JWKS can't verify signature) |
+| `429 Daily generation limit reached` | — | `/internal/generation/consume -> 429` | Expected — free tier cap, 10/day. |
+| `500 ModuleNotFoundError: No module named 'X'` | Python traceback in Modal handler | — | Missing pip dep in image — add to `modal_stemphonic.py` image chain and redeploy |
+
+## Known foot-guns
+
+- **`vercel env add NAME preview`** silently no-ops when the `preview` arg is the last positional. Fix: pass `""` as a trailing branch arg — `vercel env add NEXT_PUBLIC_FOO preview "" --value … --yes`.
+- **Modal CLI `H2Connection` gRPC crash** — `AttributeError: 'H2Connection' object has no attribute '_frame_dispatch_table'` appears alongside deploys. Harmless; the server-side deploy usually completes. Workaround: `pip install -U 'h2>=4.3,<5'` and re-run `modal deploy`.
+- **Trailing newline in secret files** — `gcloud secrets versions add --data-file=-` stored `echo $VAL` with the newline, causing 403s. Always use `printf %s` when writing secrets to files.
+- **Vercel project root-dir** — Vercel's project setting pins root at `Do/` (not `Do/doseedo-next/`). Running `vercel --prod` from `doseedo-next/` fails with `path "~/Downloads/Do/doseedo-next/doseedo-next" does not exist`. Run from `Do/` instead.
+- **Clerk dev-mode cookies don't attach to doseedo.com** — `__session` in dev lives on `*.clerk.accounts.dev`, so `credentials: 'include'` on a doseedo.com fetch won't carry it. The frontend must call `window.__clerkGetToken()` and pass the JWT as `Authorization: Bearer`. Production mode (`clerk.doseedo.com` CNAME) sets the cookie on `.doseedo.com` so it rides along automatically.
+
+## Kill switch
+
+One-line shutdown of all paid-gen routes:
+```bash
+modal secret create doseedo-gate --force \
+  "AUTH_SERVICE_URL=https://doseedo-api.fly.dev" \
+  "INTERNAL_SECRET=$(flyctl ssh console --app doseedo-api -C 'printenv INTERNAL_SECRET' | tail -1)" \
+  "DISABLE_ALL_GENERATION=true"
+cd ~/Downloads/Do/modal && modal deploy modal_stemphonic.py
+```
+All gated routes return `503 {"error":"Generation is temporarily disabled"}` within ~1 minute. Revert by setting `DISABLE_ALL_GENERATION=false` and redeploying.

@@ -343,6 +343,12 @@ image = (
         "torchvision==0.20.1",
         extra_index_url="https://download.pytorch.org/whl/cu121",
     )
+    # demucs — still called from stemphonic_server.py:_run_demucs_separation
+    # (`import demucs.api; Separator(model="htdemucs_6s")`). The comment in
+    # the requirements.txt block above says demucs was replaced by the latent
+    # student models, but the /separate-stems route wasn't migrated — re-add
+    # it here with --no-deps so it doesn't perturb the pinned torch/numpy.
+    .pip_install("demucs==4.0.1", extra_options="--no-deps")
     # ACE-Step source — exclude the 14 GB checkpoints subdir (goes on volume)
     .add_local_dir(
         str(_ACE_STEP),
