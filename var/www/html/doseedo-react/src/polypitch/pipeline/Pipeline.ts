@@ -186,6 +186,7 @@ export class Pipeline {
 
     this.setStage("synthesizing", 0.05, `Rendering ${edits.length} edit(s)…`);
     const base = this.cloneBaseMix(includeUnedited);
+    console.log(`[polypitch.render] edits=${edits.length} includeUnedited=${includeUnedited} cachedNotes=${this.notes.length}`);
     if (edits.length === 0) {
       this.diagnostics.lastTimingsMs.render = nowMs() - t0;
       this.setStage("ready", 1);
@@ -200,10 +201,17 @@ export class Pipeline {
     // broadband copy (couldn't separate overlapping notes), this yields
     // clean per-note isolation.
     const editedNotes = this.notes.filter((n) => edits.some((e) => e.noteId === n.id));
+    const missing = edits.filter((e) => !this.notes.some((n) => n.id === e.noteId));
+    if (missing.length > 0) {
+      console.warn(`[polypitch.render] ${missing.length} edit(s) reference unknown noteIds:`, missing.map((e) => e.noteId));
+    }
     const needIds = editedNotes.map((n) => n.id).filter((id) => !this.noteAudioCache.has(id));
+    console.log(`[polypitch.render] edited=${editedNotes.length} extractNeeded=${needIds.length} cached=${editedNotes.length - needIds.length}`);
     if (needIds.length > 0) {
+      const tExtract = nowMs();
       const extracted = await this.extractImpl(needIds);
       for (const [id, buf] of extracted) this.noteAudioCache.set(id, buf);
+      console.log(`[polypitch.render] extract done in ${(nowMs() - tExtract).toFixed(0)}ms → ${extracted.size} note(s)`);
     }
 
     let i = 0;
@@ -211,20 +219,31 @@ export class Pipeline {
       i++;
       this.setStage("synthesizing", 0.1 + 0.9 * (i / edits.length), `Edit ${i}/${edits.length}…`);
       const note = this.notes.find((n) => n.id === edit.noteId);
-      if (!note) continue;
+      if (!note) {
+        console.warn(`[polypitch.render] edit ${i}: note ${edit.noteId} not in this.notes`);
+        continue;
+      }
       const original = this.noteAudioCache.get(note.id);
-      if (!original) continue;
+      if (!original) {
+        console.warn(`[polypitch.render] edit ${i}: no extracted buffer for ${note.id}`);
+        continue;
+      }
 
+      const origNoteRms = windowRms(original, note.startSec, note.endSec, PUBLIC_SR);
       if (includeUnedited) this.subtractNoteFromMix(base, original);
 
       const totalSemis = edit.semitones + edit.cents / 100;
       const gain = edit.muted ? 0 : dbToGain(edit.gainDb);
-      if (edit.muted) continue;
+      if (edit.muted) {
+        console.log(`[polypitch.render] edit ${i}/${edits.length} noteId=${edit.noteId} midi=${note.pitchMidi} MUTED (origRms=${origNoteRms.toExponential(2)})`);
+        continue;
+      }
 
       if (Math.abs(totalSemis) < 1e-4) {
         const scaled = new Float32Array(original.samples);
         scaleInPlace(scaled, gain);
         this.addNoteToMix(base, { ...original, samples: scaled });
+        console.log(`[polypitch.render] edit ${i}/${edits.length} midi=${note.pitchMidi} semis=0 (gain-only, origRms=${origNoteRms.toExponential(2)})`);
         continue;
       }
       const ratio = Math.pow(2, totalSemis / 12);
@@ -234,12 +253,18 @@ export class Pipeline {
       // 1/ratio for pitch-up; the gap at the note's tail is imperceptible
       // at chord-edit granularity.
       const shifted = pitchShiftByResample(note, original, ratio, PUBLIC_SR);
+      // Shifted-note RMS is measured over the post-resample active window:
+      // length shrinks to (noteDur/ratio) for pitch-up, grows for pitch-down.
+      const shiftedEnd = note.startSec + (note.endSec - note.startSec) / ratio;
+      const shiftedNoteRms = windowRms(shifted, note.startSec, shiftedEnd, PUBLIC_SR);
       if (gain !== 1) scaleInPlace(shifted.samples, gain);
       this.addNoteToMix(base, shifted);
+      console.log(`[polypitch.render] edit ${i}/${edits.length} midi=${note.pitchMidi} semis=${totalSemis.toFixed(2)} ratio=${ratio.toFixed(4)} gain=${gain.toFixed(3)} origRms=${origNoteRms.toExponential(2)} shiftedRms=${shiftedNoteRms.toExponential(2)} t=[${note.startSec.toFixed(2)},${note.endSec.toFixed(2)}]s`);
     }
 
     this.diagnostics.lastTimingsMs.render = nowMs() - t0;
     this.setStage("ready", 1);
+    console.log(`[polypitch.render] complete in ${(nowMs() - t0).toFixed(0)}ms, baseFrames=${base.frames}`);
     return base;
   }
 
@@ -315,13 +340,17 @@ export class Pipeline {
     const cache = this.cachedStft!;
     const idSet = new Set(noteIds);
     const selected = this.notes.filter((n) => idSet.has(n.id));
-    if (selected.length === 0) return new Map();
+    if (selected.length === 0) {
+      console.warn(`[polypitch.extract] no cached notes match ${noteIds.length} requested id(s)`);
+      return new Map();
+    }
     const channels = cache.complexByChannel.length as 1 | 2;
     const nFrames = cache.nFrames;
     const nBins = cache.bins;
     const nFft = cache.nFft;
     const hop = cache.hop;
     const sr = PUBLIC_SR;
+    console.log(`[polypitch.extract] notes=${this.notes.length} extracting=${selected.length} nFrames=${nFrames} nBins=${nBins} channels=${channels}`);
 
     // Build the portion-factor input shape the Python algorithm wants:
     // per-note {startFrame, endFrame, f0Hz, energy}. Basic-pitch gives us
@@ -456,25 +485,21 @@ export class Pipeline {
       const local = perEditLocal[editSlot];
       const sampleOffset = local.startFrame * hop;
       const samples = new Float32Array(fullFrames * channels);
+      let istftRmsSum = 0;
+      let istftRmsCount = 0;
       for (let c = 0; c < channels; c++) {
         const localTime = cpuIstft(local.byChannel[c], local.localFrames, nFft, hop);
+        istftRmsSum += rmsOfArray(localTime);
+        istftRmsCount++;
         const dstBase = c * fullFrames + sampleOffset;
         const copyLen = Math.min(localTime.length, fullFrames - sampleOffset);
         if (copyLen > 0) samples.set(localTime.subarray(0, copyLen), dstBase);
       }
+      const avgIstftRms = istftRmsSum / Math.max(1, istftRmsCount);
+      console.log(`[polypitch.extract] note ${note.id} midi=${note.pitchMidi} t=[${note.startSec.toFixed(2)},${note.endSec.toFixed(2)}]s localFrames=${local.localFrames} istftRms(per-chan avg)=${avgIstftRms.toExponential(2)}`);
       out.set(note.id, { samples, channels, sampleRate: PUBLIC_SR, frames: fullFrames });
     }
     return out;
-  }
-
-  private async istftToTime(rfftComplex: Float32Array, nFrames: number): Promise<Float32Array> {
-    // CPU ISTFT — the GPU path (istft.wgsl + FFTKernel) appears to produce
-    // silence even when the masked STFT has real content. After nine commits
-    // of GPU-plumbing fixes, abandon it here and use a straightforward
-    // Cooley-Tukey radix-2 iFFT + sqrt-Hann overlap-add on CPU. Matches the
-    // math verified in /tmp/polypitch-test/reproduce_browser.py. ~50 ms for a
-    // 30 s song, noise against the polypitch render's other costs.
-    return cpuIstft(rfftComplex, nFrames, STFT_N_FFT, STFT_HOP);
   }
 
   private cloneBaseMix(includeUnedited: boolean): AudioBuffer {
@@ -503,121 +528,6 @@ export class Pipeline {
     }
   }
 
-  private async pitchShiftPhaseVocoder(note: Note, ratio: number): Promise<AudioBuffer> {
-    // Replaced the WGSL phase_vocoder.wgsl call chain with a CPU port of the
-    // same Laroche-Dolson bin-wise phase vocoder, verified audibly correct
-    // in /tmp/polypitch-test/reproduce_browser.py on a synthetic C+E+G triad
-    // (E4 peak drops 72%, new peak at E4×2^(1/12), C4/G4 intact).
-    //
-    // Four GPU-path attempts to make this audible failed:
-    //   - 69f2cd99 removed a misdiagnosed audioResample;
-    //   - 4a128eda fixed a real mask row-indexing bug in NoteExtractor;
-    //   - 84b09561 tried a time-domain-resample bypass (reverted, changed dur);
-    //   - d179ed32 switched the PV buffer from full-complex to rfft-packed.
-    // Each shipped "correct logs, identical audio." The GPU kernel has layered
-    // buffer-layout + uniform-frame-index hazards that kept turning silent
-    // despite the algorithm being provably sound. A CPU port sidesteps all
-    // of them. At 30 s of audio (~2900 STFT frames × 1025 bins) this loop
-    // runs in ~30 ms in V8 — indistinguishable from the GPU version from a
-    // wall-clock perspective given the async buffer roundtrips we were doing
-    // anyway.
-    const cache = this.cachedStft!;
-    const channels = cache.complexByChannel.length as 1 | 2;
-    const fullBins = STFT_N_FFT;
-    const nFrames = cache.nFrames;
-    const bins = cache.bins;
-    const hop = cache.hop;
-
-    const query = NoteExtractor.noteToQuery(note, { sampleRate: PUBLIC_SR, hop: STFT_HOP, nFrames });
-    const midMag = channels === 2
-      ? averageMag(cache.magByChannel[0], cache.magByChannel[1])
-      : cache.magByChannel[0];
-    const masks = await this.maskUNet.predict(midMag, [query], PUBLIC_SR, cache.nFft);
-    const mask = masks[0];
-    if (!mask) return silence(cache.audio.frames, channels);
-    const maskFrames = Math.max(1, query.endFrame - query.startFrame);
-
-    const outChannels: Float32Array[] = [];
-    for (let c = 0; c < channels; c++) {
-      // Broadband: ALL bins in the note's window, not just harmonic bands —
-      // matches the extract path above so subtract + add operate on the
-      // same signal.
-      const maskedRfft = NoteExtractor.applyMaskToComplex(
-        cache.complexByChannel[c], null, nFrames, bins, query.startFrame, maskFrames,
-      );
-      const rotatedRfft = cpuPhaseVocoder(maskedRfft, nFrames, bins, ratio, hop, cache.nFft);
-      // CPU ISTFT (see istftToTime note). Also removes the GPU roundtrip
-      // for this path.
-      const time = cpuIstft(rotatedRfft, nFrames, cache.nFft, hop);
-      outChannels.push(fitLength(time, cache.audio.frames));
-    }
-
-    const frames = cache.audio.frames;
-    const samples = new Float32Array(frames * channels);
-    samples.set(outChannels[0], 0);
-    if (channels === 2) samples.set(outChannels[1], frames);
-    return { samples, channels, sampleRate: PUBLIC_SR, frames };
-  }
-}
-
-/**
- * CPU Laroche-Dolson bin-wise phase vocoder. Operates on an rfft-packed complex
- * STFT `[nFrames, rfftBins, 2]` interleaved float32. Returns a new buffer of
- * the same shape with each bin's instantaneous frequency scaled by `ratio` and
- * the phase accumulator advanced coherently across frames. Magnitude preserved.
- *
- * Port of phase_vocoder.wgsl (same math, no identity phase locking), without
- * the GPU-side buffer-layout + uniform-frame-index hazards that kept nerfing
- * the shipped shader in practice.
- */
-function cpuPhaseVocoder(
-  rfftComplex: Float32Array,
-  nFrames: number,
-  nBins: number,
-  ratio: number,
-  hop: number,
-  nFft: number,
-): Float32Array {
-  const out = new Float32Array(rfftComplex.length);
-  const prevInPhase = new Float32Array(nBins);
-  const accumOutPhase = new Float32Array(nBins);
-  const TAU = 2 * Math.PI;
-  const omegaExpected = new Float32Array(nBins);
-  for (let b = 0; b < nBins; b++) omegaExpected[b] = (TAU * b * hop) / nFft;
-
-  // Frame 0: identity, seed accumulators from the input phase.
-  for (let b = 0; b < nBins; b++) {
-    const base = b * 2;
-    const re = rfftComplex[base];
-    const im = rfftComplex[base + 1];
-    out[base] = re;
-    out[base + 1] = im;
-    const phase = Math.atan2(im, re);
-    prevInPhase[b] = phase;
-    accumOutPhase[b] = phase;
-  }
-
-  for (let f = 1; f < nFrames; f++) {
-    const rowOff = f * nBins * 2;
-    for (let b = 0; b < nBins; b++) {
-      const base = rowOff + b * 2;
-      const re = rfftComplex[base];
-      const im = rfftComplex[base + 1];
-      const mag = Math.sqrt(re * re + im * im);
-      const phase = Math.atan2(im, re);
-      // Unwrap delta into (-π, π].
-      let delta = phase - prevInPhase[b] - omegaExpected[b];
-      delta = delta - TAU * Math.floor((delta + Math.PI) / TAU);
-      const instOmega = (omegaExpected[b] + delta) / hop;
-      const shiftedOmega = instOmega * ratio;
-      const newOutPhase = accumOutPhase[b] + shiftedOmega * hop;
-      accumOutPhase[b] = newOutPhase;
-      prevInPhase[b] = phase;
-      out[base] = mag * Math.cos(newOutPhase);
-      out[base + 1] = mag * Math.sin(newOutPhase);
-    }
-  }
-  return out;
 }
 
 // ---- CPU ISTFT — Cooley-Tukey radix-2 iFFT + sqrt-Hann overlap-add ---------
@@ -717,38 +627,9 @@ function cpuIfft(re: Float32Array, im: Float32Array): void {
 function nowMs(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
-function rmsOf(buf: Float32Array): number {
-  let s = 0;
-  const N = Math.min(buf.length, 500000);
-  for (let i = 0; i < N; i++) s += buf[i] * buf[i];
-  return Math.sqrt(s / Math.max(1, N));
-}
-function rmsOf2(a: Float32Array, b: Float32Array): number {
-  let s = 0;
-  const N = Math.min(a.length, b.length, 500000);
-  for (let i = 0; i < N; i++) { const d = a[i] - b[i]; s += d * d; }
-  return Math.sqrt(s / Math.max(1, N));
-}
-function rmsOf2Audio(a: Float32Array, b: Float32Array): number {
-  let s = 0;
-  const N = Math.min(a.length, b.length, 500000);
-  for (let i = 0; i < N; i++) { const d = a[i] - b[i]; s += d * d; }
-  return Math.sqrt(s / Math.max(1, N));
-}
 function extractChannel(audio: AudioBuffer, c: number): Float32Array {
   const off = c * audio.frames;
   return audio.samples.subarray(off, off + audio.frames);
-}
-function averageMag(a: Float32Array, b: Float32Array): Float32Array {
-  const out = new Float32Array(a.length);
-  for (let i = 0; i < a.length; i++) out[i] = 0.5 * (a[i] + b[i]);
-  return out;
-}
-function fitLength(src: Float32Array, targetLen: number): Float32Array {
-  if (src.length === targetLen) return src;
-  const out = new Float32Array(targetLen);
-  out.set(src.subarray(0, Math.min(src.length, targetLen)), 0);
-  return out;
 }
 function compactComplexToRfftBins(full: Float32Array, nFrames: number, nFft: number, rfftBins: number): Float32Array {
   const out = new Float32Array(nFrames * rfftBins * 2);
@@ -758,20 +639,34 @@ function compactComplexToRfftBins(full: Float32Array, nFrames: number, nFft: num
   }
   return out;
 }
-function expandRfftToFullComplex(rfft: Float32Array, nFrames: number, nFft: number): Float32Array {
-  const rfftBins = nFft / 2 + 1;
-  const out = new Float32Array(nFrames * nFft * 2);
-  for (let t = 0; t < nFrames; t++) {
-    const srcOff = t * rfftBins * 2, dstOff = t * nFft * 2;
-    out.set(rfft.subarray(srcOff, srcOff + rfftBins * 2), dstOff);
-    for (let b = 1; b < nFft / 2; b++) {
-      const srcRe = rfft[srcOff + b * 2], srcIm = rfft[srcOff + b * 2 + 1];
-      const mirrorBin = nFft - b;
-      out[dstOff + mirrorBin * 2] = srcRe;
-      out[dstOff + mirrorBin * 2 + 1] = -srcIm;
+
+function rmsOfArray(buf: Float32Array): number {
+  if (buf.length === 0) return 0;
+  let s = 0;
+  for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+  return Math.sqrt(s / buf.length);
+}
+
+// RMS over a time window [startSec, endSec], averaged across channels.
+// Used by render() to confirm each edited note actually carries signal in
+// its extracted window. 0 here = extraction produced silence for that note.
+function windowRms(audio: AudioBuffer, startSec: number, endSec: number, sr: number): number {
+  const frames = audio.frames;
+  const ch = audio.channels;
+  const s0 = Math.max(0, Math.floor(startSec * sr));
+  const s1 = Math.min(frames, Math.ceil(endSec * sr));
+  if (s1 <= s0) return 0;
+  let sum = 0;
+  let count = 0;
+  for (let c = 0; c < ch; c++) {
+    const off = c * frames;
+    for (let i = s0; i < s1; i++) {
+      const v = audio.samples[off + i];
+      sum += v * v;
+      count++;
     }
   }
-  return out;
+  return count === 0 ? 0 : Math.sqrt(sum / count);
 }
 
 // ---- spectral-portion + resample pitch shift (Python parity) --------------
