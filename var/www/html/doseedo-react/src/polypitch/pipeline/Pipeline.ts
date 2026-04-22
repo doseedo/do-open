@@ -477,26 +477,45 @@ export class Pipeline {
 
     // ISTFT each edited note's local spectrum → per-channel time signal,
     // placed back into a full-length output buffer at startFrame * hop.
+    //
+    // Pad the local STFT with PAD_FRAMES zero-frames on each side so the
+    // ISTFT's OLA winSum reaches full interior value (≈2.0 for sqrt-Hann
+    // nFft=2048, hop=512) at the first/last DATA frame. Without padding,
+    // winSum at the note boundary drops to ~0 over nFft-hop samples, and
+    // `out[i] /= winSum[i]` amplifies near-zero edges back to full scale —
+    // that boost was audible as a click at every note start/end (verified
+    // in /tmp/istft_edge_test.js: 3000× amplification at edges vs interior).
+    const PAD_FRAMES = Math.ceil(nFft / hop) - 1;  // 3 for nFft=2048/hop=512
     const out = new Map<string, AudioBuffer>();
     const fullFrames = cache.audio.frames;
     for (let editSlot = 0; editSlot < editedCount; editSlot++) {
       const nIdx = selectedIdxs[editSlot];
       const note = selectedByIdx.get(nIdx)!;
       const local = perEditLocal[editSlot];
-      const sampleOffset = local.startFrame * hop;
+      const paddedFrames = local.localFrames + 2 * PAD_FRAMES;
+      // Output of the padded ISTFT starts at (startFrame - PAD_FRAMES) * hop
+      // in final-audio terms. The first PAD_FRAMES*hop samples are zero
+      // (from zero-padded frames), so content begins at startFrame * hop
+      // with a natural sqrt-Hann taper.
+      const sampleOffset = (local.startFrame - PAD_FRAMES) * hop;
       const samples = new Float32Array(fullFrames * channels);
       let istftRmsSum = 0;
       let istftRmsCount = 0;
       for (let c = 0; c < channels; c++) {
-        const localTime = cpuIstft(local.byChannel[c], local.localFrames, nFft, hop);
+        const paddedBuf = new Float32Array(paddedFrames * nBins * 2);
+        paddedBuf.set(local.byChannel[c], PAD_FRAMES * nBins * 2);
+        const localTime = cpuIstft(paddedBuf, paddedFrames, nFft, hop);
         istftRmsSum += rmsOfArray(localTime);
         istftRmsCount++;
-        const dstBase = c * fullFrames + sampleOffset;
-        const copyLen = Math.min(localTime.length, fullFrames - sampleOffset);
-        if (copyLen > 0) samples.set(localTime.subarray(0, copyLen), dstBase);
+        const srcSkip = Math.max(0, -sampleOffset);
+        const dstStart = Math.max(0, sampleOffset);
+        const copyLen = Math.min(localTime.length - srcSkip, fullFrames - dstStart);
+        if (copyLen > 0) {
+          samples.set(localTime.subarray(srcSkip, srcSkip + copyLen), c * fullFrames + dstStart);
+        }
       }
       const avgIstftRms = istftRmsSum / Math.max(1, istftRmsCount);
-      console.log(`[polypitch.extract] note ${note.id} midi=${note.pitchMidi} t=[${note.startSec.toFixed(2)},${note.endSec.toFixed(2)}]s localFrames=${local.localFrames} istftRms(per-chan avg)=${avgIstftRms.toExponential(2)}`);
+      console.log(`[polypitch.extract] note ${note.id} midi=${note.pitchMidi} t=[${note.startSec.toFixed(2)},${note.endSec.toFixed(2)}]s localFrames=${local.localFrames}(+${2*PAD_FRAMES}pad) istftRms(per-chan avg)=${avgIstftRms.toExponential(2)}`);
       out.set(note.id, { samples, channels, sampleRate: PUBLIC_SR, frames: fullFrames });
     }
     return out;
@@ -679,14 +698,20 @@ interface PortionNote {
 }
 
 /**
- * Pitch-shift a note's isolated time signal by resampling its [startSec, endSec]
- * window. Clean shift — no phase-vocoder artefacts — because the signal is
- * already single-note-isolated by spectral portion allocation.
+ * Pitch-shift a note's isolated time signal by resampling its audio window.
+ * Clean shift — no phase-vocoder artefacts — because the signal is already
+ * single-note-isolated by spectral portion allocation.
  *
  * For pitch-up the resampled segment is shorter by 1/ratio, so the note tail
  * ends ~1/ratio earlier; the gap is inaudible at chord-edit granularity.
  * For pitch-down the segment is longer by ratio and the tail runs past the
  * original endSec into following silence.
+ *
+ * The read range extends `STFT_N_FFT` samples past note.endSec so the
+ * natural sqrt-Hann OLA taper of the extracted ISTFT signal is included in
+ * the resample — otherwise the shifted output stops abruptly mid-taper and
+ * produces a click when summed back against the master (which has the full
+ * taper subtracted).
  */
 function pitchShiftByResample(
   note: Note,
@@ -697,7 +722,8 @@ function pitchShiftByResample(
   const frames = original.frames;
   const channels = original.channels;
   const startSample = Math.max(0, Math.floor(note.startSec * sampleRate));
-  const endSample = Math.min(frames, Math.ceil(note.endSec * sampleRate));
+  const coreEnd = Math.min(frames, Math.ceil(note.endSec * sampleRate));
+  const endSample = Math.min(frames, coreEnd + STFT_N_FFT);
   const segLen = Math.max(0, endSample - startSample);
 
   const out = new Float32Array(frames * channels);
