@@ -343,12 +343,33 @@ image = (
         "torchvision==0.20.1",
         extra_index_url="https://download.pytorch.org/whl/cu121",
     )
-    # demucs — still called from stemphonic_server.py:_run_demucs_separation
-    # (`import demucs.api; Separator(model="htdemucs_6s")`). The comment in
-    # the requirements.txt block above says demucs was replaced by the latent
-    # student models, but the /separate-stems route wasn't migrated — re-add
-    # it here with --no-deps so it doesn't perturb the pinned torch/numpy.
-    .pip_install("demucs==4.0.1", extra_options="--no-deps")
+    # demucs — called by stemphonic_server._run_demucs_separation
+    # (`import demucs.api; Separator(model="htdemucs_6s")`).
+    #
+    # MUST install from GitHub main, not PyPI: demucs==4.0.1 (the latest on
+    # PyPI) predates the `demucs/api.py` submodule. That module was only
+    # added to the main branch, and no subsequent PyPI release was cut —
+    # pip-installing from GitHub gives us api.Separator. Pinned to a commit
+    # for reproducibility; bump when demucs cuts a real release with api.
+    #
+    # --no-deps is CRITICAL: without it pip pulls in torch 2.1.2 +
+    # nvidia-cudnn + triton, downgrading our pinned torch 2.5.1 and
+    # breaking every other GPU path in the app. The runtime deps demucs
+    # actually needs (dora-search, julius, lameenc, openunmix) are installed
+    # separately below, also --no-deps so they don't re-resolve the world.
+    .pip_install(
+        "git+https://github.com/adefossez/demucs@b9ab48cad45976ba42b2ff17b229c071f0df9390",
+        extra_options="--no-deps",
+        force_build=True,
+    )
+    .pip_install(
+        "dora-search==0.1.12",
+        "julius==0.2.7",
+        "lameenc==1.7.0",
+        "openunmix==1.3.0",
+        "einops==0.8.0",
+        extra_options="--no-deps",
+    )
     # ACE-Step source — exclude the 14 GB checkpoints subdir (goes on volume)
     .add_local_dir(
         str(_ACE_STEP),
