@@ -46,6 +46,25 @@ const _renderVersionByTrackId = new Map();
 const _inFlightVersionByTrackId = new Map();
 
 /**
+ * Apply a newPitches map (noteId → new MIDI) to a midiData.notes array,
+ * returning a new array with the shifted pitches. Ids are computed with
+ * the same formula notesFromMidiData uses (pitch + time), so a lookup
+ * here matches what the voicing layer emitted.
+ */
+function applyPitchesToMidiNotes(notes, newPitches) {
+  if (!Array.isArray(notes) || newPitches.size === 0) return notes;
+  let changed = false;
+  const out = notes.map((n) => {
+    const id = `${n.note | 0}@${n.time.toFixed(3)}`;
+    const target = newPitches.get(id);
+    if (typeof target !== 'number' || target === (n.note | 0)) return n;
+    changed = true;
+    return { ...n, note: target };
+  });
+  return changed ? out : notes;
+}
+
+/**
  * @param {object} args
  * @param {number} args.beatIndex — chord row beat position whose label changed
  * @param {string|null} args.oldChord — previous chord label (may be null on first set)
@@ -53,10 +72,13 @@ const _inFlightVersionByTrackId = new Map();
  * @param {Array} args.pitchedStemTracks — [{id, busId, audioUrl, metadata?, midiData? ...}]
  * @param {{beatMap: Array, bpm: number}} args.tempo
  * @param {(trackId:string, busId:string, newUrl:string) => void} args.onTrackAudioReady
+ * @param {(trackId:string, busId:string, newMidiData:object) => void} [args.onTrackMidiReady]
+ *   Optional: called with the updated midiData (same shape as input, with
+ *   shifted note.note values) so the MIDI-window view can re-render.
  */
 export async function applyChordChange({
   beatIndex, oldChord, newChord,
-  pitchedStemTracks, tempo, onTrackAudioReady,
+  pitchedStemTracks, tempo, onTrackAudioReady, onTrackMidiReady,
 }) {
   if (!newChord || oldChord === newChord) return;
   if (!Array.isArray(pitchedStemTracks) || pitchedStemTracks.length === 0) return;
@@ -114,6 +136,16 @@ export async function applyChordChange({
           'ok',
         );
         onTrackAudioReady(track.id, track.busId, url);
+
+        // Mirror the same pitch edits into midiData so the MIDI window
+        // reflects the new voicing. Without this the audio moves but the
+        // piano roll keeps showing the original pitches.
+        if (typeof onTrackMidiReady === 'function') {
+          const newNotes = applyPitchesToMidiNotes(midiData.notes, newPitches);
+          if (newNotes !== midiData.notes) {
+            onTrackMidiReady(track.id, track.busId, { ...midiData, notes: newNotes });
+          }
+        }
       } catch (err) {
         logPipeline('polypitch', `${track.id}: ${err?.message || err}`, 'error');
       } finally {

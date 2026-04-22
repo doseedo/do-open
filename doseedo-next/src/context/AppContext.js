@@ -1276,6 +1276,13 @@ function appReducer(state, action) {
       // payload: "N/D" string e.g. "7/8"
       const [n, d] = String(action.payload).split('/').map((x) => parseInt(x, 10));
       if (!n || !d) return state;
+      // No-op when the value is unchanged. Auto-detect dispatches
+      // SET_METER after rhythm analysis even when the detected meter
+      // equals the current default (4/4 → 4/4), and without this guard
+      // every detection caused downstream effects (live-reschedule,
+      // meter-log fan-out) to fire as if the user had flipped the
+      // meter dropdown.
+      if (n === state.beatsPerBar && d === state.meterDenominator) return state;
       return { ...state, beatsPerBar: n, meterDenominator: d };
     }
 

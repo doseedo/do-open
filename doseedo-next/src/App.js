@@ -28,6 +28,7 @@ import UserInfo from './components/UserInfo/UserInfo';
 import Tools from './components/Tools/Tools';
 import WhatsNew from './components/WhatsNew/WhatsNew';
 import Research from './components/Research/Research';
+import Downloads from './components/Downloads/Downloads';
 import Plugins from './components/Plugins/Plugins';
 import PublicProfile from './components/PublicProfile/PublicProfile';
 import About from './components/Legal/About';
@@ -164,6 +165,7 @@ function AppContent() {
       p === '/privacy' ||
       p === '/terms' ||
       p.startsWith('/research') ||
+      p === '/downloads' ||
       p.startsWith('/plugins') ||
       p.startsWith('/creation/');
     // Keep the legacy hifi-purple class in lockstep — /studio still uses
@@ -262,6 +264,7 @@ function AppContent() {
                       location.pathname === '/feedback' ? 'feedback' :
                       location.pathname === '/plans' ? 'plans' :
                       location.pathname.startsWith('/research') ? 'research' :
+                      location.pathname === '/downloads' ? 'downloads' :
                       location.pathname.startsWith('/creation/') ? 'creation' :
                       location.pathname.startsWith('/plugins') ? 'plugins' :
                       location.pathname === '/studio' ? 'daw' :
@@ -461,6 +464,11 @@ function AppContent() {
     navigate('/research');
   };
 
+  // Handle navigation to downloads
+  const handleGoToDownloads = () => {
+    navigate('/downloads');
+  };
+
   // Handle navigation to plugins
   const handleGoToPlugins = () => {
     navigate('/plugins');
@@ -520,6 +528,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -548,6 +557,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -576,6 +586,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -605,6 +616,7 @@ function AppContent() {
             onGoToTools={handleGoToTools}
             onGoToWhatsNew={handleGoToWhatsNew}
             onGoToResearch={handleGoToResearch}
+            onGoToDownloads={handleGoToDownloads}
             onGoToPlugins={handleGoToPlugins}
             onToggleSearch={handleToggleSearch}
             onShowGenerationPanel={handleShowGenerationPanel}
@@ -633,6 +645,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -661,6 +674,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -672,6 +686,35 @@ function AppContent() {
           isResearchView={true}
         />
         <Research />
+      </div>
+    );
+  }
+
+  // Show downloads view with sidebar
+  if (currentView === 'downloads') {
+    return (
+      <div className="App">
+        <LiquidGlassFilters />
+        <LeftSidebar
+          onBackToDashboard={handleBackToDashboard}
+          onGoToHome={handleGoToHome}
+          onGoToSearch={handleGoToSearch}
+          onGoToUserInfo={handleGoToUserInfo}
+          onGoToTools={handleGoToTools}
+          onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
+          onGoToPlugins={handleGoToPlugins}
+          onGoToDO1={handleGoToDO1}
+          onToggleSearch={handleToggleSearch}
+          onShowGenerationPanel={handleShowGenerationPanel}
+          onShowMidiBrowser={handleShowMidiBrowser}
+          showMidiBrowser={showMidiBrowser}
+          onToggleChat={handleToggleChat}
+          showChatWindow={showChatWindow}
+          isDownloadsView={true}
+        />
+        <Downloads />
       </div>
     );
   }
@@ -706,6 +749,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -733,6 +777,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -762,6 +807,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -790,6 +836,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -835,6 +882,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -872,6 +920,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -948,6 +997,7 @@ function AppContent() {
           onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
           onToggleSearch={handleToggleSearch}
@@ -1115,6 +1165,7 @@ function AppContent() {
         onGoToTools={handleGoToTools}
           onGoToWhatsNew={handleGoToWhatsNew}
           onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
           onGoToDO1={handleGoToDO1}
         onToggleSearch={handleToggleSearch}

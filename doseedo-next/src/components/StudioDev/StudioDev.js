@@ -1253,6 +1253,13 @@ export default function StudioDev() {
       for (const tr of bus.tracks || []) {
         const isDrum = tr.metadata?.stemType === 'drums' || tr.metadata?.instrumentGroup === 'drums';
         if (isDrum) continue;
+        // Skip the parent/master track — it's the full mixdown, not a
+        // pitched stem. It gains basicPitch midiData from the Tier-1
+        // master pass but resynthing it collides with the stem layer
+        // (you'd hear the edit twice, phase-smeared against itself).
+        // Stems carry metadata.parentTrackId; the parent does not.
+        const isParent = !tr.metadata?.parentTrackId;
+        if (isParent) continue;
         if (!tr.audioUrl || !tr.metadata?.midiData?.notes?.length) continue;
         pitchedStemTracks.push({ ...tr, busId: bus.id, midiData: tr.metadata.midiData });
       }
@@ -1271,6 +1278,12 @@ export default function StudioDev() {
           dispatch({
             type: 'UPDATE_TRACK',
             payload: { busId, trackId, updates: { audioUrl: newUrl } },
+          });
+        },
+        onTrackMidiReady: (trackId, busId, newMidiData) => {
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: { busId, trackId, updates: { metadata: { midiData: newMidiData } } },
           });
         },
       });

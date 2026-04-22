@@ -11,7 +11,7 @@ import logoImg from '../../../assets/transparentlogo.png';
  * LeftSidebar Component
  * Main navigation sidebar with collapsible menu
  */
-const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, onGoToUserInfo, onGoToTools, onGoToWhatsNew, onGoToResearch, onGoToPlugins, onGoToDO1, onToggleSearch: onToggleMidiBrowser, onShowGenerationPanel, onShowMidiBrowser, showMidiBrowser, onToggleChat, showChatWindow, isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView, isWhatsNewView, isResearchView, isPluginsView, isDO1View }) => {
+const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, onGoToUserInfo, onGoToTools, onGoToWhatsNew, onGoToResearch, onGoToDownloads, onGoToPlugins, onGoToDO1, onToggleSearch: onToggleMidiBrowser, onShowGenerationPanel, onShowMidiBrowser, showMidiBrowser, onToggleChat, showChatWindow, isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView, isWhatsNewView, isResearchView, isDownloadsView, isPluginsView, isDO1View }) => {
   const navigate = useNavigate();
   const { state, dispatch } = useApp();
   const [userInfo, setUserInfo] = useState(null);
@@ -32,7 +32,7 @@ const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, o
   }, []);
 
   // Force sidebar to be expanded when not in DAW view (desktop only)
-  const isSpecialView = isDashboardView || isHomeView || isSearchView || isUserInfoView || isToolsView || isWhatsNewView || isResearchView || isPluginsView || isDO1View;
+  const isSpecialView = isDashboardView || isHomeView || isSearchView || isUserInfoView || isToolsView || isWhatsNewView || isResearchView || isDownloadsView || isPluginsView || isDO1View;
   useEffect(() => {
     if (!isMobile && isSpecialView && !state.sidebar.isExpanded) {
       dispatch({ type: 'TOGGLE_SIDEBAR' });
@@ -163,6 +163,16 @@ const LeftSidebar = React.memo(({ onBackToDashboard, onGoToHome, onGoToSearch, o
             onClick={(e) => {
               e.preventDefault();
               onGoToWhatsNew();
+            }}
+          />
+          <SidebarLink
+            href="#"
+            icon="fa-solid fa-download"
+            label="Downloads"
+            active={isDownloadsView}
+            onClick={(e) => {
+              e.preventDefault();
+              if (onGoToDownloads) onGoToDownloads();
             }}
           />
           <div className={styles.moreMenu}>
