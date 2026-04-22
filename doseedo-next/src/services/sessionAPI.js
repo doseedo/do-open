@@ -253,66 +253,6 @@ export const getPublicSessions = async (filters = {}) => {
   }
 };
 
-/**
- * Fetch the project-state JSON for a session from R2. Used by the studio
- * deep-link flow (`/studio?session=<uuid>`) so a session synced from the
- * desktop app (or anywhere else) can be loaded straight into the web DAW.
- *
- * Returns `{ state, version, updated_at }`. `state` is null when nothing
- * has been persisted yet.
- */
-export const getSessionState = async (sessionId) => {
-  const token = localStorage.getItem('token');
-  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/state`, {
-    method: 'GET',
-    headers: {
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      'Content-Type': 'application/json',
-    },
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || err.error || `Failed to load session state (${res.status})`);
-  }
-  return res.json();
-};
-
-/**
- * Translate the desktop sync payload shape (as written by the Python
- * logic_sync.py) into the field names this web context expects. The
- * server-side shape uses `url`/`volume`, the web state uses
- * `audioUrl`/`gain`; everything else already lines up.
- */
-export function normalizeSyncedSessionState(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const mapTrack = (t) => {
-    if (!t) return t;
-    const out = { ...t };
-    if (out.url != null && out.audioUrl == null) out.audioUrl = out.url;
-    if (out.volume != null && out.gain == null) out.gain = out.volume;
-    if (Array.isArray(out.clips)) {
-      out.clips = out.clips.map((c) => {
-        if (!c) return c;
-        const co = { ...c };
-        if (co.url != null && co.audioUrl == null) co.audioUrl = co.url;
-        return co;
-      });
-    }
-    return out;
-  };
-  const buses = Array.isArray(raw.buses)
-    ? raw.buses.map((b) => ({
-        ...b,
-        tracks: Array.isArray(b.tracks) ? b.tracks.map(mapTrack) : [],
-      }))
-    : [];
-  return {
-    ...raw,
-    buses,
-    importSource: raw.sourceApp || raw.importSource || 'sync',
-  };
-}
-
 export default {
   createSession,
   getUserSessions,
@@ -321,7 +261,5 @@ export default {
   deleteSession,
   uploadSessionContent,
   searchSessions,
-  getPublicSessions,
-  getSessionState,
-  normalizeSyncedSessionState,
+  getPublicSessions
 };

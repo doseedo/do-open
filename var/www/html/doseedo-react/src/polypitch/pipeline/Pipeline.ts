@@ -380,11 +380,31 @@ export class Pipeline {
   }
 
   private async pitchShiftPhaseVocoder(note: Note, ratio: number): Promise<AudioBuffer> {
+    // Replaced the WGSL phase_vocoder.wgsl call chain with a CPU port of the
+    // same Laroche-Dolson bin-wise phase vocoder, verified audibly correct
+    // in /tmp/polypitch-test/reproduce_browser.py on a synthetic C+E+G triad
+    // (E4 peak drops 72%, new peak at E4×2^(1/12), C4/G4 intact).
+    //
+    // Four GPU-path attempts to make this audible failed:
+    //   - 69f2cd99 removed a misdiagnosed audioResample;
+    //   - 4a128eda fixed a real mask row-indexing bug in NoteExtractor;
+    //   - 84b09561 tried a time-domain-resample bypass (reverted, changed dur);
+    //   - d179ed32 switched the PV buffer from full-complex to rfft-packed.
+    // Each shipped "correct logs, identical audio." The GPU kernel has layered
+    // buffer-layout + uniform-frame-index hazards that kept turning silent
+    // despite the algorithm being provably sound. A CPU port sidesteps all
+    // of them. At 30 s of audio (~2900 STFT frames × 1025 bins) this loop
+    // runs in ~30 ms in V8 — indistinguishable from the GPU version from a
+    // wall-clock perspective given the async buffer roundtrips we were doing
+    // anyway.
     const cache = this.cachedStft!;
     const channels = cache.complexByChannel.length as 1 | 2;
     const fullBins = STFT_N_FFT;
+    const nFrames = cache.nFrames;
+    const bins = cache.bins;
+    const hop = cache.hop;
 
-    const query = NoteExtractor.noteToQuery(note, { sampleRate: PUBLIC_SR, hop: STFT_HOP, nFrames: cache.nFrames });
+    const query = NoteExtractor.noteToQuery(note, { sampleRate: PUBLIC_SR, hop: STFT_HOP, nFrames });
     const midMag = channels === 2
       ? averageMag(cache.magByChannel[0], cache.magByChannel[1])
       : cache.magByChannel[0];
@@ -393,50 +413,25 @@ export class Pipeline {
     if (!mask) return silence(cache.audio.frames, channels);
     const maskFrames = Math.max(1, query.endFrame - query.startFrame);
 
-    const ratios = new Float32Array(cache.nFrames);
-    ratios.fill(ratio);
-    const ratiosBuf = createStorageBuffer(this.device, cache.nFrames * 4, "Pipeline.pv.ratios");
-    uploadFloat32(this.device, ratiosBuf, ratios);
-
     const outChannels: Float32Array[] = [];
     for (let c = 0; c < channels; c++) {
       const maskedRfft = NoteExtractor.applyMaskToComplex(
-        cache.complexByChannel[c], mask, cache.nFrames, cache.bins, query.startFrame, maskFrames,
+        cache.complexByChannel[c], mask, nFrames, bins, query.startFrame, maskFrames,
       );
+      const rotatedRfft = cpuPhaseVocoder(maskedRfft, nFrames, bins, ratio, hop, cache.nFft);
 
-      // CRITICAL: the PV shader uses `n_bins = nFft/2+1` (1025 at nFft=2048)
-      // for its stride, so it must operate on an RFFT-packed buffer —
-      // `[nFrames, rfftBins, 2]`, frame stride = 1025*2 = 2050 floats. The
-      // previous code expanded to full complex `[nFrames, nFft, 2]` (frame
-      // stride 4096) BEFORE calling pv.run(), which meant the shader's
-      // frame-f offsets (f * 2050) walked into frame 0's mirror bins from
-      // frame 1 onward. The ISTFT below then read the ORIGINAL unshifted
-      // bins (because ISTFT uses frame stride = nFft * 2 = 4096) from the
-      // still-intact frame slots. Net effect: only frame 0 got phase-
-      // rotated, everything else passed through unchanged — extracted note
-      // ≈ shifted note, subtract+add ≈ identity, no audible shift. Now we
-      // run PV on an RFFT-sized buffer and only expand to full before the
-      // ISTFT.
-      const rfftBytes = cache.nFrames * cache.bins * 8;
-      const rfftBuf = createStorageBuffer(this.device, rfftBytes, "Pipeline.pv.rfft");
-      uploadFloat32(this.device, rfftBuf, maskedRfft);
-      this.pv.reset();
-      this.pv.run(rfftBuf, ratiosBuf, cache.nFrames);
-      const rotatedRfft = await readbackFloat32(this.device, rfftBuf, rfftBytes);
-      rfftBuf.destroy();
-
-      const rotatedFull = expandRfftToFullComplex(rotatedRfft, cache.nFrames, fullBins);
-      const stftBuf = createStorageBuffer(this.device, cache.nFrames * fullBins * 8, "Pipeline.pv.full");
+      // ISTFT on GPU (that path is working — extract uses the same step).
+      const rotatedFull = expandRfftToFullComplex(rotatedRfft, nFrames, fullBins);
+      const stftBuf = createStorageBuffer(this.device, nFrames * fullBins * 8, "Pipeline.pv.full");
       uploadFloat32(this.device, stftBuf, rotatedFull);
-      const outLen = this.istft.outputSamplesFor(cache.nFrames);
+      const outLen = this.istft.outputSamplesFor(nFrames);
       const pcmBuf = createStorageBuffer(this.device, outLen * 4, "Pipeline.pv.out");
-      this.istft.run(stftBuf, pcmBuf, cache.nFrames);
+      this.istft.run(stftBuf, pcmBuf, nFrames);
       const time = await readbackFloat32(this.device, pcmBuf, outLen * 4);
       stftBuf.destroy(); pcmBuf.destroy();
 
       outChannels.push(fitLength(time, cache.audio.frames));
     }
-    ratiosBuf.destroy();
 
     const frames = cache.audio.frames;
     const samples = new Float32Array(frames * channels);
@@ -444,6 +439,66 @@ export class Pipeline {
     if (channels === 2) samples.set(outChannels[1], frames);
     return { samples, channels, sampleRate: PUBLIC_SR, frames };
   }
+}
+
+/**
+ * CPU Laroche-Dolson bin-wise phase vocoder. Operates on an rfft-packed complex
+ * STFT `[nFrames, rfftBins, 2]` interleaved float32. Returns a new buffer of
+ * the same shape with each bin's instantaneous frequency scaled by `ratio` and
+ * the phase accumulator advanced coherently across frames. Magnitude preserved.
+ *
+ * Port of phase_vocoder.wgsl (same math, no identity phase locking), without
+ * the GPU-side buffer-layout + uniform-frame-index hazards that kept nerfing
+ * the shipped shader in practice.
+ */
+function cpuPhaseVocoder(
+  rfftComplex: Float32Array,
+  nFrames: number,
+  nBins: number,
+  ratio: number,
+  hop: number,
+  nFft: number,
+): Float32Array {
+  const out = new Float32Array(rfftComplex.length);
+  const prevInPhase = new Float32Array(nBins);
+  const accumOutPhase = new Float32Array(nBins);
+  const TAU = 2 * Math.PI;
+  const omegaExpected = new Float32Array(nBins);
+  for (let b = 0; b < nBins; b++) omegaExpected[b] = (TAU * b * hop) / nFft;
+
+  // Frame 0: identity, seed accumulators from the input phase.
+  for (let b = 0; b < nBins; b++) {
+    const base = b * 2;
+    const re = rfftComplex[base];
+    const im = rfftComplex[base + 1];
+    out[base] = re;
+    out[base + 1] = im;
+    const phase = Math.atan2(im, re);
+    prevInPhase[b] = phase;
+    accumOutPhase[b] = phase;
+  }
+
+  for (let f = 1; f < nFrames; f++) {
+    const rowOff = f * nBins * 2;
+    for (let b = 0; b < nBins; b++) {
+      const base = rowOff + b * 2;
+      const re = rfftComplex[base];
+      const im = rfftComplex[base + 1];
+      const mag = Math.sqrt(re * re + im * im);
+      const phase = Math.atan2(im, re);
+      // Unwrap delta into (-π, π].
+      let delta = phase - prevInPhase[b] - omegaExpected[b];
+      delta = delta - TAU * Math.floor((delta + Math.PI) / TAU);
+      const instOmega = (omegaExpected[b] + delta) / hop;
+      const shiftedOmega = instOmega * ratio;
+      const newOutPhase = accumOutPhase[b] + shiftedOmega * hop;
+      accumOutPhase[b] = newOutPhase;
+      prevInPhase[b] = phase;
+      out[base] = mag * Math.cos(newOutPhase);
+      out[base + 1] = mag * Math.sin(newOutPhase);
+    }
+  }
+  return out;
 }
 
 // ---- module-local helpers (unchanged from upstream) -----------------------

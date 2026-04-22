@@ -4,7 +4,6 @@ import { AppProvider, useApp } from './context/AppContext';
 import { useKeyboardControls } from './hooks/useKeyboardControls';
 import * as authService from './services/authService';
 import * as sessionService from './services/sessionService';
-import { getSessionState, normalizeSyncedSessionState } from './services/sessionAPI';
 
 // === STUDIO COMPONENTS (original) ===
 import Navbar from './components/Navbar/Navbar';
@@ -343,37 +342,6 @@ function AppContent() {
       setHasCheckedAutoLoad(true);
     }
   }, [dispatch, navigate, location.pathname, hasCheckedAutoLoad]);
-
-  // Deep-link: /studio?session=<uuid> — used by the desktop Sync flow to
-  // hand off a Logic Pro project directly into the web DAW. Fetches
-  // state.json from the fly.io sessions API, remaps the desktop payload's
-  // field names, and dispatches LOAD_SESSION. Runs once per distinct id.
-  const [loadedSessionId, setLoadedSessionId] = useState(null);
-  useEffect(() => {
-    if (location.pathname !== '/studio') return;
-    const params = new URLSearchParams(location.search);
-    const sid = params.get('session');
-    if (!sid || sid === loadedSessionId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await getSessionState(sid);
-        if (cancelled) return;
-        const normalized = normalizeSyncedSessionState(res && res.state);
-        if (normalized) {
-          dispatch({ type: 'LOAD_SESSION', payload: normalized });
-          console.log(`✅ Loaded synced session ${sid}`);
-        } else {
-          console.warn(`Session ${sid} has no state yet`);
-        }
-        setLoadedSessionId(sid);
-      } catch (err) {
-        console.error(`Failed to load session ${sid}:`, err);
-        setLoadedSessionId(sid); // don't retry on failure
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [location.pathname, location.search, dispatch, loadedSessionId]);
 
   // Enable keyboard controls (spacebar for play/pause)
   useKeyboardControls(dispatch, state.isPlaying);
