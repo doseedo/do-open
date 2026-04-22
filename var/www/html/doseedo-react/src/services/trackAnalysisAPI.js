@@ -148,13 +148,15 @@ export async function separateStemsAuto(audioFile, opts = {}) {
   // on BasicPitch). Old callers that just awaited the result still work —
   // they'll get stems_ready payload + the final `status === 'completed'`
   // is still reachable via polling status if they need it.
-  // Auth: prefer a fresh Clerk JWT when available (AppShell.tsx installs
-  // window.__clerkGetToken), fall back to the cached clerk_token that
-  // ClerkTokenBridge snapshots, then the legacy 'token' key for back-compat.
-  // Previous code only checked the legacy key → 401 for Clerk-authed users.
+  // Auth: always ask Clerk for a live token via window.__clerkGetToken
+  // (installed by AppShell.tsx's ClerkTokenBridge). NEVER read the cached
+  // localStorage['clerk_token'] snapshot — on a dev→prod Clerk cutover the
+  // snapshot can be a stale dev-instance JWT whose signing kid isn't in
+  // prod's JWKS, which auth-service rejects with 401. getToken() itself
+  // returns null under the prod instance if the user has no valid session,
+  // which is the correct signal to surface instead of a bogus token.
   const token = (typeof window !== 'undefined' && typeof window.__clerkGetToken === 'function'
       ? await window.__clerkGetToken().catch(() => null) : null)
-    || (typeof window !== 'undefined' && window.localStorage?.getItem('clerk_token'))
     || localStorage.getItem('token');
   const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
   const compressed = await compressAudioForUpload(audioFile);

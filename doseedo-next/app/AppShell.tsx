@@ -32,10 +32,13 @@ const App = dynamic(() => import('@/App'), {
  * `.doseedo.com` auth cookie isn't in scope (e.g. on localhost).
  */
 function ClerkTokenBridge() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const { getToken } = useAuth();
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    // Always install the getter — httpClient tolerates failures.
+    // Expose a live token getter. Callers that can await use this; they
+    // must NOT read from localStorage['clerk_token'], because that snapshot
+    // survives Clerk dev→prod instance swaps and returns tokens whose
+    // signing kid isn't in the new JWKS (auth-service then 401s).
     (window as any).__clerkGetToken = async () => {
       try {
         return await getToken();
@@ -43,15 +46,9 @@ function ClerkTokenBridge() {
         return null;
       }
     };
-    // Also prime a static snapshot for contexts that can't await.
-    if (isLoaded && isSignedIn) {
-      getToken()
-        .then((t) => {
-          if (t) window.localStorage.setItem('clerk_token', t);
-        })
-        .catch(() => {});
-    }
-  }, [getToken, isLoaded, isSignedIn]);
+    // Clean up any stale snapshot left over from an earlier Clerk instance.
+    try { window.localStorage.removeItem('clerk_token'); } catch {}
+  }, [getToken]);
   return null;
 }
 
