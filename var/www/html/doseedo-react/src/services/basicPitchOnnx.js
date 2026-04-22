@@ -21,7 +21,6 @@
  */
 
 import * as ort from 'onnxruntime-web';
-import { ortWebGPURun } from './webgpuOrtQueue';
 
 // ?v=1 cache-busts Cloudflare, which aggressively caches 404 HTML pages
 // (max-age 30 days). Before the model file was deployed CF cached an HTML
@@ -45,11 +44,10 @@ const MIN_NOTE_LEN_FRAMES   = 11;                         // ≈128ms
 let session = null;
 let outputKeys = null;
 let initFailed = false;
-// Concurrency guard for the one-time session build. Once the session
-// exists, all sess.run() calls go through the process-wide WebGPU
-// queue in webgpuOrtQueue so they don't collide with other ORT-Web
-// WebGPU sessions (latentDrumSep, sem4Decoder, ...) that share the
-// jsep backend's module-scoped "Session already started" guard.
+// One-time-build guard. Runs after this don't need the process-wide
+// webgpuOrtQueue because this session is WASM-only (see executionProviders
+// below) — ORT-Web's WASM backend serializes internally and the webgpu
+// jsep "$c" lock doesn't apply.
 let _initInFlight = null;
 
 /**
@@ -113,8 +111,15 @@ export async function initBasicPitch() {
       );
       return null;
     }
+    // WASM-only: basic-pitch's graph contains a CQT Mul node
+    // (model_1/cq_t2010v2_1/mul_1) whose broadcast shapes ORT-Web 1.22's
+    // WebGPU jsep binary-op kernel rejects with "Can't perform binary op
+    // on the given tensors" — every first call to transcribeAudio would
+    // crash on that op with the webgpu EP selected. nmp.onnx is 225 KB
+    // and fully-convolutional; WASM runs the whole transcribe in ~3 s
+    // for a 30 s master, so we gain nothing by keeping WebGPU in the list.
     session = await ort.InferenceSession.create(modelBytes, {
-      executionProviders: ['webgpu', 'wasm'],
+      executionProviders: ['wasm'],
       ...(externalData ? { externalData } : {}),
     });
     outputKeys = mapOutputs(session);
@@ -174,7 +179,7 @@ function mapOutputs(sess) {
 
 async function probeShapes(sess) {
   const zeroIn = new ort.Tensor('float32', new Float32Array(CHUNK_SAMPLES), [1, CHUNK_SAMPLES, 1]);
-  const out = await ortWebGPURun(() => sess.run({ [sess.inputNames[0]]: zeroIn }));
+  const out = await sess.run({ [sess.inputNames[0]]: zeroIn });
   let onset = null, frame = null, contour = null;
   for (const n of sess.outputNames) {
     const w = out[n].dims[out[n].dims.length - 1];
@@ -249,7 +254,7 @@ async function _transcribeAudioImpl(audio, sr, opts = {}) {
     const end = Math.min(start + CHUNK_SAMPLES, audio22k.length);
     chunk.set(audio22k.subarray(start, end));
     const inputTensor = new ort.Tensor('float32', chunk, [1, CHUNK_SAMPLES, 1]);
-    const out = await ortWebGPURun(() => sess.run({ [sess.inputNames[0]]: inputTensor }));
+    const out = await sess.run({ [sess.inputNames[0]]: inputTensor });
     // Outputs are already sigmoid'd inside the graph — copy straight in.
     const onset = out[outputKeys.onset].data;
     const frame = out[outputKeys.frame].data;
