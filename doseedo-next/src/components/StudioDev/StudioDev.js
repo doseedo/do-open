@@ -1150,8 +1150,16 @@ export default function StudioDev() {
     if (!sig) return;
     const [n, d] = sig.split('/').map((v) => parseInt(v, 10));
     if (!n || !d) return;
+    const prev = `${state.beatsPerBar || 4}/${state.meterDenominator || 4}`;
     dispatch({ type: 'SET_METER', payload: sig });
-  }, [dispatch]);
+    logPipeline(
+      'meter',
+      state.isPlaying
+        ? `${prev} → ${sig} — live-reschedule on next frame`
+        : `${prev} → ${sig} — will apply at next play`,
+      'ok',
+    );
+  }, [dispatch, state.beatsPerBar, state.meterDenominator, state.isPlaying]);
 
   // Wire real metronome audio — the hook schedules WebAudio clicks against
   // the transport clock. `state.isMetronomeOn` is the reducer's key name

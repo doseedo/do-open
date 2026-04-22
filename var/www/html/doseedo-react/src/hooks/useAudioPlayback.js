@@ -413,6 +413,14 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         // protected schedule, bass gets melodic-protected, others fall
         // through to bar rearrange.
         const schedule = dispatchStrategy(track, projectMeter);
+        // Visibility: when meter change actually rearranges the track,
+        // the schedule has multiple segments. Identity (src meter =
+        // tgt meter) collapses to a single keep-all segment.
+        if (schedule && schedule.length > 1) {
+          const src = `${track.metadata?.detectedMeter || '?'}/${track.metadata?.detectedMeterDenominator || '?'}`;
+          const tgt = `${projectMeter.beatsPerBar}/${projectMeter.meterDenominator}`;
+          console.log(`🎚️ [meter] ${track.name || track.id}: ${src} → ${tgt} — ${schedule.length} segments`);
+        }
         if (audioBufferCache.has(url)) {
           const { sources, gainNode } = scheduleTrackWithSchedule(
             audioContext, url, schedule, finalGain, trackStartTime,
