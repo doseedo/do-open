@@ -87,25 +87,30 @@ function hitTestNote(notes, mx, my, cfg) {
     const span = Math.max(1, n.pitchSpan || 1);
     const topPitch = n.note + span - 1;
     const x = KEYS_W + (n.time - cfg.scrollX) * cfg.pxPerSec;
-    // y = top edge of the note rectangle (higher pitch → lower y).
     const y = RULER_H + (cfg.maxPitch - topPitch) * cfg.rowH - cfg.scrollY;
     const w = Math.max(6, n.duration * cfg.pxPerSec);
     const h = span * cfg.rowH - 1;
     if (mx >= x && mx <= x + w && my >= y && my <= y + h) {
-      // Edge grabs — resize duration (L/R) or stretch into a pitch chord (T/B):
-      //   right 6 px  → resize-right (extend duration)
-      //   left  6 px  → resize-left  (shift start, pin right edge)
-      //   top   4 px  → resize-top    (extend upward, creating a chord stack)
-      //   bottom 4 px → resize-bottom (extend downward, creating a chord stack)
-      // Horizontal edges win over vertical so short notes stay grabbable
-      // from the sides, and narrow-enough notes skip the left grab so
-      // both centre-ish zones don't overlap.
-      const edge =
-        mx >= x + w - 6 ? 'right'
-        : (w > 14 && mx <= x + 6) ? 'left'
-        : (h > 14 && my <= y + 4) ? 'top'
-        : (h > 14 && my >= y + h - 4) ? 'bottom'
-        : null;
+      // Edge grab bands scale with the note size so the zones are always
+      // reachable whether the note is narrow or wide:
+      //   left/right: min(8, w/3)
+      //   top/bottom: min(8, h/3)
+      // Vertical edges win over horizontal in the CENTRE of the side —
+      // if the cursor is in the top 8 px of the note but not in a
+      // horizontal edge's corner, it's a top grab.
+      const hEdge = Math.min(8, Math.max(3, w / 3));
+      const vEdge = Math.min(8, Math.max(3, h / 3));
+      const onLeft   = mx <= x + hEdge;
+      const onRight  = mx >= x + w - hEdge;
+      const onTop    = my <= y + vEdge;
+      const onBottom = my >= y + h - vEdge;
+      // Priority: vertical edge if the cursor is NOT in a horizontal
+      // corner zone. Corners fall through to the side (L/R) grab.
+      let edge = null;
+      if (onTop && !onLeft && !onRight) edge = 'top';
+      else if (onBottom && !onLeft && !onRight) edge = 'bottom';
+      else if (onRight) edge = 'right';
+      else if (onLeft) edge = 'left';
       return { idx: i, note: n, edge };
     }
   }
