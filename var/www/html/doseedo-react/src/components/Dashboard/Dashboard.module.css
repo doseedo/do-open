@@ -723,6 +723,53 @@
 .wcellMeterFoot a { color: var(--wb-ink-soft); }
 .wcellMeterFoot a:hover { color: var(--wb-ink); }
 
+/* ---- Feature slideshow (workbench deck) ---- */
+.slideshowSect {
+  margin: 0 -40px 36px;
+  padding: 0 40px;
+}
+.slides {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 620px;
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-rule);
+  overflow: hidden;
+}
+.slidesFrame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.slidesDots {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 2;
+  padding: 6px 10px;
+  background: rgba(232, 230, 225, 0.7);
+  border: 1px solid var(--wb-rule);
+  backdrop-filter: blur(6px);
+}
+.slidesDot {
+  width: 18px;
+  height: 4px;
+  border: 0;
+  background: var(--wb-rule-strong);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s;
+}
+.slidesDot:hover { background: var(--wb-ink-soft); }
+.slidesDotActive { background: var(--wb-ink); }
+
 /* ---- Responsive ---- */
 @media (max-width: 900px) {
   .dashboard { margin-left: 0; }
