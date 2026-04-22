@@ -36,7 +36,13 @@ struct Params {
 @group(0) @binding(3) var<storage, read_write> pcm_out: array<f32>;
 @group(0) @binding(4) var<storage, read_write> w_sum: array<f32>;
 
-@compute @workgroup_size(64, 1, 1)
+// Workgroup size 256 (not 64): the extract-pass total thread count is
+// n_frames * n_fft, which reaches ~5.9M for a 30 s song at n_fft=2048 /
+// hop=512. At size 64 that's 92 000 workgroups in X, exceeding WebGPU's
+// 65 535 maxComputeWorkgroupsPerDimension. 256 divides by 4 → ~23 000,
+// safely under the cap, and the shader has no shared/workgroup memory
+// so bumping the size is free.
+@compute @workgroup_size(256, 1, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let idx = gid.x;
 

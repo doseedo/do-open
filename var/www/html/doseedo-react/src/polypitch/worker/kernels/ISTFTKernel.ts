@@ -262,7 +262,9 @@ export class ISTFTKernel {
       pass.setPipeline(this.pipeline);
       pass.setBindGroup(0, bgExtract);
       const total = nFrames * this.cfg.nFft;
-      pass.dispatchWorkgroups(Math.ceil(total / 64), 1, 1);
+      // Must match @workgroup_size(256) in istft.wgsl — see that file
+      // for why we're at 256 instead of 64.
+      pass.dispatchWorkgroups(Math.ceil(total / 256), 1, 1);
       pass.end();
     }
 
@@ -283,7 +285,7 @@ export class ISTFTKernel {
       const pass = enc.beginComputePass({ label: "ISTFTKernel.oa.pass" });
       pass.setPipeline(this.pipeline);
       pass.setBindGroup(0, bgOA);
-      pass.dispatchWorkgroups(Math.ceil(outLen / 64), 1, 1);
+      pass.dispatchWorkgroups(Math.ceil(outLen / 256), 1, 1);
       pass.end();
     }
 
@@ -304,7 +306,7 @@ export class ISTFTKernel {
       const pass = enc.beginComputePass({ label: "ISTFTKernel.norm.pass" });
       pass.setPipeline(this.pipeline);
       pass.setBindGroup(0, bgNorm);
-      pass.dispatchWorkgroups(Math.ceil(outLen / 64), 1, 1);
+      pass.dispatchWorkgroups(Math.ceil(outLen / 256), 1, 1);
       pass.end();
     }
 
