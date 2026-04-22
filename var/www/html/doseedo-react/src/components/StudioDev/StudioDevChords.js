@@ -10,7 +10,7 @@
  * click → delete. Delete via right-click or picker fires SET_CHORD_FOR_BEAT
  * with a falsy payload, which the reducer treats as a removal.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import useChordRegen from '../../hooks/useChordRegen';
 
@@ -21,6 +21,7 @@ const BARS_VISIBLE = 8;
 export default function StudioDevChords() {
   const { state, dispatch } = useApp();
   const [editingBeat, setEditingBeat] = useState(null);
+  const [pageStartBar, setPageStartBar] = useState(0);
   const chords = state.chordTrack?.chords || {};
   const runChordRegen = useChordRegen();
 
@@ -35,30 +36,102 @@ export default function StudioDevChords() {
     dispatch({ type: 'SET_CHORD_FOR_BEAT', payload: { beatIndex, chord: null } });
   };
 
+  const BEATS_PER_BAR = state.beatsPerBar || 4;
+
   const currentBeat = useMemo(() => {
     const bpm = state.bpm || 120;
     const spb = 60 / bpm;
     return Math.floor((state.playheadPosition || 0) / spb);
   }, [state.playheadPosition, state.bpm]);
 
-  const BEATS_PER_BAR = state.beatsPerBar || 4;
-  const cells = Array.from({ length: BARS_VISIBLE * BEATS_PER_BAR }, (_, i) => i);
+  // Detector emits a sparse map keyed on chord-change beats; every beat in
+  // between inherits the prior label. Carry it forward so sustained chords
+  // actually fill the grid — otherwise 9 chord changes across 60 beats
+  // render as 9 dots surrounded by `·` and the bar looks empty.
+  //
+  // Scan from beat 0 up to the last chord change OR the last visible beat,
+  // whichever is larger, so paging forward keeps working once the detector
+  // assigns labels beyond the current window.
+  const lastChordBeat = useMemo(() => {
+    let m = 0;
+    for (const k of Object.keys(chords)) {
+      const n = parseInt(k, 10);
+      if (Number.isFinite(n) && n > m) m = n;
+    }
+    return m;
+  }, [chords]);
+
+  const filledChords = useMemo(() => {
+    const out = {};
+    const totalBeats = Math.max(
+      lastChordBeat + 1,
+      (pageStartBar + BARS_VISIBLE) * BEATS_PER_BAR
+    );
+    let current = null;
+    for (let i = 0; i < totalBeats; i++) {
+      if (chords[i] != null) current = chords[i];
+      if (current != null) out[i] = current;
+    }
+    return out;
+  }, [chords, lastChordBeat, pageStartBar, BEATS_PER_BAR]);
+
+  // Auto-advance the page when playback crosses into the next 8-bar window,
+  // but only while playing — otherwise manual paging would get fought every
+  // render.
+  useEffect(() => {
+    if (!state.isPlaying) return;
+    const currentBar = Math.floor(currentBeat / BEATS_PER_BAR);
+    const pageEndBar = pageStartBar + BARS_VISIBLE;
+    if (currentBar >= pageEndBar || currentBar < pageStartBar) {
+      const nextStart = Math.floor(currentBar / BARS_VISIBLE) * BARS_VISIBLE;
+      setPageStartBar(nextStart);
+    }
+  }, [currentBeat, state.isPlaying, pageStartBar, BEATS_PER_BAR]);
+
+  const totalBars = useMemo(() => {
+    const lastBar = Math.floor(lastChordBeat / BEATS_PER_BAR);
+    return Math.max(BARS_VISIBLE, lastBar + 1);
+  }, [lastChordBeat, BEATS_PER_BAR]);
+
+  const cells = Array.from(
+    { length: BARS_VISIBLE * BEATS_PER_BAR },
+    (_, i) => pageStartBar * BEATS_PER_BAR + i
+  );
+
+  const canPrev = pageStartBar > 0;
+  const canNext = pageStartBar + BARS_VISIBLE < totalBars;
 
   return (
     <div className="sd-chords">
       <div className="sd-chords-head">
         <span className="sd-midi-kv-k">Chords</span>
-        <span className="sd-midi-meta">{state.beatsPerBar || 4}/{state.meterDenominator || 4} · {BARS_VISIBLE} bars</span>
+        <span className="sd-midi-meta">
+          {state.beatsPerBar || 4}/{state.meterDenominator || 4} · bars {pageStartBar + 1}–{pageStartBar + BARS_VISIBLE}
+        </span>
+        <button
+          className="sd-midi-btn"
+          disabled={!canPrev}
+          onClick={() => setPageStartBar(Math.max(0, pageStartBar - BARS_VISIBLE))}
+        >‹ Prev</button>
+        <button
+          className="sd-midi-btn"
+          disabled={!canNext}
+          onClick={() => setPageStartBar(pageStartBar + BARS_VISIBLE)}
+        >Next ›</button>
         <div className="sd-midi-spacer" />
-        <button className="sd-midi-btn" onClick={() => dispatch({ type: 'CLEAR_CHORDS' })}>Clear</button>
+        <button className="sd-midi-btn" onClick={() => { dispatch({ type: 'CLEAR_CHORDS' }); setPageStartBar(0); }}>Clear</button>
       </div>
       <div className="sd-chords-grid">
         {cells.map((b) => {
-          const chord = chords[b];
+          const chord = filledChords[b];
           const bar = Math.floor(b / BEATS_PER_BAR);
           const beatInBar = b % BEATS_PER_BAR;
           const isBarStart = beatInBar === 0;
           const isPlaying = b === currentBeat;
+          // Only show the chord symbol on the beat where it *changes* or at
+          // the start of a bar — otherwise every beat would repeat the same
+          // label and the grid becomes noisy.
+          const showSymbol = chord && (chords[b] != null || isBarStart);
           return (
             <div
               key={b}
@@ -66,11 +139,11 @@ export default function StudioDevChords() {
               onClick={() => setEditingBeat(b)}
               onContextMenu={(e) => {
                 e.preventDefault();
-                if (chord) deleteChord(b);
+                if (chords[b]) deleteChord(b);
               }}
             >
               <span className="sd-chord-barlabel">{isBarStart ? bar + 1 : ''}</span>
-              <span className="sd-chord-symbol">{chord || '·'}</span>
+              <span className="sd-chord-symbol">{showSymbol ? chord : ''}</span>
             </div>
           );
         })}
