@@ -446,8 +446,20 @@ export class Pipeline {
     // Sweep frames: compute demand for all notes active at t, normalise
     // by col-sum per bin, and for each *edited* note write its share of
     // the complex STFT into that edit's scratch buffer.
-    const HARMONICS = 20;
-    const halfRatio = Math.pow(2, 2 / 12 / 2) - 1;  // "2-semitone full width" in bin terms
+    // Harmonic demand tuning: 20 harmonics at ±1 semitone each was too wide
+    // for polyphonic guitar. At 48 kHz / nFft=2048 the demand window for a
+    // 5th-harmonic of F#5 (bins ~74–84) overlaps heavily with the 4th
+    // harmonic of A5 (bins ~71–79). When those two notes are shifted by
+    // different deltas, the shared bins get pulled in opposite directions,
+    // producing ghost frequencies — the "glitchy artifacts over the original
+    // pitch" symptom on chord edits.
+    //
+    // 8 harmonics × ±0.5 semitone window keeps each note's spectral
+    // footprint concentrated near its own fundamental + low harmonics
+    // (where most of the audible energy lives) and dramatically reduces
+    // inter-harmonic bin sharing.
+    const HARMONICS = 8;
+    const halfRatio = Math.pow(2, 1 / 12 / 2) - 1;  // ±0.5 semitone window
     const binPerHz = nFft / sr;
 
     // Map: portionNote idx → edit slot (or -1 if not edited)
