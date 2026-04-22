@@ -89,13 +89,19 @@ function hitTestNote(notes, mx, my, cfg) {
     const w = Math.max(6, n.duration * cfg.pxPerSec);
     const h = cfg.rowH - 1;
     if (mx >= x && mx <= x + w && my >= y && my <= y + h) {
-      // Edge grab: right 6 px → resize end (duration), left 6 px →
-      // resize start (shifts time while keeping the far end pinned).
-      // Notes under ~14 px wide skip left-edge resize so both grabs
-      // don't overlap the centre.
+      // Edge grabs — resize duration (L/R) or stretch into a pitch chord (T/B):
+      //   right 6 px  → resize-right (extend duration)
+      //   left  6 px  → resize-left  (shift start, pin right edge)
+      //   top   4 px  → resize-top    (extend upward, creating a chord stack)
+      //   bottom 4 px → resize-bottom (extend downward, creating a chord stack)
+      // Horizontal edges win over vertical so short notes stay grabbable
+      // from the sides, and narrow-enough notes skip the left grab so
+      // both centre-ish zones don't overlap.
       const edge =
         mx >= x + w - 6 ? 'right'
         : (w > 14 && mx <= x + 6) ? 'left'
+        : (h > 14 && my <= y + 4) ? 'top'
+        : (h > 14 && my >= y + h - 4) ? 'bottom'
         : null;
       return { idx: i, note: n, edge };
     }
@@ -109,12 +115,7 @@ export default function StudioDevMidi() {
   const canvasRef  = useRef(null);
   const wrapRef    = useRef(null);
   const [size,    setSize]    = useState({ w: 800, h: 400 });
-  const [pxPerSec,setPxPerSec]= useState(96);    // X-axis pixel density
-  // Independent vertical zoom multiplier on top of the unified pxPerSec.
-  // 1 = square cells (Y matches cellSec*pxPerSec). Alt-scroll adjusts
-  // this so users can stretch the piano roll vertically without
-  // touching horizontal resolution.
-  const [rowScale,setRowScale]= useState(1);
+  const [pxPerSec,setPxPerSec]= useState(96);    // unified zoom — Y derives from X so cells stay square
   const [scrollX, setScrollX] = useState(0);
   const [scrollY, setScrollY] = useState(0);
   // Axis settings — placeholder UI for future custom quantization.
@@ -237,11 +238,9 @@ export default function StudioDevMidi() {
   const cellSec = beatSec / subdivision;
   const snapTime = (t) => Math.round(t / cellSec) * cellSec;
 
-  // Row height is square by default (cellSec × pxPerSec), then
-  // multiplied by rowScale so the user can stretch Y independently.
-  // Alt-scroll adjusts rowScale; plain Ctrl-scroll keeps rowScale=1
-  // (square). Min clamp avoids 1-px rows that can't render text.
-  const rowH = Math.max(6, Math.round(cellSec * pxPerSec * rowScale));
+  // Row height derives from the cell width so every cell is a perfect
+  // square. Unified zoom: Ctrl-scroll adjusts pxPerSec; rowH follows.
+  const rowH = Math.max(12, Math.round(cellSec * pxPerSec));
 
   // ---- Coords ----
   const cfg = { pxPerSec, rowH, maxPitch, minPitch, scrollX, scrollY };
@@ -272,12 +271,20 @@ export default function StudioDevMidi() {
       const mode =
         hit.edge === 'right' ? 'resize-right'
         : hit.edge === 'left' ? 'resize-left'
+        : hit.edge === 'top' ? 'stretch-up'
+        : hit.edge === 'bottom' ? 'stretch-down'
         : 'move';
       setDrag({
         mode,
         startClientX: e.clientX, startClientY: e.clientY,
         origNotes: notes.map((n) => ({ ...n })),
         indices: [...nextSel],
+        // For stretch modes: snapshot of the note being stretched so
+        // onMove can sync "extra" notes at adjacent pitches with the
+        // same time/duration. Extra note indices are tracked so they
+        // can be removed if the user drags back.
+        anchorIdx: hit.idx,
+        stretchExtras: [],
         moved: false,
       });
     } else {
@@ -342,6 +349,39 @@ export default function StudioDevMidi() {
           nxt[i].time = orig.time + clampedDt;
           nxt[i].duration = orig.duration - clampedDt;
         }
+      } else if (drag.mode === 'stretch-up' || drag.mode === 'stretch-down') {
+        // Vertical stretch — extend the anchor note into a chord by
+        // ADDING notes at adjacent pitches. dp (delta pitch in rows,
+        // positive = up) from the cursor delta. We rebuild the "extras"
+        // set every tick so dragging back collapses the chord cleanly.
+        const anchor = drag.origNotes[drag.anchorIdx];
+        if (anchor) {
+          const upwards = drag.mode === 'stretch-up';
+          const extraCount = upwards
+            ? Math.max(0, dp)          // dp > 0 when dragging up
+            : Math.max(0, -dp);        // -dp > 0 when dragging down
+          // Strip any prior extras from this gesture — we rebuild them.
+          const priorIds = new Set(drag.stretchExtras);
+          const base = nxt.filter((_, i) => !priorIds.has(i));
+          const freshExtras = [];
+          for (let k = 1; k <= extraCount; k++) {
+            const p = upwards
+              ? Math.min(maxPitch, anchor.note + k)
+              : Math.max(minPitch, anchor.note - k);
+            if (p === anchor.note) continue;  // clamped to existing pitch
+            freshExtras.push({
+              note: p,
+              time: anchor.time,
+              duration: anchor.duration,
+              velocity: anchor.velocity,
+            });
+          }
+          const rebuilt = [...base, ...freshExtras];
+          // Record the new extra indices (appended at the end).
+          drag.stretchExtras = freshExtras.map((_, k) => base.length + k);
+          commit(rebuilt);
+          return;
+        }
       }
       commit(nxt);
     };
@@ -390,7 +430,9 @@ export default function StudioDevMidi() {
       const c = canvasRef.current;
       const hit = hitTestNote(notes, mx, my, cfg);
       c.style.cursor = hit
-        ? (hit.edge ? 'ew-resize' : 'grab')
+        ? (hit.edge === 'left' || hit.edge === 'right' ? 'ew-resize'
+          : hit.edge === 'top' || hit.edge === 'bottom' ? 'ns-resize'
+          : 'grab')
         : (mx < KEYS_W || my < RULER_H ? 'default' : 'crosshair');
     }
   };
@@ -444,7 +486,10 @@ export default function StudioDevMidi() {
         const deltaPx = e.deltaMode === 1 ? e.deltaY * 16
                        : e.deltaMode === 2 ? e.deltaY * 400
                        : e.deltaY;
-        const step = Math.max(-0.25, Math.min(0.25, -deltaPx * 0.0015));
+        // Sensitivity 0.004: mouse wheel notch (100 px) → step 0.40,
+        // factor 1.40 — snappy like most DAWs. Trackpad pinch ticks
+        // (~10 px) → step 0.04, factor 1.04 — still smooth.
+        const step = Math.max(-0.4, Math.min(0.4, -deltaPx * 0.004));
         const factor = 1 + step;
         const newPxPerSec = Math.max(20, Math.min(800, pxPerSec * factor));
         // If the clamped factor rounded to a no-op, bail early so we
@@ -470,25 +515,28 @@ export default function StudioDevMidi() {
         setPxPerSec(newPxPerSec);
         setScrollX(nextScrollX);
         setScrollY(nextScrollY);
-      } else if (e.altKey) {
-        // Y-only zoom — stretch/squish rows without touching pxPerSec.
-        // Same linear-step formula as the unified zoom.
-        e.preventDefault();
-        const deltaPx = e.deltaMode === 1 ? e.deltaY * 16
-                       : e.deltaMode === 2 ? e.deltaY * 400
-                       : e.deltaY;
-        const step = Math.max(-0.25, Math.min(0.25, -deltaPx * 0.0015));
-        setRowScale((v) => Math.max(0.3, Math.min(6, v * (1 + step))));
       } else if (e.shiftKey) {
+        // Shift+wheel always pans X (single-axis mice without native
+        // horizontal scroll).
         e.preventDefault();
         setScrollX((v) => Math.max(0, v + e.deltaY / pxPerSec));
       } else {
+        // Trackpads + horizontal-capable mice report BOTH deltaX and
+        // deltaY on a single event, so we pan each axis independently:
+        // deltaX → scrollX, deltaY → scrollY. Previously deltaX was
+        // dropped, which is why users couldn't horizontal-scroll the
+        // piano roll at all on trackpads.
         e.preventDefault();
-        setScrollY((v) => {
-          const contentH = (maxPitch - minPitch + 1) * rowH;
-          const maxS = Math.max(0, contentH - (size.h - RULER_H));
-          return Math.max(0, Math.min(maxS, v + e.deltaY));
-        });
+        if (e.deltaX) {
+          setScrollX((v) => Math.max(0, v + e.deltaX / pxPerSec));
+        }
+        if (e.deltaY) {
+          setScrollY((v) => {
+            const contentH = (maxPitch - minPitch + 1) * rowH;
+            const maxS = Math.max(0, contentH - (size.h - RULER_H));
+            return Math.max(0, Math.min(maxS, v + e.deltaY));
+          });
+        }
       }
     };
     el.addEventListener('wheel', onWheelNative, { passive: false });
