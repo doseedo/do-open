@@ -13,7 +13,7 @@
  *   - thumbnail.jpg         (auto-generated thumbnail)
  */
 
-import * as gcsUploadService from './gcsUploadService';
+import * as r2UploadService from './r2UploadService';
 import { getCurrentUser } from './authService';
 
 /**
@@ -257,7 +257,7 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
 
     // Upload session.json (always — metadata changes every save).
     uploadPromises.push(
-      gcsUploadService.uploadToGCS(
+      r2UploadService.uploadToR2(
         sessionJsonFile,
         'session',
         {
@@ -281,7 +281,7 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
     // Upload only files that aren't cached.
     for (const trackFile of toUpload) {
       uploadPromises.push(
-        gcsUploadService.uploadToGCS(
+        r2UploadService.uploadToR2(
           trackFile.file,
           'session',
           {
@@ -307,7 +307,7 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
     // Upload video file if exists
     if (videoFile) {
       uploadPromises.push(
-        gcsUploadService.uploadToGCS(
+        r2UploadService.uploadToR2(
           videoFile.file,
           'session',
           {

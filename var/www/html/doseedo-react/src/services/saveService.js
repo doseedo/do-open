@@ -186,8 +186,7 @@ export async function saveToCloud(projectName, state, options = {}) {
       }
     }
 
-    // Export session to R2 (endpoint path kept as /api/upload/gcs for
-    // historical reasons — see uploads.py, storage is R2 under the hood).
+    // Export session to R2 via /api/upload/r2 (see uploads.py).
     const exportResult = await sessionExportService.exportSessionToGCS(
       state,
       projectName,

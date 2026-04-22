@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styles from './MySessions.module.css';
 import * as sessionAPI from '../../services/sessionAPI';
-import * as gcsUploadService from '../../services/gcsUploadService';
+import * as r2UploadService from '../../services/r2UploadService';
 
 /**
  * My Sessions Component
@@ -195,7 +195,7 @@ const UploadModal = ({ onClose, onUploadComplete }) => {
 
       // Upload files to GCS
       console.log('Uploading files to GCS...');
-      const uploadResults = await gcsUploadService.uploadMultipleToGCS(
+      const uploadResults = await r2UploadService.uploadMultipleToR2(
         files,
         formData.type,
         { sessionName: formData.name }
