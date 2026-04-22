@@ -1,233 +1,46 @@
-/* AUTO-GENERATED from /Users/hydroadmin/Downloads/Workbench Slides.html bundler template.
- * Scoped via `.wbDeck` ancestor + CSS-module :global() so the generic
- * selectors (.slide, .daw, .clip, etc.) can't leak into the app. */
+/* Text-only Workbench slideshow — matches the .slide__txt block from
+ * /Users/hydroadmin/Downloads/Do/home/stage2. No DAW stage, no 1920×1080
+ * canvas, no scaling. Just the eyebrow / headline / copy / meta list,
+ * cross-faded between slides.
+ *
+ * Selectors wrapped in :global() because the raw HTML from stage2 uses
+ * class names (.slide__eyebrow, .slide__h, .slide__copy, .slide__meta)
+ * that CSS modules would otherwise hash. Scoped under `.wbDeck` ancestor
+ * so they can't leak into the rest of the app.
+ */
 
 
+/* ---- Slide stage (stack of text blocks, only active is visible) ---- */
 
-:global(.wbDeck *), :global(.wbDeck *::before), :global(.wbDeck *::after) {box-sizing:border-box}
 
-:global(.wbDeck html), :global(.wbDeck body) {margin:0;padding:0;height:100%}
 
-:global(.wbDeck body) {background:#d9d6cf;color:var(--wb-ink);font-family:var(--sans);font-size:14px;-webkit-font-smoothing:antialiased}
+/* ---- Eyebrow (small label above headline) ---- */
 
-:global(.wbDeck button) {font:inherit;color:inherit;background:none;border:0;padding:0}
 
+/* ---- Headline ---- */
 
-:global(.wbDeck deck-stage) {--deck-bg:#d9d6cf}
 
+/* ---- Copy paragraph ---- */
 
+/* ---- Meta definition list (Input / Output / Latency / Engine, etc.) ---- */
 
 
 
 
+:global(.wbDeck .slide__meta dd .accent) { color: var(--wb-accent); }
+:global(.wbDeck .slide__meta dd .warm) { color: var(--wb-accent-warm); }
 
-:global(.wbDeck .slide__marker .dot) {width:6px;height:6px;background:var(--wb-ink);border-radius:50%}
+/* ---- Pagination dots ---- */
 
 
-
-:global(.wbDeck .slide__brand strong) {font-weight:500;color:var(--wb-ink)}
-
-:global(.wbDeck .slide__brand .sep) {color:var(--wb-ink-faint)}
-
-
-
-
-
-:global(.wbDeck .slide__eyebrow .bar) {width:28px;height:1px;background:var(--wb-accent)}
-
-
-
-
-
-
-
-:global(.wbDeck .slide__meta dd .accent) {color:var(--wb-accent)}
-
-:global(.wbDeck .slide__meta dd .warm) {color:var(--wb-accent-warm)}
-
-
-
-
-
-
-:global(.wbDeck .stage-label .sp) {flex:1;height:1px;background:var(--wb-rule)}
-
-
-
-
-
-
-
-:global(.wbDeck .daw__btn.on) {background:var(--wb-accent);color:#fff;border-color:var(--wb-accent)}
-
-
-
-:global(.wbDeck .daw__sep) {width:1px;height:22px;background:var(--wb-rule)}
-
-:global(.wbDeck .daw__bar .right) {margin-left:auto;display:flex;align-items:center;gap:8px}
-
-
-
-
-
-:global(.wbDeck .daw__ruler .ticks) {flex:1;position:relative}
-
-
-:global(.wbDeck .daw__ruler .t.major) {background:var(--wb-rule-strong)}
-
-
-
-
-:global(.wbDeck .daw__body) {flex:1;position:relative;overflow:hidden}
-
-
-
-
-
-
-
-
-
-
-
-:global(.wbDeck .clip__wave) {position:relative;flex:1;display:flex;align-items:center;gap:1px;height:70%;z-index:1}
-
-:global(.wbDeck .clip__wave i) {flex:1;background:var(--trk,var(--wb-ink));opacity:0.85;border-radius:0.5px}
-
-
-
-
-:global(.wbDeck .clip--dim) {opacity:0.35}
-
-:global(.wbDeck .clip--dim .clip__fill) {opacity:0.04}
-
-:global(.wbDeck .clip--dim .clip__wave i) {opacity:0.6}
-
-
-
-
-
-@keyframes :global(noise-wobble) {
-  0%,100%{height:30%}
-  25%{height:70%}
-  50%{height:45%}
-  75%{height:85%}
-}
-
-
-
-
-
-
-
-
-:global(.wbDeck .s1-fullmix .clip__wave i) {background:var(--wb-ink)}
-
-
-
-
-
-@keyframes :global(pulse) {
-  0%,100%{opacity:1;transform:scale(1)}
-  50%{opacity:0.3;transform:scale(0.8)}
-}
-
-
-
-
-
-
-:global(.wbDeck .panel__body) {padding:18px;flex:1;overflow:hidden}
-
-:global(.wbDeck .param) {margin-bottom:18px}
-
-
-
-
-:global(.wbDeck .param.active .param__val) {color:var(--wb-accent-warm)}
-
-
-
-:global(.wbDeck .param.active .param__fill) {background:var(--wb-accent)}
-
-
-:global(.wbDeck .param.active .param__knob) {border-color:var(--wb-accent-warm)}
-
-
-
-:global(.wbDeck .param__status .dot) {width:6px;height:6px;background:var(--wb-accent);animation:pulse 0.9s ease-in-out infinite}
-
-
-
-
-
-
-:global(.wbDeck .tabs .right) {margin-left:auto;padding:0 14px;display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;color:var(--wb-ink-mute);letter-spacing:0.8px;text-transform:uppercase}
-
-
-
-
-
-
-
-
-
-:global(.wbDeck .bigwave__before-after .pill.before) {color:var(--wb-ink-mute);background:var(--wb-bg)}
-
-:global(.wbDeck .bigwave__before-after .pill.after) {color:var(--wb-accent);background:var(--wb-surface);border-color:var(--wb-accent)}
-
-
-
-
-
-
-
-
-
-:global(.wbDeck .scene-card .rec .d) {width:6px;height:6px;background:var(--wb-accent-warm);border-radius:50%;animation:pulse 1.1s infinite}
-
-
-
-
-:global(.wbDeck .scene-chip:nth-child(1)) {animation-delay:0.1s}
-
-:global(.wbDeck .scene-chip:nth-child(2)) {animation-delay:0.25s}
-
-:global(.wbDeck .scene-chip:nth-child(3)) {animation-delay:0.4s}
-
-:global(.wbDeck .scene-chip:nth-child(4)) {animation-delay:0.55s}
-
-@keyframes :global(scene-pop) {to{opacity:1;transform:translateY(0)}}
-
-
-:global(.wbDeck .scene-chip__thumb svg) {position:relative;z-index:1}
-
-
-:global(.wbDeck .scene-chip__meta .bullet) {width:6px;height:6px;background:var(--c1)}
-
-
-
-
-
-
-
-
-:global(.wbDeck .slide__foot .left) {display:flex;gap:22px;align-items:center}
-
-:global(.wbDeck .slide__foot strong) {color:var(--wb-ink-soft);font-weight:500}
-
-
-
-
-
-
-:global(.wbDeck .ico) {width:14px;height:14px;display:inline-grid;place-items:center}
-
-:global(.wbDeck .ico svg) {width:100%;height:100%;display:block}
-
-
-/* ---- Host wrapper (fit 1920×1080 deck into dashboard strip) ---- */
-:global(.wbDeck .wbDeckViewport) { position: absolute; inset: 0; overflow: hidden; }
-:global(.wbDeck .wbDeckSlideWrap) { width: 1920px; height: 1080px; }
 :global(.wbDeck .wbDeckDot:hover) { background: var(--wb-ink-soft); }
 :global(.wbDeck .wbDeckDotActive) { background: var(--wb-ink); }
+
+/* ---- Responsive ---- */
+@media (max-width: 720px) {
+  :global(.wbDeck) { padding: 24px 20px 48px; }
+  :global(.wbDeck .slide__h) { font-size: 28px; letter-spacing: -0.6px; }
+  :global(.wbDeck .slide__copy) { font-size: 14px; }
+  :global(.wbDeck .slide__meta) { grid-template-columns: repeat(2, 1fr); }
+  :global(.wbDeck .wbDeckDots) { left: 20px; bottom: 18px; }
+}
