@@ -224,16 +224,16 @@ function classicalMasks(
   // Allocate one mask buffer per note.
   const masks: Float32Array[] = notes.map(() => new Float32Array(frames * bins));
 
-  // Harmonic amplitudes: flat-ish roll-off, 1/k normalised so Σ a_k = 1.
+  // Harmonic amplitudes: 1/k roll-off. We deliberately DO NOT divide by
+  // ampSum here — the old "Σ a_k = 1" normalisation made the fundamental
+  // weight ~0.37 (with 8 harmonics), so the subtract-then-re-add pitch
+  // shift only swapped ~37 % of the note's energy and the remaining 63 %
+  // of the original pitch sat on top of the shifted copy, leaving the
+  // result practically inaudible. With unnormalised amps the fundamental
+  // peaks at 1.0 · velocity; the per-(frame, bin) Σ-masks ≤ 1 clamp
+  // below still prevents multi-note overlap from over-subtracting.
   const amps = new Float32Array(nHarmonics);
-  let ampSum = 0;
-  for (let k = 0; k < nHarmonics; k++) {
-    amps[k] = 1 / (k + 1);
-    ampSum += amps[k];
-  }
-  if (ampSum > 0) {
-    for (let k = 0; k < nHarmonics; k++) amps[k] /= ampSum;
-  }
+  for (let k = 0; k < nHarmonics; k++) amps[k] = 1 / (k + 1);
 
   const binHz = sampleRate / nFft;
 
