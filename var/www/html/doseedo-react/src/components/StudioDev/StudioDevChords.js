@@ -150,41 +150,56 @@ export default function StudioDevChords() {
       </div>
 
       {/* Inline picker */}
-      {editingBeat != null && (
-        <div className="sd-chords-picker" onClick={(e) => e.stopPropagation()}>
-          <div className="sd-chord-picker-head">
-            <span className="sd-midi-kv-k">Beat {editingBeat + 1}</span>
-            <div className="sd-midi-spacer" />
-            <button className="sd-midi-btn" onClick={() => setEditingBeat(null)}>Done</button>
-          </div>
-          <div className="sd-chord-picker-row">
-            {ROOTS.map((r) => (
-              <button key={r} className="sd-chord-picker-btn"
+      {editingBeat != null && (() => {
+        const activeChord = filledChords[editingBeat] || null;
+        const activeRoot = activeChord ? (activeChord.match(/^[A-G]#?/)?.[0] || null) : null;
+        const activeQual = activeChord && activeRoot
+          ? activeChord.slice(activeRoot.length).split('/')[0]
+          : null;
+        return (
+          <div className="sd-chords-picker" onClick={(e) => e.stopPropagation()}>
+            <div className="sd-chord-picker-head">
+              <span className="sd-midi-kv-k">Beat {editingBeat + 1}</span>
+              <span className="sd-chord-picker-current">
+                {activeChord || '—'}
+              </span>
+              <div className="sd-midi-spacer" />
+              <button className="sd-midi-btn" onClick={() => setEditingBeat(null)}>Done</button>
+            </div>
+            <div className="sd-chord-picker-row">
+              {ROOTS.map((r) => (
+                <button
+                  key={r}
+                  className={`sd-chord-picker-btn ${r === activeRoot ? 'active' : ''}`}
+                  onClick={() => {
+                    const q = activeQual ?? QUALS[0];
+                    setChord(editingBeat, `${r}${q}`);
+                  }}
+                >{r}</button>
+              ))}
+            </div>
+            <div className="sd-chord-picker-row">
+              {QUALS.map((q) => (
+                <button
+                  key={q || 'maj'}
+                  className={`sd-chord-picker-btn ${q === activeQual ? 'active' : ''}`}
+                  onClick={() => {
+                    const root = activeRoot || 'C';
+                    setChord(editingBeat, `${root}${q}`);
+                  }}
+                >{q || 'maj'}</button>
+              ))}
+            </div>
+            <div className="sd-chord-picker-row">
+              <button className="sd-midi-btn sd-midi-danger"
                       onClick={() => {
-                        const q = QUALS[0];
-                        setChord(editingBeat, `${r}${q}`);
-                      }}>{r}</button>
-            ))}
+                        deleteChord(editingBeat);
+                        setEditingBeat(null);
+                      }}>Delete chord</button>
+            </div>
           </div>
-          <div className="sd-chord-picker-row">
-            {QUALS.map((q) => (
-              <button key={q || 'maj'} className="sd-chord-picker-btn"
-                      onClick={() => {
-                        const cur = chords[editingBeat] || 'C';
-                        const root = cur.match(/^[A-G]#?/)?.[0] || 'C';
-                        setChord(editingBeat, `${root}${q}`);
-                      }}>{q || 'maj'}</button>
-            ))}
-          </div>
-          <div className="sd-chord-picker-row">
-            <button className="sd-midi-btn sd-midi-danger"
-                    onClick={() => {
-                      deleteChord(editingBeat);
-                      setEditingBeat(null);
-                    }}>Delete chord</button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

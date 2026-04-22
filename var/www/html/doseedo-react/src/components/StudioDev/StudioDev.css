@@ -1802,6 +1802,17 @@ input[type=range].sd-midi-note-bend::-moz-range-thumb {
   cursor: pointer;
 }
 .sd-chord-picker-btn:hover { border-color: var(--hifi-accent); color: var(--hifi-accent); }
+.sd-chord-picker-btn.active {
+  border-color: var(--hifi-accent); color: var(--hifi-accent);
+  background: var(--hifi-accent-soft);
+}
+.sd-chord-picker-current {
+  font-family: var(--hifi-serif); font-size: 16px; font-weight: 600;
+  color: var(--hifi-accent); margin-left: 6px;
+  padding: 2px 10px; border: 1px solid var(--hifi-accent-soft); border-radius: 4px;
+  background: rgba(29, 76, 122, 0.08);
+  min-width: 48px; text-align: center;
+}
 
 /* ---------- Generate + Chat panels ---------- */
 .sd-overlay-narrow { width: min(60vw, 680px); height: min(75vh, 640px); }
