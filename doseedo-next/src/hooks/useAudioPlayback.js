@@ -293,20 +293,14 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
 
       const allTracks = [...voTracks, ...musicTracks, ...sfxTracks, ...drumTracks, ...midiAudioTracks, ...audioTracks];
 
-      console.log('🎵 Starting playback with', allTracks.length, 'tracks at playhead position', pauseTimeRef.current.toFixed(2), 's');
-
       // Check if any track has solo enabled
       const hasSoloTracks = allTracks.some(track => track.isSolo);
-      console.log(`🎚️ Solo mode: ${hasSoloTracks ? 'ACTIVE' : 'INACTIVE'}`);
 
       // Current playhead position in timeline (seconds)
       const currentPlayheadTime = pauseTimeRef.current;
 
       // Capture audioContext.currentTime ONCE to use as reference for all scheduling
       const schedulingStartTime = audioContext.currentTime;
-
-      console.log('🎬 Starting playback from position:', currentPlayheadTime.toFixed(2), 's');
-      console.log('⏱️  AudioContext time at scheduling start:', schedulingStartTime.toFixed(3), 's');
 
       // Establish the timeline origin BEFORE any async work. This ensures
       // the playhead advances the instant the user hits play even if no
@@ -526,8 +520,6 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         // Calculate final gain (bus gain * track gain)
         const finalGain = (track.gain || 1.0) * busGain;
 
-        console.log(`  🎛️ Track: ${track.name} | TrackGain: ${track.gain || 1.0} | BusGain: ${busGain} | FinalGain: ${finalGain.toFixed(2)} | Muted: ${track.isMuted}/${busMuted} | Solo: ${track.isSolo}/${busSolo} | ShouldPlay: ${shouldPlay}`);
-
         if (shouldPlay) {
           // Check if this is a drum track with multiple hits
           if (track.isDrumTrack && track.drumHits && track.drumHits.length > 0) {
@@ -647,11 +639,6 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       // startTimeRef + hasStartedPlaybackRef + updatePlayhead() were set
       // above, before any async work, so the timeline has already been
       // advancing while we iterated tracks.
-      console.log('⏱️  Playback timing:', {
-        schedulingStartTime: schedulingStartTime.toFixed(3),
-        startTimeRef: startTimeRef.current.toFixed(3),
-        playheadPosition: currentPlayheadTime.toFixed(3)
-      });
     } catch (error) {
       console.error('❌ Error starting playback:', error);
       dispatch({ type: 'SET_PLAYING', payload: false });
