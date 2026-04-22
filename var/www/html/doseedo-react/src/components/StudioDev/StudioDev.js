@@ -559,6 +559,29 @@ export default function StudioDev() {
           },
         },
       });
+      // Propagate detectedBpm/Meter onto any stem tracks that already
+      // exist. dispatchStrategy (virtualTrackEdit.js) reads these to know
+      // the source meter when building a keep/drop rearrange schedule;
+      // without them it falls back to project.bpm / project.meter and
+      // the schedule becomes identity (no rearrangement on meter change).
+      (stateRef.current.buses || []).forEach((bus) => {
+        (bus.tracks || []).forEach((track) => {
+          if (track?.metadata?.parentTrackId !== trackId) return;
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: {
+              busId: bus.id, trackId: track.id,
+              updates: {
+                metadata: {
+                  detectedBpm: ra.bpm,
+                  detectedMeter: ra.beatsPerBar,
+                  detectedMeterDenominator: ra.meterDenominator,
+                },
+              },
+            },
+          });
+        });
+      });
       console.log(`🎶 tempoMap extracted (${ra.tempoMap.length} entries, duration ${ra.duration?.toFixed(2)}s):`);
       console.log(formatTempoMap(ra.tempoMap));
     }).catch((err) => logPipeline('rhythm', `failed: ${err?.message || err}`, 'error'));
@@ -776,6 +799,20 @@ export default function StudioDev() {
       }
       logPipeline('separate', `${Object.keys(sep.stems).length} stems ready`, 'ok');
       const stemOnsets = sep.stem_onsets || {};
+      // If rhythm analysis already finished, grab the parent's detected
+      // meter so stems inherit it at creation. dispatchStrategy reads
+      // these to build the meter-change rearrange schedule — without
+      // them it has nothing to compare against the current project meter
+      // and playback falls back to identity. (Rhythm-analysis callback
+      // also back-fills these onto existing stems for the reverse case
+      // where stems arrive first.)
+      const parentMetaNow = (() => {
+        for (const bus of stateRef.current.buses || []) {
+          const p = (bus.tracks || []).find((t) => t.id === trackId);
+          if (p) return p.metadata || {};
+        }
+        return {};
+      })();
       const stemTracks = Object.entries(sep.stems).map(([stemName, audioUrl]) => ({
         id: `stem-${trackId}-${stemName}`,
         name: `${baseName} — ${stemName}`,
@@ -786,6 +823,13 @@ export default function StudioDev() {
           type: 'stem', stemType: stemName,
           parentTrackId: trackId, instrument: stemName,
           icon: iconForType(stemName),
+          // Copy the parent's source meter so virtualTrackEdit can build
+          // a rearrange schedule when the user flips meter. Undefined
+          // here is fine — the rhythm-analysis .then block will
+          // back-fill when it lands.
+          detectedBpm: parentMetaNow.detectedBpm,
+          detectedMeter: parentMetaNow.detectedMeter,
+          detectedMeterDenominator: parentMetaNow.detectedMeterDenominator,
           // Per-stem librosa onsets — consumed by
           // virtualTrackEdit.buildMelodicProtectedSchedule to gate bar
           // drops around sustained notes. Empty array = silent/no hits.
