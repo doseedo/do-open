@@ -337,14 +337,35 @@ export class Pipeline {
       const mask = masks[qi];
       if (!mask) continue;
       const maskFrames = Math.max(1, q.endFrame - q.startFrame);
+
+      // Diag: what does the mask actually look like? If sum/peak=0 the
+      // extract is silent before ISTFT even runs → classicalMasks didn't
+      // populate. If mask is non-zero but maskedRfft rms=0, it's a layout
+      // mismatch between mask and STFT. Either way we'll know.
+      let maskSum = 0, maskPeak = 0, maskNonzero = 0;
+      for (let j = 0; j < mask.length; j++) {
+        const v = mask[j]; if (v > 0) { maskSum += v; maskNonzero++; if (v > maskPeak) maskPeak = v; }
+      }
+
       const perChannelTime: Float32Array[] = [];
+      let firstMaskedRfftRms = 0;
       for (let c = 0; c < channels; c++) {
         const maskedRfft = NoteExtractor.applyMaskToComplex(
           cache.complexByChannel[c], mask, cache.nFrames, cache.bins, q.startFrame, maskFrames,
         );
+        if (c === 0) {
+          let s = 0; const N = Math.min(maskedRfft.length, 500000);
+          for (let i = 0; i < N; i++) s += maskedRfft[i] * maskedRfft[i];
+          firstMaskedRfftRms = Math.sqrt(s / Math.max(1, N));
+        }
         const time = await this.istftToTime(maskedRfft, cache.nFrames);
         perChannelTime.push(fitLength(time, cache.audio.frames));
       }
+      console.log(`  [extract] note=${note.id} vel=${q.velocity.toFixed(2)} `
+        + `startF=${q.startFrame} endF=${q.endFrame} maskFrames=${maskFrames} `
+        + `mask{sum=${maskSum.toFixed(2)}, peak=${maskPeak.toFixed(4)}, nonzero=${maskNonzero}} `
+        + `maskedRfft.rms=${firstMaskedRfftRms.toFixed(6)}`);
+
       const frames = cache.audio.frames;
       const samples = new Float32Array(frames * channels);
       samples.set(perChannelTime[0], 0);
