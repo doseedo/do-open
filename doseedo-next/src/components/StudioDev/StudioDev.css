@@ -1523,29 +1523,36 @@
 }
 
 /* Per-note bend + curve sliders, overlaid on the canvas next to the
- * selected multi-row note. */
-.sd-midi-note-bend,
-.sd-midi-note-curve {
+ * selected multi-row note.
+ * NOTE: selectors use input[type=range].<class> to BEAT the legacy
+ * `input[type=range]` rule in original-style5.css (which sets a dark
+ * #2a2a2a background + width:30% + height:7.2px and has attribute-
+ * selector specificity, which outranks a plain class). */
+input[type=range].sd-midi-note-bend,
+input[type=range].sd-midi-note-curve {
   position: absolute;
   margin: 0;
   padding: 0;
   background: transparent;
+  background-color: transparent;
+  border-radius: 0;
   pointer-events: auto;
   z-index: 4;
   cursor: pointer;
 }
-.sd-midi-note-curve {
-  /* horizontal slider directly below the note */
+
+/* Horizontal curve slider directly below the note. */
+input[type=range].sd-midi-note-curve {
   height: 10px;
   -webkit-appearance: none;
   appearance: none;
 }
-.sd-midi-note-curve::-webkit-slider-runnable-track {
+input[type=range].sd-midi-note-curve::-webkit-slider-runnable-track {
   height: 2px;
   background: rgba(21, 24, 28, 0.35);
   border-radius: 1px;
 }
-.sd-midi-note-curve::-webkit-slider-thumb {
+input[type=range].sd-midi-note-curve::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 10px; height: 10px;
   margin-top: -4px;
@@ -1554,12 +1561,12 @@
   border: 1px solid var(--wb-surface);
   cursor: pointer;
 }
-.sd-midi-note-curve::-moz-range-track {
+input[type=range].sd-midi-note-curve::-moz-range-track {
   height: 2px;
   background: rgba(21, 24, 28, 0.35);
   border-radius: 1px;
 }
-.sd-midi-note-curve::-moz-range-thumb {
+input[type=range].sd-midi-note-curve::-moz-range-thumb {
   width: 10px; height: 10px;
   border-radius: 50%;
   background: var(--wb-ink);
@@ -1568,27 +1575,21 @@
 }
 
 /* Vertical bend slider — modern spec is writing-mode: vertical-lr on
- * the input itself. (-webkit-appearance: slider-vertical was removed
- * from Chrome; the orient=vertical attribute alone is Firefox-only.)
- * With vertical writing-mode, width/height roles FLIP for pseudo-els:
- * `-webkit-slider-runnable-track { width }` becomes the horizontal
- * thickness of the track, `height` becomes the vertical travel.
- * direction: rtl puts value 0 at the bottom so up = more bend. */
-.sd-midi-note-bend {
+ * the input itself (slider-vertical was removed from Chrome). */
+input[type=range].sd-midi-note-bend {
   writing-mode: vertical-lr;
   direction: rtl;
   width: 14px;
-  background: transparent;
   -webkit-appearance: none;
-       appearance: none;
+  appearance: none;
 }
-.sd-midi-note-bend::-webkit-slider-runnable-track {
+input[type=range].sd-midi-note-bend::-webkit-slider-runnable-track {
   width: 2px;
   height: 100%;
   background: rgba(21, 24, 28, 0.35);
   border-radius: 1px;
 }
-.sd-midi-note-bend::-webkit-slider-thumb {
+input[type=range].sd-midi-note-bend::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 10px; height: 10px;
   margin-left: -4px;
@@ -1597,12 +1598,12 @@
   border: 1px solid var(--wb-surface);
   cursor: pointer;
 }
-.sd-midi-note-bend::-moz-range-track {
+input[type=range].sd-midi-note-bend::-moz-range-track {
   width: 2px;
   background: rgba(21, 24, 28, 0.35);
   border-radius: 1px;
 }
-.sd-midi-note-bend::-moz-range-thumb {
+input[type=range].sd-midi-note-bend::-moz-range-thumb {
   width: 10px; height: 10px;
   border-radius: 50%;
   background: var(--wb-ink);
