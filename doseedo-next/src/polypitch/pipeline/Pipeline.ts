@@ -351,6 +351,26 @@ export class Pipeline {
         const v = mask[j]; if (v > 0) { maskSum += v; maskNonzero++; if (v > maskPeak) maskPeak = v; }
       }
 
+      // RMS of the cached STFT WITHIN the note's window. If this is 0 while
+      // the global cachedSTFT.rms (first ~244 frames) is non-zero, the STFT
+      // pipeline only populated the intro — most of the song's STFT is
+      // empty. That'd make mask × STFT = 0 for any note past frame ~244.
+      let stftWinSumSq = 0, magWinSumSq = 0, winSamples = 0;
+      const bins_ = cache.bins;
+      const sEnd = Math.min(q.endFrame, cache.nFrames);
+      for (let t = q.startFrame; t < sEnd; t++) {
+        for (let b = 0; b < bins_; b++) {
+          const re = cache.complexByChannel[0][t * bins_ * 2 + b * 2];
+          const im = cache.complexByChannel[0][t * bins_ * 2 + b * 2 + 1];
+          stftWinSumSq += re * re + im * im;
+          const mv = cache.magByChannel[0][t * bins_ + b];
+          magWinSumSq += mv * mv;
+          winSamples++;
+        }
+      }
+      const stftWinRms = Math.sqrt(stftWinSumSq / Math.max(1, winSamples));
+      const magWinRms = Math.sqrt(magWinSumSq / Math.max(1, winSamples));
+
       const perChannelTime: Float32Array[] = [];
       let firstMaskedRfftRms = 0;
       for (let c = 0; c < channels; c++) {
@@ -368,6 +388,7 @@ export class Pipeline {
       console.log(`  [extract] note=${note.id} vel=${q.velocity.toFixed(2)} `
         + `startF=${q.startFrame} endF=${q.endFrame} maskFrames=${maskFrames} `
         + `mask{sum=${maskSum.toFixed(2)}, peak=${maskPeak.toFixed(4)}, nonzero=${maskNonzero}} `
+        + `stft@win.rms=${stftWinRms.toFixed(5)} mag@win.rms=${magWinRms.toFixed(5)} `
         + `maskedRfft.rms=${firstMaskedRfftRms.toFixed(6)}`);
 
       const frames = cache.audio.frames;
