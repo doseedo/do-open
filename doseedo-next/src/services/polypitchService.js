@@ -133,6 +133,19 @@ export async function renderWithNewPitches({ audioUrl, notes, newPitches }) {
     return null;
   }
 
+  // Show the actual semitone deltas so we can see whether a chord edit
+  // produces audible shifts or just tiny ±1 semitone nudges (e.g. the
+  // new chord shares most of its tones with the underlying audio).
+  const deltaHist = edits.reduce((acc, e) => {
+    acc[e.semitones] = (acc[e.semitones] || 0) + 1;
+    return acc;
+  }, {});
+  const deltaSummary = Object.entries(deltaHist)
+    .sort((a, b) => parseInt(a[0], 10) - parseInt(b[0], 10))
+    .map(([s, n]) => `${s > 0 ? '+' : ''}${s}st×${n}`)
+    .join(' ');
+  logPipeline('polypitch', `deltas: ${deltaSummary}`);
+
   logPipeline('polypitch', `loading audio…`);
   const audio = await loadAudioBuffer(audioUrl);
 
