@@ -1171,7 +1171,7 @@ export default function StudioDev() {
         oldChord: prev[k] || null,
         newChord: next[k] || null,
         pitchedStemTracks,
-        tempo: { beatMap: state.beatMap, bpm: state.bpm || 120 },
+        tempo: { beatMap: state.beatMap, bpm: state.bpm || 120, beatsPerBar: state.beatsPerBar || 4 },
         onTrackAudioReady: (trackId, busId, newUrl) => {
           dispatch({
             type: 'UPDATE_TRACK',

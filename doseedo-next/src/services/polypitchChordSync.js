@@ -20,19 +20,26 @@ import { notesFromMidiData, renderWithNewPitches } from './polypitchService';
 import { voiceLeadForChordChange } from './polypitchVoicing';
 
 /**
- * Resolve a beatIndex to a [startSec, endSec] window. Prefers the actual
- * beat_map times when analyze-rhythm has populated one; falls back to a
- * constant-tempo grid when not.
+ * Resolve a beatIndex to a [startSec, endSec] window — the full BAR
+ * containing `beatIndex`, not just the single beat. At 112 BPM a beat
+ * window is ~0.54 s, and most pop stems (especially "other") only have
+ * one note every ~1.5–2 s after BasicPitch refinement, so a single-beat
+ * window often caught zero notes on the tonal stems that actually carry
+ * the chord. Widening to one bar reliably captures 2–4 notes per stem
+ * and, musically, a chord change is anchored at bar boundaries anyway.
  */
-function beatWindowSec(beatIndex, { beatMap, bpm }) {
+function beatWindowSec(beatIndex, { beatMap, bpm, beatsPerBar = 4 }) {
   const i = Math.max(0, beatIndex | 0);
+  const barStartBeat = Math.floor(i / beatsPerBar) * beatsPerBar;
+  const barEndBeat = barStartBeat + beatsPerBar;
   if (Array.isArray(beatMap) && beatMap.length > 0) {
-    const t0 = beatMap[i]?.t ?? beatMap[beatMap.length - 1].t;
-    const t1 = beatMap[i + 1]?.t ?? t0 + (bpm > 0 ? 60 / bpm : 0.5);
+    const t0 = beatMap[barStartBeat]?.t ?? beatMap[beatMap.length - 1].t;
+    const t1 = beatMap[barEndBeat]?.t
+      ?? (beatMap[beatMap.length - 1].t + (bpm > 0 ? 60 / bpm : 0.5));
     return [t0, t1];
   }
   const sec = bpm > 0 ? 60 / bpm : 0.5;
-  return [i * sec, (i + 1) * sec];
+  return [barStartBeat * sec, barEndBeat * sec];
 }
 
 const _renderVersionByTrackId = new Map();
