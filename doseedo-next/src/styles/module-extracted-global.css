@@ -666,48 +666,21 @@
   color: var(--wb-ink);
 }
 
-.wbDeck .wbDeckViewport {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-}
-
 .wbDeck .wbDeckStage {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 1920px;
-  height: 1080px;
+  position: absolute; left: 50%; top: 50%;
+  width: 1920px; height: 1080px;
   transform-origin: center center;
-  /* transform is set inline from JS (fit-to-container scale) */
-}
-
-.wbDeck .wbDeckSlideWrap {
-  width: 1920px;
-  height: 1080px;
 }
 
 .wbDeck .wbDeckDots {
-  position: absolute;
-  left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 8px;
-  z-index: 10;
-  padding: 6px 10px;
-  background: rgba(232, 230, 225, 0.75);
-  border: 1px solid var(--wb-rule);
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  display: flex; gap: 8px; z-index: 10; padding: 6px 10px;
+  background: rgba(232, 230, 225, 0.75); border: 1px solid var(--wb-rule);
   backdrop-filter: blur(6px);
 }
 
 .wbDeck .wbDeckDot {
-  width: 18px;
-  height: 4px;
-  border: 0;
-  background: var(--wb-rule-strong);
-  cursor: pointer;
-  padding: 0;
-  transition: background 0.15s;
+  width: 18px; height: 4px; border: 0; background: var(--wb-rule-strong);
+  cursor: pointer; padding: 0; transition: background 0.15s;
 }
 

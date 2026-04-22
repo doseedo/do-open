@@ -1,7 +1,6 @@
-/* AUTO-GENERATED from /Users/hydroadmin/Downloads/Workbench Slides.html.
- * Do not edit by hand — re-run the extraction script in DASHBOARD-NOTES.md.
- * Scoped via `.wbDeck` ancestor + CSS-module :global() so the hundreds of
- * generic selectors (.slide, .daw, .clip, etc.) can't leak into the app. */
+/* AUTO-GENERATED from /Users/hydroadmin/Downloads/Workbench Slides.html bundler template.
+ * Scoped via `.wbDeck` ancestor + CSS-module :global() so the generic
+ * selectors (.slide, .daw, .clip, etc.) can't leak into the app. */
 
 
 
@@ -198,7 +197,7 @@
 
 :global(.wbDeck .scene-chip:nth-child(4)) {animation-delay:0.55s}
 
-@keyframes :global(scene-pop{to) {opacity:1;transform:translateY(0)}}
+@keyframes :global(scene-pop) {to{opacity:1;transform:translateY(0)}}
 
 
 :global(.wbDeck .scene-chip__thumb svg) {position:relative;z-index:1}
@@ -228,5 +227,7 @@
 
 
 /* ---- Host wrapper (fit 1920×1080 deck into dashboard strip) ---- */
+:global(.wbDeck .wbDeckViewport) { position: absolute; inset: 0; overflow: hidden; }
+:global(.wbDeck .wbDeckSlideWrap) { width: 1920px; height: 1080px; }
 :global(.wbDeck .wbDeckDot:hover) { background: var(--wb-ink-soft); }
 :global(.wbDeck .wbDeckDotActive) { background: var(--wb-ink); }
