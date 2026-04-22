@@ -517,11 +517,26 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         })();
       };
 
+      const hasPolypitchStem = allTracks.some(
+        (t) => t.metadata?.type === 'stem' && t.metadata?.polypitchRendered
+      );
+
       // ── Mask-based playback for stem tracks ──────────────────────
       // If mask playback is ready, stem tracks play through the worklet
       // (master audio + spectral masks) instead of individual decoded buffers.
       // This gives master-quality audio with no decoder overhead.
-      const useMaskPlayback = isMaskPlaybackReady();
+      //
+      // IMPORTANT: when ANY stem has been re-rendered by polypitch, disable
+      // mask playback for the whole pass and route everything through the
+      // regular audioUrl scheduler. Even with per-stem gains at 0, the worklet
+      // can still color or leak the original content enough to mask the
+      // edited stem. For polypitch correctness, plain decoded-buffer playback
+      // wins over master-mask fidelity.
+      const useMaskPlayback = isMaskPlaybackReady() && !hasPolypitchStem;
+      if (!useMaskPlayback && isMaskPlaybackReady() && hasPolypitchStem) {
+        console.log('🎭 Mask playback bypassed: polypitch-rendered stem present; scheduling all tracks from audioUrl');
+        maskStop();
+      }
       if (useMaskPlayback) {
         // Collect stem track gains and solo/mute state.
         // Stems that polypitch has re-rendered carry metadata.polypitchRendered:
