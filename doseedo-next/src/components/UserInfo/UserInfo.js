@@ -118,6 +118,47 @@ const UserInfo = ({ onLogout }) => {
     window.location.href = '/';
   };
 
+  // --- Guest state ----------------------------------------------------
+  // No signed-in user: strip the profile editor, library tabs, and logout
+  // button (all useless without a user). Show one clear sign-in CTA and
+  // a short list of what signing in unlocks.
+  if (!userInfo) {
+    return (
+      <div className={styles.userInfoContainer}>
+        <div className={styles.userInfoHeader}>
+          <h1 className={styles.userInfoTitle}>Account</h1>
+          <p className={styles.userInfoSubtitle}>You're browsing as a guest.</p>
+        </div>
+
+        <div className={styles.guestCard}>
+          <div className={styles.guestIcon}>
+            <i className="fa-solid fa-user"></i>
+          </div>
+          <h2 className={styles.guestHeading}>Sign in to doseedo</h2>
+          <p className={styles.guestBody}>
+            Save your projects to the cloud, publish creations, like and
+            favorite plugins, and pick up where you left off on any device.
+          </p>
+          <div className={styles.guestActions}>
+            <button
+              className={styles.guestSignInBtn}
+              onClick={() => { window.location.href = '/sign-in'; }}
+            >
+              <i className="fa-solid fa-arrow-right-to-bracket"></i>
+              Sign in
+            </button>
+            <button
+              className={styles.guestSignUpBtn}
+              onClick={() => { window.location.href = '/sign-up'; }}
+            >
+              Create account
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.userInfoContainer}>
       <div className={styles.userInfoHeader}>

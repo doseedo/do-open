@@ -1,5 +1,78 @@
 /* UserInfo Component Styles */
 
+/* ── Guest state ────────────────────────────────────────────────── */
+.guestCard {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(186, 156, 255, 0.2);
+  border-radius: 16px;
+  padding: 56px 48px;
+  max-width: 520px;
+  margin: 40px auto;
+  text-align: center;
+}
+.guestIcon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(186, 156, 255, 0.25), rgba(156, 130, 200, 0.15));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 24px;
+  font-size: 28px;
+  color: rgba(186, 156, 255, 0.85);
+}
+.guestHeading {
+  font-size: 24px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 12px;
+  letter-spacing: -0.3px;
+}
+.guestBody {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.55;
+  margin: 0 auto 28px;
+  max-width: 380px;
+}
+.guestActions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.guestSignInBtn,
+.guestSignUpBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, color 120ms;
+  font-family: inherit;
+}
+.guestSignInBtn {
+  background: linear-gradient(135deg, rgba(186, 156, 255, 0.9), rgba(156, 130, 200, 0.85));
+  color: #fff;
+  border: 1px solid rgba(186, 156, 255, 0.5);
+}
+.guestSignInBtn:hover {
+  background: linear-gradient(135deg, rgba(186, 156, 255, 1), rgba(156, 130, 200, 0.95));
+}
+.guestSignUpBtn {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.guestSignUpBtn:hover {
+  border-color: rgba(186, 156, 255, 0.6);
+  color: #fff;
+}
+
 .userInfoContainer {
   width: 80%;
   max-width: 1000px;
