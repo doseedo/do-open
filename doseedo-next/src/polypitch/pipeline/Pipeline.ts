@@ -702,16 +702,17 @@ interface PortionNote {
  * Clean shift — no phase-vocoder artefacts — because the signal is already
  * single-note-isolated by spectral portion allocation.
  *
- * For pitch-up the resampled segment is shorter by 1/ratio, so the note tail
- * ends ~1/ratio earlier; the gap is inaudible at chord-edit granularity.
- * For pitch-down the segment is longer by ratio and the tail runs past the
- * original endSec into following silence.
+ * Caller pattern is `base -= original; base += shifted`. For ratio > 1 the
+ * resampled output length (segLen/ratio) is SHORTER than the extracted
+ * range, so if `shifted` were zero in that gap the subtract-without-add
+ * would create an audible volume dip / click (measured ~15 % rms drop in
+ * /tmp/polypitch-test/verify_algo.js). Fix: the returned buffer EQUALS the
+ * extracted `original` in the unshifted tail so subtract+add cancel there.
+ * A short cosine crossfade (10 ms) between shifted and original hides the
+ * pitch jump at the transition point.
  *
- * The read range extends `STFT_N_FFT` samples past note.endSec so the
- * natural sqrt-Hann OLA taper of the extracted ISTFT signal is included in
- * the resample — otherwise the shifted output stops abruptly mid-taper and
- * produces a click when summed back against the master (which has the full
- * taper subtracted).
+ * Read range extends STFT_N_FFT past note.endSec so the natural sqrt-Hann
+ * OLA taper of the extracted ISTFT is included in the resample.
  */
 function pitchShiftByResample(
   note: Note,
@@ -723,7 +724,12 @@ function pitchShiftByResample(
   const channels = original.channels;
   const startSample = Math.max(0, Math.floor(note.startSec * sampleRate));
   const coreEnd = Math.min(frames, Math.ceil(note.endSec * sampleRate));
-  const endSample = Math.min(frames, coreEnd + STFT_N_FFT);
+  // The extracted ISTFT signal has OLA content that extends about 2×nFft
+  // past coreEnd (nFft from the last STFT frame's window + nFft from the
+  // PAD_FRAMES zero-padding tail). Reading only +nFft leaves a residual
+  // non-zero extract in the "unshifted tail", which creates a small jump
+  // at endSample+1 where out falls back to 0.
+  const endSample = Math.min(frames, coreEnd + 2 * STFT_N_FFT);
   const segLen = Math.max(0, endSample - startSample);
 
   const out = new Float32Array(frames * channels);
@@ -731,14 +737,22 @@ function pitchShiftByResample(
     return { samples: out, channels, sampleRate, frames };
   }
 
-  // Resampled segment length. Pitch-up (ratio > 1) compresses time.
-  const shiftedLen = Math.max(1, Math.round(segLen / ratio));
+  // Pitch-up (ratio > 1) compresses time. Shifted covers [0, shiftedLen)
+  // of the extracted range; the gap [shiftedLen, segLen) is filled with
+  // the extracted original so the caller's subtract-add cancels there.
+  const shiftedLen = Math.max(1, Math.min(segLen, Math.round(segLen / ratio)));
+  const CROSSFADE_SAMPLES = Math.min(
+    Math.floor(0.01 * sampleRate),   // 10 ms
+    Math.floor(shiftedLen / 4),
+    Math.floor((segLen - shiftedLen) / 2 + shiftedLen / 4),
+  );
 
   for (let c = 0; c < channels; c++) {
     const srcOff = c * frames;
     const dstOff = c * frames;
-    // Linear-interp resample: out[n] = src[start + n*ratio]. Cheap and
-    // sufficient — the note signal is already band-limited by the STFT/ISTFT.
+    const src = original.samples;
+
+    // Resampled (pitch-shifted) portion.
     for (let n = 0; n < shiftedLen; n++) {
       const t = n * ratio;
       const i0 = Math.floor(t);
@@ -746,11 +760,55 @@ function pitchShiftByResample(
       const s0 = startSample + i0;
       const s1 = s0 + 1;
       if (s0 >= endSample) break;
-      const a = original.samples[srcOff + s0];
-      const b = s1 < endSample ? original.samples[srcOff + s1] : 0;
+      const a = src[srcOff + s0];
+      const b = s1 < endSample ? src[srcOff + s1] : 0;
       const writeIdx = dstOff + startSample + n;
       if (writeIdx >= dstOff + frames) break;
       out[writeIdx] = a + (b - a) * frac;
+    }
+
+    // Unshifted tail: copy the extracted original so subtract+add cancel.
+    for (let n = shiftedLen; n < segLen; n++) {
+      const readIdx = srcOff + startSample + n;
+      const writeIdx = dstOff + startSample + n;
+      if (readIdx >= srcOff + frames || writeIdx >= dstOff + frames) break;
+      out[writeIdx] = src[readIdx];
+    }
+
+    // Crossfade shifted→original around sample shiftedLen to hide the
+    // pitch-jump boundary. Symmetric: (shiftedLen - CF/2) .. (shiftedLen + CF/2).
+    if (CROSSFADE_SAMPLES > 2) {
+      const cfHalf = Math.floor(CROSSFADE_SAMPLES / 2);
+      const cfStart = shiftedLen - cfHalf;
+      const cfEnd = shiftedLen + cfHalf;
+      for (let n = cfStart; n < cfEnd; n++) {
+        if (n < 0 || n >= segLen) continue;
+        const writeIdx = dstOff + startSample + n;
+        const readOrig = srcOff + startSample + n;
+        if (writeIdx >= dstOff + frames || readOrig >= srcOff + frames) break;
+        // Shifted value at this n (recompute — `out` currently holds it
+        // for n < shiftedLen, but for n >= shiftedLen it holds original).
+        let shiftedVal: number;
+        if (n < shiftedLen) {
+          shiftedVal = out[writeIdx];
+        } else {
+          const t = n * ratio;
+          const i0 = Math.floor(t);
+          const frac = t - i0;
+          const s0 = startSample + i0;
+          if (s0 >= endSample) shiftedVal = 0;
+          else {
+            const a = src[srcOff + s0];
+            const b = s0 + 1 < endSample ? src[srcOff + s0 + 1] : 0;
+            shiftedVal = a + (b - a) * frac;
+          }
+        }
+        const origVal = src[readOrig];
+        // Half-cosine: alpha goes from 1→0 across the crossfade
+        const u = (n - cfStart) / CROSSFADE_SAMPLES;
+        const alpha = 0.5 + 0.5 * Math.cos(Math.PI * u);
+        out[writeIdx] = alpha * shiftedVal + (1 - alpha) * origVal;
+      }
     }
   }
 

@@ -2513,3 +2513,296 @@
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ============================================================
+ * Workbench theme for the plugin editor/creator.
+ * Modeled after /Users/hydroadmin/Downloads/do (5)/daw/plugins/
+ * editor-shared.css — cream chrome around the dark canvas, LCD
+ * strips, mono labels, bordered inline-flex toolbars. Active
+ * only when body.workbench-theme is set so legacy routes keep
+ * their original look.
+ * ============================================================ */
+
+:global(body.workbench-theme) .creator,
+:global(body.workbench-theme) .creatorLayout {
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+}
+
+/* Top bar — bordered inline-flex rail with mono labels */
+:global(body.workbench-theme) .topBar {
+  background: var(--wb-surface);
+  border-bottom: 1px solid var(--wb-rule);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .topBarBtn {
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-rule);
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  border-radius: 0;
+}
+
+:global(body.workbench-theme) .topBarBtn:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+  border-color: var(--wb-rule-strong);
+}
+
+:global(body.workbench-theme) .topBarBtn.topBarBtnActive,
+:global(body.workbench-theme) .topBarBtnActive {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  border-color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .topBarDivider {
+  background: var(--wb-rule);
+}
+
+:global(body.workbench-theme) .topBarActions {
+  color: var(--wb-ink-soft);
+}
+
+/* Back btn */
+:global(body.workbench-theme) .backBtn {
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-rule);
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  border-radius: 0;
+}
+:global(body.workbench-theme) .backBtn:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+/* Mode toggle (bordered inline-flex buttons) */
+:global(body.workbench-theme) .modeToggle {
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  border-radius: 0;
+  padding: 0;
+  overflow: hidden;
+}
+:global(body.workbench-theme) .modeBtn {
+  background: transparent;
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  border: 0;
+  border-right: 1px solid var(--wb-rule);
+  border-radius: 0;
+}
+:global(body.workbench-theme) .modeToggle .modeBtn:last-child {
+  border-right: 0;
+}
+:global(body.workbench-theme) .modeBtn:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+:global(body.workbench-theme) .modeBtn.modeBtnActive,
+:global(body.workbench-theme) .modeBtnActive {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+}
+
+/* Chat tabs */
+:global(body.workbench-theme) .chatTabBar {
+  background: var(--wb-surface);
+  border-bottom: 1px solid var(--wb-rule);
+}
+:global(body.workbench-theme) .chatTab {
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  background: transparent;
+  border: 0;
+}
+:global(body.workbench-theme) .chatTab:hover {
+  color: var(--wb-ink);
+  background: var(--wb-surface-2);
+}
+:global(body.workbench-theme) .chatTab.chatTabActive,
+:global(body.workbench-theme) .chatTabActive {
+  color: var(--wb-ink);
+  background: var(--wb-bg);
+  border-bottom: 2px solid var(--wb-accent);
+}
+
+:global(body.workbench-theme) .chatPanel {
+  background: var(--wb-surface);
+  border-left: 1px solid var(--wb-rule);
+  color: var(--wb-ink);
+}
+
+/* Canvas panel (darker background kept — canvas is the plugin) */
+:global(body.workbench-theme) .canvasPanel {
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  border-radius: 0;
+}
+
+:global(body.workbench-theme) .canvasBody {
+  background: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .canvasToggle {
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  border-radius: 0;
+  overflow: hidden;
+}
+:global(body.workbench-theme) .canvasToggleBtn {
+  background: transparent;
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  border: 0;
+  border-right: 1px solid var(--wb-rule);
+  border-radius: 0;
+}
+:global(body.workbench-theme) .canvasToggle .canvasToggleBtn:last-child {
+  border-right: 0;
+}
+:global(body.workbench-theme) .canvasToggleBtn:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+:global(body.workbench-theme) .canvasToggleBtn.canvasToggleBtnActive,
+:global(body.workbench-theme) .canvasToggleBtnActive {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+}
+
+/* Config bar */
+:global(body.workbench-theme) .configBar {
+  background: var(--wb-surface);
+  border-bottom: 1px solid var(--wb-rule);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+:global(body.workbench-theme) .configLabel {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+:global(body.workbench-theme) .configInput,
+:global(body.workbench-theme) .configInputSmall {
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-rule);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  border-radius: 0;
+}
+:global(body.workbench-theme) .configInput:focus,
+:global(body.workbench-theme) .configInputSmall:focus {
+  border-color: var(--wb-ink);
+  outline: 0;
+}
+
+/* Modals (welcome card, code modal, etc.) */
+:global(body.workbench-theme) .modalOverlay {
+  background: rgba(21, 24, 28, 0.55);
+}
+:global(body.workbench-theme) .modalContent,
+:global(body.workbench-theme) .codeModalContent,
+:global(body.workbench-theme) .welcomeCard {
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  color: var(--wb-ink);
+  border-radius: 0;
+  box-shadow: var(--wb-shadow-lg);
+}
+
+:global(body.workbench-theme) .welcomeBadge {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  border-radius: 0;
+  padding: 3px 8px;
+}
+
+/* Zoom bar / floating toolbars */
+:global(body.workbench-theme) .zoomBar {
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  border-radius: 0;
+}
+
+/* Background thumb picker */
+:global(body.workbench-theme) .bgThumbWrap {
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+}
+:global(body.workbench-theme) .bgThumb {
+  border: 1px solid var(--wb-rule);
+}
+:global(body.workbench-theme) .bgImageBtn,
+:global(body.workbench-theme) .bgClearBtn {
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-rule);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  border-radius: 0;
+}
+:global(body.workbench-theme) .bgImageBtn:hover,
+:global(body.workbench-theme) .bgClearBtn:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+  border-color: var(--wb-rule-strong);
+}
+
+/* Properties / layers column */
+:global(body.workbench-theme) .canvasWithProps {
+  background: var(--wb-bg);
+}
+:global(body.workbench-theme) .resizeHandle {
+  background: var(--wb-rule);
+}
+:global(body.workbench-theme) .resizeHandle:hover {
+  background: var(--wb-rule-strong);
+}
+
+/* Color picker + grid select */
+:global(body.workbench-theme) .colorPicker,
+:global(body.workbench-theme) .gridSelect {
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  border-radius: 0;
+}
+
+/* Empty canvas hint */
+:global(body.workbench-theme) .emptyCanvasHint {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+}

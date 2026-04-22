@@ -705,3 +705,181 @@
   min-width: 0;
   overflow: hidden;
 }
+
+/* ============================================================
+ * Workbench theme for the DSP editor side of the plugin creator.
+ * Active only when body.workbench-theme is set. Matches the
+ * design export's editor chrome — cream panels, mono labels,
+ * bordered inline-flex toolbars, no rounded corners.
+ * ============================================================ */
+
+:global(body.workbench-theme) .chainArea {
+  background: var(--wb-bg);
+}
+
+/* Panels + detail inspectors */
+:global(body.workbench-theme) .detailPanel,
+:global(body.workbench-theme) .bindingsSection {
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  border-radius: 0;
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .detailHeader {
+  background: var(--wb-surface-2);
+  border-bottom: 1px solid var(--wb-rule);
+  font-family: var(--wb-font-mono);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .detailId {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+:global(body.workbench-theme) .detailIdInput,
+:global(body.workbench-theme) .detailParamInput,
+:global(body.workbench-theme) .detailParamSelect,
+:global(body.workbench-theme) .bindSelect {
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-rule);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+  border-radius: 0;
+}
+
+:global(body.workbench-theme) .detailIdInput:focus,
+:global(body.workbench-theme) .detailParamInput:focus,
+:global(body.workbench-theme) .detailParamSelect:focus,
+:global(body.workbench-theme) .bindSelect:focus {
+  border-color: var(--wb-ink);
+  outline: 0;
+}
+
+:global(body.workbench-theme) .detailParamLabel {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+:global(body.workbench-theme) .detailParamUnit {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.4px;
+}
+
+:global(body.workbench-theme) .detailParamRow {
+  border-bottom: 1px dashed var(--wb-rule);
+}
+
+:global(body.workbench-theme) .detailSection {
+  border-top: 1px solid var(--wb-rule);
+  padding-top: 10px;
+}
+
+:global(body.workbench-theme) .bindingsTitle {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+:global(body.workbench-theme) .bindingItem {
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-rule);
+  border-radius: 0;
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .bindingDot {
+  background: var(--wb-accent);
+}
+
+:global(body.workbench-theme) .bindingArrow,
+:global(body.workbench-theme) .arrow {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .bindingTarget {
+  color: var(--wb-ink-soft);
+}
+
+/* Add buttons */
+:global(body.workbench-theme) .addParamBtn,
+:global(body.workbench-theme) .createBtn {
+  background: var(--wb-ink);
+  border: 1px solid var(--wb-ink);
+  color: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  border-radius: 0;
+}
+
+:global(body.workbench-theme) .addParamBtn:hover,
+:global(body.workbench-theme) .createBtn:hover {
+  background: #000;
+}
+
+/* Add menu (pop-up node picker) */
+:global(body.workbench-theme) .addMenu {
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  border-radius: 0;
+  box-shadow: var(--wb-shadow-lg);
+}
+
+:global(body.workbench-theme) .addMenuSearch {
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-rule);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  border-radius: 0;
+}
+
+:global(body.workbench-theme) .addMenuList {
+  background: transparent;
+}
+
+:global(body.workbench-theme) .addMenuCat {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  background: var(--wb-surface-2);
+  border-bottom: 1px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .addMenuItem {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  border-bottom: 1px dashed var(--wb-rule);
+}
+
+:global(body.workbench-theme) .addMenuItem:hover {
+  background: var(--wb-surface-2);
+}
+
+:global(body.workbench-theme) .addMenuType {
+  color: var(--wb-ink-mute);
+  font-family: var(--wb-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+}
+
+:global(body.workbench-theme) .addMenuDot {
+  background: var(--wb-accent);
+}
