@@ -348,7 +348,23 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         (t.type === 'midi' && (t.audioUrl || t.f0Audio || t.midiData)) // MIDI tracks with playable content
       );
 
-      const allTracks = [...voTracks, ...musicTracks, ...sfxTracks, ...drumTracks, ...midiAudioTracks, ...audioTracks];
+      let allTracks = [...voTracks, ...musicTracks, ...sfxTracks, ...drumTracks, ...midiAudioTracks, ...audioTracks];
+
+      // Silently mute any parent track that has stem children on this pass.
+      // The parent holds the original full mix; the stems hold per-instrument
+      // audio from demucs. Without this, meter-change plays master (4/4) on
+      // top of the rearranged stems (7/8). isMuted flag on the parent track
+      // survives in state for the UI, but this guard kicks in regardless in
+      // case auto-mute didn't fire (e.g. stem-separation path that didn't
+      // dispatch the mute action).
+      const parentsWithStems = new Set(
+        allTracks
+          .map((t) => t.metadata?.parentTrackId)
+          .filter((id) => typeof id === 'string' && id.length > 0)
+      );
+      if (parentsWithStems.size > 0) {
+        allTracks = allTracks.filter((t) => !parentsWithStems.has(t.id));
+      }
 
       // Check if any track has solo enabled
       const hasSoloTracks = allTracks.some(track => track.isSolo);
