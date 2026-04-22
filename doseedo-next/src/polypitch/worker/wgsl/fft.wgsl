@@ -57,9 +57,14 @@ fn main(
   // gid.x = output-pair index within [0, half_n), gid.y = batch row.
   let pair_idx = gid.x;
   let row = gid.y;
-  if (pair_idx >= half_n || row >= batch) {
-    return;
-  }
+  // Out-of-bounds threads still participate in the stage barriers below
+  // — WGSL requires workgroupBarrier() to execute from uniform control
+  // flow, so early-returning here would crash every FFT dispatch where
+  // half_n*batch isn't a multiple of the workgroup size with the exact
+  // "Must only be called from uniform control flow" validation error.
+  // Gate the read/write work on `active` but let all threads reach each
+  // barrier.
+  let active = (pair_idx < half_n) && (row < batch);
 
   // Stockham writes are structured so stage s reads stride M = 1<<s and writes
   // with output stride 2*M. We ping-pong: stage 0 reads buf_a, writes buf_b;
@@ -67,7 +72,7 @@ fn main(
   //
   // All threads participate in every stage; the barrier between stages keeps
   // ordering consistent. We use a tiny helper to index complex elements.
-  let row_offset = row * n * 2u;
+  let row_offset = select(0u, row * n * 2u, active);
 
   // Prepare: pre-scale inverse input by nothing (division happens at the end).
   // Stockham variable definitions:
@@ -104,13 +109,15 @@ fn main(
     let out0_base = row_offset + 2u * (group_idx * m2 + k);
     let out1_base = row_offset + 2u * (group_idx * m2 + k + m);
 
-    var ar: f32; var ai: f32; var br: f32; var bi: f32;
-    if ((s & 1u) == 0u) {
-      ar = buf_a[in_a_base]; ai = buf_a[in_a_base + 1u];
-      br = buf_a[in_b_base]; bi = buf_a[in_b_base + 1u];
-    } else {
-      ar = buf_b[in_a_base]; ai = buf_b[in_a_base + 1u];
-      br = buf_b[in_b_base]; bi = buf_b[in_b_base + 1u];
+    var ar: f32 = 0.0; var ai: f32 = 0.0; var br: f32 = 0.0; var bi: f32 = 0.0;
+    if (active) {
+      if ((s & 1u) == 0u) {
+        ar = buf_a[in_a_base]; ai = buf_a[in_a_base + 1u];
+        br = buf_a[in_b_base]; bi = buf_a[in_b_base + 1u];
+      } else {
+        ar = buf_b[in_a_base]; ai = buf_b[in_a_base + 1u];
+        br = buf_b[in_b_base]; bi = buf_b[in_b_base + 1u];
+      }
     }
 
     // t = w * b
@@ -122,19 +129,23 @@ fn main(
     let y1r = ar - tr;
     let y1i = ai - ti;
 
-    if ((s & 1u) == 0u) {
-      buf_b[out0_base]      = y0r;
-      buf_b[out0_base + 1u] = y0i;
-      buf_b[out1_base]      = y1r;
-      buf_b[out1_base + 1u] = y1i;
-    } else {
-      buf_a[out0_base]      = y0r;
-      buf_a[out0_base + 1u] = y0i;
-      buf_a[out1_base]      = y1r;
-      buf_a[out1_base + 1u] = y1i;
+    if (active) {
+      if ((s & 1u) == 0u) {
+        buf_b[out0_base]      = y0r;
+        buf_b[out0_base + 1u] = y0i;
+        buf_b[out1_base]      = y1r;
+        buf_b[out1_base + 1u] = y1i;
+      } else {
+        buf_a[out0_base]      = y0r;
+        buf_a[out0_base + 1u] = y0i;
+        buf_a[out1_base]      = y1r;
+        buf_a[out1_base + 1u] = y1i;
+      }
     }
 
     // Ensure every thread has written its pair before the next stage reads.
+    // All threads (including out-of-bounds) reach this unconditionally so
+    // the barrier is in uniform control flow — see the `active` note above.
     workgroupBarrier();
     storageBarrier();
   }
@@ -148,6 +159,10 @@ fn main(
   // Each thread now owns two output indices: pair_idx and pair_idx + half_n
   let off0 = row_offset + 2u * pair_idx;
   let off1 = row_offset + 2u * (pair_idx + half_n);
+
+  if (!active) {
+    return;
+  }
 
   var r0: f32; var i0: f32; var r1: f32; var i1: f32;
   if (final_in_b) {
