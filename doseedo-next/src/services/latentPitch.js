@@ -303,11 +303,15 @@ function _postprocess({ onset, frame, velocity, offset }, T) {
   for (let i = 0; i < cands.length; i++) {
     if (suppressed[i]) continue;
     const c = cands[i];
+    const nFrames = Math.max(1, c.endT - c.startT);
     notes.push({
       note: c.pitch,
       time: (c.t + c.subFrame) * dt,
-      duration: (c.endT - c.startT) * dt,
+      duration: nFrames * dt,
+      startFrame: c.startT,
+      endFrame: c.endT,
       velocity: Math.max(1, Math.min(127, Math.round(c.vMean * 127))),
+      energyCurve: Array.from({ length: nFrames }, () => c.vMean),
     });
   }
   notes.sort((a, b) => a.time - b.time);
