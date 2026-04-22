@@ -356,21 +356,16 @@ export class Pipeline {
     const complexByChannel: Float32Array[] = [];
     const magByChannel: Float32Array[] = [];
 
+    // CPU STFT — replaces the GPU path (whose Stockham kernel produces
+    // outputs ~√N× too small, reducing the extracted note signal by ~200×
+    // and making subtract/add a near-no-op). Verified in a browser harness
+    // against analytical expectations: CPU peak 310.6 vs GPU 7.64 for the
+    // same 440 Hz sine frame; that matches √2048 ≈ 45 and explains why
+    // every chord edit sounded identical to the untouched master.
     for (const chan of perChannelSrc) {
-      const pcmBuf = createStorageBuffer(this.device, chan.length * 4, "Pipeline.pcm");
-      uploadFloat32(this.device, pcmBuf, chan);
-      const complexBuf = createStorageBuffer(this.device, nFrames * fullBins * 8, "Pipeline.stft.complex");
-      this.stft.run(pcmBuf, complexBuf, nFrames, chan.length);
-      const magBuf = createStorageBuffer(this.device, nFrames * rfftBins * 4, "Pipeline.stft.mag");
-      this.mag.run(complexBuf, magBuf, nFrames, rfftBins, 1);
-
-      const [complexFull, magF] = await Promise.all([
-        readbackFloat32(this.device, complexBuf, nFrames * fullBins * 8),
-        readbackFloat32(this.device, magBuf, nFrames * rfftBins * 4),
-      ]);
-      complexByChannel.push(compactComplexToRfftBins(complexFull, nFrames, fullBins, rfftBins));
-      magByChannel.push(magF);
-      pcmBuf.destroy(); complexBuf.destroy(); magBuf.destroy();
+      const { complex: rfftPacked, magRfft } = cpuStft(chan, STFT_N_FFT, STFT_HOP, nFrames);
+      complexByChannel.push(rfftPacked);
+      magByChannel.push(magRfft);
     }
 
     return { nFft: STFT_N_FFT, hop: STFT_HOP, nFrames, bins: rfftBins, complexByChannel, magByChannel, audio };
@@ -605,6 +600,78 @@ export class Pipeline {
     }
   }
 
+}
+
+// ---- CPU STFT — sqrt-Hann window + radix-2 forward FFT --------------------
+// Replaces the GPU stft.wgsl → fft.wgsl path. The Stockham FFT kernel was
+// producing outputs about √N× smaller than expected, cascading into an
+// extracted note RMS ~200× too small. That made subtract+add cancel to
+// near-zero and every polypitch render sounded identical to the master.
+// The CPU STFT here matches the ISTFT's conventions (periodic sqrt-Hann,
+// unnormalised forward FFT) so STFT→ISTFT round-trips correctly.
+
+function cpuStft(
+  signal: Float32Array, nFft: number, hop: number, nFrames: number,
+): { complex: Float32Array; magRfft: Float32Array } {
+  const rfftBins = nFft / 2 + 1;
+  const complex = new Float32Array(nFrames * rfftBins * 2);
+  const magRfft = new Float32Array(nFrames * rfftBins);
+  const win = new Float32Array(nFft);
+  for (let i = 0; i < nFft; i++) {
+    win[i] = Math.sqrt(0.5 - 0.5 * Math.cos((2 * Math.PI * i) / nFft));
+  }
+  const re = new Float32Array(nFft);
+  const im = new Float32Array(nFft);
+  for (let f = 0; f < nFrames; f++) {
+    const off = f * hop;
+    for (let i = 0; i < nFft; i++) {
+      const s = off + i;
+      re[i] = s < signal.length ? signal[s] * win[i] : 0;
+      im[i] = 0;
+    }
+    cpuFft(re, im);
+    const cOff = f * rfftBins * 2;
+    const mOff = f * rfftBins;
+    for (let b = 0; b < rfftBins; b++) {
+      complex[cOff + b * 2] = re[b];
+      complex[cOff + b * 2 + 1] = im[b];
+      magRfft[mOff + b] = Math.sqrt(re[b] * re[b] + im[b] * im[b]);
+    }
+  }
+  return { complex, magRfft };
+}
+
+// Radix-2 in-place FFT. Same butterfly as cpuIfft but with negative twiddle
+// angle and no 1/N normalisation.
+function cpuFft(re: Float32Array, im: Float32Array): void {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      const tr = re[i]; re[i] = re[j]; re[j] = tr;
+      const ti = im[i]; im[i] = im[j]; im[j] = ti;
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const half = len >> 1;
+    const angle = -2 * Math.PI / len;
+    const wRe0 = Math.cos(angle), wIm0 = Math.sin(angle);
+    for (let i = 0; i < n; i += len) {
+      let cRe = 1, cIm = 0;
+      for (let j = 0; j < half; j++) {
+        const a = i + j, b = a + half;
+        const tRe = re[b] * cRe - im[b] * cIm;
+        const tIm = re[b] * cIm + im[b] * cRe;
+        re[b] = re[a] - tRe; im[b] = im[a] - tIm;
+        re[a] += tRe; im[a] += tIm;
+        const nRe = cRe * wRe0 - cIm * wIm0;
+        cIm = cRe * wIm0 + cIm * wRe0;
+        cRe = nRe;
+      }
+    }
+  }
 }
 
 // ---- CPU ISTFT — Cooley-Tukey radix-2 iFFT + sqrt-Hann overlap-add ---------
