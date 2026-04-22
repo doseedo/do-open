@@ -403,24 +403,37 @@ export class Pipeline {
       const maskedRfft = NoteExtractor.applyMaskToComplex(
         cache.complexByChannel[c], mask, cache.nFrames, cache.bins, query.startFrame, maskFrames,
       );
-      const maskedFull = expandRfftToFullComplex(maskedRfft, cache.nFrames, fullBins);
-      const stftBuf = createStorageBuffer(this.device, cache.nFrames * fullBins * 8, "Pipeline.pv.stft");
-      uploadFloat32(this.device, stftBuf, maskedFull);
+
+      // CRITICAL: the PV shader uses `n_bins = nFft/2+1` (1025 at nFft=2048)
+      // for its stride, so it must operate on an RFFT-packed buffer —
+      // `[nFrames, rfftBins, 2]`, frame stride = 1025*2 = 2050 floats. The
+      // previous code expanded to full complex `[nFrames, nFft, 2]` (frame
+      // stride 4096) BEFORE calling pv.run(), which meant the shader's
+      // frame-f offsets (f * 2050) walked into frame 0's mirror bins from
+      // frame 1 onward. The ISTFT below then read the ORIGINAL unshifted
+      // bins (because ISTFT uses frame stride = nFft * 2 = 4096) from the
+      // still-intact frame slots. Net effect: only frame 0 got phase-
+      // rotated, everything else passed through unchanged — extracted note
+      // ≈ shifted note, subtract+add ≈ identity, no audible shift. Now we
+      // run PV on an RFFT-sized buffer and only expand to full before the
+      // ISTFT.
+      const rfftBytes = cache.nFrames * cache.bins * 8;
+      const rfftBuf = createStorageBuffer(this.device, rfftBytes, "Pipeline.pv.rfft");
+      uploadFloat32(this.device, rfftBuf, maskedRfft);
       this.pv.reset();
-      this.pv.run(stftBuf, ratiosBuf, cache.nFrames);
+      this.pv.run(rfftBuf, ratiosBuf, cache.nFrames);
+      const rotatedRfft = await readbackFloat32(this.device, rfftBuf, rfftBytes);
+      rfftBuf.destroy();
+
+      const rotatedFull = expandRfftToFullComplex(rotatedRfft, cache.nFrames, fullBins);
+      const stftBuf = createStorageBuffer(this.device, cache.nFrames * fullBins * 8, "Pipeline.pv.full");
+      uploadFloat32(this.device, stftBuf, rotatedFull);
       const outLen = this.istft.outputSamplesFor(cache.nFrames);
       const pcmBuf = createStorageBuffer(this.device, outLen * 4, "Pipeline.pv.out");
       this.istft.run(stftBuf, pcmBuf, cache.nFrames);
       const time = await readbackFloat32(this.device, pcmBuf, outLen * 4);
       stftBuf.destroy(); pcmBuf.destroy();
 
-      // The Laroche-Dolson PV kernel is phase-only — it emits a signal that
-      // is already pitch-shifted by `ratio` at the ORIGINAL sample rate and
-      // length. Resampling to PUBLIC_SR*ratio and then storing the samples
-      // into an AudioBuffer still labeled PUBLIC_SR played them back at a
-      // slower rate, scaling pitch DOWN by 1/ratio — exactly cancelling the
-      // shift. (Symptom: "rendered N KB WAV" with correct deltas but no
-      // audible difference vs the original.) Use the PV's output directly.
       outChannels.push(fitLength(time, cache.audio.frames));
     }
     ratiosBuf.destroy();
