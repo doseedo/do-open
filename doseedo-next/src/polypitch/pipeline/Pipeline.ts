@@ -414,8 +414,14 @@ export class Pipeline {
       const time = await readbackFloat32(this.device, pcmBuf, outLen * 4);
       stftBuf.destroy(); pcmBuf.destroy();
 
-      const shifted = audioResample(time, PUBLIC_SR, PUBLIC_SR * ratio);
-      outChannels.push(fitLength(shifted, cache.audio.frames));
+      // The Laroche-Dolson PV kernel is phase-only — it emits a signal that
+      // is already pitch-shifted by `ratio` at the ORIGINAL sample rate and
+      // length. Resampling to PUBLIC_SR*ratio and then storing the samples
+      // into an AudioBuffer still labeled PUBLIC_SR played them back at a
+      // slower rate, scaling pitch DOWN by 1/ratio — exactly cancelling the
+      // shift. (Symptom: "rendered N KB WAV" with correct deltas but no
+      // audible difference vs the original.) Use the PV's output directly.
+      outChannels.push(fitLength(time, cache.audio.frames));
     }
     ratiosBuf.destroy();
 
