@@ -380,62 +380,56 @@ export class Pipeline {
   }
 
   private async pitchShiftPhaseVocoder(note: Note, ratio: number): Promise<AudioBuffer> {
-    // The WGSL phase_vocoder.wgsl is Laroche-Dolson phase-only WITHOUT the
-    // identity phase-locking step the comment promises. On real-world non-
-    // stationary audio (anything that isn't a pure sine) each bin's phase
-    // gets rotated independently, the frame-to-frame coherence is destroyed,
-    // and overlap-add reconstruction sums to ≈identity + modulation artefacts
-    // — not an audibly shifted signal. That's the "rendered N KB WAV, sounds
-    // identical" symptom: the whole subtract-extracted-note / add-shifted-
-    // note cycle is approximately a no-op because shifted ≈ extracted.
-    //
-    // Real phase-vocoder pitch shift needs either (a) identity phase locking
-    // in the shader + proper group-of-peaks phase advance, or (b) a
-    // time-stretch PV with a variable synthesis hop followed by a resample.
-    // Both are real work. Until either lands, do a time-domain resample of
-    // the mask-extracted note: the note plays at `ratio×` pitch for
-    // `1/ratio × original_duration`. Coarse (duration changes), but reliably
-    // audible, which is what's missing right now.
     const cache = this.cachedStft!;
     const channels = cache.complexByChannel.length as 1 | 2;
+    const fullBins = STFT_N_FFT;
 
-    // Prefer the note buffer the extract path already produced for the
-    // subtract step — we'd otherwise re-run mask + ISTFT for the same note.
-    let original = this.noteAudioCache.get(note.id) ?? null;
-    if (!original) {
-      const extracted = await this.extractImpl([note.id]);
-      original = extracted.get(note.id) ?? null;
-      if (original) this.noteAudioCache.set(note.id, original);
-    }
-    if (!original) return silence(cache.audio.frames, channels);
+    const query = NoteExtractor.noteToQuery(note, { sampleRate: PUBLIC_SR, hop: STFT_HOP, nFrames: cache.nFrames });
+    const midMag = channels === 2
+      ? averageMag(cache.magByChannel[0], cache.magByChannel[1])
+      : cache.magByChannel[0];
+    const masks = await this.maskUNet.predict(midMag, [query], PUBLIC_SR, cache.nFft);
+    const mask = masks[0];
+    if (!mask) return silence(cache.audio.frames, channels);
+    const maskFrames = Math.max(1, query.endFrame - query.startFrame);
 
-    const totalFrames = cache.audio.frames;
-    const startSample = Math.max(0, Math.floor(note.startSec * PUBLIC_SR));
-    const endSample = Math.min(totalFrames, Math.ceil(note.endSec * PUBLIC_SR));
-    const segLen = Math.max(0, endSample - startSample);
-    if (segLen === 0) return silence(totalFrames, channels);
+    const ratios = new Float32Array(cache.nFrames);
+    ratios.fill(ratio);
+    const ratiosBuf = createStorageBuffer(this.device, cache.nFrames * 4, "Pipeline.pv.ratios");
+    uploadFloat32(this.device, ratiosBuf, ratios);
 
-    // To shift pitch UP by `ratio`, generate a buffer whose playback-at-
-    // PUBLIC_SR runs `ratio×` faster — i.e. `1/ratio` fewer samples per unit
-    // time. audioResample(seg, PUBLIC_SR, PUBLIC_SR/ratio) yields exactly
-    // that: same audio content encoded at a lower effective rate. When the
-    // mixer reads it back at PUBLIC_SR, each sample advances `ratio×` faster
-    // through the waveform, raising pitch by `ratio`.
-    const targetSr = Math.max(1, Math.round(PUBLIC_SR / ratio));
-    const outSamples = new Float32Array(totalFrames * channels);
+    const outChannels: Float32Array[] = [];
     for (let c = 0; c < channels; c++) {
-      const srcOff = c * totalFrames;
-      const segment = original.samples.subarray(srcOff + startSample, srcOff + endSample);
-      const shifted = audioResample(segment, PUBLIC_SR, targetSr);
-      // For ratio > 1 (pitch up): shifted < segLen → place only what fits;
-      // the tail of the note window becomes silence. For ratio < 1 (pitch
-      // down): shifted > segLen → truncate; we clip the extended tail so the
-      // edit doesn't bleed into the next note's window.
-      const placeLen = Math.min(shifted.length, segLen);
-      outSamples.set(shifted.subarray(0, placeLen), srcOff + startSample);
+      const maskedRfft = NoteExtractor.applyMaskToComplex(
+        cache.complexByChannel[c], mask, cache.nFrames, cache.bins, query.startFrame, maskFrames,
+      );
+      const maskedFull = expandRfftToFullComplex(maskedRfft, cache.nFrames, fullBins);
+      const stftBuf = createStorageBuffer(this.device, cache.nFrames * fullBins * 8, "Pipeline.pv.stft");
+      uploadFloat32(this.device, stftBuf, maskedFull);
+      this.pv.reset();
+      this.pv.run(stftBuf, ratiosBuf, cache.nFrames);
+      const outLen = this.istft.outputSamplesFor(cache.nFrames);
+      const pcmBuf = createStorageBuffer(this.device, outLen * 4, "Pipeline.pv.out");
+      this.istft.run(stftBuf, pcmBuf, cache.nFrames);
+      const time = await readbackFloat32(this.device, pcmBuf, outLen * 4);
+      stftBuf.destroy(); pcmBuf.destroy();
+
+      // The Laroche-Dolson PV kernel is phase-only — it emits a signal that
+      // is already pitch-shifted by `ratio` at the ORIGINAL sample rate and
+      // length. Resampling to PUBLIC_SR*ratio and then storing the samples
+      // into an AudioBuffer still labeled PUBLIC_SR played them back at a
+      // slower rate, scaling pitch DOWN by 1/ratio — exactly cancelling the
+      // shift. (Symptom: "rendered N KB WAV" with correct deltas but no
+      // audible difference vs the original.) Use the PV's output directly.
+      outChannels.push(fitLength(time, cache.audio.frames));
     }
-    const frames = totalFrames;
-    return { samples: outSamples, channels, sampleRate: PUBLIC_SR, frames };
+    ratiosBuf.destroy();
+
+    const frames = cache.audio.frames;
+    const samples = new Float32Array(frames * channels);
+    samples.set(outChannels[0], 0);
+    if (channels === 2) samples.set(outChannels[1], frames);
+    return { samples, channels, sampleRate: PUBLIC_SR, frames };
   }
 }
 

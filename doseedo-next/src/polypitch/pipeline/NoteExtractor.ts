@@ -71,9 +71,10 @@ export class NoteExtractor {
    * Apply a soft mask (frames × bins) to a complex STFT. Returns a new
    * Float32Array with the masked complex STFT, leaving the input untouched.
    *
-   * The mask may be shorter than the full spectrum in the time axis (covering
-   * only the note's active range); callers pass the `frameOffset` and `frames`
-   * length of the mask so the caller owns the clipping policy.
+   * The mask must be sized `[totalFrames, bins]` — the same time dimension
+   * as the STFT. `maskFrameOffset` and `maskFrames` are the active WINDOW
+   * (rows outside are expected to be zero anyway, but the window check
+   * short-circuits the inner loop for notes that only occupy a few frames).
    */
   static applyMaskToComplex(
     stftComplex: Float32Array,
@@ -84,15 +85,19 @@ export class NoteExtractor {
     maskFrames = totalFrames,
   ): Float32Array {
     const out = new Float32Array(stftComplex.length);
+    const windowEnd = maskFrameOffset + maskFrames;
     for (let t = 0; t < totalFrames; t++) {
-      const rowC = t * bins * 2;
-      const rel = t - maskFrameOffset;
-      const inMask = rel >= 0 && rel < maskFrames;
-      if (!inMask) {
-        // Outside the mask window → bins are zeroed.
+      if (t < maskFrameOffset || t >= windowEnd) {
+        // Outside the note's active window → bins are zeroed.
         continue;
       }
-      const rowM = rel * bins;
+      const rowC = t * bins * 2;
+      // Mask is full-sized [totalFrames, bins] — index by ABSOLUTE frame t.
+      // (The previous `rel * bins` treated mask as [maskFrames, bins] and
+      // read the first `maskFrames` rows — which are all zeros for any note
+      // that doesn't start at frame 0. Net effect was silent extraction:
+      // mask × STFT ≈ 0, subtract no-op, add no-op, render ≈ identity.)
+      const rowM = t * bins;
       for (let b = 0; b < bins; b++) {
         const m = mask[rowM + b];
         out[rowC + b * 2] = stftComplex[rowC + b * 2] * m;
