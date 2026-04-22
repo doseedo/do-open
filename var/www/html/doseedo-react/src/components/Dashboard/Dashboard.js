@@ -1,103 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { getCurrentUser } from '../../services/authService';
 import * as sessionService from '../../services/sessionService';
 import * as dashboardService from '../../services/dashboardService';
+import WorkbenchSlides from './WorkbenchSlides';
 import styles from './Dashboard.module.css';
-
-/* =====================================================================
- * Workbench Slides — 5-slide feature deck (Stems / Generate / Shape /
- * Score / Editable). Source file lives in public/workbench-slides.html
- * (copied from the bundled Workbench Slides.html export). The file is a
- * self-contained Framer-bundler deck using a <deck-stage> custom
- * element that auto-scales its 1920×1080 canvas to fit the iframe, and
- * exposes a public API (next/prev/goTo/length/index) we call from here
- * to auto-advance.
- *
- * Each slide ships with its own text-left-animation-right layout — the
- * headline + copy + meta block and the mock DAW stage both live inside
- * the iframe, so no external text overlay is needed here.
- * ===================================================================== */
-const SLIDE_ADVANCE_MS = 8000;
-
-const WorkbenchSlides = () => {
-  const iframeRef = useRef(null);
-  const [slideIndex, setSlideIndex] = useState(0);
-  const [slideTotal, setSlideTotal] = useState(5);
-
-  useEffect(() => {
-    // The deck posts {slideIndexChanged: N} to the top window on every
-    // navigation (see /public/workbench-slides.html, deck-stage impl).
-    const onMsg = (e) => {
-      if (e?.data && typeof e.data.slideIndexChanged === 'number') {
-        setSlideIndex(e.data.slideIndexChanged);
-      }
-    };
-    window.addEventListener('message', onMsg);
-    return () => window.removeEventListener('message', onMsg);
-  }, []);
-
-  const getDeck = useCallback(() => {
-    try {
-      const doc = iframeRef.current?.contentDocument;
-      return doc?.querySelector('deck-stage') || null;
-    } catch { return null; }
-  }, []);
-
-  // On iframe load, hide the deck's built-in nav overlay (subtle fade-
-  // out hints at the bottom — clutter inside an embedded dashboard
-  // strip) and seed the total-slide indicator.
-  const handleLoad = useCallback(() => {
-    const deck = getDeck();
-    if (!deck) return;
-    try {
-      setSlideTotal(deck.length || 5);
-      const style = deck.shadowRoot?.querySelector('style');
-      if (style && !style.textContent.includes('/* doseedo-host */')) {
-        style.textContent += '\n/* doseedo-host */\n.overlay, .tapzones{display:none!important}';
-      }
-    } catch {}
-  }, [getDeck]);
-
-  // Auto-advance timer. Restarts whenever the active slide changes so
-  // the full 8s plays after manual taps + postMessage jumps.
-  useEffect(() => {
-    const t = setTimeout(() => {
-      const deck = getDeck();
-      if (deck && typeof deck.next === 'function') deck.next();
-    }, SLIDE_ADVANCE_MS);
-    return () => clearTimeout(t);
-  }, [slideIndex, getDeck]);
-
-  const goTo = useCallback((i) => {
-    const deck = getDeck();
-    if (deck && typeof deck.goTo === 'function') deck.goTo(i);
-  }, [getDeck]);
-
-  return (
-    <div className={styles.slides}>
-      <iframe
-        ref={iframeRef}
-        src="/workbench-slides.html"
-        title="Workbench feature deck"
-        className={styles.slidesFrame}
-        onLoad={handleLoad}
-        loading="eager"
-      />
-      <div className={styles.slidesDots}>
-        {Array.from({ length: slideTotal }, (_, i) => (
-          <button
-            key={i}
-            type="button"
-            className={`${styles.slidesDot} ${i === slideIndex ? styles.slidesDotActive : ''}`}
-            onClick={() => goTo(i)}
-            aria-label={`Go to slide ${i + 1}`}
-          />
-        ))}
-      </div>
-    </div>
-  );
-};
 
 /* =====================================================================
  * Waveform generator + seed helpers
