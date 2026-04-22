@@ -1210,6 +1210,32 @@ function scheduleTrackWithSchedule(
       sources.push(src);
     }
 
+    // One-line meter-schedule diagnostic: summarise what we just scheduled
+    // so we can tell from the console whether the rearrange is actually
+    // different from an identity (= src→dst identical) schedule.
+    if (schedule.length > 1) {
+      const kinds = {};
+      let totalSrc = 0, totalDst = 0;
+      let srcMin = Infinity, srcMax = -Infinity;
+      let dstMin = Infinity, dstMax = -Infinity;
+      let identityLike = 0;
+      for (const seg of schedule) {
+        const k = seg.kind || '?';
+        kinds[k] = (kinds[k] || 0) + 1;
+        totalSrc += (seg.srcEnd - seg.srcStart);
+        totalDst += (seg.dstEnd - seg.dstStart);
+        if (seg.srcStart < srcMin) srcMin = seg.srcStart;
+        if (seg.srcEnd > srcMax) srcMax = seg.srcEnd;
+        if (seg.dstStart < dstMin) dstMin = seg.dstStart;
+        if (seg.dstEnd > dstMax) dstMax = seg.dstEnd;
+        if (Math.abs(seg.srcStart - seg.dstStart) < 1e-4 && Math.abs(seg.srcEnd - seg.dstEnd) < 1e-4 && (seg.rate || 1) === 1) {
+          identityLike++;
+        }
+      }
+      const kindStr = Object.entries(kinds).map(([k, v]) => `${k}×${v}`).join(' ');
+      console.log(`  📐 schedule: ${schedule.length} segs [${kindStr}] src=[${srcMin.toFixed(3)},${srcMax.toFixed(3)}](${totalSrc.toFixed(3)}s) dst=[${dstMin.toFixed(3)},${dstMax.toFixed(3)}](${totalDst.toFixed(3)}s) identityLike=${identityLike}/${schedule.length} liveScheduled=${sources.length}`);
+    }
+
     return { sources, gainNode: trackGain };
   } catch (error) {
     console.error('❌ Error scheduling track with schedule:', audioUrl, error);
