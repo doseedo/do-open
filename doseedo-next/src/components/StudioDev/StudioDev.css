@@ -1787,6 +1787,22 @@ input[type=range].sd-midi-note-bend::-moz-range-thumb {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   display: block; max-width: 100%;
 }
+.sd-chord-cell.pickup {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--hifi-surface-2),
+    var(--hifi-surface-2) 4px,
+    rgba(255,255,255,0.04) 4px,
+    rgba(255,255,255,0.04) 8px
+  );
+  border-color: var(--hifi-rule-strong);
+  color: var(--hifi-ink-mute); font-style: italic;
+}
+.sd-chord-cell.pickup .sd-chord-symbol { color: var(--hifi-ink-mute); }
+.sd-chord-cell.pickup.playing {
+  background: var(--hifi-accent-soft); border-color: var(--hifi-accent);
+  color: var(--hifi-ink);
+}
 .sd-chords-picker {
   position: absolute; left: 320px; bottom: 260px; z-index: 40;
   background: var(--hifi-surface); border: 1px solid var(--hifi-rule-strong);

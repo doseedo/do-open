@@ -39,11 +39,45 @@ export default function StudioDevChords() {
 
   const BEATS_PER_BAR = state.beatsPerBar || 4;
 
+  // First real downbeat in seconds. The rhythm analyzer writes a tempoMap
+  // whose first entry (`tempoMap[0].t`) is the onset of bar 1 — for most
+  // songs this is 0.2–1.5 s after t=0 (count-in, intro noise, leading
+  // silence). beatMap[0].t is the same value at a per-beat granularity.
+  // When absent (rhythm analysis still running, or pure constant-BPM
+  // fallback), pickupSec = 0 and bar 1 starts at t=0.
+  const pickupSec = useMemo(() => {
+    if (Array.isArray(state.beatMap) && state.beatMap.length > 0) {
+      return Math.max(0, state.beatMap[0]?.t || 0);
+    }
+    if (Array.isArray(state.tempoMap) && state.tempoMap.length > 0) {
+      return Math.max(0, state.tempoMap[0]?.t || 0);
+    }
+    return 0;
+  }, [state.beatMap, state.tempoMap]);
+
+  // Cell index under the playhead. When beatMap is available we snap to
+  // real beat times (handles tempo drift, pickup bars, rit/accel). The
+  // returned value is -1 while the playhead sits before the first
+  // downbeat — callers use that to light up the pickup cell instead of
+  // a real bar-1 cell.
   const currentBeat = useMemo(() => {
+    const pos = state.playheadPosition || 0;
+    const bm = state.beatMap;
+    if (Array.isArray(bm) && bm.length > 0) {
+      if (pos < bm[0].t) return -1;  // pre-downbeat → pickup region
+      // Binary-search for the largest i where bm[i].t <= pos.
+      let lo = 0, hi = bm.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (bm[mid].t <= pos) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo;
+    }
     const bpm = state.bpm || 120;
     const spb = 60 / bpm;
-    return Math.floor((state.playheadPosition || 0) / spb);
-  }, [state.playheadPosition, state.bpm]);
+    return Math.floor(pos / spb);
+  }, [state.playheadPosition, state.beatMap, state.bpm]);
 
   // Detector emits a sparse map keyed on chord-change beats; every beat in
   // between inherits the prior label. Carry it forward so sustained chords
@@ -78,9 +112,14 @@ export default function StudioDevChords() {
 
   // Auto-advance the page when playback crosses into the next 8-bar window,
   // but only while playing — otherwise manual paging would get fought every
-  // render.
+  // render. currentBeat === -1 means pre-downbeat (pickup region): stay on
+  // the first page so the pickup cell stays visible.
   useEffect(() => {
     if (!state.isPlaying) return;
+    if (currentBeat < 0) {
+      if (pageStartBar !== 0) setPageStartBar(0);
+      return;
+    }
     const currentBar = Math.floor(currentBeat / BEATS_PER_BAR);
     const pageEndBar = pageStartBar + BARS_VISIBLE;
     if (currentBar >= pageEndBar || currentBar < pageStartBar) {
@@ -102,6 +141,23 @@ export default function StudioDevChords() {
   const canPrev = pageStartBar > 0;
   const canNext = pageStartBar + BARS_VISIBLE < totalBars;
 
+  // Pickup bar: one extra "bar 0" column before the normal bar grid,
+  // width-proportional to the pre-downbeat offset. Only shown on the
+  // first page (bar 1 is always page 0), otherwise bars 9..N don't
+  // need a pickup prefix. The grid uses fr units — pickupFr is the
+  // pickup's share of one bar, capped so a wildly long intro doesn't
+  // squash the real bars to invisibility.
+  const showPickup = pickupSec > 0 && pageStartBar === 0;
+  const barSec = (state.beatMap && state.beatMap.length > BEATS_PER_BAR)
+    ? Math.max(0.01, state.beatMap[BEATS_PER_BAR].t - state.beatMap[0].t)
+    : (60 / (state.bpm || 120)) * BEATS_PER_BAR;
+  const pickupFr = showPickup
+    ? Math.min(BEATS_PER_BAR, Math.max(0.5, (pickupSec / barSec) * BEATS_PER_BAR))
+    : 0;
+  const gridTemplate = showPickup
+    ? `${pickupFr}fr repeat(${BARS_VISIBLE * BEATS_PER_BAR}, minmax(0, 1fr))`
+    : undefined; // fall back to stylesheet's repeat(32, minmax(0, 1fr))
+
   return (
     <div className="sd-chords">
       <div className="sd-chords-head">
@@ -122,7 +178,16 @@ export default function StudioDevChords() {
         <div className="sd-midi-spacer" />
         <button className="sd-midi-btn" onClick={() => { dispatch({ type: 'CLEAR_CHORDS' }); setPageStartBar(0); }}>Clear</button>
       </div>
-      <div className="sd-chords-grid">
+      <div className="sd-chords-grid" style={gridTemplate ? { gridTemplateColumns: gridTemplate } : undefined}>
+        {showPickup && (
+          <div
+            className={`sd-chord-cell pickup ${currentBeat === -1 ? 'playing' : ''}`}
+            title={`Pickup — ${pickupSec.toFixed(2)}s before bar 1`}
+          >
+            <span className="sd-chord-barlabel">0</span>
+            <span className="sd-chord-symbol">pickup</span>
+          </div>
+        )}
         {cells.map((b) => {
           const chord = filledChords[b];
           const bar = Math.floor(b / BEATS_PER_BAR);
