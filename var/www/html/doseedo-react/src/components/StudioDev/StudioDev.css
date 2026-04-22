@@ -1522,6 +1522,47 @@
   cursor: crosshair;
 }
 
+/* Per-note bend + curve sliders, overlaid on the canvas next to the
+ * selected multi-row note. Both are native range inputs with tight
+ * appearance overrides so they read as part of the note chrome. */
+.sd-midi-note-bend,
+.sd-midi-note-curve {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  pointer-events: auto;
+  z-index: 4;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.sd-midi-note-bend {
+  /* vertical slider on the right side of the note */
+  width: 14px;
+  transform: rotate(180deg);
+  writing-mode: vertical-lr;
+  -webkit-appearance: slider-vertical;
+}
+.sd-midi-note-curve {
+  /* horizontal slider directly below the note */
+  height: 12px;
+}
+.sd-midi-note-bend::-webkit-slider-runnable-track,
+.sd-midi-note-curve::-webkit-slider-runnable-track {
+  background: rgba(21, 24, 28, 0.2);
+  border-radius: 2px;
+}
+.sd-midi-note-bend::-webkit-slider-thumb,
+.sd-midi-note-curve::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--wb-ink);
+  border: 1px solid var(--wb-surface);
+  cursor: pointer;
+}
+
 /* Axis-settings gear — floats top-left of the canvas. */
 .sd-midi-axis-btn {
   position: absolute;

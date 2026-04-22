@@ -60,14 +60,18 @@ class MIDIPlayer {
   }
 
   /**
-   * Play a single note as a sine oscillator.
-   * @param {number} midiNote  MIDI pitch (may be fractional; 60.5 etc.)
+   * Play a single note as a sine oscillator with optional pitch bend.
+   * @param {number} midiNote  MIDI pitch (base row for multi-span notes)
    * @param {number} velocity  0–1 (scales gain)
    * @param {number} duration  seconds
    * @param {number} time      audioContext time (0 = now)
-   * @returns {object|null}    { osc, gain } — use .stop() on osc to cancel
+   * @param {object} opts
+   *   opts.span   {number} rows covered (default 1)
+   *   opts.bend   {number} [0,1] — span travel amount. 0 = static mid.
+   *   opts.curve  {number} [-1,+1] — shape: -1 log, 0 linear, +1 exp
+   * @returns {object|null}
    */
-  playNote(midiNote, velocity = 0.8, duration = 1.0, time = 0) {
+  playNote(midiNote, velocity = 0.8, duration = 1.0, time = 0, opts = {}) {
     if (!this.isLoaded || !this.audioContext) {
       console.warn('⚠️ MIDI player not initialized');
       return null;
@@ -75,12 +79,43 @@ class MIDIPlayer {
     try {
       const ctx = this.audioContext;
       const when = time || ctx.currentTime;
-      const freq = this._freqFor(midiNote);
+      const span = Math.max(1, opts.span || 1);
+      const bend = Math.max(0, Math.min(1, opts.bend ?? 0));
+      const curve = Math.max(-1, Math.min(1, opts.curve ?? 0));
+      const centerRow = midiNote + (span - 1) / 2;
+
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(Math.max(20, freq), when);
-      // Short attack + release envelope so each note doesn't click.
+
+      // Pitch trajectory over [when, when+duration].
+      // f(x) = 2 * x^p - 1, where p = 4^curve. p=1 linear, >1 exp,
+      // <1 log. pitchOffset = bend * (span-1)/2 * f(x).
+      if (bend > 0 && span > 1) {
+        const STEPS = 48;
+        const p = Math.pow(4, curve);
+        const halfSpan = (span - 1) / 2;
+        const freqCurve = new Float32Array(STEPS);
+        for (let i = 0; i < STEPS; i++) {
+          const x = i / (STEPS - 1);
+          const f = 2 * Math.pow(x, p) - 1;
+          const pitch = centerRow + bend * halfSpan * f;
+          freqCurve[i] = Math.max(20, this._freqFor(pitch));
+        }
+        osc.frequency.setValueAtTime(freqCurve[0], when);
+        try {
+          osc.frequency.setValueCurveAtTime(freqCurve, when, duration);
+        } catch (_) {
+          // Some older browsers choke on setValueCurveAtTime with
+          // certain lengths; fall back to a linear ramp through
+          // start → end.
+          osc.frequency.linearRampToValueAtTime(freqCurve[STEPS - 1], when + duration);
+        }
+      } else {
+        // Static midpoint (or span-1 note). centerRow is the played pitch.
+        osc.frequency.setValueAtTime(Math.max(20, this._freqFor(centerRow)), when);
+      }
+
       const peak = 0.25 * Math.max(0, Math.min(1, velocity));
       const attack = 0.005;
       const release = Math.min(0.08, duration * 0.5);
@@ -212,10 +247,13 @@ class MIDIPlayer {
       return;
     }
     const baseTime = startTime || this.audioContext.currentTime;
-    for (const { note, time, duration, velocity = 0.8 } of notes) {
+    for (const n of notes) {
+      const { note, time, duration, velocity = 0.8, pitchSpan, bend, curve } = n;
       const when = baseTime + time * this.timeScale;
       const dur = duration * this.timeScale;
-      this.playNote(note, velocity, dur, when);
+      this.playNote(note, velocity, dur, when, {
+        span: pitchSpan, bend, curve,
+      });
     }
   }
 

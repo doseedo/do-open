@@ -178,10 +178,14 @@ export default function StudioDevMidi() {
         velocity: Math.max(1, Math.min(127, n.velocity ?? 100)),
         lyric: n.lyric,
         // Preserve vertical stretch (default 1 = normal single-row
-        // note). Dropping this was why Y-resize appeared to do nothing:
-        // commit() stored the new span, but the very next render
-        // stripped it before draw + hit-test saw it.
+        // note). Dropping this was why Y-resize appeared to do nothing.
         pitchSpan: Math.max(1, n.pitchSpan | 0 || 1),
+        // Pitch-trajectory params for multi-row notes:
+        //   bend  ∈ [0, 1] — how far from the span midpoint the pitch
+        //                     travels. 0 = static midpoint.
+        //   curve ∈ [-1, 1] — shape: -1 log, 0 linear, +1 exp.
+        bend: Number.isFinite(n.bend) ? Math.max(0, Math.min(1, n.bend)) : 0,
+        curve: Number.isFinite(n.curve) ? Math.max(-1, Math.min(1, n.curve)) : 0,
       }));
   }, [selectedTrack]);
 
@@ -319,11 +323,15 @@ export default function StudioDevMidi() {
         nextSel = selected.has(hit.idx) ? selected : new Set([hit.idx]);
       }
       setSelected(nextSel);
-      // Audition the clicked note through the sine synth so users can
-      // hear what they just selected at the current axis ratio.
+      // Audition the clicked note through the sine synth at the
+      // current axis ratio + per-note bend/curve/span.
       midiPlayer.resume().then(() => {
         if (isDrum) midiPlayer.playDrum(hit.note.note, 0.7);
-        else midiPlayer.playNote(hit.note.note, 0.7, 0.3);
+        else midiPlayer.playNote(hit.note.note, 0.7, Math.min(0.6, hit.note.duration || 0.3), 0, {
+          span: hit.note.pitchSpan || 1,
+          bend: hit.note.bend || 0,
+          curve: hit.note.curve || 0,
+        });
       }).catch(() => {});
       const mode =
         hit.edge === 'right' ? 'resize-right'
@@ -872,6 +880,59 @@ export default function StudioDevMidi() {
           onDoubleClick={onDoubleClick}
           className="sd-midi-canvas"
         />
+        {/* Per-note bend + curve sliders — appear when the selected
+         * note spans multiple rows. Vertical slider (right of note):
+         * bend amount 0..1. Horizontal slider (under note): curve
+         * shape -1 (log) .. +1 (exp), 0 = linear. Together they
+         * describe the pitch trajectory over the notes duration:
+         *   pitchOffset(t) = bend * (span-1)/2 * (2 * (t/dur)^p - 1)
+         *                    where p = 4^curve
+         */}
+        {(() => {
+          let idx = -1;
+          for (const i of selected) {
+            const n = notes[i];
+            if (n && (n.pitchSpan || 1) > 1) { idx = i; break; }
+          }
+          if (idx < 0) return null;
+          const n = notes[idx];
+          const span = n.pitchSpan || 1;
+          const topPitch = n.note + span - 1;
+          const x = KEYS_W + (n.time - scrollX) * pxPerSec;
+          const y = RULER_H + (maxPitch - topPitch) * rowH - scrollY;
+          const w = Math.max(12, n.duration * pxPerSec);
+          const h = span * rowH - 2;
+          // Skip when offscreen.
+          if (x + w < KEYS_W - 40 || x > size.w + 40 || y + h < RULER_H - 40 || y > size.h + 40) return null;
+          const bend = n.bend || 0;
+          const curve = n.curve || 0;
+          const updateNote = (patch) => {
+            const nxt = notes.map((m, i) => i === idx ? { ...m, ...patch } : m);
+            commit(nxt);
+          };
+          return (
+            <>
+              <input
+                type="range"
+                className="sd-midi-note-bend"
+                style={{ left: x + w + 2, top: y, height: h }}
+                min={0} max={1} step={0.01}
+                value={bend}
+                title={`Bend ${(bend * 100).toFixed(0)}%`}
+                onChange={(e) => updateNote({ bend: parseFloat(e.target.value) })}
+              />
+              <input
+                type="range"
+                className="sd-midi-note-curve"
+                style={{ left: x, top: y + h + 2, width: w }}
+                min={-1} max={1} step={0.01}
+                value={curve}
+                title={`Curve ${curve.toFixed(2)} (${curve === 0 ? 'linear' : curve > 0 ? 'exp' : 'log'})`}
+                onChange={(e) => updateNote({ curve: parseFloat(e.target.value) })}
+              />
+            </>
+          );
+        })()}
         {/* Axis-settings gear — top-left of the canvas. Opens a panel
          * where the user edits X / Y axis expressions. Expression
          * evaluation is a follow-up; for now the fields just store
