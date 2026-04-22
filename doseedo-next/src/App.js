@@ -249,8 +249,10 @@ function AppContent() {
     }
   }, [state.pluginMode]);
 
-  // Determine current view from URL
-  const currentView = location.pathname === '/dashboard' ? 'home' :
+  // Determine current view from URL. Both /dashboard and /projects render the
+  // same <Dashboard /> component now — /dashboard was previously the <Home />
+  // slideshow, but the workbench template owns that URL going forward.
+  const currentView = location.pathname === '/dashboard' ? 'dashboard' :
                       location.pathname === '/projects' ? 'dashboard' :
                       location.pathname === '/search' ? 'search' :
                       location.pathname.startsWith('/profile/') && location.pathname.split('/').length >= 3 ? 'publicProfile' :
