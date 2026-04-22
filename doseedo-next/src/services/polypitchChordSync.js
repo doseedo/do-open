@@ -93,9 +93,19 @@ export async function applyChordChange({
         if (!blob) return;
         if (_renderVersionByTrackId.get(track.id) !== version) {
           // A newer chord edit landed while we were rendering; discard.
+          logPipeline(
+            'polypitch',
+            `${track.name || track.id}: discarded stale render (newer edit pending)`,
+            'warn',
+          );
           return;
         }
         const url = URL.createObjectURL(blob);
+        logPipeline(
+          'polypitch',
+          `${track.name || track.id}: swapping audioUrl → ${url.slice(0, 40)}…`,
+          'ok',
+        );
         onTrackAudioReady(track.id, track.busId, url);
       } catch (err) {
         logPipeline('polypitch', `${track.id}: ${err?.message || err}`, 'error');
