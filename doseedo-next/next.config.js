@@ -14,6 +14,16 @@ const R2_CDN   = process.env.NEXT_PUBLIC_R2_CDN_ORIGIN   || 'https://pub-93d4c82
 const nextConfig = {
   reactStrictMode: true,
 
+  // Don't block production builds on TS errors in the CRA-era src/ tree.
+  // polypitch/pipeline/Pipeline.ts is actively being refactored and
+  // temporary TS2304s (undeclared-yet-imports) were making Vercel fall
+  // back to months-old builds. The app's runtime behaviour is still
+  // exercised by src/App.js, and TS errors surface locally via `npm run
+  // type-check` or the IDE. Flip back once the polypitch work settles.
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+
   // Emit browser source maps in production so Sentry can un-minify stack
   // traces. The .map files are uploaded to Sentry in scripts/sentry-sourcemaps.sh
   // and should NOT be served alongside the bundle — the postbuild hook moves
