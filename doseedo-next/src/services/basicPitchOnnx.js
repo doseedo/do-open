@@ -21,6 +21,7 @@
  */
 
 import * as ort from 'onnxruntime-web';
+import { ortWebGPURun } from './webgpuOrtQueue';
 
 // ?v=1 cache-busts Cloudflare, which aggressively caches 404 HTML pages
 // (max-age 30 days). Before the model file was deployed CF cached an HTML
@@ -44,10 +45,6 @@ const MIN_NOTE_LEN_FRAMES   = 11;                         // ≈128ms
 let session = null;
 let outputKeys = null;
 let initFailed = false;
-// One-time-build guard. Runs after this don't need the process-wide
-// webgpuOrtQueue because this session is WASM-only (see executionProviders
-// below) — ORT-Web's WASM backend serializes internally and the webgpu
-// jsep "$c" lock doesn't apply.
 let _initInFlight = null;
 
 /**
@@ -118,6 +115,11 @@ export async function initBasicPitch() {
     // crash on that op with the webgpu EP selected. nmp.onnx is 225 KB
     // and fully-convolutional; WASM runs the whole transcribe in ~3 s
     // for a 30 s master, so we gain nothing by keeping WebGPU in the list.
+    // Even though the EP is WASM, all sess.run calls still go through
+    // ortWebGPURun — ORT-Web's jsep decorator sets a module-global $c
+    // lock around every run, so a concurrent WebGPU session.run on
+    // sem4Decoder/latentPitch/etc would trip "Session already started"
+    // on this WASM run unless they're serialized together.
     session = await ort.InferenceSession.create(modelBytes, {
       executionProviders: ['wasm'],
       ...(externalData ? { externalData } : {}),
@@ -179,7 +181,7 @@ function mapOutputs(sess) {
 
 async function probeShapes(sess) {
   const zeroIn = new ort.Tensor('float32', new Float32Array(CHUNK_SAMPLES), [1, CHUNK_SAMPLES, 1]);
-  const out = await sess.run({ [sess.inputNames[0]]: zeroIn });
+  const out = await ortWebGPURun(() => sess.run({ [sess.inputNames[0]]: zeroIn }));
   let onset = null, frame = null, contour = null;
   for (const n of sess.outputNames) {
     const w = out[n].dims[out[n].dims.length - 1];
@@ -227,21 +229,8 @@ async function toMono22050(audio, sr) {
  * @param {number} [opts.minNoteLenFrames=11]
  * @returns {Promise<{notes: Array, duration: number}>}
  */
-// Module-level queue: ORT-Web sessions (WASM or WebGPU) throw
-// "Session already started" when a second sess.run() enters while the
-// first is still in flight. basic-pitch is a singleton, so the global
-// chain is the right granularity — chunks within one transcribe are
-// already serialized by their awaited loop, but two concurrent
-// callers (prewarm race + user upload + chord-detect pass) would
-// collide without this.
-let _transcribeQueue = Promise.resolve();
-
 export async function transcribeAudio(audio, sr, opts = {}) {
-  const next = _transcribeQueue.then(() => _transcribeAudioImpl(audio, sr, opts));
-  // Keep the queue alive on failure — a thrown run shouldn't poison
-  // every subsequent transcribe.
-  _transcribeQueue = next.catch(() => {});
-  return next;
+  return _transcribeAudioImpl(audio, sr, opts);
 }
 
 async function _transcribeAudioImpl(audio, sr, opts = {}) {
@@ -263,7 +252,7 @@ async function _transcribeAudioImpl(audio, sr, opts = {}) {
     const end = Math.min(start + CHUNK_SAMPLES, audio22k.length);
     chunk.set(audio22k.subarray(start, end));
     const inputTensor = new ort.Tensor('float32', chunk, [1, CHUNK_SAMPLES, 1]);
-    const out = await sess.run({ [sess.inputNames[0]]: inputTensor });
+    const out = await ortWebGPURun(() => sess.run({ [sess.inputNames[0]]: inputTensor }));
     // Outputs are already sigmoid'd inside the graph — copy straight in.
     const onset = out[outputKeys.onset].data;
     const frame = out[outputKeys.frame].data;

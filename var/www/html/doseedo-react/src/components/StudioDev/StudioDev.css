@@ -1768,20 +1768,25 @@ input[type=range].sd-midi-note-bend::-moz-range-thumb {
   padding: 8px 14px; display: flex; flex-direction: column; gap: 8px;
 }
 .sd-chords-head { display: flex; align-items: center; gap: 10px; }
-.sd-chords-grid { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; }
+.sd-chords-grid { display: grid; grid-template-columns: repeat(32, minmax(0, 1fr)); gap: 2px; }
 .sd-chord-cell {
   position: relative; height: 40px; padding: 4px; cursor: pointer;
   background: var(--hifi-surface-2); border: 1px solid var(--hifi-rule); border-radius: 3px;
   display: flex; flex-direction: column; justify-content: space-between;
   font-family: var(--hifi-serif); color: var(--hifi-ink-soft);
   transition: border-color 80ms, background 80ms;
+  min-width: 0; overflow: hidden;
 }
 .sd-chord-cell:hover    { border-color: var(--hifi-rule-strong); }
 .sd-chord-cell.bar-start{ border-left: 1px solid var(--hifi-accent-soft); }
 .sd-chord-cell.playing  { background: var(--hifi-accent-soft); border-color: var(--hifi-accent); }
 .sd-chord-cell.filled   { color: var(--hifi-ink); background: rgba(29, 76, 122, 0.08); }
 .sd-chord-barlabel      { font-family: var(--hifi-mono); font-size: 9px; color: var(--hifi-ink-mute); letter-spacing: .4px; }
-.sd-chord-symbol        { font-size: 14px; font-weight: 500; }
+.sd-chord-symbol        {
+  font-size: 11px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block; max-width: 100%;
+}
 .sd-chords-picker {
   position: absolute; left: 320px; bottom: 260px; z-index: 40;
   background: var(--hifi-surface); border: 1px solid var(--hifi-rule-strong);

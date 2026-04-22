@@ -244,11 +244,6 @@ export async function exportSessionToGCS(state, projectName, options = {}) {
     // didn't change since the last save.
     _resetCacheIfNewSession(sessionId);
     const toUpload = trackFiles.filter((tf) => !tf.cached);
-    const reused = trackFiles.length - toUpload.length;
-    console.log(
-      `📤 Uploading ${toUpload.length + 1} file(s) to R2…` +
-      (reused > 0 ? ` (${reused} reused from cache)` : '')
-    );
 
     const uploadPromises = [];
 
