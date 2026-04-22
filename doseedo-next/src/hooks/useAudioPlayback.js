@@ -432,7 +432,12 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
           );
           if (track.metadata?.polypitchRendered) {
             const buf = audioBufferCache.get(url);
-            console.log(`  🎹 scheduled polypitch ${track.metadata?.stemType || '?'} dur=${buf.duration.toFixed(2)}s gain=${finalGain.toFixed(2)} segs=${sources.length} from=${url.slice(0, 40)}…`);
+            const ch = buf.getChannelData(0);
+            let sum = 0, peak = 0;
+            const N = Math.min(ch.length, 96000); // sample first 2s at 48k
+            for (let i = 0; i < N; i++) { const v = ch[i]; sum += v*v; const a = Math.abs(v); if (a > peak) peak = a; }
+            const rms = Math.sqrt(sum / Math.max(1, N));
+            console.log(`  🎹 scheduled polypitch ${track.metadata?.stemType || '?'} dur=${buf.duration.toFixed(2)}s rms(2s)=${rms.toFixed(5)} peak(2s)=${peak.toFixed(4)} gain=${finalGain.toFixed(2)} segs=${sources.length} from=${url.slice(0, 40)}…`);
           }
           if (gainNode) {
             sourceNodesRef.current.push(...sources);
