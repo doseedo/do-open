@@ -401,16 +401,13 @@ export class Pipeline {
   }
 
   private async istftToTime(rfftComplex: Float32Array, nFrames: number): Promise<Float32Array> {
-    const fullBins = STFT_N_FFT;
-    const fullComplex = expandRfftToFullComplex(rfftComplex, nFrames, fullBins);
-    const complexBuf = createStorageBuffer(this.device, nFrames * fullBins * 8, "Pipeline.istft.in");
-    uploadFloat32(this.device, complexBuf, fullComplex);
-    const outLen = this.istft.outputSamplesFor(nFrames);
-    const pcmBuf = createStorageBuffer(this.device, outLen * 4, "Pipeline.istft.out");
-    this.istft.run(complexBuf, pcmBuf, nFrames);
-    const pcm = await readbackFloat32(this.device, pcmBuf, outLen * 4);
-    complexBuf.destroy(); pcmBuf.destroy();
-    return pcm;
+    // CPU ISTFT — the GPU path (istft.wgsl + FFTKernel) appears to produce
+    // silence even when the masked STFT has real content. After nine commits
+    // of GPU-plumbing fixes, abandon it here and use a straightforward
+    // Cooley-Tukey radix-2 iFFT + sqrt-Hann overlap-add on CPU. Matches the
+    // math verified in /tmp/polypitch-test/reproduce_browser.py. ~50 ms for a
+    // 30 s song, noise against the polypitch render's other costs.
+    return cpuIstft(rfftComplex, nFrames, STFT_N_FFT, STFT_HOP);
   }
 
   private cloneBaseMix(includeUnedited: boolean): AudioBuffer {
@@ -479,17 +476,9 @@ export class Pipeline {
         cache.complexByChannel[c], mask, nFrames, bins, query.startFrame, maskFrames,
       );
       const rotatedRfft = cpuPhaseVocoder(maskedRfft, nFrames, bins, ratio, hop, cache.nFft);
-
-      // ISTFT on GPU (that path is working — extract uses the same step).
-      const rotatedFull = expandRfftToFullComplex(rotatedRfft, nFrames, fullBins);
-      const stftBuf = createStorageBuffer(this.device, nFrames * fullBins * 8, "Pipeline.pv.full");
-      uploadFloat32(this.device, stftBuf, rotatedFull);
-      const outLen = this.istft.outputSamplesFor(nFrames);
-      const pcmBuf = createStorageBuffer(this.device, outLen * 4, "Pipeline.pv.out");
-      this.istft.run(stftBuf, pcmBuf, nFrames);
-      const time = await readbackFloat32(this.device, pcmBuf, outLen * 4);
-      stftBuf.destroy(); pcmBuf.destroy();
-
+      // CPU ISTFT (see istftToTime note). Also removes the GPU roundtrip
+      // for this path.
+      const time = cpuIstft(rotatedRfft, nFrames, cache.nFft, hop);
       outChannels.push(fitLength(time, cache.audio.frames));
     }
 
@@ -559,6 +548,94 @@ function cpuPhaseVocoder(
     }
   }
   return out;
+}
+
+// ---- CPU ISTFT — Cooley-Tukey radix-2 iFFT + sqrt-Hann overlap-add ---------
+// Replaces the GPU istft.wgsl path, which produced silent output for this
+// use case despite non-zero inputs. Matches the STFT analysis window (sqrt-
+// Hann on both sides → combined Hann) used by stft.wgsl.
+
+function cpuIstft(
+  rfftComplex: Float32Array, nFrames: number, nFft: number, hop: number,
+): Float32Array {
+  const rfftBins = nFft / 2 + 1;
+  const outLen = nFft + (nFrames - 1) * hop;
+  const out = new Float32Array(outLen);
+  const winSum = new Float32Array(outLen);
+
+  // sqrt-Hann window.
+  const win = new Float32Array(nFft);
+  for (let i = 0; i < nFft; i++) {
+    win[i] = Math.sqrt(0.5 - 0.5 * Math.cos((2 * Math.PI * i) / nFft));
+  }
+
+  const re = new Float32Array(nFft);
+  const im = new Float32Array(nFft);
+
+  for (let t = 0; t < nFrames; t++) {
+    // Unpack rfft-packed frame into full complex spectrum (mirror conjugate).
+    for (let b = 0; b < rfftBins; b++) {
+      re[b] = rfftComplex[(t * rfftBins + b) * 2];
+      im[b] = rfftComplex[(t * rfftBins + b) * 2 + 1];
+    }
+    for (let b = 1; b < nFft / 2; b++) {
+      re[nFft - b] = re[b];
+      im[nFft - b] = -im[b];
+    }
+
+    cpuIfft(re, im);
+
+    // sqrt-Hann synthesis window + overlap-add.
+    const offset = t * hop;
+    for (let i = 0; i < nFft; i++) {
+      const w = win[i];
+      out[offset + i] += re[i] * w;
+      winSum[offset + i] += w * w;
+    }
+  }
+
+  // Normalise by sum-of-squared-window so overlapping frames reconstruct.
+  for (let i = 0; i < outLen; i++) {
+    if (winSum[i] > 1e-12) out[i] /= winSum[i];
+  }
+
+  return out;
+}
+
+// Radix-2 in-place iFFT. Expects power-of-2 length. Leaves result in `re`/`im`.
+function cpuIfft(re: Float32Array, im: Float32Array): void {
+  const n = re.length;
+  // Bit reversal.
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      const tr = re[i]; re[i] = re[j]; re[j] = tr;
+      const ti = im[i]; im[i] = im[j]; im[j] = ti;
+    }
+  }
+  // Cooley-Tukey, inverse direction.
+  for (let len = 2; len <= n; len <<= 1) {
+    const half = len >> 1;
+    const angle = -2 * Math.PI / len;
+    const wRe0 = Math.cos(angle), wIm0 = Math.sin(angle);
+    for (let i = 0; i < n; i += len) {
+      let cRe = 1, cIm = 0;
+      for (let j = 0; j < half; j++) {
+        const a = i + j, b = a + half;
+        const tRe = re[b] * cRe - im[b] * cIm;
+        const tIm = re[b] * cIm + im[b] * cRe;
+        re[b] = re[a] - tRe; im[b] = im[a] - tIm;
+        re[a] += tRe; im[a] += tIm;
+        const nRe = cRe * wRe0 - cIm * wIm0;
+        cIm = cRe * wIm0 + cIm * wRe0;
+        cRe = nRe;
+      }
+    }
+  }
+  // Divide by n for iFFT normalisation.
+  for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
 }
 
 // ---- module-local helpers (unchanged from upstream) -----------------------
