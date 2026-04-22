@@ -41,6 +41,7 @@ import { applyChordChange as polypitchApplyChordChange } from '../../services/po
 import StudioDevGenerate from './StudioDevGenerate';
 import StudioDevChat from './StudioDevChat';
 import StudioDevNav from './StudioDevNav';
+import OutOfCreditsModal from './OutOfCreditsModal';
 import StudioDevFileMenu from './StudioDevFileMenu';
 
 import './StudioDev.css';
@@ -2604,6 +2605,7 @@ export default function StudioDev() {
         </aside>
       </div>
 
+      <OutOfCreditsModal />
     </div>
   );
 }

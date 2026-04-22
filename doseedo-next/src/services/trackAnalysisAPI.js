@@ -163,7 +163,13 @@ export async function separateStemsAuto(audioFile, opts = {}) {
   const fd = new FormData();
   fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
   const r = await fetch('/separate-stems', { method: 'POST', body: fd, headers: authHeaders, credentials: 'include' });
-  if (!r.ok) throw new Error(`separate-stems HTTP ${r.status}`);
+  if (!r.ok) {
+    if (r.status === 429) {
+      const { handleMaybeCreditGate } = await import('./outOfCreditsSignal');
+      await handleMaybeCreditGate(r);
+    }
+    throw new Error(`separate-stems HTTP ${r.status}`);
+  }
   const start = await r.json();
   const taskId = start.task_id;
   let result = start;

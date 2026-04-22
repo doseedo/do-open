@@ -1814,6 +1814,39 @@ input[type=range].sd-midi-note-bend::-moz-range-thumb {
   min-width: 48px; text-align: center;
 }
 
+/* ---------- Out-of-credits modal ---------- */
+.sd-overlay-small { width: min(92vw, 440px); height: auto; min-height: 220px; }
+.sd-credits-body {
+  padding: 22px 24px 20px;
+  display: flex; flex-direction: column; gap: 12px;
+  background: var(--hifi-bg);
+}
+.sd-credits-lead {
+  font-family: var(--hifi-serif);
+  font-size: 15px; color: var(--hifi-ink);
+  margin: 0;
+}
+.sd-credits-reset {
+  font-family: var(--hifi-mono);
+  font-size: 11px; color: var(--hifi-ink-mute);
+  letter-spacing: 0.4px;
+  margin: 0;
+}
+.sd-credits-reset strong { color: var(--hifi-accent); font-weight: 600; }
+.sd-credits-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+  margin-top: 8px;
+}
+.sd-midi-btn.sd-midi-primary {
+  background: var(--hifi-accent);
+  border-color: var(--hifi-accent);
+  color: var(--hifi-surface);
+}
+.sd-midi-btn.sd-midi-primary:hover {
+  background: var(--hifi-accent);
+  filter: brightness(1.1);
+}
+
 /* ---------- Generate + Chat panels ---------- */
 .sd-overlay-narrow { width: min(60vw, 680px); height: min(75vh, 640px); }
 

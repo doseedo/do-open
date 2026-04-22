@@ -273,6 +273,10 @@ export async function separateStems(audioUrl) {
   });
 
   if (!response.ok) {
+    if (response.status === 429) {
+      const { handleMaybeCreditGate } = await import('./outOfCreditsSignal');
+      await handleMaybeCreditGate(response);
+    }
     throw new Error(`HTTP error! status: ${response.status}`);
   }
 
