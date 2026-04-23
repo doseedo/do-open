@@ -17,14 +17,13 @@ export default function SignUpPage() {
     <div
       style={{
         minHeight: '100vh',
-        background: '#0a0a0a',
-        color: '#fff',
+        background: 'var(--wb-bg, #e8e6e1)',
+        color: 'var(--wb-ink, #15181c)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '24px',
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Inter", sans-serif',
+        fontFamily: 'var(--wb-font-sans, Inter, -apple-system, BlinkMacSystemFont, sans-serif)',
       }}
     >
       <div
@@ -38,7 +37,17 @@ export default function SignUpPage() {
         }}
       >
         {isSignedIn ? (
-          <div style={{ color: '#666', fontSize: '0.85em' }}>Redirecting…</div>
+          <div
+            style={{
+              color: 'var(--wb-ink-mute, #7c7e85)',
+              fontFamily: 'var(--wb-font-mono, "JetBrains Mono", monospace)',
+              fontSize: '11px',
+              letterSpacing: '0.8px',
+              textTransform: 'uppercase',
+            }}
+          >
+            Redirecting…
+          </div>
         ) : (
           <SignUp
             path="/sign-up"

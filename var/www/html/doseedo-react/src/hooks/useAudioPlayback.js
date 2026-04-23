@@ -403,6 +403,14 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         // ── Drum substem fan-out ───────────────────────────────────────
         const substems = getTrackSubstemSchedules(track, projectMeter);
         if (substems) {
+          // getTrackSubstemSchedules already logs the per-substem schedule
+          // breakdown (kind + segment counts). Mark the fan-out here so
+          // the order is clear when reading the console: substem log →
+          // fan-out log → late-scheduled confirmations per substem.
+          const cachedCount = Object.values(substems)
+            .filter(({ audioUrl }) => audioBufferCache.has(audioUrl)).length;
+          const total = Object.keys(substems).length;
+          console.log(`🥁 fan-out ${track.name || track.id}: ${total} drum substems (${cachedCount} cached, ${total - cachedCount} late-loading)`);
           // Create the shared per-track gain once and register it under
           // the parent track id so the gain-update loop reaches it.
           const trackGain = audioContext.createGain();
@@ -457,6 +465,15 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         const meterChanged = srcN && srcD && (srcN !== tgtN || srcD !== tgtD);
         if (schedule && schedule.length > 1 && meterChanged) {
           console.log(`🎚️ [meter] ${track.name || track.id}: ${srcN}/${srcD} → ${tgtN}/${tgtD} — ${schedule.length} segments`);
+          // Diagnostic: if a drum track is meter-changing but using the
+          // bar-rearrange path, the drumSubstems metadata hasn't landed
+          // (backend _run_drum_teacher didn't finish yet, or MDX23C-DrumSep
+          // unavailable). Make that state loud so it's obvious why the
+          // per-substem snap path didn't fire.
+          const stemType = (track.metadata?.stemType || track.metadata?.instrument || '').toLowerCase();
+          if (stemType === 'drums' || stemType === 'drum_kit' || stemType === 'percussion') {
+            console.warn(`  ⚠️ drums meter-change on bar-rearrange path — no drumSubstems metadata yet (backend MDX23C-DrumSep still running or unavailable)`);
+          }
         }
         if (audioBufferCache.has(url)) {
           const { sources, gainNode } = scheduleTrackWithSchedule(

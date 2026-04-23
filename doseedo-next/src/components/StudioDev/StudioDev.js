@@ -1279,19 +1279,31 @@ export default function StudioDev() {
           // metadata.polypitchRendered tells useAudioPlayback to route this
           // stem through the regular audioUrl path instead of mask-playback.
           //
-          // Clear editSchedule: polypitch preserves the stem's duration (the
-          // render does master − original + shifted in place on the same
-          // frame count), so dispatchStrategy → getTrackSchedule rebuilds a
-          // fresh meter/tempo-aware schedule from beatMap on the next play.
-          // A prior identity override pinned the stem to its source meter
-          // and made meter changes silently no-op on polypitch-edited stems.
+          // editSchedule forces dispatchStrategy → getTrackSchedule to return
+          // a single identity segment (see virtualTrackEdit.js:944 — editSchedule
+          // takes precedence over buildMeterSchedule). Without this override,
+          // a track with a detected tempoMap (3 BPM entries for this song) gets
+          // 15 segments rearranged across the project timeline, and the
+          // polypitch blob's audio ends up chopped + silenced in practice.
+          // Known tradeoff: a subsequent meter change won't re-flow the
+          // polypitch stem. Accept it — we need audibility first.
+          const bus = (state.buses || []).find((b) => b.id === busId);
+          const tr = bus?.tracks.find((t) => t.id === trackId);
+          const dur = tr?.duration || 0;
+          const editSchedule = dur > 0
+            ? [{
+                srcStart: 0, srcEnd: dur,
+                dstStart: 0, dstEnd: dur,
+                rate: 1, fadeIn: 0, fadeOut: 0, kind: 'identity',
+              }]
+            : undefined;
           dispatch({
             type: 'UPDATE_TRACK',
             payload: {
               busId, trackId,
               updates: {
                 audioUrl: newUrl,
-                editSchedule: null,
+                ...(editSchedule ? { editSchedule } : {}),
                 metadata: { polypitchRendered: true },
               },
             },

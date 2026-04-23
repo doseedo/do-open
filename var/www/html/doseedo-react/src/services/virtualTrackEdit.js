@@ -1560,7 +1560,17 @@ export function getTrackSubstemSchedules(track, project) {
     }
     out[name] = { audioUrl, schedule, kind, ...(fiveFourGrouping ? { fiveFourGrouping } : {}) };
   }
-  return Object.keys(out).length > 0 ? out : null;
+  if (Object.keys(out).length === 0) return null;
+  // Visibility: log the per-substem schedule breakdown whenever the drum
+  // substem path is taken, so it's obvious in the console which branch
+  // fired (per-substem snap vs the bar-rearrange fallback). Kept under
+  // the meter-change emoji so it groups with the other meter logs.
+  const breakdown = Object.entries(out)
+    .map(([name, { schedule, kind }]) => `${name}:${kind}(${schedule.length})`)
+    .join(' ');
+  const tag = identity ? 'identity' : `${srcMeter[0]}/${srcMeter[1]} → ${tgtMeter[0]}/${tgtMeter[1]}`;
+  console.log(`🥁 [meter] drums per-substem schedule (${tag}): ${breakdown}`);
+  return out;
 }
 
 /**

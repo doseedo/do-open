@@ -324,23 +324,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         (t.type === 'midi' && (t.audioUrl || t.f0Audio || t.midiData)) // MIDI tracks with playable content
       );
 
-      let allTracks = [...voTracks, ...musicTracks, ...sfxTracks, ...drumTracks, ...midiAudioTracks, ...audioTracks];
-
-      // Silently mute any parent track that has stem children on this pass.
-      // The parent holds the original full mix; the stems hold per-instrument
-      // audio from demucs. Without this, meter-change plays master (4/4) on
-      // top of the rearranged stems (7/8). isMuted flag on the parent track
-      // survives in state for the UI, but this guard kicks in regardless in
-      // case auto-mute didn't fire (e.g. stem-separation path that didn't
-      // dispatch the mute action).
-      const parentsWithStems = new Set(
-        allTracks
-          .map((t) => t.metadata?.parentTrackId)
-          .filter((id) => typeof id === 'string' && id.length > 0)
-      );
-      if (parentsWithStems.size > 0) {
-        allTracks = allTracks.filter((t) => !parentsWithStems.has(t.id));
-      }
+      const allTracks = [...voTracks, ...musicTracks, ...sfxTracks, ...drumTracks, ...midiAudioTracks, ...audioTracks];
 
       // Check if any track has solo enabled
       const hasSoloTracks = allTracks.some(track => track.isSolo);
@@ -419,6 +403,14 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         // ── Drum substem fan-out ───────────────────────────────────────
         const substems = getTrackSubstemSchedules(track, projectMeter);
         if (substems) {
+          // getTrackSubstemSchedules already logs the per-substem schedule
+          // breakdown (kind + segment counts). Mark the fan-out here so
+          // the order is clear when reading the console: substem log →
+          // fan-out log → late-scheduled confirmations per substem.
+          const cachedCount = Object.values(substems)
+            .filter(({ audioUrl }) => audioBufferCache.has(audioUrl)).length;
+          const total = Object.keys(substems).length;
+          console.log(`🥁 fan-out ${track.name || track.id}: ${total} drum substems (${cachedCount} cached, ${total - cachedCount} late-loading)`);
           // Create the shared per-track gain once and register it under
           // the parent track id so the gain-update loop reaches it.
           const trackGain = audioContext.createGain();
@@ -473,6 +465,15 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         const meterChanged = srcN && srcD && (srcN !== tgtN || srcD !== tgtD);
         if (schedule && schedule.length > 1 && meterChanged) {
           console.log(`🎚️ [meter] ${track.name || track.id}: ${srcN}/${srcD} → ${tgtN}/${tgtD} — ${schedule.length} segments`);
+          // Diagnostic: if a drum track is meter-changing but using the
+          // bar-rearrange path, the drumSubstems metadata hasn't landed
+          // (backend _run_drum_teacher didn't finish yet, or MDX23C-DrumSep
+          // unavailable). Make that state loud so it's obvious why the
+          // per-substem snap path didn't fire.
+          const stemType = (track.metadata?.stemType || track.metadata?.instrument || '').toLowerCase();
+          if (stemType === 'drums' || stemType === 'drum_kit' || stemType === 'percussion') {
+            console.warn(`  ⚠️ drums meter-change on bar-rearrange path — no drumSubstems metadata yet (backend MDX23C-DrumSep still running or unavailable)`);
+          }
         }
         if (audioBufferCache.has(url)) {
           const { sources, gainNode } = scheduleTrackWithSchedule(
@@ -1185,32 +1186,6 @@ function scheduleTrackWithSchedule(
         continue;
       }
       sources.push(src);
-    }
-
-    // One-line meter-schedule diagnostic: summarise what we just scheduled
-    // so we can tell from the console whether the rearrange is actually
-    // different from an identity (= src→dst identical) schedule.
-    if (schedule.length > 1) {
-      const kinds = {};
-      let totalSrc = 0, totalDst = 0;
-      let srcMin = Infinity, srcMax = -Infinity;
-      let dstMin = Infinity, dstMax = -Infinity;
-      let identityLike = 0;
-      for (const seg of schedule) {
-        const k = seg.kind || '?';
-        kinds[k] = (kinds[k] || 0) + 1;
-        totalSrc += (seg.srcEnd - seg.srcStart);
-        totalDst += (seg.dstEnd - seg.dstStart);
-        if (seg.srcStart < srcMin) srcMin = seg.srcStart;
-        if (seg.srcEnd > srcMax) srcMax = seg.srcEnd;
-        if (seg.dstStart < dstMin) dstMin = seg.dstStart;
-        if (seg.dstEnd > dstMax) dstMax = seg.dstEnd;
-        if (Math.abs(seg.srcStart - seg.dstStart) < 1e-4 && Math.abs(seg.srcEnd - seg.dstEnd) < 1e-4 && (seg.rate || 1) === 1) {
-          identityLike++;
-        }
-      }
-      const kindStr = Object.entries(kinds).map(([k, v]) => `${k}×${v}`).join(' ');
-      console.log(`  📐 schedule: ${schedule.length} segs [${kindStr}] src=[${srcMin.toFixed(3)},${srcMax.toFixed(3)}](${totalSrc.toFixed(3)}s) dst=[${dstMin.toFixed(3)},${dstMax.toFixed(3)}](${totalDst.toFixed(3)}s) identityLike=${identityLike}/${schedule.length} liveScheduled=${sources.length}`);
     }
 
     return { sources, gainNode: trackGain };

@@ -43,6 +43,7 @@ import AudioLabeler from './components/AudioLabeler/AudioLabeler';
 import DataMonitor from './components/DataMonitor/DataMonitor';
 import AdminUsers from './components/AdminUsers/AdminUsers';
 import DO1 from './components/DO1/DO1';
+import Models from './components/Models/Models';
 import CreationView from './components/CreationView/CreationView';
 import StudioDev from './components/StudioDev/StudioDev';
 // ThemeEditor removed
@@ -94,16 +95,39 @@ function PasswordGate({ children, routeName }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      minHeight: '100vh', background: '#111', color: '#fff',
+      minHeight: '100vh',
+      background: 'var(--wb-bg, #e8e6e1)',
+      color: 'var(--wb-ink, #15181c)',
+      fontFamily: 'var(--wb-font-sans, Inter, -apple-system, sans-serif)',
     }}>
       <form onSubmit={handleSubmit} style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
-        background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 12, padding: '40px 48px',
+        background: 'var(--wb-surface, #f2f0ea)',
+        border: '1px solid var(--wb-rule-strong, #a5a29a)',
+        padding: '40px 48px',
+        boxShadow: '0 8px 24px -6px rgba(20, 22, 26, 0.15)',
+        minWidth: 320,
       }}>
-        <i className="fa-solid fa-lock" style={{ fontSize: 28, color: 'rgba(186,156,255,0.8)', marginBottom: 8 }} />
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Password Required</h2>
-        <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+        <i className="fa-solid fa-lock" style={{
+          fontSize: 24, color: 'var(--wb-accent, #1d4c7a)', marginBottom: 4,
+        }} />
+        <div style={{
+          fontFamily: 'var(--wb-font-mono, "JetBrains Mono", monospace)',
+          fontSize: 10, letterSpacing: '0.8px', textTransform: 'uppercase',
+          color: 'var(--wb-ink-mute, #7c7e85)',
+        }}>
+          Early Access
+        </div>
+        <h2 style={{
+          margin: 0, fontSize: 22, fontWeight: 600,
+          letterSpacing: '-0.3px', color: 'var(--wb-ink, #15181c)',
+        }}>
+          Password Required
+        </h2>
+        <p style={{
+          margin: 0, fontSize: 13, lineHeight: 1.5, textAlign: 'center',
+          color: 'var(--wb-ink-soft, #3a3d44)', maxWidth: 260,
+        }}>
           Enter the password to access {routeName}.
         </p>
         <input
@@ -113,17 +137,35 @@ function PasswordGate({ children, routeName }) {
           placeholder="Password"
           autoFocus
           style={{
-            padding: '10px 16px', fontSize: 14, borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)',
-            background: 'rgba(255,255,255,0.06)', color: '#fff', outline: 'none', width: 220,
+            padding: '10px 14px', fontSize: 13,
+            border: '1px solid var(--wb-rule, #c8c5bd)',
+            background: 'var(--wb-bg, #e8e6e1)',
+            color: 'var(--wb-ink, #15181c)',
+            fontFamily: 'var(--wb-font-mono, "JetBrains Mono", monospace)',
+            outline: 'none', width: 240, borderRadius: 0,
           }}
         />
         <button type="submit" style={{
-          padding: '10px 32px', fontSize: 14, fontWeight: 600, borderRadius: 8, border: 'none',
-          background: 'rgba(186,156,255,0.85)', color: '#fff', cursor: 'pointer',
+          padding: '10px 32px',
+          fontFamily: 'var(--wb-font-mono, "JetBrains Mono", monospace)',
+          fontSize: 10, fontWeight: 500, letterSpacing: '0.8px',
+          textTransform: 'uppercase', border: '1px solid var(--wb-ink, #15181c)',
+          background: 'var(--wb-ink, #15181c)',
+          color: 'var(--wb-bg, #e8e6e1)',
+          cursor: 'pointer', borderRadius: 0,
         }}>
           Unlock
         </button>
-        {error && <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,100,100,0.9)' }}>Incorrect password</p>}
+        {error && (
+          <p style={{
+            margin: 0, fontSize: 11,
+            fontFamily: 'var(--wb-font-mono, "JetBrains Mono", monospace)',
+            letterSpacing: '0.5px', textTransform: 'uppercase',
+            color: 'var(--wb-accent-warm, #c94f2c)',
+          }}>
+            Incorrect password
+          </p>
+        )}
       </form>
     </div>
   );
@@ -168,6 +210,7 @@ function AppContent() {
       p.startsWith('/research') ||
       p === '/downloads' ||
       p.startsWith('/plugins') ||
+      p === '/models' ||
       p.startsWith('/creation/');
     // Keep the legacy hifi-purple class in lockstep — /studio still uses
     // it for the password-gate skin override.
@@ -271,6 +314,7 @@ function AppContent() {
                       location.pathname === '/downloads' ? 'downloads' :
                       location.pathname.startsWith('/creation/') ? 'creation' :
                       location.pathname.startsWith('/plugins') ? 'plugins' :
+                      location.pathname === '/models' ? 'models' :
                       location.pathname === '/studio' ? 'daw' :
                       location.pathname === '/studio-legacy' ? 'daw' :
                       location.pathname === '/demo' ? 'daw' :
@@ -478,9 +522,9 @@ function AppContent() {
     navigate('/plugins');
   };
 
-  // Handle navigation to DO1
-  const handleGoToDO1 = () => {
-    navigate('/DO1');
+  // Handle navigation to Models catalog
+  const handleGoToModels = () => {
+    navigate('/models');
   };
 
   // Toggle MIDI browser
@@ -536,7 +580,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -570,7 +614,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -602,7 +646,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -631,7 +675,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -690,7 +734,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -719,7 +763,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -748,7 +792,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -794,7 +838,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -822,7 +866,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -832,6 +876,35 @@ function AppContent() {
           isPluginsView={true}
         />
         <Plugins />
+      </div>
+    );
+  }
+
+  // Show models catalog view with sidebar
+  if (currentView === 'models') {
+    return (
+      <div className="App">
+        <LiquidGlassFilters />
+        <LeftSidebar
+          onBackToDashboard={handleBackToDashboard}
+          onGoToHome={handleGoToHome}
+          onGoToSearch={handleGoToSearch}
+          onGoToUserInfo={handleGoToUserInfo}
+          onGoToTools={handleGoToTools}
+          onGoToWhatsNew={handleGoToWhatsNew}
+          onGoToResearch={handleGoToResearch}
+          onGoToDownloads={handleGoToDownloads}
+          onGoToPlugins={handleGoToPlugins}
+          onGoToModels={handleGoToModels}
+          onToggleSearch={handleToggleSearch}
+          onShowGenerationPanel={handleShowGenerationPanel}
+          onShowMidiBrowser={handleShowMidiBrowser}
+          showMidiBrowser={showMidiBrowser}
+          onToggleChat={handleToggleChat}
+          showChatWindow={showChatWindow}
+          isModelsView={true}
+        />
+        <Models />
       </div>
     );
   }
@@ -852,7 +925,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -881,7 +954,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -912,7 +985,7 @@ function AppContent() {
     );
   }
 
-  // Show DO1 view with sidebar
+  // Show DO1 view with sidebar (legacy route, not in nav)
   if (currentView === 'do1') {
     return (
       <div className="App">
@@ -927,14 +1000,13 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
           showMidiBrowser={showMidiBrowser}
           onToggleChat={handleToggleChat}
           showChatWindow={showChatWindow}
-          isDO1View={true}
         />
         <DO1 />
       </div>
@@ -965,7 +1037,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           onShowGenerationPanel={handleShowGenerationPanel}
           onShowMidiBrowser={handleShowMidiBrowser}
@@ -1042,7 +1114,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
           onToggleSearch={handleToggleSearch}
           showMidiBrowser={showMidiBrowser}
           onToggleChat={handleToggleChat}
@@ -1210,7 +1282,7 @@ function AppContent() {
           onGoToResearch={handleGoToResearch}
           onGoToDownloads={handleGoToDownloads}
           onGoToPlugins={handleGoToPlugins}
-          onGoToDO1={handleGoToDO1}
+          onGoToModels={handleGoToModels}
         onToggleSearch={handleToggleSearch}
         showMidiBrowser={showMidiBrowser}
         onToggleChat={handleToggleChat}

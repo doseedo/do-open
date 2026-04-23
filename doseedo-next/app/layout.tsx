@@ -2,6 +2,11 @@ import type { Metadata } from 'next';
 import Script from 'next/script';
 import { ClerkProvider } from '@clerk/nextjs';
 import './globals.css';
+// Workbench design tokens — defined at :root so they're available on every
+// route (including auth pages that don't render AppShell). Body-level
+// activation rules are scoped to body.workbench-theme, so importing here
+// doesn't re-theme marketing/auth chrome by itself.
+import '@/styles/theme-workbench.css';
 
 export const metadata: Metadata = {
   title: 'Doseedo - Music Production Studio',

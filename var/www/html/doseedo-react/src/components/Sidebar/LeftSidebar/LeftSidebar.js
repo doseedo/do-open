@@ -50,6 +50,14 @@ const Icon = {
       <path d="M13 3L5 14h6l-2 7 8-11h-6z" strokeLinejoin="round" />
     </svg>
   ),
+  models: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <circle cx="5" cy="6" r="1.7" /><circle cx="5" cy="18" r="1.7" />
+      <circle cx="12" cy="12" r="1.7" />
+      <circle cx="19" cy="6" r="1.7" /><circle cx="19" cy="18" r="1.7" />
+      <path d="M6.4 6.9L10.6 11M6.4 17.1L10.6 13M13.4 11L17.6 6.9M13.4 13L17.6 17.1" strokeLinecap="round" />
+    </svg>
+  ),
   research: (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
       <path d="M6 3v18M6 3h10l3 4v14" />
@@ -142,11 +150,11 @@ const SideItem = ({ icon, label, active, disabled, muted, onClick, tooltip }) =>
 
 const LeftSidebar = React.memo(({
   onBackToDashboard, onGoToHome, onGoToSearch, onGoToUserInfo, onGoToTools,
-  onGoToWhatsNew, onGoToResearch, onGoToDownloads, onGoToPlugins, onGoToDO1,
+  onGoToWhatsNew, onGoToResearch, onGoToDownloads, onGoToPlugins, onGoToModels,
   onToggleSearch: onToggleMidiBrowser, onShowGenerationPanel, onShowMidiBrowser,
   showMidiBrowser, onToggleChat, showChatWindow,
   isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView,
-  isWhatsNewView, isResearchView, isDownloadsView, isPluginsView, isDO1View,
+  isWhatsNewView, isResearchView, isDownloadsView, isPluginsView, isModelsView,
 }) => {
   const navigate = useNavigate();
   const { state, dispatch } = useApp();
@@ -169,7 +177,7 @@ const LeftSidebar = React.memo(({
   // Auto-expand on non-DAW views (desktop only).
   const isSpecialView = isDashboardView || isHomeView || isSearchView || isUserInfoView
     || isToolsView || isWhatsNewView || isResearchView || isDownloadsView
-    || isPluginsView || isDO1View;
+    || isPluginsView || isModelsView;
 
   useEffect(() => {
     if (!isMobile && isSpecialView && !state.sidebar.isExpanded) {
@@ -238,7 +246,7 @@ const LeftSidebar = React.memo(({
               <SideItem icon={Icon.plus} label="New Session" muted disabled tooltip="Coming soon" />
               <SideItem icon={Icon.wrench} label="Tools" disabled tooltip="Coming soon" />
               <SideItem icon={Icon.plugin} label="Plugins" active={isPluginsView} onClick={onGoToPlugins} />
-              <SideItem icon={Icon.bolt} label="DO1" active={isDO1View} onClick={onGoToDO1} />
+              <SideItem icon={Icon.models} label="Models" active={isModelsView} onClick={onGoToModels} />
             </div>
 
             <div className={styles.sideGroup}>

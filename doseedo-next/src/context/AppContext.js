@@ -1283,18 +1283,7 @@ function appReducer(state, action) {
       // meter-log fan-out) to fire as if the user had flipped the
       // meter dropdown.
       if (n === state.beatsPerBar && d === state.meterDenominator) return state;
-      // Also rewrite each tempoMap entry's `meter` to the new value.
-      // virtualTrackEdit.buildMeterSchedule's localTgtMeterAtBar prefers
-      // the per-entry meter over the scalar tgtMeter, so leaving the
-      // tempoMap entries at the detected meter made every bar remap
-      // (srcMeter → tgtMeter) collapse to srcMeter → srcMeter → identity.
-      // The result was "project meter changed but every stem's schedule
-      // played as identity" — 15 segments reported but zero audible
-      // rearrangement.
-      const rewrittenTempoMap = Array.isArray(state.tempoMap) && state.tempoMap.length > 0
-        ? state.tempoMap.map((e) => ({ ...e, meter: [n, d] }))
-        : state.tempoMap;
-      return { ...state, beatsPerBar: n, meterDenominator: d, tempoMap: rewrittenTempoMap };
+      return { ...state, beatsPerBar: n, meterDenominator: d };
     }
 
     case 'SET_TIMELINE_OFFSET':

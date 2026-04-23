@@ -1602,8 +1602,14 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
             // mixed via one shared per-track gain so solo/mute keeps working.
             const onDrumTeacher = ({ drum_substem_urls, drum_substem_onsets, drum_substem_onset_strengths }) => {
               const names = Object.keys(drum_substem_urls || {});
-              if (!names.length) return;
-              console.log('[separate-stems] drum teacher ready:', names);
+              if (!names.length) {
+                console.warn('[separate-stems] drum teacher returned 0 substems — meter-change will use bar-rearrange fallback on drums');
+                return;
+              }
+              const onsetCounts = names
+                .map((n) => `${n}(${(drum_substem_onsets?.[n] || []).length})`)
+                .join(' ');
+              console.log(`🥁 [separate-stems] drum teacher ready: ${names.length} substems — ${onsetCounts} → caching on drums track (stem-${trackId}-drums)`);
               dispatch({
                 type: 'UPDATE_TRACK',
                 payload: {

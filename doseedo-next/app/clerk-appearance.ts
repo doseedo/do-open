@@ -1,65 +1,106 @@
-import { dark } from '@clerk/themes';
-
 /**
- * Minimal, Linear/Vercel-style dark aesthetic matching
- * auth-service/static/login/index.html (the desktop sign-in page).
+ * Clerk appearance — workbench cream theme.
  *
- * Typed loosely (no @clerk/types import) since @clerk/nextjs doesn't
- * pull that package in as a dep; Clerk's components accept plain
- * objects as the `appearance` prop at runtime.
+ * Matches the rest of the app: cream surfaces, dark ink, mono labels,
+ * square-ish radii. Raw hex values (not var(--wb-*)) because Clerk's
+ * runtime inlines these into its own <style> islands where custom
+ * properties may or may not inherit, depending on shadow-root boundaries.
+ * Keep in sync with styles/theme-workbench.css.
  */
 export const doseedoClerkAppearance = {
-  baseTheme: dark,
   variables: {
-    colorPrimary: '#ffffff',
-    colorBackground: '#0a0a0a',
-    colorText: '#ffffff',
-    colorInputBackground: '#111111',
-    colorInputText: '#ffffff',
-    colorNeutral: '#ffffff',
-    colorDanger: '#ef4444',
-    colorSuccess: '#10b981',
-    colorWarning: '#f59e0b',
+    colorPrimary: '#15181c',        // wb-ink
+    colorBackground: '#f2f0ea',     // wb-surface
+    colorText: '#15181c',           // wb-ink
+    colorTextSecondary: '#3a3d44',  // wb-ink-soft
+    colorInputBackground: '#e8e6e1',// wb-bg
+    colorInputText: '#15181c',      // wb-ink
+    colorNeutral: '#15181c',
+    colorDanger: '#c94f2c',         // wb-accent-warm
+    colorSuccess: '#2f6b4e',        // wb-ok
+    colorWarning: '#c94f2c',
     fontFamily:
-      '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-    fontSize: '14px',
-    borderRadius: '6px',
+      'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    fontFamilyButtons:
+      '"JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+    fontSize: '13px',
+    borderRadius: '4px',
     spacingUnit: '1rem',
   },
   elements: {
     card: {
-      backgroundColor: '#0a0a0a',
-      border: '1px solid #1a1a1a',
-      boxShadow: 'none',
+      backgroundColor: '#f2f0ea',
+      border: '1px solid #a5a29a',   // wb-rule-strong
+      boxShadow: '0 8px 24px rgba(20, 22, 26, 0.10)',
+      borderRadius: '0',
+    },
+    headerTitle: {
+      color: '#15181c',
+      fontWeight: 600,
+      letterSpacing: '-0.3px',
+    },
+    headerSubtitle: {
+      color: '#3a3d44',
     },
     footer: { display: 'none' },
     formButtonPrimary: {
-      backgroundColor: '#e8e8e8',
-      color: '#000',
-      fontWeight: 600,
-      textTransform: 'none',
+      backgroundColor: '#15181c',    // wb-ink
+      color: '#e8e6e1',              // wb-bg
+      border: '1px solid #15181c',
+      borderRadius: '0',
+      fontFamily:
+        '"JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+      fontSize: '11px',
+      fontWeight: 500,
+      letterSpacing: '0.8px',
+      textTransform: 'uppercase',
       '&:hover, &:focus, &:active': {
-        backgroundColor: '#ffffff',
-        color: '#000',
+        backgroundColor: '#000',
+        color: '#e8e6e1',
       },
     },
     socialButtonsBlockButton: {
-      backgroundColor: '#111',
-      border: '1px solid #222',
-      color: '#fff',
+      backgroundColor: '#e8e6e1',
+      border: '1px solid #c8c5bd',   // wb-rule
+      color: '#15181c',
+      borderRadius: '0',
       '&:hover': {
-        backgroundColor: '#1a1a1a',
-        borderColor: '#333',
+        backgroundColor: '#dcd9d1',  // wb-surface-2
+        borderColor: '#a5a29a',
       },
     },
-    formFieldInput: {
-      backgroundColor: '#111',
-      border: '1px solid #222',
-      color: '#fff',
-      '&:focus': { borderColor: '#444' },
+    formFieldLabel: {
+      color: '#3a3d44',
+      fontFamily:
+        '"JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+      fontSize: '10px',
+      letterSpacing: '0.7px',
+      textTransform: 'uppercase',
     },
-    dividerLine: { backgroundColor: '#1e1e1e' },
-    dividerText: { color: '#444', fontSize: '0.78em' },
+    formFieldInput: {
+      backgroundColor: '#e8e6e1',
+      border: '1px solid #c8c5bd',
+      color: '#15181c',
+      borderRadius: '0',
+      '&:focus': { borderColor: '#15181c' },
+    },
+    dividerLine: { backgroundColor: '#c8c5bd' },
+    dividerText: {
+      color: '#7c7e85',              // wb-ink-mute
+      fontSize: '0.78em',
+      fontFamily:
+        '"JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace',
+      letterSpacing: '0.4px',
+    },
+    identityPreviewText: { color: '#15181c' },
+    identityPreviewEditButton: { color: '#1d4c7a' }, // wb-accent
+    formFieldAction: { color: '#1d4c7a' },
+    footerActionText: { color: '#3a3d44' },
+    footerActionLink: {
+      color: '#1d4c7a',
+      fontWeight: 500,
+      '&:hover': { color: '#15181c' },
+    },
   },
   layout: {
     socialButtonsPlacement: 'top',
