@@ -22,12 +22,9 @@ export interface Note {
   id: string;
   startSec: number;
   endSec: number;
-  startFrame?: number;            // detector-native frame boundary, if available
-  endFrame?: number;              // detector-native frame boundary, if available
   pitchMidi: number;              // rounded MIDI pitch (integer)
   pitchCents: number;             // cents offset from pitchMidi center (-50 .. +50)
   pitchTrack?: Float32Array;      // sub-sample pitch contour in MIDI, 100 Hz grid
-  energyCurve?: Float32Array;     // detector-native per-frame energy curve
   velocity: number;               // 0..1
   confidence: number;             // 0..1 from detector head
   instrumentClass?: string;       // "piano", "strings", "voice", ... or undefined

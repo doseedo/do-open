@@ -1,6 +1,6 @@
 /**
  * polypitchService — bridge between doseedo's existing basic-pitch MIDI and
- * the polypitch WebGPU phase-vocoder pipeline (ported from
+ * the polypitch WebGPU resample pipeline (ported from
  * ~/Downloads/doseedo-desktop/polypitch-browser under src/polypitch/).
  *
  * The upstream Pipeline did its own note detection via @spotify/basic-pitch;
@@ -41,7 +41,7 @@ export function getPipeline() {
         // Wire a learned mask_unet.onnx URL here once it's trained.
         maskUNetUrl: null,
       });
-      logPipeline('polypitch', 'ready (phase-vocoder pitch-shift)', 'ok');
+      logPipeline('polypitch', 'ready (python-parity resample pitch-shift)', 'ok');
       return pipeline;
     })().catch((err) => {
       _pipelinePromise = null; // retry on next call
@@ -56,14 +56,11 @@ export function getPipeline() {
  * Convert the {notes: [{note, time, duration, velocity}]} shape produced by
  * basicPitchOnnx / latentPitch into the polypitch Note[] shape.
  *
- * @param {{notes:Array<{note:number, time:number, duration:number, velocity:number, startFrame?:number, endFrame?:number, energyCurve?:number[]|Float32Array}>, frameRate?:number}} midiData
- * @returns {Array<{id:string, startSec:number, endSec:number, startFrame?:number, endFrame?:number, pitchMidi:number, pitchCents:number, energyCurve?:Float32Array, velocity:number, confidence:number}>}
+ * @param {{notes:Array<{note:number, time:number, duration:number, velocity:number}>}} midiData
+ * @returns {Array<{id:string, startSec:number, endSec:number, pitchMidi:number, pitchCents:number, velocity:number, confidence:number}>}
  */
 export function notesFromMidiData(midiData) {
   if (!midiData || !Array.isArray(midiData.notes)) return [];
-  const frameRate = Number.isFinite(midiData.frameRate) && midiData.frameRate > 0
-    ? midiData.frameRate
-    : null;
   // IDs are deterministic on pitch+time so the same note produces the
   // same id whether it came through a windowed slice or the full track
   // array. polypitchChordSync computes newPitches from a ~2-note window
@@ -71,38 +68,15 @@ export function notesFromMidiData(midiData) {
   // we index-prefixed the id, "n0-69-10.234" in newPitches wouldn't
   // match "n47-69-10.234" in the full array and every render silently
   // noop'd with "no pitch changes".
-  return midiData.notes.map((n) => {
-    const startSec = n.time;
-    const endSec = n.time + Math.max(0.01, n.duration || 0.1);
-    const velocity = Math.min(1, Math.max(0, (n.velocity ?? 100) / 127));
-    const startFrame = Number.isFinite(n.startFrame)
-      ? Math.max(0, Math.round(n.startFrame))
-      : frameRate
-        ? Math.max(0, Math.round(startSec * frameRate))
-        : undefined;
-    const endFrame = Number.isFinite(n.endFrame)
-      ? Math.max(startFrame ?? 0, Math.round(n.endFrame))
-      : frameRate
-        ? Math.max(startFrame ?? 0, Math.round(endSec * frameRate))
-        : undefined;
-    const energyCurve = n.energyCurve && n.energyCurve.length > 0
-      ? Float32Array.from(n.energyCurve)
-      : startFrame !== undefined && endFrame !== undefined
-        ? new Float32Array(Math.max(1, endFrame - startFrame + 1)).fill(velocity)
-        : undefined;
-    return {
-      id: `${n.note | 0}@${n.time.toFixed(3)}`,
-      startSec,
-      endSec,
-      startFrame,
-      endFrame,
-      pitchMidi: n.note | 0,
-      pitchCents: 0,
-      energyCurve,
-      velocity,
-      confidence: 1.0,
-    };
-  });
+  return midiData.notes.map((n) => ({
+    id: `${n.note | 0}@${n.time.toFixed(3)}`,
+    startSec: n.time,
+    endSec: n.time + Math.max(0.01, n.duration || 0.1),
+    pitchMidi: n.note | 0,
+    pitchCents: 0,
+    velocity: Math.min(1, Math.max(0, (n.velocity ?? 100) / 127)),
+    confidence: 1.0,
+  }));
 }
 
 /**
@@ -130,7 +104,7 @@ async function loadAudioBuffer(audioUrl) {
 
 /**
  * Render a new take of the track where each note in `newPitches` has been
- * pitch-shifted to its target MIDI via polypitch's phase vocoder. Notes not
+ * pitch-shifted to its target MIDI via polypitch's resample renderer. Notes not
  * present in `newPitches` stay at their original pitch (they stay in the mix
  * because `includeUnedited=true`, the subtract-then-add path inside render).
  *

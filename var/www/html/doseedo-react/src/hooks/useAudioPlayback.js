@@ -7,6 +7,14 @@ import { getStretchedBuffer } from '../services/wsolaStretch';
 
 // Global audio buffer cache (shared across all instances)
 const audioBufferCache = new Map();
+const RESUME_ATTACK_SECONDS = 0.005;
+
+function isRenderablePlaybackTrack(track) {
+  // `isBusMaster` is the hidden uploaded full-mix parent kept in state for
+  // analysis/regen after stem separation. It must never be scheduled for
+  // playback once stems exist or it will mask stem edits and double the mix.
+  return !track?.metadata?.isBusMaster;
+}
 
 function normalizeStemForMaskPlayback(track) {
   const raw = (
@@ -46,6 +54,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
   const isPlayingRef = useRef(isPlaying); // Track isPlaying in ref for animation loop
   const tracksRef = useRef(tracks); // Store tracks in ref to avoid recreating play callback
   const hasStartedPlaybackRef = useRef(false); // Track if playback has actually started
+  const playbackSessionRef = useRef(0); // Invalidate stale late-load scheduling across pause/play cycles
   const playRef = useRef(null); // Latest play() fn — called by the meter-change live-reschedule effect
 
   // Initialize audio context, Tuna FX, and MIDI player
@@ -100,11 +109,11 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
   useEffect(() => {
     if (!isPlaying || gainNodesRef.current.size === 0) return;
 
-    const voTracks = tracks.vo || [];
-    const musicTracks = tracks.music || [];
-    const sfxTracks = tracks.sfx || [];
-    const midiTracks = tracks.midi || [];
-    const audioTracks = tracks.audio || [];
+    const voTracks = (tracks.vo || []).filter(isRenderablePlaybackTrack);
+    const musicTracks = (tracks.music || []).filter(isRenderablePlaybackTrack);
+    const sfxTracks = (tracks.sfx || []).filter(isRenderablePlaybackTrack);
+    const midiTracks = (tracks.midi || []).filter(isRenderablePlaybackTrack);
+    const audioTracks = (tracks.audio || []).filter(isRenderablePlaybackTrack);
 
     // Include MIDI bus audio tracks (not MIDI type tracks)
     const midiAudioTracks = midiTracks.filter(t => t.type !== 'midi' && t.audioUrl);
@@ -182,10 +191,10 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     if (!audioContextRef.current) return;
 
     const audioContext = audioContextRef.current;
-    const voTracks = tracks.vo || [];
-    const musicTracks = tracks.music || [];
-    const sfxTracks = tracks.sfx || [];
-    const audioTracks = tracks.audio || [];
+    const voTracks = (tracks.vo || []).filter(isRenderablePlaybackTrack);
+    const musicTracks = (tracks.music || []).filter(isRenderablePlaybackTrack);
+    const sfxTracks = (tracks.sfx || []).filter(isRenderablePlaybackTrack);
+    const audioTracks = (tracks.audio || []).filter(isRenderablePlaybackTrack);
     const allTracks = [...voTracks, ...musicTracks, ...sfxTracks, ...audioTracks];
 
     // Pre-load all unique audio URLs (including drum hits)
@@ -280,6 +289,9 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     if (!audioContextRef.current) return;
 
     const audioContext = audioContextRef.current;
+    const sessionId = ++playbackSessionRef.current;
+    const isSessionActive = () =>
+      playbackSessionRef.current === sessionId && isPlayingRef.current;
 
     if (audioContext.state === 'suspended') {
       await audioContext.resume();
@@ -299,12 +311,12 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
 
       // Get all tracks from ref (not prop) to avoid recreating this callback
       const currentTracks = tracksRef.current;
-      const voTracks = currentTracks.vo || [];
-      const musicTracks = currentTracks.music || [];
-      const sfxTracks = currentTracks.sfx || [];
-      const drumTracks = currentTracks.drums || [];
-      const midiTracks = currentTracks.midi || [];
-      const audioTracks = currentTracks.audio || [];
+      const voTracks = (currentTracks.vo || []).filter(isRenderablePlaybackTrack);
+      const musicTracks = (currentTracks.music || []).filter(isRenderablePlaybackTrack);
+      const sfxTracks = (currentTracks.sfx || []).filter(isRenderablePlaybackTrack);
+      const drumTracks = (currentTracks.drums || []).filter(isRenderablePlaybackTrack);
+      const midiTracks = (currentTracks.midi || []).filter(isRenderablePlaybackTrack);
+      const audioTracks = (currentTracks.audio || []).filter(isRenderablePlaybackTrack);
 
       // Include MIDI bus tracks - include MIDI tracks with audioUrl OR f0Audio
       const midiAudioTracks = midiTracks.filter(t =>
@@ -417,7 +429,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             (async () => {
               try {
                 await ensureBuffer(audioUrl);
-                if (!isPlayingRef.current) return;
+                if (!isSessionActive()) return;
                 const livePlayhead = audioContext.currentTime - startTimeRef.current;
                 const n = scheduleSubstem(livePlayhead, audioContext.currentTime);
                 console.log(`  🥁 Late-scheduled drum substem ${name} (${kind}, ${n} seg)`);
@@ -497,7 +509,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         (async () => {
           try {
             const audioBuffer = await ensureBuffer(url);
-            if (!isPlayingRef.current) return;
+            if (!isSessionActive()) return;
             const livePlayhead = audioContext.currentTime - startTimeRef.current;
             const trackDuration = track.duration || audioBuffer.duration;
             if (livePlayhead > trackStartTime + trackDuration) return;  // already past
@@ -780,6 +792,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     if (t >= 0 && t <= totalDuration + 1) {
       pauseTimeRef.current = t;
     }
+    playbackSessionRef.current += 1;
     sourceNodesRef.current.forEach((s) => { try { s.stop(); } catch (_) {} });
     sourceNodesRef.current = [];
     gainNodesRef.current.clear();
@@ -797,6 +810,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
    * @param {boolean} storePosition - Whether to store current position (default true)
    */
   const pause = useCallback((storePosition = true) => {
+    playbackSessionRef.current += 1;
     sourceNodesRef.current.forEach(source => {
       try {
         source.stop();
@@ -886,7 +900,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
 
     if (isPlaying) {
       // Only start playback if not already playing
-      if (sourceNodesRef.current.length === 0) {
+      if (!hasStartedPlaybackRef.current) {
         play();
       }
     } else {
@@ -901,6 +915,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
    */
   useEffect(() => {
     return () => {
+      playbackSessionRef.current += 1;
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
@@ -960,7 +975,6 @@ function scheduleTrack(
     const gainNode = audioContext.createGain();
 
     source.buffer = audioBuffer;
-    gainNode.gain.value = gain;
 
     source.connect(gainNode);
     // TEMPORARY: Bypass FX chain for testing - connect directly to master
@@ -996,6 +1010,15 @@ function scheduleTrack(
     }
 
     console.log(`    🎵 Starting at AudioContext time: ${when.toFixed(2)}s, offset: ${offset.toFixed(2)}s`);
+
+    const immediateStart = when <= audioContext.currentTime + 1e-4;
+    const attack = immediateStart ? Math.min(RESUME_ATTACK_SECONDS, 0.02) : 0;
+    if (attack > 0) {
+      gainNode.gain.setValueAtTime(0, when);
+      gainNode.gain.linearRampToValueAtTime(gain, when + attack);
+    } else {
+      gainNode.gain.setValueAtTime(gain, when);
+    }
 
     source.start(when, offset);
 
@@ -1117,7 +1140,12 @@ function scheduleTrackWithSchedule(
       // bent the time axis; the source just plays the result back.
 
       const segGain = audioContext.createGain();
-      const fadeIn  = dstOffsetIntoSeg > 0 ? 0 : Math.min(seg.fadeIn  || 0, dstDurFromHere * 0.5);
+      const immediateStart = Math.abs(when - schedulingStartTime) < 1e-4;
+      const attackFade = immediateStart
+        ? Math.min(RESUME_ATTACK_SECONDS, dstDurFromHere * 0.5)
+        : 0;
+      const fadeInBase = dstOffsetIntoSeg > 0 ? 0 : (seg.fadeIn || 0);
+      const fadeIn  = Math.min(Math.max(fadeInBase, attackFade), dstDurFromHere * 0.5);
       const fadeOut = Math.min(seg.fadeOut || 0, dstDurFromHere * 0.5);
       const segEnd = when + dstDurFromHere;
       if (fadeIn > 0) {

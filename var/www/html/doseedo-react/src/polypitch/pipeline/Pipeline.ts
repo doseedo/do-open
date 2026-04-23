@@ -9,8 +9,8 @@
  *   - replaces `analyze()` with `ingest(audio, notes)` which caches an STFT for
  *     externally-provided notes,
  *   - keeps `render(edits)` unchanged — that's the whole reason polypitch
- *     exists here: phase-vocoder pitch-shift per-note (±3 st) with fall-through
- *     to DDSP (if present) for larger intervals.
+ *     exists here: python-parity per-note resample shifting on isolated notes,
+ *     with DDSP reserved for larger-interval work if we ever wire it back in.
  *
  * MaskUNet runs in classical-fallback mode (no ONNX) out of the box; wire a
  * real `mask_unet.onnx` URL later via `PipelineInitOpts.maskUNetUrl`.

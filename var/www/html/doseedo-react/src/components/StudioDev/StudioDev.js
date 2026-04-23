@@ -424,6 +424,7 @@ export default function StudioDev() {
       const key = (bus.type || '').toLowerCase();
       const bucket = out[key] || out.music;
       for (const t of bus.tracks || []) {
+        if (t.metadata?.isBusMaster) continue;
         bucket.push({
           ...t,
           _busId: bus.id,

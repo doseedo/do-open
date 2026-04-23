@@ -244,15 +244,17 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, panelWidth = 400, plug
     state.buses.forEach(bus => {
       const typeKey = bus.type.toLowerCase();
       // Add bus info to each track so playback can apply bus-level controls
-      const tracksWithBusInfo = bus.tracks.map(track => ({
-        ...track,
-        _busId: bus.id,      // Add busId so playback can update track
-        _busGain: bus.gain,
-        _busPan: bus.pan,
-        _busReverbSend: bus.reverbSend,
-        _busMuted: bus.mute,
-        _busSolo: bus.solo
-      }));
+      const tracksWithBusInfo = bus.tracks
+        .filter(track => !track.metadata?.isBusMaster)
+        .map(track => ({
+          ...track,
+          _busId: bus.id,      // Add busId so playback can update track
+          _busGain: bus.gain,
+          _busPan: bus.pan,
+          _busReverbSend: bus.reverbSend,
+          _busMuted: bus.mute,
+          _busSolo: bus.solo
+        }));
       tracks[typeKey] = [...(tracks[typeKey] || []), ...tracksWithBusInfo];
     });
     return tracks;

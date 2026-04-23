@@ -312,16 +312,13 @@ function decodeNotes(onsetMap, frameMap, totalFrames, opts = {}) {
   const close = (p, endFrame) => {
     const n = active.get(p);
     const dur = endFrame - n.startFrame;
-    const meanVel = n.velSum / Math.max(1, n.velCount);
     if (dur >= MIN_LEN) {
       notes.push({
         note: p + MIDI_OFFSET,
         time: n.startFrame / FPS,
         duration: dur / FPS,
-        startFrame: n.startFrame,
-        endFrame,
-        velocity: Math.max(1, Math.min(127, Math.round(meanVel * 127))),
-        energyCurve: Array.from({ length: dur }, () => meanVel),
+        velocity: Math.max(1, Math.min(127,
+          Math.round((n.velSum / Math.max(1, n.velCount)) * 127))),
       });
     }
     active.delete(p);

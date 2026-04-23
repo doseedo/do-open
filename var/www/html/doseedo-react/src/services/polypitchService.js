@@ -1,6 +1,6 @@
 /**
  * polypitchService — bridge between doseedo's existing basic-pitch MIDI and
- * the polypitch WebGPU phase-vocoder pipeline (ported from
+ * the polypitch WebGPU resample pipeline (ported from
  * ~/Downloads/doseedo-desktop/polypitch-browser under src/polypitch/).
  *
  * The upstream Pipeline did its own note detection via @spotify/basic-pitch;
@@ -41,7 +41,7 @@ export function getPipeline() {
         // Wire a learned mask_unet.onnx URL here once it's trained.
         maskUNetUrl: null,
       });
-      logPipeline('polypitch', 'ready (phase-vocoder pitch-shift)', 'ok');
+      logPipeline('polypitch', 'ready (python-parity resample pitch-shift)', 'ok');
       return pipeline;
     })().catch((err) => {
       _pipelinePromise = null; // retry on next call
@@ -104,7 +104,7 @@ async function loadAudioBuffer(audioUrl) {
 
 /**
  * Render a new take of the track where each note in `newPitches` has been
- * pitch-shifted to its target MIDI via polypitch's phase vocoder. Notes not
+ * pitch-shifted to its target MIDI via polypitch's resample renderer. Notes not
  * present in `newPitches` stay at their original pitch (they stay in the mix
  * because `includeUnedited=true`, the subtract-then-add path inside render).
  *

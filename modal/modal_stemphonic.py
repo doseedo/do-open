@@ -255,6 +255,29 @@ def _ignore_patterns(*extra):
         ".git", "**/.git", "**/.git/**",
         ".venv", "**/.venv", "**/.venv/**",
         ".pytest_cache", "**/.pytest_cache", "**/.pytest_cache/**",
+        # Claude Code's config/state dir — scheduled_tasks.lock gets touched
+        # whenever a running Claude session ticks, which races Modal's copy
+        # and trips "file modified during build" if an agent is live during
+        # deploy. Never wanted in a Modal image anyway.
+        ".claude", "**/.claude", "**/.claude/**",
+        # Frontend trees — only relevant on Mac deploys where _DO2 is the
+        # full monorepo root. IDEs/webpack/vercel dev watchers routinely
+        # touch these during development, racing Modal's source copy and
+        # triggering "file modified during build". Modal only needs the
+        # Python server code; the frontend deploys to Vercel separately.
+        # (Kept narrow — no bare "build"/"dist" because ACE-Step and
+        # other Python packages under _DO2 may use those names legitimately.)
+        "doseedo-next", "**/doseedo-next", "**/doseedo-next/**",
+        "var", "**/var", "**/var/**",
+        "node_modules", "**/node_modules", "**/node_modules/**",
+        ".next", "**/.next", "**/.next/**",
+        ".vercel", "**/.vercel", "**/.vercel/**",
+        # macOS Finder touches .DS_Store whenever a folder is browsed;
+        # also races Modal's copy.
+        ".DS_Store", "**/.DS_Store",
+        # Editor / system temp files that routinely get rewritten.
+        "*.swp", "**/*.swp", "*.swo", "**/*.swo",
+        "*.tmp", "**/*.tmp",
         "*.log", "**/*.log",
     ]
     return base + list(extra)
@@ -313,10 +336,14 @@ image = (
     # so pip won't pull torch 2.11 during this pass. torch==2.4.1 gets
     # installed explicitly in the next step.
     #
-    # audio-separator is commented out in the requirements file (line 14).
-    # It was used by MDX23C-DrumSep; removed 2026-04-11 along with
-    # basic-pitch and demucs in favour of the latent student models
-    # (latent_demucs / latent_drumsep / latent_pitch / latent_visual).
+    # audio-separator stays commented out in requirements.txt (line 14)
+    # and gets its own targeted .pip_install call below (see restored
+    # MDX23C-DrumSep block). basic-pitch and demucs from the 2026-04-11
+    # removal remain gone — the latent student models (latent_demucs /
+    # latent_pitch / latent_visual) replaced those. latent_drumsep's
+    # PyTorch ckpt is lost in the /scratch wipe, so the MDX23C teacher
+    # is currently the only way to produce per-substem drum audio
+    # server-side for the browser scheduler.
     .pip_install_from_requirements(
         os.path.join(_HERE, "requirements.txt"),
         extra_options="--no-deps",
@@ -368,6 +395,17 @@ image = (
         "lameenc==1.7.0",
         "openunmix==1.3.0",
         "einops==0.8.0",
+        extra_options="--no-deps",
+    )
+    # audio-separator (MDX23C-DrumSep teacher). Restored 2026-04-23 to
+    # populate drum_substem_urls in /separate-stems so the browser-side
+    # per-substem meter-change scheduler (virtualTrackEdit's drum path)
+    # actually fires instead of falling back to bar-level rearrange.
+    # --no-deps because its declared numpy>=2 conflicts with our pinned
+    # numpy==1.26.4; every runtime dep it actually needs (librosa, onnx,
+    # pyyaml, omegaconf, tqdm, torch) is already in requirements.txt.
+    .pip_install(
+        "audio-separator==0.44.1",
         extra_options="--no-deps",
     )
     # ACE-Step source — exclude the 14 GB checkpoints subdir (goes on volume)
@@ -522,8 +560,12 @@ class Stemphonic:
 
         # Other weight dirs on volume
         link("/scratch/piper_voices",           "/models/piper-voices")
-        # audio_separator_models removed 2026-04-11 — MDX23C-DrumSep
-        # replaced by latent_drumsep student baked into image.
+        # MDX23C-DrumSep teacher — restored 2026-04-23 so _run_drum_teacher
+        # in stemphonic_server.py can populate drum_substem_urls. The ckpt
+        # (MDX23C-DrumSep-aufr33-jarredou.ckpt) and config live in the
+        # audio-separator-models volume entry; _run_drum_teacher reads them
+        # from /scratch/audio_separator_models by default (DRUM_TEACHER_DIR).
+        link("/scratch/audio_separator_models", "/models/audio-separator-models")
         link("/scratch/latent_editor_ckpts",    "/models/latent-editor-ckpts")
         link("/scratch/latent_soundfonts",      "/models/latent-soundfonts")
         link("/scratch/onnx",                   "/models/onnx")
