@@ -208,6 +208,18 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       } else if (track.audioUrl) {
         audioUrls.push(track.audioUrl);
       }
+      // Drum substem WAVs (from backend MDX23C teacher). Without this,
+      // they're only fetched inside scheduleOrDefer's late-load path,
+      // which races user seeks — if a seek lands before fetch+decode
+      // finishes, the captured session becomes stale and the substem
+      // is silently dropped. Pre-warming here caches the buffers so
+      // every subsequent play() schedules them immediately.
+      const subUrls = track.metadata?.drumSubstems;
+      if (subUrls && typeof subUrls === 'object') {
+        for (const u of Object.values(subUrls)) {
+          if (u) audioUrls.push(u);
+        }
+      }
       // Also preload F0 audio if available
       if (track.f0Audio) {
         audioUrls.push(track.f0Audio);
@@ -437,7 +449,12 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             (async () => {
               try {
                 await ensureBuffer(audioUrl);
-                if (!isSessionActive()) return;
+                if (!isSessionActive()) {
+                  // Session advanced (seek or pause) while we were fetching.
+                  // Buffer is now cached — next play() will pick it up.
+                  console.log(`  🥁 ${name} late-load: session stale, cached for next play`);
+                  return;
+                }
                 const livePlayhead = audioContext.currentTime - startTimeRef.current;
                 const n = scheduleSubstem(livePlayhead, audioContext.currentTime);
                 console.log(`  🥁 Late-scheduled drum substem ${name} (${kind}, ${n} seg)`);

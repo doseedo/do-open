@@ -166,6 +166,22 @@ import styles from './DAW.module.css';
  * 5. Extracted reusable components for better organization
  */
 
+// ── LATENT_MODE ───────────────────────────────────────────────────────────
+// Gates client-side latent → audio playback paths. When false (default), we
+// use backend WAVs for all playback (both main stems and drum substems) and
+// only the latent MIDI / envelope paths that DON'T feed audio still run.
+// Latent extraction, encoding, drum-sep → MIDI, and pitch → MIDI all keep
+// running either way — we need cached latent_ids on every track to send to
+// the backend for generation / repaint-meter.
+//
+// Specifically disabled when false:
+//   - latent_mask_e2e preview envelope dispatch onto stem tracks
+//     (the envelope overwrite was cropping stem tracks by re-triggering
+//     useWaveform's duration calculation from a different-length buffer)
+//
+// Flip to true when A/B'ing against backend-free playback.
+const LATENT_MODE = false;
+
 // Main DAW Component
 const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, pluginMode = false }) => {
   const { state, dispatch } = useApp();
@@ -1464,58 +1480,56 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
                   })();
 
                   // 2) Rough preview playback + envelope via latent_mask_e2e.
-                  // Model is 4-stem; htdemucs_6s is 6-stem. For the preview
-                  // window, piano + guitar + other all share the mask's
-                  // "other" output so the user can at least hear rough
-                  // separation before backend lands. Backend overwrites
-                  // everything on completion.
-                  try {
-                    const t0 = performance.now();
-                    const { stemAudiosFromMaskOverMaster, LATENT_MASK_ENV_FPS } =
-                      await import('../../services/latentMask');
-                    const maskStems = await stemAudiosFromMaskOverMaster(
-                      stemLatents, src.flat, src.numFrames
-                    );
-                    console.log(`[latentMask] preview ready in ${(performance.now()-t0).toFixed(0)}ms`);
-                    const byName = {};
-                    for (const s of maskStems) byName[s.stemName] = s;
-                    // Map each UI stem to a mask-preview source. drums/bass/
-                    // vocals use their matching mask stem; other/guitar/piano
-                    // all share the combined "other".
-                    const OTHER = byName['other'];
-                    const routing = {
-                      drums:  byName['drums'],
-                      bass:   byName['bass'],
-                      vocals: byName['vocals'],
-                      other:  OTHER,
-                      guitar: OTHER,
-                      piano:  OTHER,
-                    };
-                    for (const [uiName, preview] of Object.entries(routing)) {
-                      if (!preview) continue;
-                      // Temp playback from the mask intermediate isn't
-                      // usable right now — revoke the blob URL and only
-                      // push the envelope (cheap, decent visual). Audio
-                      // becomes playable when the backend WAV lands.
-                      URL.revokeObjectURL(preview.wavUrl);
-                      if (backendWon.has(uiName)) continue;
-                      dispatch({
-                        type: 'UPDATE_TRACK',
-                        payload: {
-                          busId,
-                          trackId: `stem-${trackId}-${uiName}`,
-                          updates: {
-                            metadata: {
-                              envelopeData: preview.envelope,
-                              envelopeFps: LATENT_MASK_ENV_FPS,
-                              previewSource: 'latent_mask_e2e_envelope_only',
+                  // Gated on LATENT_MODE (see module-scope flag). In default
+                  // mode we rely on the backend WAV for playback + waveform
+                  // envelope; dispatching a mask-derived envelope here was
+                  // triggering useWaveform to re-derive track.duration from
+                  // a different-length buffer, cropping every stem visually.
+                  if (LATENT_MODE) {
+                    try {
+                      const t0 = performance.now();
+                      const { stemAudiosFromMaskOverMaster, LATENT_MASK_ENV_FPS } =
+                        await import('../../services/latentMask');
+                      const maskStems = await stemAudiosFromMaskOverMaster(
+                        stemLatents, src.flat, src.numFrames
+                      );
+                      console.log(`[latentMask] preview ready in ${(performance.now()-t0).toFixed(0)}ms`);
+                      const byName = {};
+                      for (const s of maskStems) byName[s.stemName] = s;
+                      // Map each UI stem to a mask-preview source. drums/bass/
+                      // vocals use their matching mask stem; other/guitar/piano
+                      // all share the combined "other".
+                      const OTHER = byName['other'];
+                      const routing = {
+                        drums:  byName['drums'],
+                        bass:   byName['bass'],
+                        vocals: byName['vocals'],
+                        other:  OTHER,
+                        guitar: OTHER,
+                        piano:  OTHER,
+                      };
+                      for (const [uiName, preview] of Object.entries(routing)) {
+                        if (!preview) continue;
+                        URL.revokeObjectURL(preview.wavUrl);
+                        if (backendWon.has(uiName)) continue;
+                        dispatch({
+                          type: 'UPDATE_TRACK',
+                          payload: {
+                            busId,
+                            trackId: `stem-${trackId}-${uiName}`,
+                            updates: {
+                              metadata: {
+                                envelopeData: preview.envelope,
+                                envelopeFps: LATENT_MASK_ENV_FPS,
+                                previewSource: 'latent_mask_e2e_envelope_only',
+                              },
                             },
                           },
-                        },
-                      });
+                        });
+                      }
+                    } catch (maskErr) {
+                      console.warn('[latentMask] preview failed (non-fatal):', maskErr?.message || maskErr);
                     }
-                  } catch (maskErr) {
-                    console.warn('[latentMask] preview failed (non-fatal):', maskErr?.message || maskErr);
                   }
                 },
               });
