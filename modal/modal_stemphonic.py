@@ -490,18 +490,6 @@ app = modal.App("doseedo-stemphonic")
     max_containers=1,          # single container for in-process /task polling
     enable_memory_snapshot=True,
 )
-# Without this, Modal's WSGI default is 1 concurrent input per container —
-# every HTTP request (stem WAV downloads, status polls, generation calls)
-# queues behind whatever's already in flight. Combined with max_containers=1,
-# the entire backend serializes, so when /separate-stems returned 6 WAV URLs
-# the frontend's 6 parallel GETs took minutes (4 KB/s effective). Bumped to
-# 16 so concurrent stem downloads + status polls + any drum-substem fetches
-# all flow at once. The in-process DEMUCS_TASKS dict is mutated from daemon
-# worker threads (not HTTP request handlers), and Python dict writes are
-# GIL-atomic, so the "single container for /task polling" invariant still
-# holds. @modal.concurrent replaces the deprecated allow_concurrent_inputs
-# kwarg (removed from @app.cls on 2025-04-09).
-@modal.concurrent(max_inputs=16)
 class Stemphonic:
     @modal.enter(snap=True)
     def setup_cpu_state(self):
