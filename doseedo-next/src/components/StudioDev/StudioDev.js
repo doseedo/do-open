@@ -814,10 +814,23 @@ export default function StudioDev() {
         }
         return {};
       })();
+      // Stems inherit the parent uploaded-mix duration so the timeline
+      // clip renders at the right width from the first paint. Without
+      // this, stems get duration=0 which falls through to the `|| 4s`
+      // fallback in the clip-render path — every stem displays cropped
+      // to ~2 bars until useAudioPlayback pre-warm decodes each WAV
+      // (several seconds for 6 stems) and dispatches the real duration.
+      const parentDurationNow = (() => {
+        for (const bus of stateRef.current.buses || []) {
+          const p = (bus.tracks || []).find((t) => t.id === trackId);
+          if (p && typeof p.duration === 'number' && p.duration > 0) return p.duration;
+        }
+        return 0;
+      })();
       const stemTracks = Object.entries(sep.stems).map(([stemName, audioUrl]) => ({
         id: `stem-${trackId}-${stemName}`,
         name: `${baseName} — ${stemName}`,
-        audioUrl, duration: 0, startPosition: 0,
+        audioUrl, duration: parentDurationNow, startPosition: 0,
         gain: 1.0, isMuted: false, isSolo: false, cropStart: 0, cropEnd: 0,
         fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
         metadata: {
@@ -1479,12 +1492,17 @@ export default function StudioDev() {
           })();
       const sep = await separateStemsAuto(file);
       if (!sep?.stems) return;
-      // Put new stem tracks in the same bus as the source track.
+      // Put new stem tracks in the same bus as the source track. Inherit
+      // the source track's duration so clips render at full width from
+      // first paint (otherwise the `|| 4s` clip-render fallback crops
+      // every stem to ~2 bars until the WAV decodes).
       const busId = selectedBusId;
+      const parentDur = (typeof selectedTrack.duration === 'number' && selectedTrack.duration > 0)
+        ? selectedTrack.duration : 0;
       const stemTracks = Object.entries(sep.stems).map(([stemName, audioUrl]) => ({
         id: `stem-${selectedTrack.id}-${stemName}`,
         name: stemName,
-        audioUrl, duration: 0, startPosition: 0,
+        audioUrl, duration: parentDur, startPosition: 0,
         gain: 1.0, isMuted: false, isSolo: false,
         fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
         metadata: { type: 'stem', stemType: stemName, parentTrackId: selectedTrack.id, instrument: stemName, icon: iconForType(stemName) },
