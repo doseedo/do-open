@@ -227,8 +227,17 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     });
     const uniqueUrls = [...new Set(audioUrls.filter(Boolean))];
 
+    // Log which URLs the effect is about to fetch. If substems or stem
+    // WAVs never make it into audioBufferCache at play time, this tells
+    // us whether the effect even tried (missing URLs = upstream metadata
+    // not landed) vs the fetch hangs (URLs listed but no "decoded" log).
+    if (uniqueUrls.length) {
+      console.log(`[prewarm] iterating ${uniqueUrls.length} url(s):`, uniqueUrls.map((u) => u.slice(0, 80)));
+    }
     uniqueUrls.forEach(async (url) => {
       if (!audioBufferCache.has(url)) {
+        const tStart = performance.now();
+        console.log(`[prewarm] ⏳ fetching ${url.slice(0, 80)}`);
         try {
           // Reuse the shared audioCacheService blob (in-flight Promise
           // dedupe + IndexedDB cache + memory cache). This avoids the
@@ -236,8 +245,10 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
           // hit the network for the same stem URL.
           const { fetchAudioWithCache } = await import('../services/audioCacheService');
           const { blob } = await fetchAudioWithCache(url);
+          console.log(`[prewarm] ✓ fetched ${url.slice(0, 80)} in ${(performance.now() - tStart).toFixed(0)}ms (${(blob.size / 1024).toFixed(0)}KB)`);
           const arrayBuffer = await blob.arrayBuffer();
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          console.log(`[prewarm] ✓ decoded ${url.slice(0, 80)} — ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.numberOfChannels}ch`);
           audioBufferCache.set(url, audioBuffer);
 
           // Update track duration if it's 0
