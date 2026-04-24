@@ -14,7 +14,17 @@
  */
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useUser } from '@clerk/nextjs';
 import { useApp } from '../../context/AppContext';
+import {
+  listCommitsDesc,
+  refsAtCommit,
+  createCommit as sh_createCommit,
+  nextBranchName as sh_nextBranchName,
+  setCurrentAuthor as sh_setCurrentAuthor,
+  labelForAction as sh_labelForAction,
+} from '../../services/sessionHistory';
+import * as sessionService from '../../services/sessionService';
 import { useAudioPlayback } from '../../hooks/useAudioPlayback';
 import { useMetronome } from '../../hooks/useMetronome';
 import { useAudioRecorder } from '../../hooks/useAudioRecorder';
@@ -353,6 +363,20 @@ export default function StudioDev() {
   // the back arrow in the info header returns to the tab view.
   const [rightTab, setRightTab] = useState('session');
   const [sessionBusExpanded, setSessionBusExpanded] = useState({}); // busId → boolean
+  const [historyFilterMe, setHistoryFilterMe] = useState(false);    // History tab: only show my commits
+
+  // Clerk user — used for commit author attribution. Push into the
+  // sessionHistory module so the auto-logger (which runs inside the
+  // provider) can read it without taking a direct Clerk dependency.
+  const clerk = useUser();
+  useEffect(() => {
+    if (!clerk?.user) return;
+    sh_setCurrentAuthor({
+      userId: clerk.user.id || null,
+      username: clerk.user.fullName || clerk.user.primaryEmailAddress?.emailAddress || null,
+      avatarUrl: clerk.user.imageUrl || null,
+    });
+  }, [clerk?.user?.id, clerk?.user?.fullName, clerk?.user?.imageUrl]);
   const recorder = useAudioRecorder();
   const clipboardRef = useRef(null);  // for Cmd-C/X/V fallback when reducer copy paths aren't enough
 
@@ -2030,6 +2054,41 @@ export default function StudioDev() {
       if (!state.isPlaying) dispatch({ type: 'TOGGLE_PLAY' });
     }
   }, [dispatch, state.isPlaying]);
+  // ---- History tab: commit view/revert/branch helpers ------------
+  const historyPreviewCommit = useCallback((commit) => {
+    if (!commit?.snapshot) return;
+    dispatch({ type: 'HISTORY_PREVIEW_COMMIT', payload: { commit } });
+  }, [dispatch]);
+
+  const historyExitPreview = useCallback(() => {
+    dispatch({ type: 'HISTORY_EXIT_PREVIEW' });
+  }, [dispatch]);
+
+  const historyRevertToCommit = useCallback((commit) => {
+    if (!commit?.snapshot) return;
+    const parentId = state.sessionHistory?.refs?.[state.sessionHistory?.currentBranch] || null;
+    const label = `Revert to "${commit.label}" (${commit.id.slice(0, 8)})`;
+    // Clone the target snapshot so the new commit's snapshot is
+    // independent from the original (so later edits don't mutate it).
+    const snapshot = JSON.parse(JSON.stringify(commit.snapshot));
+    const newCommit = sh_createCommit({
+      parentId, label, actionType: 'HISTORY_REVERT', snapshot,
+    });
+    dispatch({
+      type: 'HISTORY_REVERT_TO_COMMIT',
+      payload: { commit: newCommit, targetCommit: commit },
+    });
+  }, [dispatch, state.sessionHistory]);
+
+  const historyBranchFromCommit = useCallback((commit) => {
+    if (!commit?.id) return;
+    const branchName = sh_nextBranchName(state.sessionHistory);
+    dispatch({
+      type: 'HISTORY_BRANCH_FROM_COMMIT',
+      payload: { commitId: commit.id, branchName },
+    });
+  }, [dispatch, state.sessionHistory]);
+
   const playTrack = useCallback((track, busId) => {
     if (!track?.id || !busId) return;
     const currentlySoloPlaying = !!track.isSolo && state.isPlaying;
@@ -2855,17 +2914,109 @@ export default function StudioDev() {
             </div>
           )}
 
-          {!selectedTrack && !state.selectedBus && rightTab === 'history' && (
-            <div className="sd-history-placeholder">
-              <div className="sd-side-title">History</div>
-              <div className="sd-side-sub">Edit history coming soon</div>
-              <p className="sd-right-hint">
-                Every significant action you take (add track, generate, meter repaint, MIDI edit…) will
-                appear here as a commit. View will let you peek at a prior state, and Revert will branch a
-                new timeline from that point while keeping the current one reachable.
-              </p>
-            </div>
-          )}
+          {!selectedTrack && !state.selectedBus && rightTab === 'history' && (() => {
+            const history = state.sessionHistory || {};
+            const commits = listCommitsDesc(history);
+            const currentUserId = clerk?.user?.id || null;
+            const shown = historyFilterMe && currentUserId
+              ? commits.filter((c) => c.author?.userId === currentUserId)
+              : commits;
+            const headId = history.refs?.[history.currentBranch];
+            const previewingCommit = state.previewCommitId ? history.commits?.[state.previewCommitId] : null;
+            const formatWhen = (ts) => {
+              const d = new Date(ts);
+              const diff = Date.now() - ts;
+              if (diff < 60_000) return 'just now';
+              if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+              if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+              return d.toLocaleString();
+            };
+            return (
+              <div className="sd-history">
+                {previewingCommit && (
+                  <div className="sd-history-preview-banner">
+                    <div>
+                      <div className="sd-history-banner-title">Previewing {previewingCommit.id.slice(0, 8)}</div>
+                      <div className="sd-history-banner-sub">Read-only snapshot. Edits will not save.</div>
+                    </div>
+                    <button className="sd-btn ghost" onClick={historyExitPreview}>
+                      <i className="fa-solid fa-arrow-rotate-left" style={{ fontSize: 10 }} /> Exit preview
+                    </button>
+                  </div>
+                )}
+
+                <div className="sd-history-head">
+                  <div>
+                    <div className="sd-side-title">History</div>
+                    <div className="sd-side-sub">
+                      on <span className="sd-history-branch">{history.currentBranch || 'main'}</span>
+                      {Object.keys(history.refs || {}).length > 1 && (
+                        <span> · {Object.keys(history.refs).length} branches</span>
+                      )}
+                    </div>
+                  </div>
+                  <label className="sd-history-toggle" title={currentUserId ? 'Filter to your commits' : 'Sign in to filter'}>
+                    <input type="checkbox" checked={historyFilterMe} disabled={!currentUserId} onChange={(e) => setHistoryFilterMe(e.target.checked)} />
+                    Mine
+                  </label>
+                </div>
+
+                {commits.length === 0 && (
+                  <div className="sd-right-hint">
+                    No commits yet. Add a track, generate audio, or edit MIDI — commits will show up here as you work.
+                  </div>
+                )}
+
+                <div className="sd-history-list">
+                  {shown.map((commit) => {
+                    const isHead = commit.id === headId;
+                    const isPreview = commit.id === state.previewCommitId;
+                    const branches = refsAtCommit(history, commit.id);
+                    const avatar = commit.author?.avatarUrl;
+                    const name = commit.author?.username || 'Anonymous';
+                    return (
+                      <div key={commit.id} className={`sd-commit ${isPreview ? 'preview' : ''} ${isHead ? 'head' : ''}`}>
+                        <div className="sd-commit-bullet" title={isHead ? 'HEAD' : ''}>
+                          <span className={`sd-commit-dot ${isHead ? 'head' : ''}`} />
+                        </div>
+                        <div className="sd-commit-body">
+                          <div className="sd-commit-row">
+                            {avatar ? (
+                              <img className="sd-commit-avatar" src={avatar} alt="" />
+                            ) : (
+                              <span className="sd-commit-avatar sd-commit-avatar-empty" aria-hidden />
+                            )}
+                            <span className="sd-commit-author">{name}</span>
+                            <span className="sd-commit-time">{formatWhen(commit.timestamp)}</span>
+                          </div>
+                          <div className="sd-commit-label">{commit.label}</div>
+                          {(isHead || branches.length > 0) && (
+                            <div className="sd-commit-refs">
+                              {isHead && <span className="sd-commit-ref head">HEAD</span>}
+                              {branches.map((b) => (
+                                <span key={b} className="sd-commit-ref">{b}</span>
+                              ))}
+                            </div>
+                          )}
+                          <div className="sd-commit-actions">
+                            <button className="sd-btn ghost" onClick={() => historyPreviewCommit(commit)} disabled={isHead && !isPreview}>
+                              <i className="fa-solid fa-eye" style={{ fontSize: 10 }} /> View
+                            </button>
+                            <button className="sd-btn ghost" onClick={() => historyRevertToCommit(commit)} disabled={isHead}>
+                              <i className="fa-solid fa-rotate-left" style={{ fontSize: 10 }} /> Revert
+                            </button>
+                            <button className="sd-btn ghost" onClick={() => historyBranchFromCommit(commit)}>
+                              <i className="fa-solid fa-code-branch" style={{ fontSize: 10 }} /> Branch
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* BUS view — shown when a bus is selected and no track is selected. */}
           {!selectedTrack && state.selectedBus && (() => {

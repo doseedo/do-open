@@ -1,5 +1,14 @@
-import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
 import * as sessionService from '../services/sessionService';
+import {
+  initialHistory,
+  loadHistory as loadSessionHistory,
+  saveHistory as saveSessionHistory,
+  createCommit,
+  recordCommit,
+  createBranch as branchFromCommit,
+  labelForAction,
+} from '../services/sessionHistory';
 
 const AppContext = createContext();
 
@@ -190,7 +199,20 @@ const initialState = {
   history: {
     past: [],
     future: []
-  }
+  },
+
+  // Persistent commit DAG — git-shaped version control for the session.
+  // Populated by the HISTORY_* action family; wrappedDispatch in the
+  // provider auto-commits significant edits with a debounce. Shape:
+  //   { commits: { [id]: Commit }, refs: { [branchName]: commitId },
+  //     head: commitId|null, currentBranch: 'main' }
+  sessionHistory: initialHistory(),
+
+  // When non-null, live state is displaying the snapshot of that commit
+  // (not the working tree). The History tab banner surfaces "Exit
+  // preview" to restore the current branch tip. While previewing, the
+  // auto-commit logger no-ops so we don't pollute history with the load.
+  previewCommitId: null,
 };
 
 // Helper: Save current state to history
@@ -1581,6 +1603,110 @@ function appReducer(state, action) {
     case 'SET_PHASER_FEEDBACK':
       return { ...state, phaserFeedback: action.payload };
 
+    // ---- Session commit DAG --------------------------------------------
+    // All snapshot-carrying actions (commit, preview, revert, branch)
+    // receive a pre-built `snapshot` payload from the caller. We never
+    // build snapshots inside the reducer itself — doing so would force
+    // the reducer to reach into sessionService's strip helper, which
+    // violates "reducers are pure functions of their input".
+
+    case 'HISTORY_SET_SESSION_KEY': {
+      // Swap which localStorage bucket we persist to. Used when the
+      // active project name changes.
+      return { ...state, sessionHistory: { ...state.sessionHistory, _sessionKey: action.payload } };
+    }
+
+    case 'HISTORY_LOAD': {
+      // Replace the in-memory DAG (e.g., on project-open). Pure — the
+      // caller has already pulled from localStorage.
+      const loaded = action.payload;
+      if (!loaded || !loaded.commits) return state;
+      return { ...state, sessionHistory: loaded, previewCommitId: null };
+    }
+
+    case 'HISTORY_RECORD_COMMIT': {
+      // Append a commit to the current branch. Wrapped dispatch builds
+      // the commit and calls this case; reducer stays pure.
+      if (state.previewCommitId) return state; // never write commits from preview
+      const next = recordCommit(state.sessionHistory, action.payload.commit);
+      return { ...state, sessionHistory: next };
+    }
+
+    case 'HISTORY_PREVIEW_COMMIT': {
+      // Load target commit's snapshot into state. Flag previewCommitId
+      // so the auto-logger + autosave suppress. Note that undo/redo
+      // stack is NOT touched — exiting preview restores it.
+      const { commit } = action.payload;
+      if (!commit?.snapshot) return state;
+      return {
+        ...state,
+        ...commit.snapshot,
+        // Keep view-local + transport state alive across preview.
+        selectedTrack: null,
+        selectedBus: null,
+        previewCommitId: commit.id,
+        // Don't let preview pollute undo/redo stack or commit DAG.
+        history: state.history,
+        sessionHistory: state.sessionHistory,
+      };
+    }
+
+    case 'HISTORY_EXIT_PREVIEW': {
+      // Restore the current branch tip's snapshot and clear the flag.
+      const headId = state.sessionHistory?.refs?.[state.sessionHistory?.currentBranch];
+      const headCommit = headId ? state.sessionHistory.commits[headId] : null;
+      if (!headCommit?.snapshot) {
+        return { ...state, previewCommitId: null };
+      }
+      return {
+        ...state,
+        ...headCommit.snapshot,
+        selectedTrack: null,
+        selectedBus: null,
+        previewCommitId: null,
+        history: state.history,
+        sessionHistory: state.sessionHistory,
+      };
+    }
+
+    case 'HISTORY_REVERT_TO_COMMIT': {
+      // Write a new commit with parent=current HEAD and snapshot=target
+      // commit's snapshot. HEAD advances on the current branch; the old
+      // tip remains reachable via its own commit id. Preview flag
+      // cleared so live state becomes the new commit.
+      const { commit: newCommit, targetCommit } = action.payload;
+      if (!newCommit || !targetCommit?.snapshot) return state;
+      const next = recordCommit(state.sessionHistory, newCommit);
+      return {
+        ...state,
+        ...targetCommit.snapshot,
+        selectedTrack: null,
+        selectedBus: null,
+        previewCommitId: null,
+        history: state.history,
+        sessionHistory: next,
+      };
+    }
+
+    case 'HISTORY_BRANCH_FROM_COMMIT': {
+      // Create a new branch ref pointing at the given commit and
+      // switch currentBranch to it. Live state becomes the commit's
+      // snapshot so subsequent edits commit onto the new branch.
+      const { commitId, branchName } = action.payload;
+      const target = state.sessionHistory?.commits?.[commitId];
+      if (!target) return state;
+      const next = branchFromCommit(state.sessionHistory, commitId, branchName);
+      return {
+        ...state,
+        ...target.snapshot,
+        selectedTrack: null,
+        selectedBus: null,
+        previewCommitId: null,
+        history: state.history,
+        sessionHistory: next,
+      };
+    }
+
     default:
       return state;
   }
@@ -1641,6 +1767,13 @@ export function AppProvider({ children }) {
     // Only autosave if there's an active project
     const activeProject = sessionService.getActiveProject();
     if (!activeProject) {
+      return;
+    }
+
+    // Don't autosave while the user is previewing an old commit — the
+    // live state is temporarily showing the snapshot, not the working
+    // tree, so saving it would clobber the actual project.
+    if (state.previewCommitId) {
       return;
     }
 
@@ -1739,8 +1872,123 @@ export function AppProvider({ children }) {
     };
   }, [state.shiftHeld, dispatch]);
 
+  // ---- Session commit DAG ---------------------------------------------
+  // Actions whose dispatch should yield a commit in the session DAG.
+  // Intentionally coarse — fine-grained UI-only state (drag position,
+  // zoom, sidebar toggles) is excluded.
+  const COMMIT_TRIGGERS = React.useMemo(() => new Set([
+    'ADD_TRACK', 'ADD_TRACKS_BULK', 'REMOVE_TRACK', 'REPLACE_TRACK', 'PASTE_TRACK',
+    'UPDATE_TRACK_MIDI_DATA',
+    'CREATE_BUS', 'ADD_BUS', 'REMOVE_BUS', 'CLEAR_BUS',
+    'UPDATE_BPM',
+  ]), []);
+  // UPDATE_TRACK only commits for substantive field changes — mirrors
+  // the existing undo/redo "shouldSaveHistory" gate so drags/resizes
+  // while dragging don't flood the commit log.
+  const isSubstantiveUpdateTrack = (payload) => {
+    const u = payload?.updates || {};
+    if (payload?.skipHistory) return false;
+    return (
+      u.audioUrl !== undefined
+      || u.startPosition !== undefined
+      || u.duration !== undefined
+      || u.cropStart !== undefined
+      || u.cropEnd !== undefined
+      || (u.metadata && (
+        u.metadata.versions !== undefined
+        || u.metadata.type !== undefined
+        || u.metadata.instrument !== undefined
+        || u.metadata.stemType !== undefined
+      ))
+    );
+  };
+
+  // Load the persisted DAG on mount AND whenever the active project
+  // changes (LOAD_SESSION from Dashboard / Projects doesn't carry the
+  // DAG — it lives in its own localStorage bucket keyed by project
+  // name, so we reload per project).
+  const lastLoadedProjectRef = useRef(null);
+  useEffect(() => {
+    const active = sessionService.getActiveProject() || state.projectName || 'Untitled Session';
+    if (active === lastLoadedProjectRef.current) return;
+    lastLoadedProjectRef.current = active;
+    const loaded = loadSessionHistory(active);
+    dispatch({ type: 'HISTORY_LOAD', payload: loaded || initialHistory() });
+  }, [state.projectName]);
+
+  // Persist the DAG on change. Debounced lightly so back-to-back
+  // commits don't thrash localStorage.
+  const historySaveTimeoutRef = useRef(null);
+  useEffect(() => {
+    const active = sessionService.getActiveProject() || state.projectName || 'Untitled Session';
+    if (!active) return;
+    if (historySaveTimeoutRef.current) clearTimeout(historySaveTimeoutRef.current);
+    historySaveTimeoutRef.current = setTimeout(() => {
+      saveSessionHistory(active, state.sessionHistory);
+    }, 500);
+    return () => { if (historySaveTimeoutRef.current) clearTimeout(historySaveTimeoutRef.current); };
+  }, [state.sessionHistory, state.projectName]);
+
+  // Debounced commit builder. Each wrappedDispatch call stamps the
+  // pending action, and a timer fires a HISTORY_RECORD_COMMIT a quiet
+  // moment later. Rapid successive edits collapse into a single commit.
+  const pendingActionRef = useRef(null);
+  const commitTimeoutRef = useRef(null);
+  const latestStateRef = useRef(state);
+  useEffect(() => { latestStateRef.current = state; }, [state]);
+
+  const dispatchCommit = useCallback(() => {
+    const pending = pendingActionRef.current;
+    pendingActionRef.current = null;
+    if (!pending) return;
+    const live = latestStateRef.current;
+    if (live.previewCommitId) return; // no-ops while previewing
+    const snapshot = sessionService._stripForCloud(live);
+    // Remove fields we don't want to time-travel.
+    delete snapshot.sessionHistory;
+    delete snapshot.previewCommitId;
+    delete snapshot.history;
+    delete snapshot.selectedTrack;
+    delete snapshot.selectedBus;
+    delete snapshot.selectedTracks;
+    const parentId = live.sessionHistory?.refs?.[live.sessionHistory?.currentBranch] || null;
+    const commit = createCommit({
+      parentId,
+      label: labelForAction(pending.type, pending.payload),
+      actionType: pending.type,
+      snapshot,
+    });
+    dispatch({ type: 'HISTORY_RECORD_COMMIT', payload: { commit } });
+  }, []);
+
+  const wrappedDispatch = useCallback((action) => {
+    dispatch(action);
+    if (!action || typeof action !== 'object') return;
+    const type = action.type;
+    const shouldLog = (
+      COMMIT_TRIGGERS.has(type)
+      || (type === 'UPDATE_TRACK' && isSubstantiveUpdateTrack(action.payload))
+    );
+    if (!shouldLog) return;
+    // Don't commit preview-mode dispatches; the reducer cases above
+    // also guard this, but stopping here avoids a wasted timer.
+    if (latestStateRef.current.previewCommitId) return;
+    pendingActionRef.current = action;
+    if (commitTimeoutRef.current) clearTimeout(commitTimeoutRef.current);
+    commitTimeoutRef.current = setTimeout(dispatchCommit, 900);
+  }, [COMMIT_TRIGGERS, dispatchCommit]);
+
+  // Flush any pending commit on unmount so rapid-edit-then-refresh
+  // doesn't lose the last action.
+  useEffect(() => () => {
+    if (commitTimeoutRef.current) {
+      clearTimeout(commitTimeoutRef.current);
+      dispatchCommit();
+    }
+  }, [dispatchCommit]);
+
   return (
-    <AppContext.Provider value={{ state, dispatch }}>
+    <AppContext.Provider value={{ state, dispatch: wrappedDispatch }}>
       {children}
     </AppContext.Provider>
   );

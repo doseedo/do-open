@@ -1413,6 +1413,81 @@
   font-size: 12px; line-height: 1.5;
 }
 
+/* History tab */
+.sd-history { display: flex; flex-direction: column; gap: 12px; }
+.sd-history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.sd-history-branch {
+  font-family: var(--hifi-mono); color: var(--hifi-accent);
+  padding: 0 4px;
+}
+.sd-history-toggle {
+  display: flex; align-items: center; gap: 4px;
+  font-family: var(--hifi-mono); font-size: 10px; letter-spacing: .4px;
+  text-transform: uppercase; color: var(--hifi-ink-mute);
+  cursor: pointer;
+}
+.sd-history-toggle input { accent-color: var(--hifi-accent); }
+.sd-history-preview-banner {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 8px 10px; border: 1px dashed var(--hifi-accent);
+  background: rgba(201, 79, 44, 0.06); border-radius: 4px;
+}
+.sd-history-banner-title {
+  font-family: var(--hifi-mono); font-size: 11px; letter-spacing: .3px;
+  text-transform: uppercase; color: var(--hifi-accent);
+}
+.sd-history-banner-sub { font-size: 11px; color: var(--hifi-ink-mute); margin-top: 2px; }
+
+.sd-history-list { display: flex; flex-direction: column; gap: 6px; }
+.sd-commit {
+  display: grid; grid-template-columns: 16px 1fr; gap: 8px;
+  padding: 8px 6px; border-top: 1px solid var(--hifi-rule);
+}
+.sd-commit:first-child { border-top: none; }
+.sd-commit.preview { background: rgba(201, 79, 44, 0.04); }
+.sd-commit-bullet { display: flex; flex-direction: column; align-items: center; padding-top: 4px; }
+.sd-commit-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--hifi-ink-soft);
+  box-shadow: 0 0 0 2px var(--hifi-surface);
+}
+.sd-commit-dot.head { background: var(--hifi-accent); }
+.sd-commit-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sd-commit-row { display: flex; align-items: center; gap: 6px; }
+.sd-commit-avatar {
+  width: 16px; height: 16px; border-radius: 50%;
+  object-fit: cover; background: var(--hifi-ink-mute);
+  border: 1px solid var(--hifi-rule);
+}
+.sd-commit-avatar-empty { background: var(--hifi-rule); }
+.sd-commit-author {
+  font-size: 12px; color: var(--hifi-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 140px;
+}
+.sd-commit-time {
+  margin-left: auto; font-size: 10px; font-family: var(--hifi-mono);
+  color: var(--hifi-ink-mute);
+}
+.sd-commit-label {
+  font-size: 12px; color: var(--hifi-ink); line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.sd-commit-refs { display: flex; flex-wrap: wrap; gap: 4px; }
+.sd-commit-ref {
+  font-family: var(--hifi-mono); font-size: 9px; letter-spacing: .4px;
+  text-transform: uppercase;
+  padding: 1px 6px; border-radius: 8px;
+  background: var(--hifi-surface-2); color: var(--hifi-ink-soft);
+  border: 1px solid var(--hifi-rule);
+}
+.sd-commit-ref.head { color: var(--hifi-accent); border-color: var(--hifi-accent); }
+.sd-commit-actions {
+  display: flex; gap: 4px; margin-top: 2px; flex-wrap: wrap;
+}
+.sd-commit-actions .sd-btn { padding: 2px 6px; font-size: 10px; }
+.sd-commit-actions .sd-btn:disabled { opacity: .35; cursor: not-allowed; }
+
 /* ---------- Selected track row ---------- */
 .sd-track-row { cursor: pointer; }
 .sd-track-row.selected { background: var(--hifi-accent-soft); }
