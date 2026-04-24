@@ -4044,57 +4044,6 @@ def analyze_rhythm():
             logger.info("[analyze-rhythm] using librosa (%d beats → %d downbeats, 4/4 assumed)",
                         len(beat_times), len(downbeat_times))
 
-        # 1b. Extrapolate downbeats backward to the start of audio.
-        #
-        # beat_this sometimes only starts tagging downbeats once the full
-        # kit is locked in — a song with an intro groove (hi-hat + rides
-        # only, no kick/snare yet) can produce a first downbeat many bars
-        # in. That makes timelineOffset land in the middle of the track
-        # and every meter-change schedule gets anchored from there too,
-        # so the ruler and audio are off by N*barSec on the ruler side.
-        #
-        # Read the detector's downbeat spacing as authoritative for the
-        # grid phase, then step the grid back bar-by-bar until the next
-        # step would go past t=0. The earliest bar whose start is ≥ 0 is
-        # the real first downbeat. beat_times is extended with the same
-        # number of interior beats per prepended bar so the beat_map the
-        # client consumes still has correct pos=1..N labels.
-        if len(downbeat_times) >= 2 and downbeat_times[0] > 0.1:
-            db_spacing = float(np.median(np.diff(downbeat_times)))
-            if db_spacing > 0.2:
-                # beats-per-bar for the first detected bar — measured from
-                # beat_times so extrapolation uses the detector's actual
-                # beat density, not a 4/4 default.
-                _db0_idx = int(np.argmin(np.abs(beat_times - downbeat_times[0])))
-                _db1_idx = int(np.argmin(np.abs(beat_times - downbeat_times[1])))
-                n_bpb_first = max(2, min(12, _db1_idx - _db0_idx))
-                first_db = float(downbeat_times[0])
-                prepended_dbs = []
-                t_cand = first_db - db_spacing
-                while t_cand >= 0.0:
-                    prepended_dbs.insert(0, t_cand)
-                    t_cand -= db_spacing
-                if prepended_dbs:
-                    beat_spacing = db_spacing / n_bpb_first
-                    prepended_beats = []
-                    for db in prepended_dbs:
-                        for j in range(n_bpb_first):
-                            t = db + j * beat_spacing
-                            if t >= 0.0:
-                                prepended_beats.append(t)
-                    beat_times = np.concatenate([
-                        np.asarray(prepended_beats, dtype=float), beat_times,
-                    ])
-                    downbeat_times = np.concatenate([
-                        np.asarray(prepended_dbs, dtype=float), downbeat_times,
-                    ])
-                    logger.info(
-                        "[analyze-rhythm] extrapolated %d bars backward "
-                        "(n_bpb=%d, barSec=%.3fs); first downbeat %.2fs → %.2fs",
-                        len(prepended_dbs), n_bpb_first, db_spacing,
-                        first_db, float(downbeat_times[0]),
-                    )
-
         # 2. Duration. soundfile handles WAV/FLAC/OGG natively but needs
         # libsndfile >= 1.1 for MP3; on older images it raises. Fall back
         # to the librosa-loaded length when sf can't read the container.
