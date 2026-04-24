@@ -1077,10 +1077,11 @@ function buildOnsetStretchSchedule({
   }
 
   if (isHiHat) {
-    // ONE stretch segment per bar: src [sbs, sbs + 14*trp] → tgt bar.
-    // User's method: take 14 triplets, stretch to fit 7/8, offset to grid.
-    // The src range extends 2 triplets into the next bar, which is fine
-    // because the drum pattern is a repeating loop.
+    // ONE stretch segment per bar: src [sbs, sbs + 13*trp] → tgt bar.
+    // 14 hits across 13 src triplet intervals; only 1 triplet borrowed
+    // from next bar (vs 2 with 14*trp), so the last tgt 16th pulls audio
+    // just past the src bar boundary — softer than the downbeat accent
+    // that hit the last-16th at 14*trp.
     for (let b = 0; b < starts.length - 1; b++) {
       const sbs = starts[b], sbe = starts[b + 1];
       const srcBarLen = sbe - sbs;
@@ -1088,7 +1089,7 @@ function buildOnsetStretchSchedule({
       const srcEighthLen = srcBarLen / srcEighths;
       const tgtBarLen = srcEighthLen * tgtEighths;
       const srcTripletLen = srcBarLen / 12;
-      const srcEnd = Math.min(duration, sbs + 14 * srcTripletLen);
+      const srcEnd = Math.min(duration, sbs + 13 * srcTripletLen);
       if (srcEnd <= sbs + EPS) { dstCursor += tgtBarLen; continue; }
       const rate = (srcEnd - sbs) / tgtBarLen;
       segs.push({
