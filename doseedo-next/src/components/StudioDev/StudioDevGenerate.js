@@ -150,38 +150,103 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
       const filePaths = result?.file_paths || [];
       if (filePaths.length) {
         const firstUrl = filePaths[0];
-        const busId = `bus-gen-${Date.now()}`;
-        const trackId = `t-gen-${Date.now()}`;
-        dispatch({
-          type: 'CREATE_BUS',
-          payload: { id: busId, type: 'INSTRUMENT', name: `Gen · ${selectedInstrument.label}`, expanded: true },
-        });
-        dispatch({
-          type: 'ADD_TRACK',
-          payload: {
-            busId,
-            track: {
-              id: trackId,
-              name: `Gen · ${selectedInstrument.label}`,
-              audioUrl: firstUrl,
-              duration: result.duration || params.duration,
-              startPosition: 0,
-              gain: 1, isMuted: false, isSolo: false,
-              fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
-              metadata: {
-                type: 'generated', source: 'stemphonic',
-                instrument: sub, timbre_preset: params.timbre_preset,
-                prompt: params.prompt, params,
-                versions: filePaths.map((url, i) => ({
-                  audioUrl: url, timestamp: Date.now(), type: 'generated',
-                  name: `Candidate ${i + 1}`, params,
-                })),
-                currentVersionIndex: 0,
+        const now = Date.now();
+        const newCandidateVersions = filePaths.map((url, i) => ({
+          audioUrl: url,
+          timestamp: now,
+          type: 'generated',
+          name: filePaths.length > 1 ? `Gen · ${selectedInstrument.label} · c${i + 1}` : `Gen · ${selectedInstrument.label}`,
+          params,
+        }));
+
+        // Prefer updating the conditioning track in place so the user sees
+        // the generation on the track they picked, not a brand new bus.
+        // Find the owning bus for selectedTrack (SELECT_TRACK doesn't stash
+        // busId on the track object, so we scan).
+        const ownerBus = selectedTrack
+          ? state.buses.find((b) => b.tracks?.some((t) => t.id === selectedTrack.id))
+          : null;
+
+        if (ownerBus && selectedTrack) {
+          // Preserve the track's current audio as a version before the new
+          // candidates, so the Track Info sidebar can switch back to it.
+          const existingVersions = selectedTrack.metadata?.versions || [];
+          const prevAudioUrl = selectedTrack.audioUrl;
+          const prevVersionAlreadyLogged = existingVersions.some((v) => v.audioUrl === prevAudioUrl);
+          const preservedPrev = prevAudioUrl && !prevVersionAlreadyLogged
+            ? [{
+                audioUrl: prevAudioUrl,
+                timestamp: selectedTrack.metadata?.timestamp || (now - 1),
+                type: selectedTrack.metadata?.type || 'previous',
+                name: selectedTrack.metadata?.versions?.length
+                  ? `Previous (v${existingVersions.length + 1})`
+                  : 'Previous',
+                params: selectedTrack.metadata?.params || null,
+                midiData: selectedTrack.metadata?.midiData || selectedTrack.midiData || null,
+              }]
+            : [];
+
+          const newVersions = [...existingVersions, ...preservedPrev, ...newCandidateVersions];
+          const firstNewIndex = existingVersions.length + preservedPrev.length;
+
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: {
+              busId: ownerBus.id,
+              trackId: selectedTrack.id,
+              updates: {
+                audioUrl: firstUrl,
+                duration: result.duration || selectedTrack.duration || params.duration,
+                metadata: {
+                  type: 'generated',
+                  source: 'stemphonic',
+                  instrument: sub,
+                  timbre_preset: params.timbre_preset,
+                  prompt: params.prompt,
+                  params,
+                  timestamp: now,
+                  versions: newVersions,
+                  currentVersionIndex: firstNewIndex,
+                },
               },
             },
-          },
-        });
-        dispatch({ type: 'SELECT_TRACK', payload: { trackId, busId } });
+          });
+          // Re-select the track so the Track Info sidebar picks up the
+          // refreshed metadata + new version history.
+          dispatch({ type: 'SELECT_TRACK', payload: { trackId: selectedTrack.id, busId: ownerBus.id } });
+        } else {
+          // Fallback (no selected track — text-only generation): create a
+          // new bus + track as before.
+          const busId = `bus-gen-${now}`;
+          const trackId = `t-gen-${now}`;
+          dispatch({
+            type: 'CREATE_BUS',
+            payload: { id: busId, type: 'INSTRUMENT', name: `Gen · ${selectedInstrument.label}`, expanded: true },
+          });
+          dispatch({
+            type: 'ADD_TRACK',
+            payload: {
+              busId,
+              track: {
+                id: trackId,
+                name: `Gen · ${selectedInstrument.label}`,
+                audioUrl: firstUrl,
+                duration: result.duration || params.duration,
+                startPosition: 0,
+                gain: 1, isMuted: false, isSolo: false,
+                fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
+                metadata: {
+                  type: 'generated', source: 'stemphonic',
+                  instrument: sub, timbre_preset: params.timbre_preset,
+                  prompt: params.prompt, params, timestamp: now,
+                  versions: newCandidateVersions,
+                  currentVersionIndex: 0,
+                },
+              },
+            },
+          });
+          dispatch({ type: 'SELECT_TRACK', payload: { trackId, busId } });
+        }
         onClose?.();
       }
     } catch (e) {
