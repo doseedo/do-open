@@ -17,8 +17,23 @@ const ChordTrack = ({ totalDuration, zoomLevel, onBeatSelect }) => {
 
   const bpm = state.bpm || 120;
   const beatsPerBar = state.beatsPerBar || 4;
+  const meterDenominator = state.meterDenominator || 4;
   const sceneTempos = state.video?.sceneTempos || [];
   const sceneChanges = state.video?.sceneChanges || [];
+
+  // Chord cells per bar for the current meter. Expressed in beat-unit
+  // subdivisions (eighths for /8, quarters for /4) as [[start, end], ...]
+  // where each pair is one cell. For 7/8 default 4+1.5+1.5 grouping we
+  // render 4 cells at 2+2+1.5+1.5 eighths — playback naturally moves
+  // faster through the skinny trailing pair.
+  const cellGrouping = useMemo(() => {
+    if (meterDenominator === 8 && beatsPerBar === 7) {
+      return [[0, 2], [2, 4], [4, 5.5], [5.5, 7]];
+    }
+    const g = [];
+    for (let i = 0; i < beatsPerBar; i++) g.push([i, i + 1]);
+    return g;
+  }, [beatsPerBar, meterDenominator]);
 
   // CRITICAL: Use the SAME containerWidth as Timeline from global state
   // This ensures perfect sync between Timeline and ChordTrack
@@ -82,49 +97,63 @@ const ChordTrack = ({ totalDuration, zoomLevel, onBeatSelect }) => {
         const sceneDuration = sceneEnd - sceneStart;
         accumulatedBeats += sceneDuration / secondsPerBeat;
       }
-    } else if (state.beatMap && state.beatMap.length > 0) {
-      const bm = state.beatMap;
-      for (let i = 0; i < bm.length; i++) {
-        const time = bm[i].t;
-        if (time > totalDuration) break;
-        const nextTime = (i + 1 < bm.length) ? bm[i + 1].t : (time + 60 / bpm);
-        const beatPosition = (time / totalDuration) * width;
-        const nextBeatPosition = Math.min((nextTime / totalDuration) * width, width);
-        cellArray.push({
-          id: `beat-${i + 1}`,
-          beatNumber: i + 1,
-          time,
-          position: beatPosition,
-          width: nextBeatPosition - beatPosition,
-          chord: state.chordTrack?.chords?.[i] || null,
-        });
-      }
     } else {
-      // Render with constant BPM - 4 beats per bar
-      const secondsPerBeat = 60 / bpm;
-      const tlOffset = state.timelineOffset || 0;
-      let beatNumber = 1;
+      // Bar-grouped rendering. Bar starts come from beatMap pos=1 entries
+      // when the detected meter still matches state.beatsPerBar; otherwise
+      // fall back to synthetic bars at constant tempo + timelineOffset.
+      // Within each bar we emit one cell per entry in cellGrouping — for
+      // 7/8 that's 4 cells at 2+2+1.5+1.5 eighths.
+      const beatUnitFactor = meterDenominator === 8 ? 0.5 : 1;
+      const secondsPerUnit = (60 / bpm) * beatUnitFactor;
+      const secondsPerBar = secondsPerUnit * beatsPerBar;
+      const unitsInBar = beatsPerBar;
 
-      for (let time = tlOffset; time <= totalDuration; time += secondsPerBeat) {
-        const beatPosition = (time / totalDuration) * width;
-        const nextBeatTime = time + secondsPerBeat;
-        const nextBeatPosition = Math.min((nextBeatTime / totalDuration) * width, width);
+      const barStarts = [];
+      const bm = state.beatMap;
+      const bmMatches = bm && bm.length > 0 &&
+        bm.reduce((m, b) => Math.max(m, b.pos || 0), 0) === beatsPerBar;
+      if (bmMatches) {
+        for (const b of bm) {
+          if (b.pos === 1 && b.t <= totalDuration) barStarts.push(b.t);
+        }
+      }
+      if (barStarts.length === 0) {
+        const tlOffset = state.timelineOffset || 0;
+        for (let t = tlOffset; t <= totalDuration; t += secondsPerBar) barStarts.push(t);
+      }
 
-        cellArray.push({
-          id: `beat-${beatNumber}`,
-          beatNumber,
-          time,
-          position: beatPosition,
-          width: nextBeatPosition - beatPosition,
-          chord: state.chordTrack?.chords?.[beatNumber - 1] || null // Chord per beat (0-indexed)
+      for (let b = 0; b < barStarts.length; b++) {
+        const barStart = barStarts[b];
+        const nextBarStart = (b + 1 < barStarts.length)
+          ? barStarts[b + 1]
+          : Math.min(barStart + secondsPerBar, totalDuration);
+        const barDur = Math.max(0, nextBarStart - barStart);
+        if (barDur <= 0) continue;
+
+        cellGrouping.forEach(([u0, u1], ci) => {
+          const cellStart = barStart + (u0 / unitsInBar) * barDur;
+          const cellEnd = barStart + (u1 / unitsInBar) * barDur;
+          if (cellStart >= totalDuration) return;
+          const pos = (cellStart / totalDuration) * width;
+          const right = Math.min((cellEnd / totalDuration) * width, width);
+          const globalIdx = cellArray.length;
+          cellArray.push({
+            id: `cell-${b + 1}-${ci}`,
+            beatNumber: globalIdx + 1,
+            barNumber: b + 1,
+            cellInBar: ci,
+            isBarStart: ci === 0,
+            time: cellStart,
+            position: pos,
+            width: Math.max(0, right - pos),
+            chord: state.chordTrack?.chords?.[globalIdx] || null,
+          });
         });
-
-        beatNumber++;
       }
     }
 
     return cellArray;
-  }, [containerWidth, zoomLevel, totalDuration, bpm, beatsPerBar, sceneTempos, sceneChanges, state.chordTrack, state.timelineOffset, state.beatMap]);
+  }, [containerWidth, zoomLevel, totalDuration, bpm, beatsPerBar, meterDenominator, cellGrouping, sceneTempos, sceneChanges, state.chordTrack, state.timelineOffset, state.beatMap]);
 
   // Mouse move handler
   const handleMouseMove = useCallback((e) => {
@@ -186,10 +215,9 @@ const ChordTrack = ({ totalDuration, zoomLevel, onBeatSelect }) => {
         pointerEvents: 'auto' // Ensure mouse events work
       }}
     >
-      {/* Render beat cells - 4 beats per bar */}
+      {/* Render cells — grouping-driven: one per beat in /4, 4 per 7/8 bar. */}
       {beatCells.map((cell) => {
-        // Beat 1 of each bar (every Nth beat per current meter)
-        const isBarStart = (cell.beatNumber - 1) % beatsPerBar === 0;
+        const isBarStart = cell.isBarStart ?? ((cell.beatNumber - 1) % beatsPerBar === 0);
 
         return (
           <div

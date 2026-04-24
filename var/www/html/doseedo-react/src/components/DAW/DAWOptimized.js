@@ -238,6 +238,8 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
     state.beatsPerBar || 4,
     state.meterDenominator || 4,
     state.tempoMap || null,
+    state.beatMap || null,        // upload-time analyze-rhythm populates this
+    state.timelineOffset || 0,    // auto-offset so downbeats align
   );
 
   // Enable keyboard controls (spacebar for play/pause, etc.)

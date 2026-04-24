@@ -41,7 +41,7 @@ function normalizeStemForMaskPlayback(track) {
  * Custom hook for managing audio playback across multiple tracks
  * Integrates with global state via dispatch
  */
-export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10, currentPlayheadPosition = 0, bpm = 120, masterGain = 0.8, beatsPerBar = 4, meterDenominator = 4, tempoMap = null) {
+export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10, currentPlayheadPosition = 0, bpm = 120, masterGain = 0.8, beatsPerBar = 4, meterDenominator = 4, tempoMap = null, beatMap = null, timelineOffset = 0) {
   const audioContextRef = useRef(null);
   const masterGainNodeRef = useRef(null); // Master gain node for overall volume control
   const sourceNodesRef = useRef([]);
@@ -405,7 +405,19 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       // hit-snap to the new meter grid; sustain substems stay on bar
       // rearrange. All substems mix into ONE shared per-track gain so
       // solo/mute on the parent drum track keeps working.
-      const projectMeter = { bpm, beatsPerBar, meterDenominator, tempoMap };
+      // Derive project-level barStarts from the analyze-rhythm beatMap
+      // so drum stem tracks that don't carry their own barStarts/downbeat
+      // can still align to real detected downbeats. Without this, the
+      // substem scheduler falls back to synthesized bars (constant-BPM
+      // grid starting at t=0), which misaligns triplet-snap / 4+3 warps.
+      const projectBarStarts = (Array.isArray(beatMap) && beatMap.length > 0)
+        ? beatMap.filter((b) => b && b.pos === 1).map((b) => b.t)
+        : null;
+      const projectMeter = {
+        bpm, beatsPerBar, meterDenominator, tempoMap,
+        barStarts: projectBarStarts,
+        downbeatOffset: typeof timelineOffset === 'number' ? timelineOffset : 0,
+      };
 
       // Helper: ensure a buffer is decoded + cached, then run the cb.
       const ensureBuffer = async (url) => {

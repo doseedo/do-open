@@ -235,11 +235,9 @@ const Timeline = React.memo(({
 
     } else if (
       state.beatMap && state.beatMap.length >= beatsPerBar &&
-      // Only use the detected beat map when the user hasn't switched
-      // meter away from what was detected. Otherwise the bar grouping
-      // (every 4 beats) would still be 4/4 even when state says 7/8.
-      meterDenominator === 4 &&
-      // Detected meter inferred from beat map: max pos value.
+      // Trust the beatMap only when its detected numerator matches the
+      // current project meter. If the user has changed meter, the reducer
+      // clears beatMap so this branch naturally falls through to synthetic.
       state.beatMap.reduce((m, b) => Math.max(m, b.pos), 0) === beatsPerBar
     ) {
       const bm = state.beatMap;

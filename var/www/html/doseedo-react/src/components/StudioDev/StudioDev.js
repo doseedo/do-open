@@ -450,6 +450,8 @@ export default function StudioDev() {
     state.beatsPerBar || 4,
     state.meterDenominator || 4,
     state.tempoMap || null,
+    state.beatMap || null,
+    state.timelineOffset || 0,
   );
 
   /* ---------- Auto-switch mode based on selected track type ---------- */
@@ -464,6 +466,29 @@ export default function StudioDev() {
       setActiveMode('audio');
     }
   }, [selectedTrack?.id]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ---------- Debug bridge: auto-snapshot meter/tempo state ----------
+     Fires a `studio-state` mark whenever any rhythm-defining field changes,
+     so tailing /tmp/doseedo-studio-debug.jsonl shows what the timeline +
+     chord row are rendering against without any console-paste dance. */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const bm = state.beatMap;
+    const firstDownbeat = Array.isArray(bm) ? bm.find((b) => b?.pos === 1)?.t : null;
+    const bmMaxPos = Array.isArray(bm) && bm.length > 0
+      ? bm.reduce((m, b) => Math.max(m, b?.pos || 0), 0) : 0;
+    window.__doseedoDebug?.mark?.('studio-state', {
+      bpm: state.bpm,
+      beatsPerBar: state.beatsPerBar,
+      meterDenominator: state.meterDenominator,
+      timelineOffset: state.timelineOffset,
+      beatMapLen: Array.isArray(bm) ? bm.length : 0,
+      beatMapMaxPos: bmMaxPos,
+      firstDownbeatT: firstDownbeat ?? null,
+      tempoMapLen: Array.isArray(state.tempoMap) ? state.tempoMap.length : 0,
+      totalDuration: state.totalDuration,
+    });
+  }, [state.bpm, state.beatsPerBar, state.meterDenominator, state.timelineOffset, state.beatMap, state.tempoMap, state.totalDuration]);
 
   /* ---------- Actions ---------- */
   const togglePlay = useCallback(() => dispatch({ type: 'TOGGLE_PLAY' }), [dispatch]);
@@ -1787,14 +1812,28 @@ export default function StudioDev() {
   // downbeat is offset from t=0.
   const barMarkers = React.useMemo(() => {
     const beatsPerBar = state.beatsPerBar || 4;
+    const meterDen = state.meterDenominator || 4;
     const bpm = state.bpm || 120;
-    const secPerBar = (60 / bpm) * beatsPerBar;
+    // /8 meters beat on the eighth note, so one "beat" is half a quarter.
+    // Without this factor a 7/8 bar was laid out as 7 quarters (2× too wide).
+    const beatUnitFactor = meterDen === 8 ? 0.5 : 1;
+    const secPerBeat = (60 / bpm) * beatUnitFactor;
+    const secPerBar = secPerBeat * beatsPerBar;
     const pickupTime = (state.beatMap?.[0]?.t) ?? (state.tempoMap?.[0]?.t) ?? 0;
     const out = [];
     if (pickupTime > 0) out.push({ bar: 0, t: 0, isPickup: true });
 
+    // Only trust the beatMap when its detected numerator matches the current
+    // project meter. Otherwise a stale /4 beatMap (pos 1..4 at quarter
+    // intervals) gets indexed with stride=7 for a user-selected 7/8 and
+    // produces bars at 7-quarter spacing. On mismatch we fall through to
+    // the synthetic per-bpm path.
     const bm = state.beatMap;
-    if (Array.isArray(bm) && bm.length > 0) {
+    const bmMaxPos = Array.isArray(bm) && bm.length > 0
+      ? bm.reduce((m, b) => Math.max(m, b.pos || 0), 0)
+      : 0;
+    const bmMatches = bmMaxPos === beatsPerBar;
+    if (bmMatches) {
       for (let bar = 1; bar < 200; bar++) {
         const beatIdx = (bar - 1) * beatsPerBar;
         const t = beatIdx < bm.length ? bm[beatIdx]?.t : null;
@@ -1802,7 +1841,7 @@ export default function StudioDev() {
         // ruler keeps showing bars even if analyze-rhythm truncated.
         const tt = Number.isFinite(t)
           ? t
-          : bm[bm.length - 1].t + (beatIdx - (bm.length - 1)) * (60 / bpm);
+          : bm[bm.length - 1].t + (beatIdx - (bm.length - 1)) * secPerBeat;
         if (tt > TIMELINE_SECONDS) break;
         out.push({ bar, t: tt, isPickup: false });
       }
@@ -1814,7 +1853,7 @@ export default function StudioDev() {
       }
     }
     return out;
-  }, [state.bpm, state.beatsPerBar, state.beatMap, state.tempoMap]);
+  }, [state.bpm, state.beatsPerBar, state.meterDenominator, state.beatMap, state.tempoMap]);
 
   /* ---------- Timeline buses: real if present, spec demo otherwise ----------
      Each bus is a collapsible group: header row (name + M/S + gain) plus, when
