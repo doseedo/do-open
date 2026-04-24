@@ -1095,12 +1095,38 @@ function buildOnsetStretchSchedule({
   const SNARE_EXP   = rule.snare?.tripletSet   || [];
   const GENERAL_EXP = rule.general?.tripletSet || [];
 
+  // Phrase-alignment anchor: the first bar that has enough kick onsets to
+  // look like a full bar of groove, not a late-in-bar pickup. Without this,
+  // a src drum stem with 3-4 pickup kicks in bar N and the real groove
+  // starting in bar N+1 would see phrasePos = 0 at bar N, then bar N+1
+  // (the first REAL boundary bar) gets labeled phrasePos=1 (interior) and
+  // emits an interior-only pattern for the first groove bar. User's
+  // hand-corrected reference shows the first groove bar should be a
+  // boundary pattern [0, 1, 4, 5, 8, 9, 11, 12] — matched by setting the
+  // phrase anchor at the first bar with >=5 kick onsets (tuned to the
+  // standard 7-8-hit boundary/interior sets). Falls back to "any onset"
+  // for sparse substems (ride/crash/toms) via the substem-specific path.
+  const GROOVE_MIN = substemName === 'kick' ? 5 : 1;
   let firstActiveBarIdx = -1;
+  let anyActiveBarIdx = -1;
   for (let b = 0; b < starts.length - 1; b++) {
-    if (onsetsArr.some((o) => o >= starts[b] && o < starts[b + 1])) {
-      firstActiveBarIdx = b; break;
+    const barLen = starts[b + 1] - starts[b];
+    const inBar = onsetsArr.filter((o) => o >= starts[b] && o < starts[b + 1]);
+    if (inBar.length >= 1 && anyActiveBarIdx < 0) anyActiveBarIdx = b;
+    if (inBar.length >= GROOVE_MIN) {
+      // A "groove bar" has at least one hit in the first quarter of the bar —
+      // excludes pickup bars where onsets cluster in the last half of the
+      // bar. Without this, a drum stem whose pickup has 4-5 kicks in the
+      // final half of bar N and the real groove starting at bar N+1 would
+      // anchor phrase position at bar N, flipping bar N+1 from boundary
+      // (which the reference shows it should be) to interior.
+      const firstQuarterHits = inBar.filter(
+        (o) => (o - starts[b]) < barLen * 0.25,
+      ).length;
+      if (firstQuarterHits >= 1) { firstActiveBarIdx = b; break; }
     }
   }
+  if (firstActiveBarIdx < 0) firstActiveBarIdx = anyActiveBarIdx;
 
   const segs = [];
   let dstCursor = 0;
@@ -1124,11 +1150,15 @@ function buildOnsetStretchSchedule({
   }
 
   if (isHiHat && rule.hh?.path === 'wsolaStretch') {
-    // ONE stretch segment per bar: src window = srcTripletsInBar * trp.
-    // Pulls that span of src triplets into the tgt bar. Rule-configured
-    // srcTripletsInBar (e.g. 13 for 4/4→7/8) controls how far we borrow
-    // from the next src bar — shorter = softer last-16th.
-    const tripletsInBar = rule.hh.srcTripletsInBar;
+    // Per user's rule — "14 16ths in a bar of 7, don't remove the 2 you
+    // borrow from next bar". Each target 16th gets ONE hi-hat sample.
+    // Strategy: map each target 16th k (0..13) to its expected src time
+    //   wantSrc = sbs + k * srcTripletLen
+    // then paste the NEAREST detected hh onset's first ~16th worth of
+    // audio at the target slot. Using nearest-onset (not per-triplet
+    // window) fills early-bar slots that would otherwise be silent
+    // because the source happens to have no hh hit there — a borrowed
+    // sample keeps the 14-16th-per-bar density matching the reference.
     for (let b = 0; b < starts.length - 1; b++) {
       const sbs = starts[b], sbe = starts[b + 1];
       const srcBarLen = sbe - sbs;
@@ -1136,14 +1166,28 @@ function buildOnsetStretchSchedule({
       const srcEighthLen = srcBarLen / srcEighths;
       const tgtBarLen = srcEighthLen * tgtEighths;
       const srcTripletLen = srcBarLen / rule.srcTripletsPerBar;
-      const srcEnd = Math.min(duration, sbs + tripletsInBar * srcTripletLen);
-      if (srcEnd <= sbs + EPS) { dstCursor += tgtBarLen; continue; }
-      const rateB = (srcEnd - sbs) / tgtBarLen;
-      segs.push({
-        srcStart: cropStart + sbs, srcEnd: cropStart + srcEnd,
-        dstStart: dstCursor, dstEnd: dstCursor + tgtBarLen,
-        rate: rateB, fadeIn: 0.002, fadeOut: 0.01, kind: 'hhStretch',
-      });
+      const nTgtSixteenths = tgtEighths * 2;
+      const tgt16thLen = tgtBarLen / nTgtSixteenths;
+      for (let k = 0; k < nTgtSixteenths; k++) {
+        const wantSrc = sbs + k * srcTripletLen;
+        // Nearest hh onset to the wanted src time. Whole-stem scan.
+        let nearest = null, minDist = Infinity;
+        for (const o of onsetsArr) {
+          const d = Math.abs(o - wantSrc);
+          if (d < minDist) { minDist = d; nearest = o; }
+        }
+        if (nearest === null) continue;
+        const srcT = nearest;
+        const srcEndT = Math.min(duration, srcT + tgt16thLen);
+        if (srcEndT <= srcT + EPS) continue;
+        const dstT = dstCursor + k * tgt16thLen;
+        const dstEndT = dstT + tgt16thLen;
+        segs.push({
+          srcStart: cropStart + srcT, srcEnd: cropStart + srcEndT,
+          dstStart: dstT, dstEnd: dstEndT,
+          rate: 1, fadeIn: 0.001, fadeOut: 0.003, kind: 'hh16th',
+        });
+      }
       dstCursor += tgtBarLen;
     }
     return segs;
