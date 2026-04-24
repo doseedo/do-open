@@ -1012,6 +1012,148 @@ export function getTrackSchedule(track, project) {
  * ------------------------------------------------------------------ */
 
 const PERCUSSIVE_SUBSTEMS = new Set(['kick', 'snare', 'toms']);
+const HIHAT_SUBSTEMS = new Set(['hh', 'hat', 'hihat']);
+
+/** triplet idx 0-11 → tgt 16th idx (0-13) for 4+1.5+1.5 grouping of 7/8. */
+function tripletIdxTo16th_4_1p5_1p5(k) {
+  if (k < 0 || k >= 12) return -1;
+  const beat = Math.floor(k / 3);
+  const idx = k % 3;
+  if (beat < 2) return beat * 4 + idx;
+  return 8 + (beat - 2) * 3 + idx;
+}
+
+/**
+ * Simple onset-to-onset WSOLA stretch schedule. Take the user's explanation:
+ *   "take 14 of the triplets, time stretch so it fits the bar of 7, offset a bit"
+ *
+ *   HI-HAT: per bar emit ONE rate≠1 segment that stretches 14 src triplet
+ *     positions into the 7/8 tgt bar.
+ *   KICK/SNARE/TOMS/RIDE/CRASH: find the nearest src onset to each expected
+ *     triplet position in the bar, emit one stretch segment per consecutive
+ *     (src, dst) pair. Rate varies by local src/dst gap.
+ */
+function buildOnsetStretchSchedule({
+  duration, onsets, srcMeter, tgtMeter, bpm, substemName,
+  downbeatOffset = 0, cropStart = 0, barStarts,
+}) {
+  if (!(duration > 0)) return [];
+  if (srcMeter[0] === tgtMeter[0] && srcMeter[1] === tgtMeter[1]) {
+    return identitySchedule(duration, cropStart);
+  }
+  const starts = (barStarts && barStarts.length >= 2)
+    ? barStarts : synthBarStarts(duration, bpm, srcMeter, downbeatOffset);
+  const [sn, sd] = srcMeter;
+  const [tn, td] = tgtMeter;
+  const srcEighths = sn * (sd === 4 ? 2 : 1);
+  const tgtEighths = tn * (td === 4 ? 2 : 1);
+  const subdivPerEighth = chooseTargetSubdivPerEighth(bpm);
+  const nTgtSlots = tgtEighths * subdivPerEighth;
+  const isHiHat = HIHAT_SUBSTEMS.has(substemName);
+  const onsetsArr = Array.isArray(onsets) ? onsets : [];
+
+  const KICK_BOUNDARY = [0, 1, 3, 4, 6, 7, 9, 10];
+  const KICK_INTERIOR = [1, 3, 4, 6, 7, 9, 10];
+  const SNARE_EXP = [4, 7, 10];
+  const GENERAL_EXP = [0, 1, 3, 4, 6, 7, 9, 10];
+
+  let firstActiveBarIdx = -1;
+  for (let b = 0; b < starts.length - 1; b++) {
+    if (onsetsArr.some((o) => o >= starts[b] && o < starts[b + 1])) {
+      firstActiveBarIdx = b; break;
+    }
+  }
+
+  const segs = [];
+  let dstCursor = 0;
+  if (starts[0] > EPS) {
+    const prerollEnd = Math.min(duration, starts[0] + 0.5);
+    segs.push({
+      srcStart: cropStart, srcEnd: cropStart + prerollEnd,
+      dstStart: 0, dstEnd: prerollEnd,
+      rate: 1, fadeIn: 0, fadeOut: 0.05, kind: 'preroll',
+    });
+    dstCursor = starts[0];
+  }
+
+  if (isHiHat) {
+    // ONE stretch segment per bar: src [sbs, sbs + 14*trp] → tgt bar.
+    // User's method: take 14 triplets, stretch to fit 7/8, offset to grid.
+    // The src range extends 2 triplets into the next bar, which is fine
+    // because the drum pattern is a repeating loop.
+    for (let b = 0; b < starts.length - 1; b++) {
+      const sbs = starts[b], sbe = starts[b + 1];
+      const srcBarLen = sbe - sbs;
+      if (srcBarLen <= EPS) continue;
+      const srcEighthLen = srcBarLen / srcEighths;
+      const tgtBarLen = srcEighthLen * tgtEighths;
+      const srcTripletLen = srcBarLen / 12;
+      const srcEnd = Math.min(duration, sbs + 14 * srcTripletLen);
+      if (srcEnd <= sbs + EPS) { dstCursor += tgtBarLen; continue; }
+      const rate = (srcEnd - sbs) / tgtBarLen;
+      segs.push({
+        srcStart: cropStart + sbs, srcEnd: cropStart + srcEnd,
+        dstStart: dstCursor, dstEnd: dstCursor + tgtBarLen,
+        rate, fadeIn: 0.002, fadeOut: 0.01, kind: 'hhStretch',
+      });
+      dstCursor += tgtBarLen;
+    }
+    return segs;
+  }
+
+  // Kick / snare / toms / ride / crash — per-onset placement w/ stretch.
+  const mappings = [];
+  let dstC = starts[0] > EPS ? starts[0] : 0;
+  for (let b = 0; b < starts.length - 1; b++) {
+    const sbs = starts[b], sbe = starts[b + 1];
+    const srcBarLen = sbe - sbs;
+    if (srcBarLen <= EPS) continue;
+    const srcEighthLen = srcBarLen / srcEighths;
+    const tgtBarLen = srcEighthLen * tgtEighths;
+    const srcTripletLen = srcBarLen / 12;
+    const tgtSlotLen = tgtBarLen / nTgtSlots;
+    let expected;
+    if (substemName === 'snare') expected = SNARE_EXP;
+    else if (substemName === 'kick') {
+      const phrasePos = firstActiveBarIdx >= 0 ? (b - firstActiveBarIdx) % 4 : 0;
+      expected = (phrasePos === 0 || phrasePos === 3) ? KICK_BOUNDARY : KICK_INTERIOR;
+    } else expected = GENERAL_EXP;
+    const inBar = onsetsArr.filter((o) => o >= sbs && o < sbe);
+    const used = new Set();
+    for (const trpIdx of expected) {
+      const expectedSrcT = sbs + trpIdx * srcTripletLen;
+      let nearest = null, minDist = srcTripletLen;
+      for (const o of inBar) {
+        if (used.has(o)) continue;
+        const d = Math.abs(o - expectedSrcT);
+        if (d < minDist) { minDist = d; nearest = o; }
+      }
+      if (nearest === null) continue;
+      used.add(nearest);
+      const tgt16th = tripletIdxTo16th_4_1p5_1p5(trpIdx);
+      if (tgt16th < 0 || tgt16th >= nTgtSlots) continue;
+      mappings.push({ srcT: nearest, dstT: dstC + tgt16th * tgtSlotLen });
+    }
+    dstC += tgtBarLen;
+  }
+  mappings.sort((a, b) => a.srcT - b.srcT);
+  for (let i = 0; i < mappings.length; i++) {
+    const srcStart = mappings[i].srcT;
+    const dstStart = mappings[i].dstT;
+    const hasNext = i + 1 < mappings.length;
+    const srcEnd = hasNext ? mappings[i + 1].srcT : Math.min(duration, srcStart + 0.3);
+    const dstEnd = hasNext ? mappings[i + 1].dstT : dstStart + (srcEnd - srcStart);
+    if (srcEnd <= srcStart + EPS || dstEnd <= dstStart + EPS) continue;
+    const rate = (srcEnd - srcStart) / (dstEnd - dstStart);
+    segs.push({
+      srcStart: cropStart + srcStart, srcEnd: cropStart + srcEnd,
+      dstStart, dstEnd,
+      rate, fadeIn: 0.002, fadeOut: 0.01, kind: 'onsetStretch',
+    });
+  }
+  return segs;
+}
+
 const SUSTAIN_SUBSTEMS    = new Set(['hh', 'ride', 'crash']);
 
 /**
@@ -1528,30 +1670,52 @@ export function getTrackSubstemSchedules(track, project) {
     ? (meta.detectedGrouping || inferFiveFourGrouping(subOnsets, subStrengths, srcBpm, downbeatOffset))
     : null;
 
+  // Fall back to project.barStarts when the stem metadata didn't inherit
+  // the master's analyzed rhythm.
+  const resolvedBarStarts = (Array.isArray(meta.barStarts) && meta.barStarts.length >= 2)
+    ? meta.barStarts
+    : ((Array.isArray(project.barStarts) && project.barStarts.length >= 2) ? project.barStarts : null);
+  const resolvedDownbeat = typeof meta.downbeatOffset === 'number'
+    ? meta.downbeatOffset
+    : (typeof project.downbeatOffset === 'number' ? project.downbeatOffset : downbeatOffset);
+  const tgtFitsTriplet = patternFitsTargetMeter(3, tgtMeter);
+  const anyTriplet = ['kick', 'snare', 'toms', 'hh', 'ride', 'crash']
+    .some((n) => Array.isArray(subOnsets[n]) && detectHitsPerBeat(subOnsets[n], duration, srcBpm) === 3);
+
   const out = {};
   for (const [name, audioUrl] of Object.entries(subUrls)) {
     if (!audioUrl) continue;
     let schedule;
     let kind;
+    const onsetsHere = subOnsets[name];
+    const hasOnsets = Array.isArray(onsetsHere) && onsetsHere.length > 0;
     if (identity) {
       schedule = identitySchedule(duration, cropStart);
       kind = 'identity';
-    } else if (PERCUSSIVE_SUBSTEMS.has(name) && Array.isArray(subOnsets[name]) && subOnsets[name].length > 0) {
-      schedule = buildPercussiveSubstemSchedule({
-        duration, onsets: subOnsets[name], strengths: subStrengths[name],
+    } else if (hasOnsets && !tgtFitsTriplet && anyTriplet) {
+      // Triplet source + odd target (7/8 etc.): user's manual method —
+      // hi-hat = whole-bar WSOLA stretch (14 triplets → 7/8 bar),
+      // everything else = per-onset stretch at expected tgt 16th positions.
+      schedule = buildOnsetStretchSchedule({
+        duration, onsets: onsetsHere,
         srcMeter, tgtMeter, bpm: srcBpm, substemName: name,
-        downbeatOffset, cropStart, barStarts: meta.barStarts,
+        downbeatOffset: resolvedDownbeat, cropStart, barStarts: resolvedBarStarts,
+      });
+      kind = 'onsetStretch';
+    } else if (PERCUSSIVE_SUBSTEMS.has(name) && hasOnsets) {
+      schedule = buildPercussiveSubstemSchedule({
+        duration, onsets: onsetsHere, strengths: subStrengths[name],
+        srcMeter, tgtMeter, bpm: srcBpm, substemName: name,
+        downbeatOffset: resolvedDownbeat, cropStart, barStarts: resolvedBarStarts,
         srcGrouping: meta.detectedGrouping || fiveFourGrouping || null,
         tgtGrouping: project.grouping || null,
       });
       kind = 'snap';
     } else {
-      // Sustain substem (hh/ride/crash) OR percussive substem with no
-      // onsets cached — fall through to the bar-rearrange path.
       schedule = buildMeterSchedule({
         duration, srcMeter, tgtMeter, bpm: srcBpm,
-        downbeatOffset, cropStart, barStarts: meta.barStarts,
-        tempoMap: meta.tempoMap || null,
+        downbeatOffset: resolvedDownbeat, cropStart, barStarts: resolvedBarStarts,
+        tempoMap: meta.tempoMap || project.tempoMap || null,
         tgtTempoMap: project.tempoMap || null,
         srcGrouping: meta.detectedGrouping || fiveFourGrouping || null,
         tgtGrouping: project.grouping || null,
