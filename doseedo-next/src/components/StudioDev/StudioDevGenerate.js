@@ -38,14 +38,30 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
   });
   const setAdv = (k, v) => setAdvParams((a) => ({ ...a, [k]: v }));
 
-  // Selected track = conditioning input.
+  // Selected track = conditioning input. Priority:
+  //   midi   — notes in either track.midiData or track.metadata.midiData.
+  //            Covers: (a) new tracks where the user drew notes in the
+  //            MIDI window, and (b) uploaded tracks whose BasicPitch Tier 1
+  //            transcription already populated metadata.midiData.notes.
+  //            Server renders via latent-soundfont and drives the per-layer
+  //            MIDI hooks directly — no LatentPitch call needed.
+  //   latent — uploaded tracks with a cached VAE latent (metadata.latentId).
+  //            Skips the server-side audio_to_fsq_tokens re-encode. Used
+  //            only when no MIDI is available.
+  //   audio  — last resort: raw audio, server re-encodes + runs LatentPitch.
+  //   none   — text-only generation.
   const selectedTrack = state.selectedTrack;
   const inputInfo = useMemo(() => {
     if (!selectedTrack) return { kind: 'none' };
-    if (selectedTrack.midiData?.notes?.length || selectedTrack.metadata?.midiData?.notes?.length) {
+    const md = selectedTrack.midiData || selectedTrack.metadata?.midiData;
+    if (md?.notes?.length) {
       return { kind: 'midi', name: selectedTrack.name || selectedTrack.id };
     }
-    if (selectedTrack.audioUrl || selectedTrack.audioFile) {
+    const latentId = selectedTrack.metadata?.latentId;
+    if (latentId) {
+      return { kind: 'latent', name: selectedTrack.name || selectedTrack.id, latentId };
+    }
+    if (selectedTrack.audioFile instanceof File || selectedTrack.audioUrl) {
       return { kind: 'audio', name: selectedTrack.name || selectedTrack.id };
     }
     return { kind: 'none' };
@@ -53,10 +69,31 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
 
   const buildInputFile = async () => {
     if (inputInfo.kind === 'midi') {
+      // Serialize the notes to a real .mid binary so the server's
+      // `Path(midi_path).suffix in ('.mid','.midi')` gate at
+      // stemphonic_server.py:2001 accepts it. A JSON file here silently
+      // fell through to the "no input" branch and generated from text alone.
       const md = selectedTrack.midiData || selectedTrack.metadata?.midiData;
       const notes = md?.notes || [];
-      const json = JSON.stringify({ notes, duration: md?.duration || 0, tempo: md?.tempo || state.bpm || 120 });
-      return new File([json], 'input.midi.json', { type: 'application/json' });
+      const tempo = md?.tempo || state.bpm || 120;
+      const { Midi } = await import('@tonejs/midi');
+      const midi = new Midi();
+      midi.header.setTempo(tempo);
+      const track = midi.addTrack();
+      for (const n of notes) {
+        track.addNote({
+          midi: Math.round(n.note),
+          time: Math.max(0, n.time || 0),
+          duration: Math.max(0.01, n.duration || 0.25),
+          velocity: Math.max(0.01, Math.min(1, (n.velocity ?? 100) / 127)),
+        });
+      }
+      const bytes = midi.toArray();
+      return new File([bytes], 'input.mid', { type: 'audio/midi' });
+    }
+    if (inputInfo.kind === 'latent') {
+      // latent_id rides as a form param, not a file.
+      return null;
     }
     if (inputInfo.kind === 'audio') {
       if (selectedTrack.audioFile instanceof File) return selectedTrack.audioFile;
@@ -99,6 +136,9 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
       const inputFile = await buildInputFile();
       const midiFile = inputInfo.kind === 'midi' ? inputFile : null;
       const refAudio = inputInfo.kind === 'audio' ? inputFile : null;
+      if (inputInfo.kind === 'latent') {
+        params.latent_id = inputInfo.latentId;
+      }
 
       const start = await generateStemphonic(params, midiFile, refAudio);
       if (!start.task_id) throw new Error('No task_id returned');
@@ -181,7 +221,10 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
         )}
         {inputInfo.kind !== 'none' && (
           <div className="sd-gen-input-info">
-            <span>Conditioning {inputInfo.kind === 'midi' ? 'MIDI' : 'audio'}</span>
+            <span>Conditioning {
+              inputInfo.kind === 'midi' ? 'MIDI' :
+              inputInfo.kind === 'latent' ? 'latent' : 'audio'
+            }</span>
             <strong>{inputInfo.name}</strong>
           </div>
         )}

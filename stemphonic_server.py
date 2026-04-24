@@ -1982,7 +1982,20 @@ def run_generation(task_id, params):
         # an already-spliced latent .pt instead of asking the server to
         # re-encode an audio file. When set, we load the latent and use
         # it as the render_src + lm_hints. Skips the MIDI render path.
+        # Also resolve `latent_id` (sent by /studio when a track has a
+        # cached VAE latent from upload time) into the same param, so we
+        # skip the audio_to_fsq_tokens re-encode.
         cover_src_lat_path = params.get("cover_src_latents_path")
+        if not cover_src_lat_path and params.get("latent_id"):
+            _lid = str(params.get("latent_id"))
+            _safe = "".join(c for c in _lid if c.isalnum() or c in "-_")
+            if _safe == _lid and _safe:
+                candidate = os.path.join(LATENT_DIR, f"{_safe}.pt")
+                if os.path.exists(candidate):
+                    cover_src_lat_path = candidate
+                    logger.info("🎚️  Resolved latent_id=%s → %s", _safe, candidate)
+                else:
+                    logger.warning("latent_id=%s not found at %s", _safe, candidate)
         if cover_src_lat_path and os.path.exists(cover_src_lat_path):
             try:
                 blob = torch.load(cover_src_lat_path, map_location="cuda")
@@ -2300,7 +2313,12 @@ def generate():
                      "instrument", "noise_level", "cover_noise_strength",
                      "audio_cover_strength", "drum_mode", "vox_mode",
                      "lyric_map",
-                     "checkpoint", "ckpt", "timbre_preset"]:
+                     "checkpoint", "ckpt", "timbre_preset",
+                     # latent_id lets the frontend reuse an already-cached
+                     # VAE latent (from upload time) instead of uploading
+                     # audio for the server to re-encode. Resolved to
+                     # cover_src_latents_path in run_generation.
+                     "latent_id"]:
             val = request.form.get(key)
             if val is not None:
                 params[key] = val
