@@ -26,6 +26,7 @@ import {
 } from '../../services/trackAnalysisAPI';
 import { formatTempoMap } from '../../services/tempoMap';
 import * as saveService from '../../services/saveService';
+import { parseMIDIFile } from '../../utils/midiParser';
 
 // Existing production components reused for mode content + overlays.
 // They read/dispatch AppContext directly, so dropping them in Just Works.
@@ -489,6 +490,81 @@ export default function StudioDev() {
     if (!file) return;
     clearPipelineLog();
     logPipeline('upload', `${file.name} (${(file.size / 1024).toFixed(0)} KB)`);
+
+    // MIDI files bypass the audio pipeline — parse notes directly and
+    // create a MIDI track (or one per MIDI track for multitrack files)
+    // so the piano roll can read midiData.notes.
+    if (/\.(mid|midi)$/i.test(file.name)) {
+      const baseName = file.name.replace(/\.(mid|midi)$/i, '');
+      const busId = `bus-${Date.now()}`;
+      parseMIDIFile(file).then((midiData) => {
+        const tracksWithNotes = (midiData.tracks || []).filter((t) => t.notes && t.notes.length > 0);
+        dispatch({
+          type: 'CREATE_BUS',
+          payload: { id: busId, type: 'INSTRUMENT', name: baseName, expanded: false },
+        });
+        let firstTrackId = null;
+        if (tracksWithNotes.length > 1) {
+          tracksWithNotes.forEach((midiTrack, index) => {
+            const trackId = `t-${Date.now()}-${index}`;
+            if (!firstTrackId) firstTrackId = trackId;
+            dispatch({
+              type: 'ADD_TRACK',
+              payload: {
+                busId,
+                track: {
+                  id: trackId,
+                  name: `${baseName} — Track ${index + 1}`,
+                  duration: midiData.duration || 0,
+                  startPosition: 0,
+                  gain: 1.0, isMuted: false, isSolo: false,
+                  fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
+                  metadata: { type: 'midi', originalFilename: file.name },
+                  midiData: {
+                    notes: midiTrack.notes,
+                    duration: midiData.duration,
+                    tempo: midiData.tempo || 120,
+                    trackIndex: index,
+                    isMultitrack: true,
+                  },
+                },
+              },
+            });
+          });
+        } else {
+          firstTrackId = `t-${Date.now()}`;
+          const notes = tracksWithNotes[0]?.notes || midiData.notes || [];
+          dispatch({
+            type: 'ADD_TRACK',
+            payload: {
+              busId,
+              track: {
+                id: firstTrackId,
+                name: baseName,
+                duration: midiData.duration || 0,
+                startPosition: 0,
+                gain: 1.0, isMuted: false, isSolo: false,
+                fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
+                metadata: { type: 'midi', originalFilename: file.name },
+                midiData: {
+                  notes,
+                  duration: midiData.duration,
+                  tempo: midiData.tempo || 120,
+                },
+              },
+            },
+          });
+        }
+        if (midiData.tempo) dispatch({ type: 'UPDATE_BPM', payload: Math.round(midiData.tempo) });
+        if (firstTrackId) dispatch({ type: 'SELECT_TRACK', payload: { trackId: firstTrackId, busId } });
+        setActiveMode('midi');
+        logPipeline('upload', `MIDI parsed — ${midiData.numTracks} tracks, ${midiData.notes?.length || 0} notes`, 'ok');
+      }).catch((err) => {
+        logPipeline('upload', `MIDI parse failed: ${err?.message || err}`, 'error');
+      });
+      return;
+    }
+
     const busId = `bus-${Date.now()}`;
     const trackId = `t-${Date.now()}`;
     const baseName = file.name.replace(/\.[^.]+$/, '');
@@ -2063,7 +2139,7 @@ export default function StudioDev() {
                   <div className="sd-tile-label">BRW</div>
                 </button>
               </div>
-              <input ref={fileInputRef} type="file" accept="audio/*"
+              <input ref={fileInputRef} type="file" accept="audio/*,.mid,.midi"
                      style={{ display: 'none' }} onChange={onFilePick} />
 
               {/* Currently selected track — auto-loaded as the generation
