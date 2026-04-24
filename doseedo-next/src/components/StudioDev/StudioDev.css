@@ -1344,6 +1344,75 @@
 .sd-right-actions .sd-btn { justify-content: center; }
 .sd-btn-danger { color: #e07556 !important; border-color: rgba(224,117,86,0.4) !important; }
 
+/* ---------- Right sidebar: Session / History tabs ---------- */
+.sd-right-tabs {
+  display: flex; align-items: center; gap: 4px;
+  margin: -8px -4px 16px -4px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--hifi-rule);
+}
+.sd-right-back {
+  background: transparent; border: 1px solid var(--hifi-rule);
+  color: var(--hifi-ink-soft); cursor: pointer;
+  padding: 4px 8px; font-size: 11px; border-radius: 3px;
+  margin-right: 4px;
+}
+.sd-right-back:hover { color: var(--hifi-ink); border-color: var(--hifi-ink-mute); }
+.sd-right-tab {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--hifi-ink-mute); font-family: var(--hifi-mono);
+  font-size: 11px; letter-spacing: .4px; text-transform: uppercase;
+  padding: 4px 10px; border-bottom: 2px solid transparent;
+}
+.sd-right-tab:hover { color: var(--hifi-ink-soft); }
+.sd-right-tab.active {
+  color: var(--hifi-ink);
+  border-bottom-color: var(--hifi-accent);
+}
+
+.sd-session-list { display: flex; flex-direction: column; gap: 6px; }
+.sd-session-bus { display: flex; flex-direction: column; gap: 2px; }
+.sd-session-bus-row {
+  display: grid; grid-template-columns: 24px 20px 1fr 22px 20px;
+  align-items: center; gap: 6px;
+  padding: 4px 2px;
+}
+.sd-session-play, .sd-session-caret, .sd-session-kebab {
+  background: transparent; border: 1px solid transparent;
+  color: var(--hifi-ink-soft); cursor: pointer;
+  padding: 2px 0; font-size: 11px; border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+}
+.sd-session-play:hover, .sd-session-caret:hover, .sd-session-kebab:hover {
+  color: var(--hifi-ink); border-color: var(--hifi-rule);
+}
+.sd-session-play-sm { width: 20px; height: 18px; }
+.sd-session-name, .sd-session-trackname {
+  background: transparent; border: none; cursor: pointer; text-align: left;
+  color: var(--hifi-ink); font-family: var(--hifi-sans);
+  font-size: 13px; padding: 2px 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sd-session-name:hover, .sd-session-trackname:hover { color: var(--hifi-accent); }
+.sd-session-count {
+  color: var(--hifi-ink-mute); font-family: var(--hifi-mono); font-size: 10px;
+  text-align: right;
+}
+.sd-session-tracks {
+  display: flex; flex-direction: column; gap: 2px;
+  padding-left: 44px; margin-bottom: 4px;
+}
+.sd-session-track-row {
+  display: grid; grid-template-columns: 20px 1fr 20px;
+  align-items: center; gap: 6px;
+  padding: 2px 0;
+}
+
+.sd-history-placeholder { padding: 8px 0; }
+.sd-right-hint {
+  margin-top: 12px; color: var(--hifi-ink-mute);
+  font-size: 12px; line-height: 1.5;
+}
+
 /* ---------- Selected track row ---------- */
 .sd-track-row { cursor: pointer; }
 .sd-track-row.selected { background: var(--hifi-accent-soft); }

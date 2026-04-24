@@ -347,6 +347,12 @@ export default function StudioDev() {
   const [markers, setMarkers] = useState([]);                 // [{ time, name, color }]
   const [reorderDrag, setReorderDrag] = useState(null);       // { trackId, busId, startY }
   const [meterByTrack, setMeterByTrack] = useState({});       // trackId → 0..1 pseudo-level
+  // Right sidebar tab: 'session' (bus list) or 'history' (edit log, Part B).
+  // The info panel (bus/track) takes over the sidebar body when a bus or
+  // track is selected; the tab bar stays visible so you can flip tabs and
+  // the back arrow in the info header returns to the tab view.
+  const [rightTab, setRightTab] = useState('session');
+  const [sessionBusExpanded, setSessionBusExpanded] = useState({}); // busId → boolean
   const recorder = useAudioRecorder();
   const clipboardRef = useRef(null);  // for Cmd-C/X/V fallback when reducer copy paths aren't enough
 
@@ -2008,6 +2014,33 @@ export default function StudioDev() {
   const renameBus         = (busId, name) => busId && dispatch({ type: 'UPDATE_BUS_NAME', payload: { busId, name } });
   const clearBus          = (busId) => busId && dispatch({ type: 'CLEAR_BUS', payload: { busId } });
 
+  // Right sidebar navigation: the info view (bus/track) replaces the tab
+  // body. The back arrow on the info header clears selection so the tab
+  // view returns.
+  const clearRightSelection = () => dispatch({ type: 'CLEAR_SELECTION' });
+  // Play a bus in isolation: solo it and start playback if we're paused.
+  // Clicking again on the currently-soloed+playing bus stops and unsolos.
+  const playBus = useCallback((bus) => {
+    if (!bus?.id) return;
+    const currentlySoloPlaying = !!bus.solo && state.isPlaying;
+    dispatch({ type: 'TOGGLE_BUS_SOLO', payload: { busId: bus.id } });
+    if (currentlySoloPlaying) {
+      if (state.isPlaying) dispatch({ type: 'TOGGLE_PLAY' });
+    } else {
+      if (!state.isPlaying) dispatch({ type: 'TOGGLE_PLAY' });
+    }
+  }, [dispatch, state.isPlaying]);
+  const playTrack = useCallback((track, busId) => {
+    if (!track?.id || !busId) return;
+    const currentlySoloPlaying = !!track.isSolo && state.isPlaying;
+    dispatch({ type: 'TOGGLE_TRACK_SOLO', payload: { trackId: track.id, busId } });
+    if (currentlySoloPlaying) {
+      if (state.isPlaying) dispatch({ type: 'TOGGLE_PLAY' });
+    } else {
+      if (!state.isPlaying) dispatch({ type: 'TOGGLE_PLAY' });
+    }
+  }, [dispatch, state.isPlaying]);
+
   /* ---------- Canvas content ---------- */
   // Always render the active mode's component. Each mode handles its own
   // empty state internally, so a never-used /studio-dev still looks right
@@ -2752,6 +2785,88 @@ export default function StudioDev() {
 
         {/* -------- RIGHT: TRACK INFO -------- */}
         <aside className="sd-right">
+          {/* Tab bar — flips between the session overview and edit history.
+              The info view for a selected bus/track replaces the tab body
+              (below), but the tab bar and back arrow stay visible so the
+              user can always return. */}
+          <div className="sd-right-tabs">
+            {(selectedTrack || state.selectedBus) && (
+              <button className="sd-right-back" onClick={clearRightSelection} title="Back to session view">
+                <i className="fa-solid fa-arrow-left" />
+              </button>
+            )}
+            <button className={`sd-right-tab ${rightTab === 'session' ? 'active' : ''}`} onClick={() => { setRightTab('session'); clearRightSelection(); }}>Session</button>
+            <button className={`sd-right-tab ${rightTab === 'history' ? 'active' : ''}`} onClick={() => { setRightTab('history'); clearRightSelection(); }}>History</button>
+          </div>
+
+          {/* Tab body — SESSION view (bus list) or HISTORY view (placeholder).
+              Only renders when nothing is selected; info replaces it otherwise. */}
+          {!selectedTrack && !state.selectedBus && rightTab === 'session' && (
+            <div className="sd-session-list">
+              {timelineBuses.length === 0 && (
+                <div className="sd-side-sub">No buses yet. Drop audio or add a track.</div>
+              )}
+              {timelineBuses.map((wrapped) => {
+                const real = wrapped._real;
+                if (!real) return null;
+                const visibleTracks = (real.tracks || []).filter((t) => !t.metadata?.isBusMaster);
+                const isExpanded = !!sessionBusExpanded[real.id];
+                const isPlaying = !!real.solo && state.isPlaying;
+                return (
+                  <div key={real.id} className="sd-session-bus">
+                    <div className="sd-session-bus-row">
+                      <button className="sd-session-play" onClick={() => playBus(real)} title={isPlaying ? 'Stop' : 'Play (solo bus)'}>
+                        <i className={`fa-solid fa-${isPlaying ? 'stop' : 'play'}`} />
+                      </button>
+                      <button className="sd-session-caret" onClick={() => setSessionBusExpanded((m) => ({ ...m, [real.id]: !m[real.id] }))} title={isExpanded ? 'Collapse tracks' : 'Expand tracks'}>
+                        <i className={`fa-solid fa-caret-${isExpanded ? 'down' : 'right'}`} />
+                      </button>
+                      <button className="sd-session-name" onClick={() => dispatch({ type: 'SELECT_BUS', payload: { busId: real.id } })} title="Open bus info" style={{ color: wrapped.color }}>
+                        {real.name || real.type || 'Bus'}
+                      </button>
+                      <span className="sd-session-count">{visibleTracks.length}</span>
+                      <button className="sd-session-kebab" onClick={() => dispatch({ type: 'SELECT_BUS', payload: { busId: real.id } })} title="Bus info">
+                        <i className="fa-solid fa-ellipsis" />
+                      </button>
+                    </div>
+                    {isExpanded && visibleTracks.length > 0 && (
+                      <div className="sd-session-tracks">
+                        {visibleTracks.map((t) => {
+                          const tPlaying = !!t.isSolo && state.isPlaying;
+                          return (
+                            <div key={t.id} className="sd-session-track-row">
+                              <button className="sd-session-play sd-session-play-sm" onClick={() => playTrack(t, real.id)} title={tPlaying ? 'Stop' : 'Play (solo track)'}>
+                                <i className={`fa-solid fa-${tPlaying ? 'stop' : 'play'}`} />
+                              </button>
+                              <button className="sd-session-trackname" onClick={() => dispatch({ type: 'SELECT_TRACK', payload: { trackId: t.id, busId: real.id } })}>
+                                {t.name || t.metadata?.stemType || t.id}
+                              </button>
+                              <button className="sd-session-kebab" onClick={() => dispatch({ type: 'SELECT_TRACK', payload: { trackId: t.id, busId: real.id } })} title="Track info">
+                                <i className="fa-solid fa-ellipsis" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {!selectedTrack && !state.selectedBus && rightTab === 'history' && (
+            <div className="sd-history-placeholder">
+              <div className="sd-side-title">History</div>
+              <div className="sd-side-sub">Edit history coming soon</div>
+              <p className="sd-right-hint">
+                Every significant action you take (add track, generate, meter repaint, MIDI edit…) will
+                appear here as a commit. View will let you peek at a prior state, and Revert will branch a
+                new timeline from that point while keeping the current one reachable.
+              </p>
+            </div>
+          )}
+
           {/* BUS view — shown when a bus is selected and no track is selected. */}
           {!selectedTrack && state.selectedBus && (() => {
             const b = state.selectedBus;
@@ -2804,13 +2919,6 @@ export default function StudioDev() {
               </>
             );
           })()}
-
-          {!selectedTrack && !state.selectedBus && (
-            <>
-              <div className="sd-side-title">Track</div>
-              <div className="sd-side-sub">Nothing selected</div>
-            </>
-          )}
 
           {selectedTrack && (
             <>
