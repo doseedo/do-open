@@ -1,38 +1,45 @@
 import React, { useState, useRef, useCallback } from 'react';
 import ToolWaveform from './ToolWaveform';
-import styles from './Tools.module.css';
+import {
+  C,
+  P,
+  Ic,
+  ToolShell,
+  Panel,
+  DropZone,
+  ChipRow,
+  FieldLabel,
+  Slider,
+  Select,
+} from './toolShell';
 
 const API_BASE = '';
 
-// Voicing style options
 const VOICING_STYLES = [
-  { id: 'thirds', name: 'Thirds (Traditional)', description: 'Classic harmony using thirds and fifths' },
-  { id: 'sixths', name: 'Sixths', description: 'Sweet sounding sixths harmony' },
-  { id: 'power', name: 'Power (Rock)', description: 'Simple power chord style harmonies' },
-  { id: 'close', name: 'Close Harmony', description: 'Tight, close harmonies' },
-  { id: 'wide', name: 'Wide Spread', description: 'Wide, spacious harmonies' },
-  { id: 'jazz', name: 'Jazz Voicing', description: 'Jazz-style extended harmonies' },
-  { id: 'minor', name: 'Minor Thirds', description: 'Darker minor harmonies' },
-  { id: 'barbershop', name: 'Barbershop', description: 'Four-part barbershop style' }
+  { value: 'thirds', label: 'Thirds (Traditional)' },
+  { value: 'sixths', label: 'Sixths' },
+  { value: 'power', label: 'Power (Rock)' },
+  { value: 'close', label: 'Close Harmony' },
+  { value: 'wide', label: 'Wide Spread' },
+  { value: 'jazz', label: 'Jazz Voicing' },
+  { value: 'minor', label: 'Minor Thirds' },
+  { value: 'barbershop', label: 'Barbershop' },
 ];
 
-// Musical keys
 const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B', 'chromatic'];
 
 /**
- * Vocal Harmonizer Tool
- * Generate harmony tracks from vocal audio
+ * Vocal Harmonizer — generates N harmony voices from a dry vocal.
+ * Backend wiring (POST /api/vocal-harmonizer) preserved verbatim from the
+ * pre-refactor implementation; only the presentation layer has changed.
  */
-const VocalHarmonizerTool = ({ tool }) => {
-  // State
+const VocalHarmonizerTool = ({ tool, onBack }) => {
   const [audioFile, setAudioFile] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState(null);
 
-  // Settings
   const [numHarmonies, setNumHarmonies] = useState(2);
   const [voicingStyle, setVoicingStyle] = useState('thirds');
   const [musicalKey, setMusicalKey] = useState('C');
@@ -40,54 +47,33 @@ const VocalHarmonizerTool = ({ tool }) => {
   const [noiseLevel, setNoiseLevel] = useState(0.3);
   const [useAceStep, setUseAceStep] = useState(false);
 
-  // Results
   const [harmonyAudios, setHarmonyAudios] = useState([]);
   const [harmonyMidi, setHarmonyMidi] = useState(null);
-  const [extractedLyrics, setExtractedLyrics] = useState(null);
+  const abortRef = useRef(null);
 
-  const fileInputRef = useRef(null);
+  const resetResults = () => {
+    setHarmonyAudios([]);
+    setHarmonyMidi(null);
+  };
 
-  // Handle file upload
   const handleFileUpload = useCallback((file) => {
     if (file && file.type.startsWith('audio/')) {
       setAudioFile(file);
       setError(null);
       setStatusMessage(`File loaded: ${file.name}`);
-      // Clear previous results
-      setHarmonyAudios([]);
-      setHarmonyMidi(null);
-      setExtractedLyrics(null);
+      resetResults();
     } else {
       setError('Please upload an audio file (WAV, MP3, etc.)');
     }
   }, []);
 
-  // Drag and drop handlers
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(true);
+  const handleRemoveFile = useCallback(() => {
+    setAudioFile(null);
+    resetResults();
+    setStatusMessage('');
+    setError(null);
   }, []);
 
-  const handleDragLeave = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    handleFileUpload(file);
-  }, [handleFileUpload]);
-
-  const handleFileInputChange = useCallback((e) => {
-    const file = e.target.files[0];
-    if (file) {
-      handleFileUpload(file);
-    }
-  }, [handleFileUpload]);
-
-  // Generate harmonies
   const handleGenerate = useCallback(async () => {
     if (!audioFile) {
       setError('Please upload an audio file first');
@@ -97,7 +83,7 @@ const VocalHarmonizerTool = ({ tool }) => {
     setIsGenerating(true);
     setProgress(0);
     setError(null);
-    setStatusMessage('Starting harmony generation...');
+    setStatusMessage('Uploading audio and extracting pitch…');
 
     try {
       const formData = new FormData();
@@ -109,12 +95,13 @@ const VocalHarmonizerTool = ({ tool }) => {
       formData.append('noiseLevel', noiseLevel.toString());
       formData.append('useAceStep', useAceStep.toString());
 
-      setStatusMessage('Uploading audio and extracting pitch...');
       setProgress(0.1);
-
+      const controller = new AbortController();
+      abortRef.current = controller;
       const response = await fetch(`${API_BASE}/api/vocal-harmonizer`, {
         method: 'POST',
-        body: formData
+        body: formData,
+        signal: controller.signal,
       });
 
       if (!response.ok) {
@@ -123,323 +110,304 @@ const VocalHarmonizerTool = ({ tool }) => {
       }
 
       setProgress(0.5);
-      setStatusMessage('Generating harmony tracks...');
-
+      setStatusMessage('Generating harmony tracks…');
       const result = await response.json();
+      setProgress(1);
+      setStatusMessage('Harmonies generated successfully.');
 
-      setProgress(1.0);
-      setStatusMessage('Harmonies generated successfully!');
-
-      // Set results
       if (result.harmony_audio && result.harmony_audio.length > 0) {
         setHarmonyAudios(result.harmony_audio);
       }
       if (result.harmony_midi) {
         setHarmonyMidi(result.harmony_midi);
       }
-      if (result.lyrics) {
-        setExtractedLyrics(result.lyrics);
-      }
-
     } catch (err) {
-      console.error('Harmony generation failed:', err);
-      setError(err.message || 'Failed to generate harmonies');
+      if (err.name !== 'AbortError') {
+        console.error('Harmony generation failed:', err);
+        setError(err.message || 'Failed to generate harmonies');
+      }
       setStatusMessage('');
     } finally {
+      abortRef.current = null;
       setIsGenerating(false);
     }
   }, [audioFile, numHarmonies, voicingStyle, musicalKey, mode, noiseLevel, useAceStep]);
 
-  // Download MIDI
-  const handleDownloadMidi = useCallback(() => {
-    if (harmonyMidi) {
-      const link = document.createElement('a');
-      link.href = harmonyMidi;
-      link.download = 'harmonies.mid';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-  }, [harmonyMidi]);
-
-  // Remove file
-  const handleRemoveFile = useCallback(() => {
-    setAudioFile(null);
-    setHarmonyAudios([]);
-    setHarmonyMidi(null);
-    setExtractedLyrics(null);
-    setStatusMessage('');
-    setError(null);
+  const handleCancel = useCallback(() => {
+    abortRef.current?.abort();
+    setStatusMessage('Cancelled.');
   }, []);
 
-  return (
-    <div className={styles.toolGeneratorContainer}>
-      {/* Header */}
-      <div className={styles.toolGeneratorHeader}>
-        <div className={styles.toolGeneratorTitleSection}>
-          <div
-            className={styles.toolGeneratorIcon}
-            style={{ background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.4), rgba(76, 175, 80, 0.2))' }}
-          >
-            <i className="fa-solid fa-music" style={{ color: '#4CAF50' }}></i>
-          </div>
-          <div className={styles.toolGeneratorTitleText}>
-            <h2 className={styles.toolGeneratorTitle}>{tool?.name || 'Vocal Harmonizer'}</h2>
-            <p className={styles.toolGeneratorDescription}>
-              {tool?.description || 'Generate beautiful harmony tracks from your vocals'}
-            </p>
-          </div>
-        </div>
-        <span className={styles.availableBadge}>Available</span>
-      </div>
+  const handleDownloadMidi = useCallback(() => {
+    if (!harmonyMidi) return;
+    const link = document.createElement('a');
+    link.href = harmonyMidi;
+    link.download = 'harmonies.mid';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [harmonyMidi]);
 
-      {/* File Upload Section */}
-      <div className={styles.toolSection}>
-        <label className={styles.toolInputLabel}>
-          <i className="fa-solid fa-upload"></i>
-          Upload Vocal Audio
-        </label>
-
-        {!audioFile ? (
-          <div
-            className={`${styles.toolFileUpload} ${isDragging ? styles.toolFileUploadActive : ''}`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <i className="fa-solid fa-cloud-arrow-up"></i>
-            <span>Drag & drop your vocal audio here</span>
-            <span className={styles.uploadHint}>or click to browse (WAV, MP3, FLAC)</span>
-          </div>
+  // ---------- Panel: Input ----------
+  const InputPanel = (
+    <Panel
+      title="Input · dry vocal"
+      marker="◆"
+      status={
+        audioFile ? (
+          <span style={{ color: C.ok, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.ok }} />
+            loaded
+          </span>
         ) : (
-          <div className={styles.uploadedFileInfo}>
-            <i className="fa-solid fa-file-audio"></i>
-            <span>{audioFile.name}</span>
-            <button className={styles.removeFileBtn} onClick={handleRemoveFile}>
-              <i className="fa-solid fa-xmark"></i>
-            </button>
+          <span style={{ color: C.inkMute }}>empty</span>
+        )
+      }
+    >
+      <DropZone
+        file={audioFile}
+        onPick={handleFileUpload}
+        onRemove={handleRemoveFile}
+        accept="audio/*"
+        hint="WAV · MP3 · FLAC"
+        icon="WAV"
+      />
+      {audioFile && (
+        <div style={{ padding: '0 16px 14px' }}>
+          <FieldLabel style={{ marginBottom: 8 }}>Preview · dry</FieldLabel>
+          <div style={{ background: C.bg, border: `1px solid ${C.rule}`, padding: 8 }}>
+            <ToolWaveform audioUrl={URL.createObjectURL(audioFile)} height={56} color={C.ink} />
           </div>
-        )}
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="audio/*"
-          onChange={handleFileInputChange}
-          style={{ display: 'none' }}
-        />
-      </div>
-
-      {/* Settings Section */}
-      <div className={styles.toolSection}>
-        <label className={styles.toolInputLabel}>
-          <i className="fa-solid fa-sliders"></i>
-          Harmony Settings
-        </label>
-
-        <div className={styles.harmonizerSettings}>
-          {/* Number of Harmonies */}
-          <div className={styles.settingRow}>
-            <label className={styles.settingLabel}>Number of Harmony Voices</label>
-            <div className={styles.harmonyCountBtns}>
-              {[1, 2, 3, 4].map(n => (
-                <button
-                  key={n}
-                  className={`${styles.harmonyCountBtn} ${numHarmonies === n ? styles.active : ''}`}
-                  onClick={() => setNumHarmonies(n)}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Voicing Style */}
-          <div className={styles.settingRow}>
-            <label className={styles.settingLabel}>Voicing Style</label>
-            <select
-              className={styles.toolSelect}
-              value={voicingStyle}
-              onChange={(e) => setVoicingStyle(e.target.value)}
-            >
-              {VOICING_STYLES.map(style => (
-                <option key={style.id} value={style.id}>
-                  {style.name}
-                </option>
-              ))}
-            </select>
-            <span className={styles.settingHint}>
-              {VOICING_STYLES.find(s => s.id === voicingStyle)?.description}
-            </span>
-          </div>
-
-          {/* Musical Key */}
-          <div className={styles.settingRowInline}>
-            <div className={styles.settingCol}>
-              <label className={styles.settingLabel}>Key</label>
-              <select
-                className={styles.toolSelect}
-                value={musicalKey}
-                onChange={(e) => setMusicalKey(e.target.value)}
-              >
-                {KEYS.map(key => (
-                  <option key={key} value={key}>{key}</option>
-                ))}
-              </select>
-            </div>
-            <div className={styles.settingCol}>
-              <label className={styles.settingLabel}>Mode</label>
-              <select
-                className={styles.toolSelect}
-                value={mode}
-                onChange={(e) => setMode(e.target.value)}
-              >
-                <option value="major">Major</option>
-                <option value="minor">Minor</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Noise Level */}
-          <div className={styles.settingRow}>
-            <label className={styles.settingLabel}>
-              Noise Reduction: {Math.round(noiseLevel * 100)}%
-            </label>
-            <input
-              type="range"
-              className={styles.toolSlider}
-              min="0"
-              max="1"
-              step="0.1"
-              value={noiseLevel}
-              onChange={(e) => setNoiseLevel(parseFloat(e.target.value))}
-            />
-            <div className={styles.sliderLabels}>
-              <span>None</span>
-              <span>Maximum</span>
-            </div>
-          </div>
-
-          {/* ACE-Step Option */}
-          <div className={styles.toolOptionsRow}>
-            <label className={styles.toolCheckbox}>
-              <input
-                type="checkbox"
-                checked={useAceStep}
-                onChange={(e) => setUseAceStep(e.target.checked)}
-              />
-              <span>Use ACE-Step for natural vocal rendering (slower)</span>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      {/* Progress/Status */}
-      {(isGenerating || statusMessage) && (
-        <div className={styles.toolSection}>
-          {isGenerating && (
-            <div className={styles.progressContainer}>
-              <div
-                className={styles.progressBar}
-                style={{ width: `${progress * 100}%` }}
-              ></div>
-            </div>
-          )}
-          {statusMessage && (
-            <div className={styles.statusMessage}>{statusMessage}</div>
-          )}
         </div>
       )}
-
-      {/* Error Message */}
       {error && (
-        <div className={styles.errorMessage}>
-          <i className="fa-solid fa-circle-exclamation"></i>
+        <div
+          style={{
+            margin: '0 14px 14px',
+            padding: '8px 12px',
+            border: `1px solid ${C.warm}66`,
+            background: 'rgba(201,79,44,0.08)',
+            color: C.warm,
+            fontFamily: C.mono,
+            fontSize: 10,
+            letterSpacing: 0.4,
+          }}
+        >
           {error}
         </div>
       )}
+    </Panel>
+  );
 
-      {/* Results Section */}
-      {harmonyAudios.length > 0 && (
-        <div className={styles.toolSection}>
-          <label className={styles.toolInputLabel}>
-            <i className="fa-solid fa-music"></i>
-            Generated Harmonies
-          </label>
-
-          <div className={styles.harmonyResults}>
-            {harmonyAudios.map((audioUrl, index) => (
-              <div key={index} className={styles.harmonyTrack}>
-                <div className={styles.harmonyTrackHeader}>
-                  <span className={styles.harmonyTrackLabel}>
-                    <i className="fa-solid fa-waveform-lines"></i>
-                    Harmony Voice {index + 1}
-                  </span>
-                  <a
-                    href={audioUrl}
-                    download={`harmony_${index + 1}.wav`}
-                    className={styles.downloadBtn}
-                  >
-                    <i className="fa-solid fa-download"></i>
-                  </a>
-                </div>
-                <ToolWaveform
-                  audioUrl={audioUrl}
-                  height={80}
-                  color={`hsl(${120 + index * 30}, 70%, 50%)`}
-                />
-              </div>
-            ))}
-          </div>
-
-          {/* MIDI Download */}
-          {harmonyMidi && (
-            <button
-              className={`${styles.toolControlBtn} ${styles.toolControlBtnSecondary}`}
-              onClick={handleDownloadMidi}
-            >
-              <i className="fa-solid fa-file-audio"></i>
-              Download Harmony MIDI
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Extracted Lyrics */}
-      {extractedLyrics && extractedLyrics.text && (
-        <div className={styles.toolSection}>
-          <label className={styles.toolInputLabel}>
-            <i className="fa-solid fa-closed-captioning"></i>
-            Extracted Lyrics
-          </label>
-          <div className={styles.lyricsDisplay}>
-            {extractedLyrics.text}
-          </div>
-        </div>
-      )}
-
-      {/* Generate Button */}
-      <div className={styles.toolControlSection}>
-        <button
-          className={`${styles.toolControlBtn} ${styles.toolControlBtnPrimary}`}
-          onClick={handleGenerate}
-          disabled={isGenerating || !audioFile}
-        >
-          {isGenerating ? (
-            <>
-              <i className="fa-solid fa-spinner fa-spin"></i>
-              Generating Harmonies...
-            </>
-          ) : (
-            <>
-              <i className="fa-solid fa-wand-magic-sparkles"></i>
-              Generate Harmonies
-            </>
-          )}
-        </button>
+  // ---------- Panel: Controls ----------
+  const ControlsPanel = (
+    <Panel title="Controls · harmony engine" marker="◇">
+      <div style={{ padding: '12px 16px 0' }}>
+        <FieldLabel style={{ marginBottom: 8 }}>Voices</FieldLabel>
+        <ChipRow
+          options={[1, 2, 3, 4].map((n) => ({ value: n, label: String(n) }))}
+          value={numHarmonies}
+          onChange={setNumHarmonies}
+        />
       </div>
-    </div>
+
+      <div style={{ padding: '14px 16px 0' }}>
+        <FieldLabel style={{ marginBottom: 8 }}>Voicing style</FieldLabel>
+        <Select value={voicingStyle} onChange={setVoicingStyle} options={VOICING_STYLES} />
+      </div>
+
+      <div style={{ padding: '14px 16px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div>
+          <FieldLabel style={{ marginBottom: 6 }}>Key</FieldLabel>
+          <Select
+            value={musicalKey}
+            onChange={setMusicalKey}
+            options={KEYS.map((k) => ({ value: k, label: k }))}
+          />
+        </div>
+        <div>
+          <FieldLabel style={{ marginBottom: 6 }}>Mode</FieldLabel>
+          <Select
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'major', label: 'Major' },
+              { value: 'minor', label: 'Minor' },
+            ]}
+          />
+        </div>
+      </div>
+
+      <Slider
+        label="Noise reduction"
+        value={Math.round(noiseLevel * 100)}
+        min={0}
+        max={100}
+        onChange={(v) => setNoiseLevel(v / 100)}
+        unit="%"
+        leftLabel="None"
+        rightLabel="Max"
+      />
+
+      <div
+        style={{
+          padding: '10px 16px 16px',
+          borderTop: `1px solid ${C.rule}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <input
+          id="useAceStep"
+          type="checkbox"
+          checked={useAceStep}
+          onChange={(e) => setUseAceStep(e.target.checked)}
+        />
+        <label
+          htmlFor="useAceStep"
+          style={{
+            fontFamily: C.mono,
+            fontSize: 10,
+            letterSpacing: 0.5,
+            color: C.inkSoft,
+            textTransform: 'uppercase',
+          }}
+        >
+          ACE-Step natural vocals (slower)
+        </label>
+      </div>
+    </Panel>
+  );
+
+  // ---------- Panel: Output ----------
+  const OutputPanel = (
+    <Panel
+      title="Output · harmonies"
+      marker="●"
+      status={
+        harmonyAudios.length > 0 ? (
+          <span style={{ color: C.ok }}>{harmonyAudios.length} voice{harmonyAudios.length === 1 ? '' : 's'}</span>
+        ) : null
+      }
+    >
+      <div style={{ padding: '6px 16px', flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        {harmonyAudios.length === 0 && (
+          <div
+            style={{
+              padding: '40px 16px',
+              textAlign: 'center',
+              fontFamily: C.mono,
+              fontSize: 10,
+              letterSpacing: 0.5,
+              color: C.inkMute,
+              textTransform: 'uppercase',
+            }}
+          >
+            Render a take to see harmony voices here.
+          </div>
+        )}
+        {harmonyAudios.map((audioUrl, index) => (
+          <div
+            key={index}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '64px 1fr 24px',
+              alignItems: 'center',
+              gap: 10,
+              padding: '8px 0',
+              borderBottom: `1px solid ${C.rule}`,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontFamily: C.mono,
+                  fontSize: 10,
+                  fontWeight: 500,
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                  color: index === 0 ? C.ink : index === 1 ? C.purple : index === 2 ? C.accent : C.warm,
+                }}
+              >
+                V{index + 1}
+              </div>
+              <div style={{ fontFamily: C.mono, fontSize: 9, letterSpacing: 0.5, color: C.inkMute, marginTop: 1 }}>
+                harmony
+              </div>
+            </div>
+            <div style={{ background: C.bg, border: `1px solid ${C.rule}`, padding: 4 }}>
+              <ToolWaveform audioUrl={audioUrl} height={28} color={C.ink} />
+            </div>
+            <a
+              href={audioUrl}
+              download={`harmony_${index + 1}.wav`}
+              title="Download"
+              style={{
+                width: 24,
+                height: 24,
+                border: `1px solid ${C.rule}`,
+                display: 'grid',
+                placeItems: 'center',
+                color: C.inkSoft,
+              }}
+            >
+              <Ic d={P.dl} size={11} />
+            </a>
+          </div>
+        ))}
+      </div>
+      {harmonyMidi && (
+        <div style={{ padding: 14, borderTop: `1px solid ${C.rule}` }}>
+          <button
+            type="button"
+            onClick={handleDownloadMidi}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              background: C.ink,
+              color: C.bg,
+              border: 'none',
+              fontFamily: C.mono,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              cursor: 'pointer',
+            }}
+          >
+            <Ic d={P.dl} size={12} color={C.bg} /> Download harmony MIDI
+          </button>
+        </div>
+      )}
+    </Panel>
+  );
+
+  return (
+    <ToolShell
+      tool={{ ...tool, sku: 'T-01', category: 'Audio tool', version: 'v2.4.1' }}
+      subtitle="single-take mode"
+      description="Drop a dry vocal. We’ll analyze pitch, key, and timing, then render up to four harmony voices with selectable intervals and voicings."
+      meta={[
+        { k: 'Runs today', v: '2 / 3 free' },
+        { k: 'Avg time', v: '~42s' },
+      ]}
+      running={isGenerating}
+      progress={progress}
+      statusMessage={statusMessage}
+      primaryLabel="Render take"
+      onPrimary={handleGenerate}
+      onCancel={handleCancel}
+      primaryDisabled={!audioFile}
+      onBack={onBack}
+      left={InputPanel}
+      center={ControlsPanel}
+      right={OutputPanel}
+    />
   );
 };
 

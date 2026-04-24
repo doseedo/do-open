@@ -2,13 +2,13 @@ import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { useAudioRecorder } from '../../hooks/useAudioRecorder';
 import { startGeneration, pollUntilComplete } from '../../services/generationAPI';
 import ToolWaveform from './ToolWaveform';
-import styles from './Tools.module.css';
+import { C, P, Ic, ToolShell, Panel, DropZone, FieldLabel } from './toolShell';
 
 /**
- * Voice to Instrument Tool
- * Record voice/humming and convert to instrument using AI
+ * Voice to Instrument — hums / voice memos → instrumental audio.
+ * Backend: startGeneration + pollUntilComplete (unchanged).
  */
-const VoiceToInstrumentTool = ({ tool }) => {
+const VoiceToInstrumentTool = ({ tool, onBack }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -16,98 +16,73 @@ const VoiceToInstrumentTool = ({ tool }) => {
   const [recordedFile, setRecordedFile] = useState(null);
   const fileInputRef = useRef(null);
 
-  // Instrument selection state
   const [instrumentGroup, setInstrumentGroup] = useState('strings');
   const [instrumentSubgroup, setInstrumentSubgroup] = useState('violin');
 
-  // Generation parameters
-  // eslint-disable-next-line no-unused-vars
-  const [extractMidi, setExtractMidi] = useState(true);
-
-  // Audio recorder hook
   const {
     isRecording,
     recordingDuration,
     startRecording,
     stopRecording,
-    cancelRecording
+    cancelRecording,
   } = useAudioRecorder({ extractMidi: false, convertToSine: false });
 
-  // Instrument configuration
-  const instrumentSubgroups = useMemo(() => ({
-    piano: ['acoustic_piano', 'keys'],
-    guitar: ['acoustic_guitar', 'electric_guitar'],
-    bass: ['electric_bass', 'upright_bass'],
-    strings: ['ensemble_strings', 'violin', 'cello'],
-    brass: ['ensemble_brass', 'trumpet', 'trombone'],
-    winds: ['ensemble_winds', 'flute', 'sax']
-  }), []);
+  const instrumentSubgroups = useMemo(
+    () => ({
+      piano: ['acoustic_piano', 'keys'],
+      guitar: ['acoustic_guitar', 'electric_guitar'],
+      bass: ['electric_bass', 'upright_bass'],
+      strings: ['ensemble_strings', 'violin', 'cello'],
+      brass: ['ensemble_brass', 'trumpet', 'trombone'],
+      winds: ['ensemble_winds', 'flute', 'sax'],
+    }),
+    [],
+  );
 
-  const instrumentGroups = useMemo(() => [
-    { id: 'piano',   label: 'Piano',   iconImg: '/assets/icons/piano.png' },
-    { id: 'guitar',  label: 'Guitar',  iconImg: '/assets/icons/acguitar.png' },
-    { id: 'bass',    label: 'Bass',    iconImg: '/assets/icons/elecbass.png' },
-    { id: 'strings', label: 'Strings', iconImg: '/assets/icons/violin.png' },
-    { id: 'brass',   label: 'Brass',   iconImg: '/assets/icons/trumpetens.png' },
-    { id: 'winds',   label: 'Winds',   iconImg: '/assets/icons/sax.png' }
-  ], []);
+  const instrumentGroups = useMemo(
+    () => [
+      { id: 'piano', label: 'Piano' },
+      { id: 'guitar', label: 'Guitar' },
+      { id: 'bass', label: 'Bass' },
+      { id: 'strings', label: 'Strings' },
+      { id: 'brass', label: 'Brass' },
+      { id: 'winds', label: 'Winds' },
+    ],
+    [],
+  );
 
-  const subgroupIcons = useMemo(() => ({
-    'acoustic_piano': '/assets/icons/piano.png',
-    'keys': '/assets/icons/keyboard.png',
-    'acoustic_guitar': '/assets/icons/acguitar.png',
-    'electric_guitar': '/assets/icons/elecgtr.png',
-    'electric_bass': '/assets/icons/elecbass.png',
-    'upright_bass': '/assets/icons/elecbass.png',
-    'violin': '/assets/icons/violin.png',
-    'cello': '/assets/icons/cello.png',
-    'ensemble_strings': '/assets/icons/viollinensemble.png',
-    'trumpet': '/assets/icons/tpt.png',
-    'trombone': '/assets/icons/tbn.png',
-    'ensemble_brass': '/assets/icons/trumpetens.png',
-    'flute': '/assets/icons/flute.png',
-    'sax': '/assets/icons/sax.png',
-    'ensemble_winds': '/assets/icons/sax.png'
-  }), []);
+  const handleGroupChange = useCallback(
+    (newGroup) => {
+      setInstrumentGroup(newGroup);
+      const subs = instrumentSubgroups[newGroup] || instrumentSubgroups.strings;
+      setInstrumentSubgroup(subs[0]);
+    },
+    [instrumentSubgroups],
+  );
 
-  // Handle group change
-  const handleGroupChange = useCallback((newGroup) => {
-    setInstrumentGroup(newGroup);
-    const newSubgroups = instrumentSubgroups[newGroup] || instrumentSubgroups.strings;
-    setInstrumentSubgroup(newSubgroups[0]);
-  }, [instrumentSubgroups]);
-
-  // Handle recording stop
   const handleStopRecording = useCallback(async () => {
     const file = await stopRecording();
     if (file) {
       setRecordedFile(file);
-      setStatusMessage('Recording saved. Click Generate to convert to instrument.');
+      setStatusMessage('Recording saved. Press render to convert.');
     }
   }, [stopRecording]);
 
-  // Handle file upload
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setRecordedFile(file);
-      setStatusMessage(`File loaded: ${file.name}`);
-    }
+  const handleFileUpload = (file) => {
+    if (!file) return;
+    setRecordedFile(file);
+    setStatusMessage(`File loaded: ${file.name}`);
   };
 
-  // Generate instrument from voice
   const handleGenerate = useCallback(async () => {
     if (!recordedFile) {
-      setStatusMessage('Please record or upload audio first.');
+      setStatusMessage('Record or upload audio first.');
       return;
     }
-
     setIsGenerating(true);
     setProgress(0);
-    setStatusMessage('Starting generation...');
-
+    setStatusMessage('Starting generation…');
     try {
-      // Build generation parameters
       const params = {
         instrumentGroup,
         instrumentSubgroup,
@@ -117,57 +92,45 @@ const VoiceToInstrumentTool = ({ tool }) => {
         adapterScale: 0.5,
         cfgWeight: 2.5,
         t0: 0.95,
-        seed: Math.floor(Math.random() * 1000000)
+        seed: Math.floor(Math.random() * 1000000),
       };
-
-      // Start generation
       const startResult = await startGeneration(params, recordedFile);
       const taskId = startResult.task_id;
-
-      setStatusMessage('Processing audio...');
-
-      // Poll for completion
+      setStatusMessage('Processing audio…');
       const result = await pollUntilComplete(
         taskId,
         (progressData) => {
           setProgress(progressData.progress || 0);
-          setStatusMessage(`Processing... ${Math.round((progressData.progress || 0) * 100)}%`);
+          setStatusMessage(`Processing… ${Math.round((progressData.progress || 0) * 100)}%`);
         },
         null,
-        1800
+        1800,
       );
-
-      // Get generated audio URL
       if (result.file_paths && result.file_paths.length > 0) {
-        const audioPath = result.file_paths[0];
-        setGeneratedAudioUrl(audioPath);
-        setStatusMessage('Generation complete!');
+        setGeneratedAudioUrl(result.file_paths[0]);
+        setStatusMessage('Generation complete.');
       } else {
-        setStatusMessage('Generation completed but no audio returned.');
+        setStatusMessage('Completed but no audio returned.');
       }
-
-    } catch (error) {
-      console.error('Generation failed:', error);
-      setStatusMessage(`Error: ${error.message}`);
+    } catch (err) {
+      console.error('Generation failed:', err);
+      setStatusMessage(`Error: ${err.message}`);
     } finally {
       setIsGenerating(false);
       setProgress(0);
     }
   }, [recordedFile, instrumentGroup, instrumentSubgroup]);
 
-  // Download generated audio
   const handleDownload = useCallback(() => {
-    if (generatedAudioUrl) {
-      const a = document.createElement('a');
-      a.href = generatedAudioUrl;
-      a.download = `${instrumentSubgroup}_${Date.now()}.wav`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
+    if (!generatedAudioUrl) return;
+    const a = document.createElement('a');
+    a.href = generatedAudioUrl;
+    a.download = `${instrumentSubgroup}_${Date.now()}.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }, [generatedAudioUrl, instrumentSubgroup]);
 
-  // Format recording duration
   const formatDuration = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -176,216 +139,319 @@ const VoiceToInstrumentTool = ({ tool }) => {
 
   const availableSubgroups = instrumentSubgroups[instrumentGroup] || [];
 
-  return (
-    <div className={styles.toolGeneratorContainer}>
-      {/* Tool Header */}
-      <div className={styles.toolGeneratorHeader}>
-        <div className={styles.toolGeneratorTitleSection}>
-          <div className={styles.toolGeneratorIcon} style={{ background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.4), rgba(102, 126, 234, 0.2))' }}>
-            <i className="fa-solid fa-microphone-lines" style={{ color: '#667eea' }}></i>
-          </div>
-          <div className={styles.toolGeneratorTitleText}>
-            <h2 className={styles.toolGeneratorTitle}>{tool.name}</h2>
-            <p className={styles.toolGeneratorDescription}>{tool.description}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Instrument Selection */}
-      <div className={styles.toolSection}>
-        <label className={styles.toolInputLabel}>
-          <i className="fa-solid fa-music"></i>
-          Select Instrument
-        </label>
-        <div className={styles.instrumentGroupGrid}>
-          {instrumentGroups.map(group => (
+  // ---------- Input panel ----------
+  const InputPanel = (
+    <Panel
+      title="Input · voice / hum"
+      marker="◆"
+      status={
+        recordedFile ? (
+          <span style={{ color: C.ok, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.ok }} />
+            loaded
+          </span>
+        ) : isRecording ? (
+          <span style={{ color: C.warm, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: C.warm,
+                boxShadow: `0 0 6px ${C.warm}`,
+              }}
+            />
+            recording {formatDuration(recordingDuration)}
+          </span>
+        ) : (
+          <span style={{ color: C.inkMute }}>empty</span>
+        )
+      }
+    >
+      <div style={{ padding: 14, display: 'grid', gap: 10 }}>
+        {!isRecording ? (
+          <>
             <button
-              key={group.id}
               type="button"
-              className={`${styles.instrumentGroupBtn} ${instrumentGroup === group.id ? styles.active : ''}`}
-              onClick={() => handleGroupChange(group.id)}
+              onClick={startRecording}
+              disabled={isGenerating}
+              style={{
+                padding: '14px 12px',
+                background: C.ink,
+                color: C.bg,
+                border: 'none',
+                fontFamily: C.mono,
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: 0.8,
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+              }}
             >
-              <img
-                src={group.iconImg}
-                alt={group.label}
-                className={styles.instrumentIcon}
-                style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.9 }}
-                aria-hidden="true"
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  background: C.warm,
+                  boxShadow: `0 0 6px ${C.warm}`,
+                }}
               />
-              <span>{group.label}</span>
+              Start recording
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isGenerating}
+              style={{
+                padding: '10px 12px',
+                background: 'transparent',
+                color: C.inkSoft,
+                border: `1px dashed ${C.ruleStrong}`,
+                fontFamily: C.mono,
+                fontSize: 10,
+                letterSpacing: 0.8,
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              Or upload a file
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/*"
+              onChange={(e) => handleFileUpload(e.target.files?.[0])}
+              style={{ display: 'none' }}
+            />
+          </>
+        ) : (
+          <>
+            <div
+              style={{
+                padding: '14px 12px',
+                background: C.ink,
+                color: C.bg,
+                fontFamily: C.mono,
+                fontSize: 12,
+                letterSpacing: 0.5,
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: 10, color: C.warm, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                Recording
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 500, marginTop: 4 }}>
+                {formatDuration(recordingDuration)}
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <button
+                type="button"
+                onClick={handleStopRecording}
+                style={{
+                  padding: '10px 12px',
+                  background: C.ink,
+                  color: C.bg,
+                  border: 'none',
+                  fontFamily: C.mono,
+                  fontSize: 10,
+                  letterSpacing: 0.8,
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                }}
+              >
+                Stop
+              </button>
+              <button
+                type="button"
+                onClick={cancelRecording}
+                style={{
+                  padding: '10px 12px',
+                  background: 'transparent',
+                  color: C.inkSoft,
+                  border: `1px solid ${C.rule}`,
+                  fontFamily: C.mono,
+                  fontSize: 10,
+                  letterSpacing: 0.8,
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+      {recordedFile && !isRecording && (
+        <div style={{ borderTop: `1px solid ${C.rule}` }}>
+          <DropZone
+            file={recordedFile}
+            onPick={handleFileUpload}
+            onRemove={() => setRecordedFile(null)}
+            accept="audio/*"
+            icon="WAV"
+          />
         </div>
+      )}
+    </Panel>
+  );
 
-        {/* Subgroup Selection */}
-        <div className={styles.instrumentSubgroupGrid}>
-          {availableSubgroups.map(subgroup => {
-            let displayLabel = subgroup.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-            if (subgroup.startsWith('ensemble_')) displayLabel = 'Ensemble';
-
+  // ---------- Controls panel ----------
+  const ControlsPanel = (
+    <Panel title="Controls · instrument" marker="◇">
+      <div style={{ padding: '12px 12px 0' }}>
+        <FieldLabel style={{ padding: '0 4px 8px' }}>Group</FieldLabel>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 4 }}>
+          {instrumentGroups.map((g) => {
+            const active = instrumentGroup === g.id;
             return (
               <button
-                key={subgroup}
+                key={g.id}
                 type="button"
-                className={`${styles.instrumentSubgroupBtn} ${instrumentSubgroup === subgroup ? styles.active : ''}`}
-                onClick={() => setInstrumentSubgroup(subgroup)}
+                onClick={() => handleGroupChange(g.id)}
+                style={{
+                  padding: '8px 10px',
+                  background: active ? C.ink : C.bg,
+                  color: active ? C.bg : C.ink,
+                  border: `1px solid ${active ? C.ink : C.rule}`,
+                  fontFamily: C.mono,
+                  fontSize: 10,
+                  letterSpacing: 0.6,
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                }}
               >
-                {subgroupIcons[subgroup] && (
-                  <img
-                    src={subgroupIcons[subgroup]}
-                    alt={subgroup}
-                    className={styles.instrumentIcon}
-                    style={{ width: 36, height: 36, objectFit: 'contain', opacity: 0.9 }}
-                    aria-hidden="true"
-                  />
-                )}
-                <span>{displayLabel}</span>
+                {g.label}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Recording Section */}
-      <div className={styles.toolSection}>
-        <label className={styles.toolInputLabel}>
-          <i className="fa-solid fa-microphone"></i>
-          Record Voice / Humming
-        </label>
-
-        <div className={styles.recordingControls}>
-          {!isRecording ? (
-            <>
+      <div style={{ padding: '14px 12px 0' }}>
+        <FieldLabel style={{ padding: '0 4px 8px' }}>Subgroup</FieldLabel>
+        <div style={{ display: 'grid', gap: 4 }}>
+          {availableSubgroups.map((sg) => {
+            const active = instrumentSubgroup === sg;
+            let label = sg
+              .split('_')
+              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+              .join(' ');
+            if (sg.startsWith('ensemble_')) label = 'Ensemble';
+            return (
               <button
-                className={`${styles.toolControlBtn} ${styles.recordBtn}`}
-                onClick={startRecording}
-                disabled={isGenerating}
+                key={sg}
+                type="button"
+                onClick={() => setInstrumentSubgroup(sg)}
+                style={{
+                  padding: '9px 12px',
+                  background: active ? C.ink : C.bg,
+                  color: active ? C.bg : C.ink,
+                  border: `1px solid ${active ? C.ink : C.rule}`,
+                  textAlign: 'left',
+                  fontFamily: C.mono,
+                  fontSize: 11,
+                  letterSpacing: 0.3,
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                }}
               >
-                <i className="fa-solid fa-circle" style={{ color: '#ef4444' }}></i>
-                Start Recording
+                {label}
               </button>
-              <span className={styles.orDivider}>or</span>
-              <button
-                className={`${styles.toolControlBtn} ${styles.toolControlBtnSecondary}`}
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isGenerating}
-              >
-                <i className="fa-solid fa-upload"></i>
-                Upload Audio
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="audio/*"
-                onChange={handleFileUpload}
-                style={{ display: 'none' }}
-              />
-            </>
-          ) : (
-            <>
-              <div className={styles.recordingIndicator}>
-                <i className="fa-solid fa-circle fa-beat" style={{ color: '#ef4444' }}></i>
-                <span>Recording: {formatDuration(recordingDuration)}</span>
-              </div>
-              <button
-                className={`${styles.toolControlBtn} ${styles.stopBtn}`}
-                onClick={handleStopRecording}
-              >
-                <i className="fa-solid fa-stop"></i>
-                Stop
-              </button>
-              <button
-                className={`${styles.toolControlBtn} ${styles.toolControlBtnSecondary}`}
-                onClick={cancelRecording}
-              >
-                <i className="fa-solid fa-xmark"></i>
-                Cancel
-              </button>
-            </>
-          )}
+            );
+          })}
         </div>
+      </div>
 
-        {recordedFile && (
-          <div className={styles.recordedFileInfo}>
-            <i className="fa-solid fa-file-audio"></i>
-            <span>{recordedFile.name}</span>
-            <button
-              className={styles.removeFileBtn}
-              onClick={() => {
-                setRecordedFile(null);
-              }}
-            >
-              <i className="fa-solid fa-xmark"></i>
-            </button>
+      <div style={{ flex: 1 }} />
+      <div
+        style={{
+          padding: '12px 16px',
+          borderTop: `1px solid ${C.rule}`,
+          fontFamily: C.mono,
+          fontSize: 9,
+          letterSpacing: 0.5,
+          color: C.inkMute,
+          textTransform: 'uppercase',
+          lineHeight: 1.6,
+        }}
+      >
+        {instrumentSubgroup.startsWith('ensemble_')
+          ? 'Ensemble · monophonic arrange mode'
+          : 'Solo · polyphonic mode'}
+      </div>
+    </Panel>
+  );
+
+  // ---------- Output panel ----------
+  const OutputPanel = (
+    <Panel
+      title="Output · rendered instrument"
+      marker="●"
+      status={generatedAudioUrl ? <span style={{ color: C.ok }}>ready</span> : null}
+    >
+      <div style={{ padding: 16 }}>
+        <div style={{ background: C.bg, border: `1px solid ${C.rule}`, padding: 10, marginBottom: 10 }}>
+          <FieldLabel>Preview</FieldLabel>
+          <div style={{ marginTop: 8 }}>
+            <ToolWaveform audioUrl={generatedAudioUrl} height={100} color={C.accent} />
           </div>
-        )}
-      </div>
-
-      {/* Options */}
-      <div className={styles.toolOptionsRow}>
-        <label className={styles.toolCheckbox}>
-          <input
-            type="checkbox"
-            checked={extractMidi}
-            onChange={(e) => setExtractMidi(e.target.checked)}
-          />
-          <span>Extract MIDI first (better pitch accuracy)</span>
-        </label>
-      </div>
-
-      {/* Waveform Display */}
-      <div className={styles.toolWaveformSection}>
-        <div className={styles.toolWaveformHeader}>
-          <span className={styles.toolWaveformLabel}>
-            <i className="fa-solid fa-waveform-lines"></i>
-            Output
-          </span>
-          {generatedAudioUrl && (
-            <div className={styles.toolWaveformActions}>
-              <button className={styles.toolActionBtn} title="Download" onClick={handleDownload}>
-                <i className="fa-solid fa-download"></i>
-              </button>
-            </div>
-          )}
         </div>
-        <ToolWaveform
-          audioUrl={generatedAudioUrl}
-          height={120}
-          color="#667eea"
-        />
-        {statusMessage && (
-          <div className={styles.statusMessage}>{statusMessage}</div>
-        )}
       </div>
-
-      {/* Progress Bar */}
-      {isGenerating && (
-        <div className={styles.progressContainer}>
-          <div className={styles.progressBar} style={{ width: `${progress * 100}%` }}></div>
+      <div style={{ flex: 1 }} />
+      {generatedAudioUrl && (
+        <div style={{ padding: 14, borderTop: `1px solid ${C.rule}` }}>
+          <button
+            type="button"
+            onClick={handleDownload}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              background: C.ink,
+              color: C.bg,
+              border: 'none',
+              fontFamily: C.mono,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              cursor: 'pointer',
+            }}
+          >
+            <Ic d={P.dl} size={12} color={C.bg} /> Download WAV
+          </button>
         </div>
       )}
+    </Panel>
+  );
 
-      {/* Generate Button */}
-      <div className={styles.toolControlSection}>
-        <button
-          className={`${styles.toolControlBtn} ${styles.toolControlBtnPrimary}`}
-          onClick={handleGenerate}
-          disabled={isGenerating || isRecording || !recordedFile}
-        >
-          {isGenerating ? (
-            <>
-              <i className="fa-solid fa-spinner fa-spin"></i>
-              Generating...
-            </>
-          ) : (
-            <>
-              <i className="fa-solid fa-bolt"></i>
-              Generate Instrument
-            </>
-          )}
-        </button>
-      </div>
-    </div>
+  return (
+    <ToolShell
+      tool={{ ...tool, sku: 'T-04', category: 'Audio tool', version: 'v1.2.0' }}
+      subtitle={`${instrumentSubgroup.replace(/_/g, ' ')}`}
+      description="Hum or speak a melody. We extract the contour, align it to the scale, and render it with the instrument you picked."
+      meta={[{ k: 'Avg time', v: '~30s' }]}
+      running={isGenerating}
+      progress={progress}
+      statusMessage={statusMessage}
+      primaryLabel="Render instrument"
+      onPrimary={handleGenerate}
+      primaryDisabled={!recordedFile || isRecording}
+      onBack={onBack}
+      left={InputPanel}
+      center={ControlsPanel}
+      right={OutputPanel}
+    />
   );
 };
 

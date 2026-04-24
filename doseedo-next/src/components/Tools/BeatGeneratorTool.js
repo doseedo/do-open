@@ -2,13 +2,14 @@ import React, { useState, useCallback } from 'react';
 import { generateAndDownloadDrumSamples } from '../../services/drumSamplerAPI';
 import { generateDrums, generateRisers } from '../../services/generationAPI';
 import ToolWaveform from './ToolWaveform';
-import styles from './Tools.module.css';
+import { C, P, Ic, ToolShell, Panel, FieldLabel, Slider, ChipRow } from './toolShell';
 
 /**
- * Beat Generator Tool
- * Generate custom beats and drum patterns with AI
+ * Beat Generator — no file input. Picks a generation style + BPM, calls
+ * drumSamplerAPI (random pattern) or generateDrums (orchestral). Backend
+ * wiring untouched.
  */
-const BeatGeneratorTool = ({ tool }) => {
+const BeatGeneratorTool = ({ tool, onBack }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState(null);
   const [statusMessage, setStatusMessage] = useState('');
@@ -16,79 +17,56 @@ const BeatGeneratorTool = ({ tool }) => {
   // eslint-disable-next-line no-unused-vars
   const [midiFile, setMidiFile] = useState(null);
 
-  // Generation parameters
   const [bpm, setBpm] = useState(120);
-  const [pattern, setPattern] = useState(4); // 1, 2, or 4 bars
-  const [generationType, setGenerationType] = useState('random'); // 'random' or 'orchestral'
+  const [pattern, setPattern] = useState(4);
+  const [generationType, setGenerationType] = useState('random');
   const [includeRisers, setIncludeRisers] = useState(false);
 
-  const patternOptions = [
-    { value: 1, label: '1 Bar' },
-    { value: 2, label: '2 Bars' },
-    { value: 4, label: '4 Bars' }
-  ];
-
-  // Generate random drum pattern
   const handleGenerateRandom = useCallback(async () => {
     setIsGenerating(true);
-    setStatusMessage('Generating random drum pattern...');
-
+    setStatusMessage('Generating random drum pattern…');
     try {
       const result = await generateAndDownloadDrumSamples(bpm);
-
       if (result.audioUrl) {
         setGeneratedAudioUrl(result.audioUrl);
         setDrumKit(result.drumKit);
         setMidiFile(result.midiFile);
-        setStatusMessage(`Generated: ${result.midiFile} at ${bpm} BPM`);
+        setStatusMessage(`Generated · ${result.midiFile} · ${bpm} BPM`);
       } else {
-        setStatusMessage('Generation completed but no audio returned.');
+        setStatusMessage('Completed but no audio returned.');
       }
-
-    } catch (error) {
-      console.error('Drum generation failed:', error);
-      setStatusMessage(`Error: ${error.message}`);
+    } catch (err) {
+      console.error('Drum generation failed:', err);
+      setStatusMessage(`Error: ${err.message}`);
     } finally {
       setIsGenerating(false);
     }
   }, [bpm]);
 
-  // Generate orchestral drums
   const handleGenerateOrchestral = useCallback(async () => {
     setIsGenerating(true);
-    setStatusMessage('Generating orchestral drums...');
-
+    setStatusMessage('Generating orchestral drums…');
     try {
-      const params = {
-        tempo: bpm,
-        pattern: pattern
-      };
-
+      const params = { tempo: bpm, pattern };
       const result = await generateDrums(params);
-
       if (result.audio_url) {
         setGeneratedAudioUrl(result.audio_url);
-        setStatusMessage(`Generated orchestral drums at ${bpm} BPM`);
-
-        // Generate risers if enabled
+        setStatusMessage(`Generated orchestral drums · ${bpm} BPM`);
         if (includeRisers) {
-          setStatusMessage('Generating risers...');
-          const riserResult = await generateRisers(params);
-          console.log('Risers generated:', riserResult);
+          setStatusMessage('Generating risers…');
+          await generateRisers(params);
         }
       } else {
-        setStatusMessage('Generation completed but no audio returned.');
+        setStatusMessage('Completed but no audio returned.');
       }
-
-    } catch (error) {
-      console.error('Orchestral drum generation failed:', error);
-      setStatusMessage(`Error: ${error.message}`);
+    } catch (err) {
+      console.error('Orchestral drum generation failed:', err);
+      setStatusMessage(`Error: ${err.message}`);
     } finally {
       setIsGenerating(false);
     }
   }, [bpm, pattern, includeRisers]);
 
-  // Main generate handler
   const handleGenerate = useCallback(async () => {
     if (generationType === 'random') {
       await handleGenerateRandom();
@@ -97,201 +75,275 @@ const BeatGeneratorTool = ({ tool }) => {
     }
   }, [generationType, handleGenerateRandom, handleGenerateOrchestral]);
 
-  // Download generated audio
   const handleDownload = useCallback(() => {
-    if (generatedAudioUrl) {
-      const a = document.createElement('a');
-      a.href = generatedAudioUrl;
-      a.download = `drums_${bpm}bpm_${Date.now()}.wav`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
+    if (!generatedAudioUrl) return;
+    const a = document.createElement('a');
+    a.href = generatedAudioUrl;
+    a.download = `drums_${bpm}bpm_${Date.now()}.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }, [generatedAudioUrl, bpm]);
 
-  return (
-    <div className={styles.toolGeneratorContainer}>
-      {/* Tool Header */}
-      <div className={styles.toolGeneratorHeader}>
-        <div className={styles.toolGeneratorTitleSection}>
-          <div className={styles.toolGeneratorIcon} style={{ background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.4), rgba(102, 126, 234, 0.2))' }}>
-            <i className="fa-solid fa-drum" style={{ color: '#667eea' }}></i>
-          </div>
-          <div className={styles.toolGeneratorTitleText}>
-            <h2 className={styles.toolGeneratorTitle}>{tool.name}</h2>
-            <p className={styles.toolGeneratorDescription}>{tool.description}</p>
-          </div>
-        </div>
+  // ---------- Input (style picker) ----------
+  const InputPanel = (
+    <Panel title="Input · generation style" marker="◆">
+      <div style={{ padding: 14, display: 'grid', gap: 10 }}>
+        {[
+          {
+            id: 'random',
+            label: 'Random pattern',
+            desc: 'AI-generated drum samples over a rolled pattern.',
+          },
+          {
+            id: 'orchestral',
+            label: 'Orchestral',
+            desc: 'Cinematic percussion — toms, timpani, ensemble hits.',
+          },
+        ].map((opt) => {
+          const active = generationType === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setGenerationType(opt.id)}
+              style={{
+                padding: '14px 14px',
+                background: active ? C.ink : C.bg,
+                color: active ? C.bg : C.ink,
+                border: `1px solid ${active ? C.ink : C.rule}`,
+                textAlign: 'left',
+                cursor: 'pointer',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: C.mono,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  letterSpacing: 0.3,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {opt.label}
+              </div>
+              <div
+                style={{
+                  fontFamily: C.sans,
+                  fontSize: 11,
+                  color: active ? 'rgba(232,230,225,.7)' : C.inkSoft,
+                  marginTop: 4,
+                  lineHeight: 1.5,
+                }}
+              >
+                {opt.desc}
+              </div>
+            </button>
+          );
+        })}
       </div>
-
-      {/* Generation Type */}
-      <div className={styles.toolSection}>
-        <label className={styles.toolInputLabel}>
-          <i className="fa-solid fa-wand-magic-sparkles"></i>
-          Generation Type
-        </label>
-        <div className={styles.generationTypeGrid}>
-          <button
-            className={`${styles.generationTypeBtn} ${generationType === 'random' ? styles.active : ''}`}
-            onClick={() => setGenerationType('random')}
-          >
-            <i className="fa-solid fa-dice"></i>
-            <span>Random Pattern</span>
-            <span className={styles.typeDescription}>AI-generated drum samples</span>
-          </button>
-          <button
-            className={`${styles.generationTypeBtn} ${generationType === 'orchestral' ? styles.active : ''}`}
-            onClick={() => setGenerationType('orchestral')}
-          >
-            <i className="fa-solid fa-drum-steelpan"></i>
-            <span>Orchestral</span>
-            <span className={styles.typeDescription}>Cinematic percussion</span>
-          </button>
+      {drumKit && (
+        <div
+          style={{
+            margin: '0 14px 14px',
+            padding: '10px 12px',
+            background: C.ink,
+            color: C.lcd,
+            fontFamily: C.mono,
+            fontSize: 10,
+            letterSpacing: 0.6,
+            display: 'flex',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span>Last kit</span>
+          <span>{drumKit}</span>
         </div>
-      </div>
+      )}
+    </Panel>
+  );
 
-      {/* BPM Input */}
-      <div className={styles.toolSection}>
-        <label className={styles.toolInputLabel}>
-          <i className="fa-solid fa-gauge-high"></i>
-          Tempo (BPM)
-        </label>
-        <div className={styles.bpmInput}>
+  // ---------- Controls ----------
+  const ControlsPanel = (
+    <Panel title="Controls · tempo & pattern" marker="◇">
+      <div style={{ padding: '14px 16px' }}>
+        <FieldLabel style={{ marginBottom: 6 }}>Tempo</FieldLabel>
+        <div style={{ display: 'grid', gridTemplateColumns: '36px 1fr 36px', gap: 6, alignItems: 'center' }}>
           <button
-            className={styles.bpmBtn}
+            type="button"
             onClick={() => setBpm(Math.max(60, bpm - 5))}
+            style={{
+              padding: '6px 0',
+              background: C.bg,
+              border: `1px solid ${C.rule}`,
+              color: C.ink,
+              fontFamily: C.mono,
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
           >
-            <i className="fa-solid fa-minus"></i>
+            −
           </button>
           <input
             type="number"
-            className={styles.bpmValue}
             value={bpm}
-            onChange={(e) => setBpm(Math.max(60, Math.min(200, parseInt(e.target.value) || 120)))}
+            onChange={(e) =>
+              setBpm(Math.max(60, Math.min(200, parseInt(e.target.value) || 120)))
+            }
             min="60"
             max="200"
+            style={{
+              width: '100%',
+              padding: '6px 10px',
+              background: C.ink,
+              color: C.lcd,
+              border: `1px solid ${C.ink}`,
+              textAlign: 'center',
+              fontFamily: C.mono,
+              fontSize: 16,
+              fontWeight: 500,
+              letterSpacing: 0.4,
+            }}
           />
           <button
-            className={styles.bpmBtn}
+            type="button"
             onClick={() => setBpm(Math.min(200, bpm + 5))}
+            style={{
+              padding: '6px 0',
+              background: C.bg,
+              border: `1px solid ${C.rule}`,
+              color: C.ink,
+              fontFamily: C.mono,
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
           >
-            <i className="fa-solid fa-plus"></i>
+            +
           </button>
         </div>
-        <input
-          type="range"
-          className={styles.toolSlider}
-          min="60"
-          max="200"
-          value={bpm}
-          onChange={(e) => setBpm(parseInt(e.target.value))}
-        />
-        <div className={styles.sliderLabels}>
-          <span>60</span>
-          <span>120</span>
-          <span>200</span>
-        </div>
       </div>
+      <Slider
+        label="BPM"
+        value={bpm}
+        min={60}
+        max={200}
+        onChange={setBpm}
+        leftLabel="60"
+        rightLabel="200"
+      />
 
-      {/* Pattern Length (for orchestral) */}
       {generationType === 'orchestral' && (
-        <div className={styles.toolSection}>
-          <label className={styles.toolInputLabel}>
-            <i className="fa-solid fa-bars-staggered"></i>
-            Pattern Length
-          </label>
-          <div className={styles.patternGrid}>
-            {patternOptions.map(opt => (
-              <button
-                key={opt.value}
-                className={`${styles.patternBtn} ${pattern === opt.value ? styles.active : ''}`}
-                onClick={() => setPattern(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
+        <>
+          <div style={{ padding: '6px 16px 14px' }}>
+            <FieldLabel style={{ marginBottom: 8 }}>Pattern length</FieldLabel>
+            <ChipRow
+              options={[
+                { value: 1, label: '1 bar' },
+                { value: 2, label: '2 bars' },
+                { value: 4, label: '4 bars' },
+              ]}
+              value={pattern}
+              onChange={setPattern}
+            />
           </div>
-        </div>
-      )}
-
-      {/* Options */}
-      {generationType === 'orchestral' && (
-        <div className={styles.toolOptionsRow}>
-          <label className={styles.toolCheckbox}>
+          <div
+            style={{
+              padding: '10px 16px 14px',
+              borderTop: `1px solid ${C.rule}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
             <input
+              id="includeRisers"
               type="checkbox"
               checked={includeRisers}
               onChange={(e) => setIncludeRisers(e.target.checked)}
             />
-            <span>Include risers and transitions</span>
-          </label>
-        </div>
+            <label
+              htmlFor="includeRisers"
+              style={{
+                fontFamily: C.mono,
+                fontSize: 10,
+                letterSpacing: 0.5,
+                color: C.inkSoft,
+                textTransform: 'uppercase',
+              }}
+            >
+              Include risers + transitions
+            </label>
+          </div>
+        </>
       )}
+    </Panel>
+  );
 
-      {/* Drum Kit Info */}
-      {drumKit && (
-        <div className={styles.drumKitInfo}>
-          <i className="fa-solid fa-drum"></i>
-          <span>Kit: {drumKit}</span>
+  // ---------- Output ----------
+  const OutputPanel = (
+    <Panel
+      title="Output · beat"
+      marker="●"
+      status={generatedAudioUrl ? <span style={{ color: C.ok }}>ready</span> : null}
+    >
+      <div style={{ padding: 16 }}>
+        <div style={{ background: C.bg, border: `1px solid ${C.rule}`, padding: 8 }}>
+          <FieldLabel style={{ padding: '0 0 8px' }}>Rendered beat</FieldLabel>
+          <ToolWaveform audioUrl={generatedAudioUrl} height={100} color={C.warm} />
         </div>
-      )}
-
-      {/* Waveform Display */}
-      <div className={styles.toolWaveformSection}>
-        <div className={styles.toolWaveformHeader}>
-          <span className={styles.toolWaveformLabel}>
-            <i className="fa-solid fa-waveform-lines"></i>
-            Generated Beat
-          </span>
-          {generatedAudioUrl && (
-            <div className={styles.toolWaveformActions}>
-              <button className={styles.toolActionBtn} onClick={handleDownload} title="Download">
-                <i className="fa-solid fa-download"></i>
-              </button>
-            </div>
-          )}
-        </div>
-        <ToolWaveform
-          audioUrl={generatedAudioUrl}
-          height={120}
-          color="#667eea"
-        />
-        {statusMessage && (
-          <div className={styles.statusMessage}>{statusMessage}</div>
-        )}
       </div>
-
-      {/* Generate Button */}
-      <div className={styles.toolControlSection}>
-        <div className={styles.toolControlRow}>
+      <div style={{ flex: 1 }} />
+      {generatedAudioUrl && (
+        <div style={{ padding: 14, borderTop: `1px solid ${C.rule}` }}>
           <button
-            className={`${styles.toolControlBtn} ${styles.toolControlBtnSecondary}`}
-            onClick={handleGenerate}
-            disabled={isGenerating}
+            type="button"
+            onClick={handleDownload}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              background: C.ink,
+              color: C.bg,
+              border: 'none',
+              fontFamily: C.mono,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              cursor: 'pointer',
+            }}
           >
-            <i className="fa-solid fa-dice"></i>
-            Randomize
+            <Ic d={P.dl} size={12} color={C.bg} /> Download WAV
           </button>
         </div>
-        <button
-          className={`${styles.toolControlBtn} ${styles.toolControlBtnPrimary}`}
-          onClick={handleGenerate}
-          disabled={isGenerating}
-        >
-          {isGenerating ? (
-            <>
-              <i className="fa-solid fa-spinner fa-spin"></i>
-              Generating...
-            </>
-          ) : (
-            <>
-              <i className="fa-solid fa-bolt"></i>
-              Generate Beat
-            </>
-          )}
-        </button>
-      </div>
-    </div>
+      )}
+    </Panel>
+  );
+
+  return (
+    <ToolShell
+      tool={{ ...tool, sku: 'T-07', category: 'Audio tool · Beta', version: 'v0.3.0' }}
+      subtitle={generationType === 'random' ? 'random pattern' : 'orchestral'}
+      description="Pick a style and a tempo. Random rolls an AI drum pattern; Orchestral builds cinematic percussion arranged over bars."
+      meta={[
+        { k: 'Status', v: 'Beta' },
+        { k: 'Avg time', v: '~10s' },
+      ]}
+      running={isGenerating}
+      progress={isGenerating ? 0.6 : 0}
+      statusMessage={statusMessage}
+      primaryLabel="Generate beat"
+      secondaryLabel="Randomize"
+      onSecondary={handleGenerate}
+      onPrimary={handleGenerate}
+      onBack={onBack}
+      left={InputPanel}
+      center={ControlsPanel}
+      right={OutputPanel}
+    />
   );
 };
 

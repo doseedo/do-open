@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import VocalHarmonizerTool from './VocalHarmonizerTool';
 import VoiceToInstrumentTool from './VoiceToInstrumentTool';
 import LyricEditTool from './LyricEditTool';
@@ -6,7 +6,6 @@ import StemSeparationTool from './StemSeparationTool';
 import VideoToMusicTool from './VideoToMusicTool';
 import SampleRegeneratorTool from './SampleRegeneratorTool';
 import BeatGeneratorTool from './BeatGeneratorTool';
-import styles from './Tools.module.css';
 
 /**
  * Tools landing page — workbench-themed grid of AI utilities.
@@ -782,72 +781,32 @@ const TOOLS = [
 const Tools = () => {
   const [selectedTool, setSelectedTool] = useState(null);
   const [filter, setFilter] = useState('All');
-  const toolBarRef = useRef(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
   useWorkbenchFonts();
 
   const availableCount = TOOLS.filter((t) => t.status === 'available').length;
 
-  // Scroll-bar bookkeeping for the selected-tool top bar (unchanged from
-  // the pre-workbench implementation).
-  const updateScrollState = () => {
-    if (toolBarRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } = toolBarRef.current;
-      setCanScrollLeft(scrollLeft > 0);
-      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 1);
-    }
-  };
-  useEffect(() => {
-    updateScrollState();
-    window.addEventListener('resize', updateScrollState);
-    return () => window.removeEventListener('resize', updateScrollState);
-  }, [selectedTool]);
-
-  const scrollToolBar = (direction) => {
-    if (toolBarRef.current) {
-      toolBarRef.current.scrollBy({
-        left: direction === 'left' ? -200 : 200,
-        behavior: 'smooth',
-      });
-      setTimeout(updateScrollState, 300);
-    }
-  };
-
-  // ---------- Selected-tool view (existing behaviour) ----------
+  // ---------- Selected-tool view ----------
+  // The workbench-themed tool components (VocalHarmonizerTool, etc.)
+  // render their own Topbar + Header + BottomBar via <ToolShell/>, so no
+  // outer chrome needed here — just give the component the full container
+  // and let it fill it. The onBack prop wires the shell's "Back to tools"
+  // button back to this parent.
   if (selectedTool) {
     const ToolComponent = selectedTool.component;
+    if (!ToolComponent) return null;
     return (
-      <div className={`${styles.toolsContainer} ${styles.toolsContainerWithSelection}`}>
-        <div className={styles.toolBarContainer}>
-          <button
-            className={`${styles.toolBarArrow} ${styles.toolBarArrowLeft} ${!canScrollLeft ? styles.toolBarArrowHidden : ''}`}
-            onClick={() => scrollToolBar('left')}
-            disabled={!canScrollLeft}
-          >
-            <i className="fa-solid fa-chevron-left"></i>
-          </button>
-          <div ref={toolBarRef} className={styles.toolBarScroll} onScroll={updateScrollState}>
-            {TOOLS.map((tool) => (
-              <button
-                key={tool.id}
-                className={`${styles.toolBarItem} ${selectedTool?.id === tool.id ? styles.toolBarItemActive : ''}`}
-                onClick={() => setSelectedTool(tool)}
-              >
-                <i className={`fa-solid ${tool.icon}`}></i>
-                <span>{tool.name}</span>
-              </button>
-            ))}
-          </div>
-          <button
-            className={`${styles.toolBarArrow} ${styles.toolBarArrowRight} ${!canScrollRight ? styles.toolBarArrowHidden : ''}`}
-            onClick={() => scrollToolBar('right')}
-            disabled={!canScrollRight}
-          >
-            <i className="fa-solid fa-chevron-right"></i>
-          </button>
-        </div>
-        {ToolComponent && <ToolComponent tool={selectedTool} onBack={() => setSelectedTool(null)} />}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#e8e6e1',
+          minHeight: 0,
+          minWidth: 0,
+        }}
+      >
+        <ToolComponent tool={selectedTool} onBack={() => setSelectedTool(null)} />
       </div>
     );
   }

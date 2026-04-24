@@ -2,323 +2,320 @@ import React, { useState, useCallback } from 'react';
 import { generateACEStep, pollACEStepUntilComplete } from '../../services/generationAPI';
 import { sendChatMessage } from '../../services/chatAPI';
 import ToolWaveform from './ToolWaveform';
-import styles from './Tools.module.css';
+import { C, P, Ic, ToolShell, Panel, FieldLabel, Slider, Select, ChipRow } from './toolShell';
+
+const LANGUAGES = [
+  { value: 'english', label: 'English' },
+  { value: 'spanish', label: 'Spanish' },
+  { value: 'french', label: 'French' },
+  { value: 'german', label: 'German' },
+  { value: 'mandarin', label: 'Mandarin' },
+  { value: 'japanese', label: 'Japanese' },
+];
+
+const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+function countSyllables(word) {
+  word = word.toLowerCase().trim();
+  if (word.length === 0) return 0;
+  if (word.length <= 3) return 1;
+  word = word.replace(/[^a-záéíóúñü'-]/gi, '');
+  word = word.replace(/(?:[^laeiouyáéíóúü]es|ed|[^laeiouyáéíóúü]e)$/i, '');
+  word = word.replace(/^y/i, '');
+  const syllables = word.match(/[aeiouyáéíóúü]{1,2}/gi);
+  return syllables ? Math.max(syllables.length, 1) : 1;
+}
+
+function countLineSyllables(line) {
+  const cleanLine = line.trim();
+  if (cleanLine === '') return 0;
+  const words = cleanLine.replace(/[^\w\s'-áéíóúñü]/gi, '').split(/\s+/);
+  return words.reduce((count, word) => (word.length === 0 ? count : count + countSyllables(word)), 0);
+}
 
 /**
- * Lyric Edit Tool
- * Edit and generate vocals with AI-assisted lyrics
+ * Lyric Edit — text-in / text-out lyric tool, plus ACE-Step vocal render.
+ * Backend: generateACEStep + pollACEStepUntilComplete (unchanged).
  */
-const LyricEditTool = ({ tool }) => {
+const LyricEditTool = ({ tool, onBack }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState(null);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
 
-  // Input state
   const [prompt, setPrompt] = useState('');
   const [lyrics, setLyrics] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('english');
   const [aceKey, setAceKey] = useState('C');
   const [aceSteps, setAceSteps] = useState(100);
 
-  const languages = [
-    { value: 'english', label: 'English' },
-    { value: 'spanish', label: 'Spanish' },
-    { value: 'french', label: 'French' },
-    { value: 'german', label: 'German' },
-    { value: 'mandarin', label: 'Mandarin' },
-    { value: 'japanese', label: 'Japanese' }
-  ];
-
-  const keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-
-  // Count syllables helper
-  const countSyllables = (word) => {
-    word = word.toLowerCase().trim();
-    if (word.length === 0) return 0;
-    if (word.length <= 3) return 1;
-    word = word.replace(/[^a-záéíóúñü'-]/gi, '');
-    word = word.replace(/(?:[^laeiouyáéíóúü]es|ed|[^laeiouyáéíóúü]e)$/i, '');
-    word = word.replace(/^y/i, '');
-    const syllables = word.match(/[aeiouyáéíóúü]{1,2}/gi);
-    return syllables ? Math.max(syllables.length, 1) : 1;
-  };
-
-  const countLineSyllables = (line) => {
-    const cleanLine = line.trim();
-    if (cleanLine === '') return 0;
-    const words = cleanLine.replace(/[^\w\s'-áéíóúñü]/gi, '').split(/\s+/);
-    return words.reduce((count, word) => word.length === 0 ? count : count + countSyllables(word), 0);
-  };
-
-  // Handle language translation
-  const handleLanguageChange = useCallback(async (languageValue) => {
-    setSelectedLanguage(languageValue);
-
-    if (!lyrics || lyrics.trim() === '') return;
-
-    setIsTranslating(true);
-    setStatusMessage('Translating lyrics...');
-
-    try {
-      const language = languages.find(l => l.value === languageValue)?.label || languageValue;
-
-      // Count syllables for each line
-      const lines = lyrics.split('\n');
-      const linesWithCounts = lines.map(line => {
-        const cleanLine = line.trim();
-        if (cleanLine === '') return '';
-        const syllableCount = countLineSyllables(cleanLine);
-        return `[${syllableCount} syllables] ${cleanLine}`;
-      }).join('\n');
-
-      const payload = {
-        system_prompt: 'You are a professional lyricist assistant. Translate lyrics while preserving syllable counts and rhythm.',
-        daw_context: { bpm: 120, key: aceKey },
-        message: `TASK: LYRIC CHANGE\nPAYLOAD:\nLanguage: ${language}\nOriginal Lyrics (with syllable counts per line):\n${linesWithCounts}`,
-        conversation_history: []
-      };
-
-      const response = await sendChatMessage(payload);
-
-      let translatedLyrics = response?.response || response?.message || response?.content || (typeof response === 'string' ? response : null);
-
-      if (translatedLyrics) {
-        // Strip syllable count numbers from end of lines
-        const cleanedLines = translatedLyrics.split('\n').map(line => line.replace(/\s*\(\d+\)\s*$/, '').trim());
-        setLyrics(cleanedLines.join('\n'));
-        setStatusMessage(`Lyrics translated to ${language}`);
-      } else {
-        setStatusMessage('Translation failed - could not extract lyrics');
+  const handleLanguageChange = useCallback(
+    async (languageValue) => {
+      setSelectedLanguage(languageValue);
+      if (!lyrics || lyrics.trim() === '') return;
+      setIsTranslating(true);
+      setStatusMessage('Translating lyrics…');
+      try {
+        const language = LANGUAGES.find((l) => l.value === languageValue)?.label || languageValue;
+        const lines = lyrics.split('\n');
+        const linesWithCounts = lines
+          .map((line) => {
+            const cleanLine = line.trim();
+            if (cleanLine === '') return '';
+            return `[${countLineSyllables(cleanLine)} syllables] ${cleanLine}`;
+          })
+          .join('\n');
+        const payload = {
+          system_prompt:
+            'You are a professional lyricist assistant. Translate lyrics while preserving syllable counts and rhythm.',
+          daw_context: { bpm: 120, key: aceKey },
+          message: `TASK: LYRIC CHANGE\nPAYLOAD:\nLanguage: ${language}\nOriginal Lyrics (with syllable counts per line):\n${linesWithCounts}`,
+          conversation_history: [],
+        };
+        const response = await sendChatMessage(payload);
+        let translatedLyrics =
+          response?.response || response?.message || response?.content ||
+          (typeof response === 'string' ? response : null);
+        if (translatedLyrics) {
+          const cleanedLines = translatedLyrics
+            .split('\n')
+            .map((line) => line.replace(/\s*\(\d+\)\s*$/, '').trim());
+          setLyrics(cleanedLines.join('\n'));
+          setStatusMessage(`Lyrics translated to ${language}`);
+        } else {
+          setStatusMessage('Translation failed — could not extract lyrics.');
+        }
+      } catch (err) {
+        console.error('Translation failed:', err);
+        setStatusMessage(`Translation error: ${err.message}`);
+      } finally {
+        setIsTranslating(false);
       }
-    } catch (error) {
-      console.error('Translation failed:', error);
-      setStatusMessage(`Translation error: ${error.message}`);
-    } finally {
-      setIsTranslating(false);
-    }
-  }, [lyrics, aceKey]);
+    },
+    [lyrics, aceKey],
+  );
 
-  // Generate vocals with ACE-Step
   const handleGenerate = useCallback(async () => {
     if (!lyrics.trim() && !prompt.trim()) {
-      setStatusMessage('Please enter lyrics or a prompt.');
+      setStatusMessage('Enter lyrics or a prompt.');
       return;
     }
-
     setIsGenerating(true);
     setProgress(0);
-    setStatusMessage('Starting ACE-Step generation...');
-
+    setStatusMessage('Starting ACE-Step generation…');
     try {
       const params = {
         acePrompt: prompt,
         aceLyrics: lyrics,
-        aceKey: aceKey,
-        aceSteps: aceSteps,
+        aceKey,
+        aceSteps,
         seed: Math.floor(Math.random() * 1000000),
-        t0: 0.8
+        t0: 0.8,
       };
-
       const startResult = await generateACEStep(params, null);
       const taskId = startResult.task_id;
-
-      setStatusMessage('Generating vocals...');
-
+      setStatusMessage('Generating vocals…');
       const result = await pollACEStepUntilComplete(
         taskId,
         (progressData) => {
           setProgress(progressData.attempts / 100);
-          setStatusMessage(`Generating... Step ${progressData.attempts}`);
+          setStatusMessage(`Generating… Step ${progressData.attempts}`);
         },
-        1800
+        1800,
       );
-
       if (result.file_paths && result.file_paths.length > 0) {
         setGeneratedAudioUrl(result.file_paths[0]);
-        setStatusMessage('Generation complete!');
+        setStatusMessage('Generation complete.');
       } else {
-        setStatusMessage('Generation completed but no audio returned.');
+        setStatusMessage('Completed but no audio returned.');
       }
-
-    } catch (error) {
-      console.error('Generation failed:', error);
-      setStatusMessage(`Error: ${error.message}`);
+    } catch (err) {
+      console.error('Generation failed:', err);
+      setStatusMessage(`Error: ${err.message}`);
     } finally {
       setIsGenerating(false);
       setProgress(0);
     }
   }, [prompt, lyrics, aceKey, aceSteps]);
 
-  // Download generated audio
   const handleDownload = useCallback(() => {
-    if (generatedAudioUrl) {
-      const a = document.createElement('a');
-      a.href = generatedAudioUrl;
-      a.download = `vocals_${Date.now()}.wav`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
+    if (!generatedAudioUrl) return;
+    const a = document.createElement('a');
+    a.href = generatedAudioUrl;
+    a.download = `vocals_${Date.now()}.wav`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }, [generatedAudioUrl]);
 
-  return (
-    <div className={styles.toolGeneratorContainer}>
-      {/* Tool Header */}
-      <div className={styles.toolGeneratorHeader}>
-        <div className={styles.toolGeneratorTitleSection}>
-          <div className={styles.toolGeneratorIcon} style={{ background: 'linear-gradient(135deg, rgba(156, 130, 200, 0.4), rgba(156, 130, 200, 0.2))' }}>
-            <i className="fa-solid fa-pen-to-square" style={{ color: '#9c82c8' }}></i>
-          </div>
-          <div className={styles.toolGeneratorTitleText}>
-            <h2 className={styles.toolGeneratorTitle}>{tool.name}</h2>
-            <p className={styles.toolGeneratorDescription}>{tool.description}</p>
-          </div>
-        </div>
-      </div>
+  const lineCount = lyrics.split('\n').filter((l) => l.trim()).length;
+  const totalSyllables = countLineSyllables(lyrics.replace(/\n/g, ' '));
 
-      {/* Prompt Input */}
-      <div className={styles.toolInputSection}>
-        <div className={styles.toolInputGroup}>
-          <label className={styles.toolInputLabel}>
-            <i className="fa-solid fa-wand-magic-sparkles"></i>
-            Style Prompt
-          </label>
-          <input
-            type="text"
-            className={styles.toolTextInput}
-            placeholder="Describe the music style... (e.g., 'emotional ballad, female voice')"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+  // ---------- Wide body: lyrics editor + side controls ----------
+  const body = (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 2fr) minmax(260px, 1fr)',
+        gap: 12,
+        minHeight: 400,
+      }}
+    >
+      {/* Left: lyrics editor */}
+      <Panel
+        title="Lyrics · editor"
+        marker="◆"
+        status={
+          <span style={{ color: C.inkMute }}>
+            {lineCount} lines · {totalSyllables} syllables
+          </span>
+        }
+      >
+        <div style={{ padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center' }}>
+          <FieldLabel style={{ flexShrink: 0 }}>Language</FieldLabel>
+          <Select
+            value={selectedLanguage}
+            onChange={handleLanguageChange}
+            options={LANGUAGES}
+            style={{ flex: 1 }}
+          />
+          {isTranslating && (
+            <span
+              style={{
+                fontFamily: C.mono,
+                fontSize: 10,
+                color: C.warm,
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+              }}
+            >
+              translating…
+            </span>
+          )}
+        </div>
+        <div style={{ padding: '0 16px 16px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <textarea
+            placeholder="Enter your lyrics here… each line will be sung as written."
+            value={lyrics}
+            onChange={(e) => setLyrics(e.target.value)}
+            style={{
+              flex: 1,
+              minHeight: 280,
+              padding: '14px 16px',
+              background: C.bg,
+              border: `1px solid ${C.rule}`,
+              color: C.ink,
+              fontFamily: C.mono,
+              fontSize: 13,
+              lineHeight: 1.65,
+              letterSpacing: 0.2,
+              resize: 'vertical',
+              outline: 'none',
+            }}
           />
         </div>
+      </Panel>
 
-        <div className={styles.toolInputGroup}>
-          <label className={styles.toolInputLabel}>
-            <i className="fa-solid fa-music"></i>
-            Key
-          </label>
-          <select
-            className={styles.toolSelect}
-            value={aceKey}
-            onChange={(e) => setAceKey(e.target.value)}
-          >
-            {keys.map(key => (
-              <option key={key} value={key}>{key}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Lyrics Input */}
-      <div className={styles.toolSection}>
-        <div className={styles.lyricsHeader}>
-          <label className={styles.toolInputLabel}>
-            <i className="fa-solid fa-align-left"></i>
-            Lyrics
-          </label>
-          <div className={styles.languageSelect}>
-            <select
-              className={styles.toolSelect}
-              value={selectedLanguage}
-              onChange={(e) => handleLanguageChange(e.target.value)}
-              disabled={isTranslating}
-            >
-              {languages.map(lang => (
-                <option key={lang.value} value={lang.value}>{lang.label}</option>
-              ))}
-            </select>
-            {isTranslating && <i className="fa-solid fa-spinner fa-spin"></i>}
+      {/* Right: prompt + key + quality + output */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+        <Panel title="Controls · vocal render" marker="◇">
+          <div style={{ padding: '12px 16px' }}>
+            <FieldLabel style={{ marginBottom: 6 }}>Style prompt</FieldLabel>
+            <input
+              type="text"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="e.g. emotional ballad, female voice"
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                background: C.bg,
+                border: `1px solid ${C.rule}`,
+                color: C.ink,
+                fontFamily: C.mono,
+                fontSize: 11,
+                letterSpacing: 0.2,
+              }}
+            />
           </div>
-        </div>
-        <textarea
-          className={styles.toolTextarea}
-          placeholder="Enter your lyrics here...&#10;Each line will be sung as written."
-          value={lyrics}
-          onChange={(e) => setLyrics(e.target.value)}
-          rows={8}
-        />
-        <div className={styles.lyricStats}>
-          <span>{lyrics.split('\n').filter(l => l.trim()).length} lines</span>
-          <span>{countLineSyllables(lyrics)} total syllables</span>
-        </div>
-      </div>
+          <div style={{ padding: '0 16px 4px' }}>
+            <FieldLabel style={{ marginBottom: 6 }}>Key</FieldLabel>
+            <ChipRow
+              options={KEYS.map((k) => ({ value: k, label: k }))}
+              value={aceKey}
+              onChange={setAceKey}
+            />
+          </div>
+          <Slider
+            label="Quality (steps)"
+            value={aceSteps}
+            min={50}
+            max={200}
+            step={10}
+            onChange={setAceSteps}
+            leftLabel="Fast"
+            rightLabel="Quality"
+          />
+        </Panel>
 
-      {/* Steps Slider */}
-      <div className={styles.toolSection}>
-        <label className={styles.toolInputLabel}>
-          <i className="fa-solid fa-sliders"></i>
-          Quality (Steps): {aceSteps}
-        </label>
-        <input
-          type="range"
-          className={styles.toolSlider}
-          min="50"
-          max="200"
-          value={aceSteps}
-          onChange={(e) => setAceSteps(parseInt(e.target.value))}
-        />
-        <div className={styles.sliderLabels}>
-          <span>Fast (50)</span>
-          <span>Balanced (100)</span>
-          <span>Quality (200)</span>
-        </div>
-      </div>
-
-      {/* Waveform Display */}
-      <div className={styles.toolWaveformSection}>
-        <div className={styles.toolWaveformHeader}>
-          <span className={styles.toolWaveformLabel}>
-            <i className="fa-solid fa-waveform-lines"></i>
-            Generated Vocals
-          </span>
-          {generatedAudioUrl && (
-            <div className={styles.toolWaveformActions}>
-              <button className={styles.toolActionBtn} title="Download" onClick={handleDownload}>
-                <i className="fa-solid fa-download"></i>
-              </button>
-            </div>
-          )}
-        </div>
-        <ToolWaveform
-          audioUrl={generatedAudioUrl}
-          height={120}
-          color="#9c82c8"
-        />
-        {statusMessage && (
-          <div className={styles.statusMessage}>{statusMessage}</div>
-        )}
-      </div>
-
-      {/* Progress Bar */}
-      {isGenerating && (
-        <div className={styles.progressContainer}>
-          <div className={styles.progressBar} style={{ width: `${progress * 100}%` }}></div>
-        </div>
-      )}
-
-      {/* Generate Button */}
-      <div className={styles.toolControlSection}>
-        <button
-          className={`${styles.toolControlBtn} ${styles.toolControlBtnPrimary}`}
-          onClick={handleGenerate}
-          disabled={isGenerating || isTranslating}
+        <Panel
+          title="Output · vocals"
+          marker="●"
+          status={generatedAudioUrl ? <span style={{ color: C.ok }}>ready</span> : null}
         >
-          {isGenerating ? (
-            <>
-              <i className="fa-solid fa-spinner fa-spin"></i>
-              Generating...
-            </>
-          ) : (
-            <>
-              <i className="fa-solid fa-bolt"></i>
-              Generate Vocals
-            </>
-          )}
-        </button>
+          <div style={{ padding: 14 }}>
+            <div style={{ background: C.bg, border: `1px solid ${C.rule}`, padding: 8 }}>
+              <ToolWaveform audioUrl={generatedAudioUrl} height={60} color={C.purple} />
+            </div>
+            {generatedAudioUrl && (
+              <button
+                type="button"
+                onClick={handleDownload}
+                style={{
+                  width: '100%',
+                  marginTop: 10,
+                  padding: '9px 12px',
+                  background: C.ink,
+                  color: C.bg,
+                  border: 'none',
+                  fontFamily: C.mono,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: 0.8,
+                  textTransform: 'uppercase',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  cursor: 'pointer',
+                }}
+              >
+                <Ic d={P.dl} size={12} color={C.bg} /> Download WAV
+              </button>
+            )}
+          </div>
+        </Panel>
       </div>
     </div>
+  );
+
+  return (
+    <ToolShell
+      tool={{ ...tool, sku: 'T-03', category: 'Lyrics tool', version: 'v1.0.0' }}
+      subtitle="ACE-Step vocal render"
+      description="Edit lyrics, translate while preserving syllable count, then render with the ACE-Step vocal engine."
+      meta={[{ k: 'Avg time', v: '~5s translate · ~90s render' }]}
+      running={isGenerating}
+      progress={progress}
+      statusMessage={statusMessage}
+      primaryLabel="Render vocals"
+      onPrimary={handleGenerate}
+      primaryDisabled={isTranslating || (!lyrics.trim() && !prompt.trim())}
+      onBack={onBack}
+      layout="wide"
+      body={body}
+    />
   );
 };
 
