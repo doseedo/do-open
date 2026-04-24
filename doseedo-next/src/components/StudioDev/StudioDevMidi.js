@@ -186,6 +186,10 @@ export default function StudioDevMidi() {
         //   curve ∈ [-1, 1] — shape: -1 log, 0 linear, +1 exp.
         bend: Number.isFinite(n.bend) ? Math.max(0, Math.min(1, n.bend)) : 0,
         curve: Number.isFinite(n.curve) ? Math.max(-1, Math.min(1, n.curve)) : 0,
+        // Per-note override color (bus composite view tags each note with
+        // its source track's palette color). Falls through to trackColor
+        // in the note draw loop when absent.
+        color: typeof n.color === 'string' ? n.color : null,
       }));
   }, [selectedTrack]);
 
@@ -769,12 +773,13 @@ export default function StudioDevMidi() {
       const h = span * rowH - 2;
       if (x + w < KEYS_W || x > W || y + h < RULER_H || y > H) continue;
       const alpha = 0.6 + (n.velocity / 127) * 0.4;
-      ctx.fillStyle = trackColor + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+      const col = n.color || trackColor;
+      ctx.fillStyle = col + Math.floor(alpha * 255).toString(16).padStart(2, '0');
       ctx.beginPath();
       ctx.roundRect(x, y + 1, w, h, 2);
       ctx.fill();
       // Border
-      ctx.strokeStyle = selected.has(i) ? C.ink : trackColor;
+      ctx.strokeStyle = selected.has(i) ? C.ink : col;
       ctx.lineWidth = selected.has(i) ? 1.4 : 1;
       ctx.stroke();
       // Lyric

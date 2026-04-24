@@ -1960,6 +1960,47 @@ export default function StudioDev() {
 
   // Bus-level actions (no-op on demo buses, where _real is absent).
   const toggleBusExpanded = (busId) => busId && dispatch({ type: 'TOGGLE_BUS_EXPANDED', payload: { busId } });
+
+  /**
+   * Clicking the bus master clip opens the MIDI window with:
+   *   - the single child track's notes, if the bus has 1 track
+   *   - a composite view where each track's notes are tagged with a
+   *     distinct color, if the bus has >1 tracks
+   * Composite tracks are view-only — StudioDevMidi commits no-op when the
+   * selected track has no real bus ownership.
+   */
+  const COMPOSITE_PALETTE = ['#c94f2c', '#7a5d3a', '#2f6b4e', '#4a3d6b', '#1d4c7a', '#a88adc', '#6aa8e8', '#e07556'];
+  const openBusMaster = useCallback((bus) => {
+    if (!bus || !Array.isArray(bus.tracks)) return;
+    const visibleTracks = bus.tracks.filter((t) => !t.metadata?.isBusMaster);
+    if (visibleTracks.length === 0) return;
+    if (visibleTracks.length === 1) {
+      dispatch({ type: 'SELECT_TRACK', payload: { trackId: visibleTracks[0].id, busId: bus.id } });
+    } else {
+      const mergedNotes = [];
+      let maxDur = 0;
+      visibleTracks.forEach((t, i) => {
+        const color = COMPOSITE_PALETTE[i % COMPOSITE_PALETTE.length];
+        const md = t.midiData || t.metadata?.midiData;
+        const notes = md?.notes || [];
+        for (const n of notes) mergedNotes.push({ ...n, color, __sourceTrackId: t.id });
+        maxDur = Math.max(maxDur, md?.duration || 0, t.duration || 0);
+      });
+      const compositeTrack = {
+        id: `__composite-${bus.id}`,
+        name: `${bus.name || bus.type || 'Bus'} · ${visibleTracks.length} tracks`,
+        midiData: { notes: mergedNotes, duration: maxDur || 8, tempo: state.bpm || 120 },
+        metadata: {
+          type: 'composite',
+          isComposite: true,
+          sourceTrackIds: visibleTracks.map((t) => t.id),
+        },
+      };
+      dispatch({ type: 'SELECT_TRACK', payload: { compositeTrack, busId: bus.id } });
+    }
+    setActiveMode('midi');
+  }, [dispatch, state.bpm]);
+
   const toggleBusMute     = (busId) => busId && dispatch({ type: 'TOGGLE_BUS_MUTE',     payload: { busId } });
   const toggleBusSolo     = (busId) => busId && dispatch({ type: 'TOGGLE_BUS_SOLO',     payload: { busId } });
   const setBusGain        = (busId, gain) => busId && dispatch({ type: 'UPDATE_BUS_GAIN', payload: { busId, gain } });
@@ -2643,8 +2684,8 @@ export default function StudioDev() {
                              background: `${bus.color}22`,
                              border: `1px solid ${bus.color}66`,
                            }}
-                           onClick={(e) => { e.stopPropagation(); toggleBusExpanded(bus.id); }}
-                           title={bus.expanded ? 'Click to collapse' : 'Click to expand'}>
+                           onClick={(e) => { e.stopPropagation(); openBusMaster(bus._real); }}
+                           title={`Open ${bus.tracks.length === 1 ? 'track' : 'composite'} MIDI view`}>
                         <div className="sd-clip-label" style={{ color: bus.color }}>
                           {bus.name} · {bus.tracks.length} track{bus.tracks.length === 1 ? '' : 's'}
                         </div>
