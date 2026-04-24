@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, useNavigate, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
 import { useKeyboardControls } from './hooks/useKeyboardControls';
+import { useSessionSync } from './hooks/useSessionSync';
 import * as authService from './services/authService';
 import * as sessionService from './services/sessionService';
 
@@ -393,6 +394,9 @@ function AppContent() {
 
   // Enable keyboard controls (spacebar for play/pause)
   useKeyboardControls(dispatch, state.isPlaying);
+
+  // Hydrate the DAW from /studio?session=<uuid> and poll for drift.
+  useSessionSync(dispatch);
 
   // Track the sidebar's left edge with a ResizeObserver — when the left
   // sidebar collapses/expands or the window resizes, leftOffset updates but

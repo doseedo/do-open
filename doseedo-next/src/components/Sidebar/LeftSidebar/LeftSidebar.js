@@ -93,16 +93,6 @@ const Icon = {
       <path d="M4 5h16v11H7l-3 3z" strokeLinejoin="round" />
     </svg>
   ),
-  shield: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <path d="M12 3l8 3v6c0 4.5-3.3 8.3-8 9-4.7-.7-8-4.5-8-9V6l8-3z" strokeLinejoin="round" />
-    </svg>
-  ),
-  doc: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <path d="M7 3h7l5 5v13H7z" strokeLinejoin="round" /><path d="M14 3v5h5M9 13h6M9 17h6" strokeLinecap="round" />
-    </svg>
-  ),
   hamburger: (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
       <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
@@ -297,22 +287,6 @@ const LeftSidebar = React.memo(({
                     >
                       <span className={styles.sideIcon}>{Icon.message}</span>
                       <span>Feedback</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.moreItem}
-                      onClick={() => { setShowMoreMenu(false); navigate('/privacy'); }}
-                    >
-                      <span className={styles.sideIcon}>{Icon.shield}</span>
-                      <span>Privacy Policy</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.moreItem}
-                      onClick={() => { setShowMoreMenu(false); navigate('/terms'); }}
-                    >
-                      <span className={styles.sideIcon}>{Icon.doc}</span>
-                      <span>Terms of Service</span>
                     </button>
                   </div>
                 )}

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import styles from './MySessions.module.css';
 import * as sessionAPI from '../../services/sessionAPI';
+import * as sessionSyncAPI from '../../services/sessionSyncAPI';
 import * as r2UploadService from '../../services/r2UploadService';
 
 /**
@@ -8,6 +10,7 @@ import * as r2UploadService from '../../services/r2UploadService';
  * Displays and manages user's uploaded sessions
  */
 const MySessions = () => {
+  const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -17,14 +20,20 @@ const MySessions = () => {
   // Load user sessions
   useEffect(() => {
     loadSessions();
-  }, [selectedCategory]);
+    // selectedCategory filters client-side; GET /api/sessions has no type
+    // filter, so no need to refetch on every tab click.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadSessions = async () => {
     try {
       setLoading(true);
-      const filters = selectedCategory !== 'all' ? { type: selectedCategory } : {};
-      const data = await sessionAPI.getUserSessions(filters);
-      setSessions(data.sessions || []);
+      // listMySessions wraps GET /api/sessions — auth-service returns
+      // { items, total, next_offset }. The pre-existing
+      // sessionAPI.getUserSessions expected { sessions: [...] } and
+      // silently showed the empty state even when rows existed.
+      const data = await sessionSyncAPI.listMySessions({ limit: 200 });
+      setSessions(Array.isArray(data?.items) ? data.items : []);
     } catch (error) {
       // Silently fail - user sessions feature is optional and backend may not be available
       // Only log in development mode
@@ -37,11 +46,20 @@ const MySessions = () => {
     }
   };
 
+  const handleOpenSession = (session) => {
+    if (!session?.id) return;
+    navigate(`/studio?session=${encodeURIComponent(session.id)}`);
+  };
+
+  const visibleSessions = selectedCategory === 'all'
+    ? sessions
+    : sessions.filter((s) => s.type === selectedCategory);
+
   const handleDeleteSession = async (sessionId) => {
     if (!window.confirm('Are you sure you want to delete this session?')) return;
 
     try {
-      await sessionAPI.deleteSession(sessionId);
+      await sessionSyncAPI.deleteSession(sessionId);
       setSessions(sessions.filter(s => s.id !== sessionId));
     } catch (error) {
       console.error('Failed to delete session:', error);
@@ -94,7 +112,7 @@ const MySessions = () => {
           <i className="fa-solid fa-spinner fa-spin"></i>
           <p>Loading sessions...</p>
         </div>
-      ) : sessions.length === 0 ? (
+      ) : visibleSessions.length === 0 ? (
         <div className={styles.emptyState}>
           <i className="fa-solid fa-folder-open"></i>
           <h3>No sessions yet</h3>
@@ -106,8 +124,21 @@ const MySessions = () => {
         </div>
       ) : (
         <div className={styles.sessionsGrid}>
-          {sessions.map((session) => (
-            <div key={session.id} className={styles.sessionCard}>
+          {visibleSessions.map((session) => (
+            <div
+              key={session.id}
+              className={styles.sessionCard}
+              onClick={() => handleOpenSession(session)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleOpenSession(session);
+                }
+              }}
+              style={{ cursor: 'pointer' }}
+            >
               <div className={styles.sessionThumbnail}>
                 {session.thumbnail_url ? (
                   <img src={session.thumbnail_url} alt={session.name} />
@@ -116,6 +147,7 @@ const MySessions = () => {
                     session.type === 'project' ? 'fa-folder' :
                     session.type === 'loop' ? 'fa-repeat' :
                     session.type === 'preset' ? 'fa-sliders' :
+                    session.type === 'logic_import' ? 'fa-waveform-lines' :
                     'fa-music'
                   }`}></i>
                 )}
@@ -125,16 +157,23 @@ const MySessions = () => {
                 <p className={styles.sessionMeta}>
                   <span className={styles.sessionType}>{session.type?.toUpperCase()}</span>
                   <span className={styles.sessionDate}>
-                    {new Date(session.created_at).toLocaleDateString()}
+                    {new Date(session.updated_at || session.created_at).toLocaleDateString()}
                   </span>
                 </p>
                 {session.description && (
                   <p className={styles.sessionDescription}>{session.description}</p>
                 )}
               </div>
-              <div className={styles.sessionActions}>
-                <button className={styles.actionButton} title="Download">
-                  <i className="fa-solid fa-download"></i>
+              <div
+                className={styles.sessionActions}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  className={styles.actionButton}
+                  onClick={() => handleOpenSession(session)}
+                  title="Open in Studio"
+                >
+                  <i className="fa-solid fa-arrow-up-right-from-square"></i>
                 </button>
                 <button className={styles.actionButton} title="Share">
                   <i className="fa-solid fa-share"></i>
