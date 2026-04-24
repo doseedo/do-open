@@ -34,6 +34,11 @@ def generate_stemphonic(
                                # (renoise base — must NOT be FSQ-detokenized)
     cover_noise_strength=0.0,  # 0 = pure noise init, 1 = start directly from src
     audio_cover_strength=1.0,  # how many steps to keep cover-mode encoder context
+    bpm: str = "120",          # metadata for format_sft_prompt — training was cached by
+                               # (group, subgroup, bpm_bucket, time_sig); "N/A" is OOD.
+                               # Callers should pass the session/MIDI-derived BPM when
+                               # known; "120" is the least-bad default bucket.
+    time_sig: str = "4/4",
 ):
     """Replicates training_step's forward pass for inference (Euler denoising)."""
     device = "cuda"
@@ -48,7 +53,7 @@ def generate_stemphonic(
     from stemphonic_trainer.preprocess_v4 import format_sft_prompt, format_lyrics
     # Pass real BPM/time_sig (not the empty defaults that turn into "N/A").
     # Training cache was keyed on real values; "N/A" is OOD for the model.
-    text_prompt = format_sft_prompt(prompt, bpm="120", time_sig="4/4",
+    text_prompt = format_sft_prompt(prompt, bpm=str(bpm), time_sig=str(time_sig),
                                     duration_sec=int(duration))
     lyric_prompt = format_lyrics(lyrics or "[Instrumental]")
 
@@ -113,6 +118,31 @@ def generate_stemphonic(
         # Start with from-scratch mode: src = zeros, chunk_masks = ones
         src = torch.zeros(B, T, D, device=device, dtype=dtype)
         chunk_masks = torch.ones(B, T, D, device=device, dtype=dtype)
+
+        # Activity mask (training-parity). training_module.training_step does
+        #   context_latents[:, :, 64:128] *= activity_mask.unsqueeze(-1)
+        # where activity_mask is a per-frame VAD of the target stem (1=has
+        # audio, 0=silent). At inference we don't have a target, but when a
+        # MIDI roll is provided we can derive activity from it: frames with
+        # any note/drum/onset active = 1. Dilating by ±4 frames (~320ms) keeps
+        # natural note decay from getting clipped by MIDI's abrupt note-off.
+        # Without this, chunk_masks stays all-ones and the model is OOD
+        # relative to training (it never saw activity=1 in silent frames).
+        if midi_tensor is not None:
+            mt = midi_tensor.to(device, dtype=dtype)
+            if mt.dim() == 3:  # [1, 146, T_midi]
+                act = (mt[0, :, :].sum(dim=0) > 0).to(dtype=dtype)
+            else:
+                act = torch.ones(T, device=device, dtype=dtype)
+            if act.shape[0] >= T:
+                act = act[:T]
+            else:
+                act = F.pad(act, (0, T - act.shape[0]))
+            if act.sum() > 0:
+                kernel = torch.ones(1, 1, 9, device=device, dtype=dtype)
+                smoothed = F.conv1d(act.view(1, 1, -1), kernel, padding=4).squeeze()
+                act = (smoothed > 0).to(dtype=dtype)
+                chunk_masks = chunk_masks * act.view(1, T, 1)
 
         # Sub-mix conditional (if provided)
         if sub_mix_latents is not None:
@@ -213,6 +243,7 @@ def generate_stemphonic(
                 refer=refer, refer_order=refer_order,
                 cover_src_latents=cover_src_latents.to(device=device, dtype=dtype),
                 lm_hints=lm_hints_for_model,
+                chunk_masks=chunk_masks,
                 T=T, D=D,
                 duration=duration, steps=steps, cfg=cfg, seed=seed,
                 cover_noise_strength=cns,
@@ -267,19 +298,25 @@ def _generate_via_model_api(
     duration, steps, cfg, seed,
     cover_noise_strength=0.0,
     audio_cover_strength=1.0,
+    chunk_masks=None,    # [B, T, 64] — activity-gated from MIDI, default ones
 ):
-    # Defensive clamp: model.generate_audio's audio_cover_strength<1.0
-    # branch tries to build a non-cover encoder context using
-    # non_cover_text_hidden_states, which we don't pass. Clamping to
-    # 1.0 here keeps the cover encoder running for all steps and avoids
-    # the prepare_condition None-input crash.
-    if audio_cover_strength < 1.0:
-        audio_cover_strength = 1.0
     """Dispatch to handler.model.generate_audio() for cover-mode inference.
 
     src_latents (the renoise base) MUST be raw VAE latents in the diffusion
     space. lm_hints (semantic context) goes through precomputed_lm_hints_25Hz
-    separately. The MIDI hook fires inside the decoder layers regardless."""
+    separately. The MIDI hook fires inside the decoder layers regardless.
+
+    audio_cover_strength<1.0 means: for the first cover_steps = round(steps*s)
+    denoising steps, use the cover-mode encoder context (text+timbre+FSQ
+    lm_hints on top of the MIDI render). For the remaining steps, swap to the
+    non-cover context (silence latent in place of lm_hints, no refer audio
+    mixed into the semantic hint — pure text2music). We reuse the same text
+    encoding for both phases, so the semantic prompt stays constant while the
+    model gradually stops being anchored to the MIDI render.
+    """
+    # Clamp to [0, 1] — generate_audio uses it to slice the schedule and will
+    # behave badly outside that range (negative cover_steps, etc.).
+    audio_cover_strength = max(0.0, min(1.0, float(audio_cover_strength)))
     device = "cuda"
     dtype = torch.bfloat16
     B = 1
@@ -295,7 +332,20 @@ def _generate_via_model_api(
         src = F.pad(src, (0, 0, 0, pad))
     src_latents = src.to(device, dtype=dtype).contiguous()
 
-    chunk_masks = torch.ones(B, T, D, device=device, dtype=dtype)
+    # chunk_masks: caller passes the activity-gated mask from MIDI when
+    # available. Fall back to ones (no VAD gating) when generating without
+    # MIDI input.
+    if chunk_masks is None:
+        chunk_masks = torch.ones(B, T, D, device=device, dtype=dtype)
+    else:
+        cm = chunk_masks
+        if cm.dim() == 2:
+            cm = cm.unsqueeze(0)
+        if cm.shape[1] >= T:
+            cm = cm[:, :T]
+        else:
+            cm = F.pad(cm, (0, 0, 0, T - cm.shape[1]), value=1.0)
+        chunk_masks = cm.to(device, dtype=dtype).contiguous()
     is_covers = torch.ones(B, device=device, dtype=torch.long)
 
     # Pad/crop lm_hints to T frames as well
@@ -329,6 +379,8 @@ def _generate_via_model_api(
             precomputed_lm_hints_25Hz=precomputed_lm_hints_25Hz,
             cover_noise_strength=float(cover_noise_strength),
             audio_cover_strength=float(audio_cover_strength),
+            non_cover_text_hidden_states=text_hs,
+            non_cover_text_attention_mask=text_mask,
             use_progress_bar=False,
         )
     pred_latents = outputs["target_latents"]  # [B, T, D]

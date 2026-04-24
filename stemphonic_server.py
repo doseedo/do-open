@@ -1344,10 +1344,22 @@ def _get_latent_drumsep():
 
 
 def _get_latent_visual():
+    # Matches _get_latent_drumsep's "unavailable" sentinel so that Mac-deploys
+    # missing latent_visual/infer.py (not in any bucket backup — lives only on
+    # the A100 VM) degrade to "drum sub-separation unavailable" instead of
+    # crashing. Callers already handle None (drumsep_latent_to_drum_roll
+    # returns zero-roll and logs a warning).
+    if _latent_visual_runtime["rt"] == "unavailable":
+        return None
     if _latent_visual_runtime["rt"] is None:
-        from latent_visual.infer import LatentVisualRuntime
-        _latent_visual_runtime["rt"] = LatentVisualRuntime.get()
-        logger.info("Loaded LatentVisual envelope model (62K-param peak predictor)")
+        try:
+            from latent_visual.infer import LatentVisualRuntime
+            _latent_visual_runtime["rt"] = LatentVisualRuntime.get()
+            logger.info("Loaded LatentVisual envelope model (62K-param peak predictor)")
+        except (ImportError, FileNotFoundError) as e:
+            logger.warning("LatentVisual unavailable — drum sub-separation disabled: %s", e)
+            _latent_visual_runtime["rt"] = "unavailable"
+            return None
     return _latent_visual_runtime["rt"]
 
 
@@ -1526,6 +1538,55 @@ def add_lyric_word_onsets(midi_tensor, lyric_map, T, fps=25):
             continue
     logger.info("   Lyric word onsets: %d / %d entries set on ch144", n_set, len(lyric_map))
     return midi_tensor
+
+
+def _resolve_bpm_timesig(req_bpm, req_ts, midi_path):
+    """Return (bpm_str, time_sig_str) for format_sft_prompt.
+
+    Priority: explicit request param → MIDI-derived → "120" / "4/4".
+    Training cached text embeddings by bpm_bucket (20-BPM bins) and literal
+    time-sig, so sending the right numbers puts us in the right cache bucket;
+    otherwise the text encoder runs OOD relative to training.
+    """
+    import pretty_midi  # already vendored and imported all over the file
+
+    # 1. Explicit param wins
+    bpm_str = None
+    if req_bpm not in (None, "", "null", "undefined"):
+        try:
+            bpm_str = str(int(round(float(req_bpm))))
+        except (TypeError, ValueError):
+            bpm_str = None
+
+    ts_str = None
+    if req_ts not in (None, "", "null", "undefined"):
+        s = str(req_ts).strip()
+        # Accept "4/4" and "4-4" forms; reject garbage like "foo"
+        if "/" in s and all(p.isdigit() for p in s.split("/", 1) if p):
+            ts_str = s
+        elif "-" in s and all(p.isdigit() for p in s.split("-", 1) if p):
+            ts_str = s.replace("-", "/")
+
+    # 2. Derive from MIDI if anything is still missing
+    if (bpm_str is None or ts_str is None) and midi_path:
+        try:
+            pm = pretty_midi.PrettyMIDI(midi_path)
+            if bpm_str is None:
+                try:
+                    tempo = float(pm.estimate_tempo())
+                    if 20.0 < tempo < 300.0:
+                        bpm_str = str(int(round(tempo)))
+                except Exception:
+                    pass
+            if ts_str is None and pm.time_signature_changes:
+                first = pm.time_signature_changes[0]
+                if first.numerator and first.denominator:
+                    ts_str = f"{int(first.numerator)}/{int(first.denominator)}"
+        except Exception as e:
+            logger.debug("bpm/timesig MIDI parse failed for %s: %s", midi_path, e)
+
+    # 3. Defaults — 120/4 is the largest training bucket; N/A is OOD.
+    return (bpm_str or "120", ts_str or "4/4")
 
 
 def load_real_midi(midi_path, T=400, fps=25, drum_mode=False):
@@ -2234,19 +2295,26 @@ def run_generation(task_id, params):
             logger.info("   No src latents for cover_noise, forcing to 0")
             effective_noise = 0.0
 
-        # audio_cover_strength<1 always crashes the decoder during the
-        # cover→non-cover encoder swap because we don't pass the
-        # non_cover_text_hidden_states arg to model.generate_audio.
-        # Force 1.0 unconditionally — the slider's range is wrong for
-        # this code path, the model effectively only supports cover=1.
-        audio_cover = float(params.get("audio_cover_strength", 1.0))
-        if audio_cover < 1.0:
-            logger.warning("audio_cover_strength=%.2f forced to 1.0 (non-cover swap unsupported)", audio_cover)
-            audio_cover = 1.0
+        # audio_cover_strength controls how long the denoiser stays in
+        # cover mode (anchored to the MIDI render's FSQ lm_hints + refer
+        # timbre) before switching to non-cover / text2music for the
+        # remaining steps. _generate_via_model_api now forwards
+        # non_cover_text_hidden_states=text_hs so values <1.0 work;
+        # clamp into [0, 1] defensively.
+        audio_cover = max(0.0, min(1.0, float(params.get("audio_cover_strength", 1.0))))
 
-        logger.info("🎵 Generating: prompt=%r dur=%.1f steps=%d cfg=%.1f seed=%d noise=%.2f(eff=%.2f) cov=%.2f midi=%s fsq=%s",
+        # BPM / time-signature for format_sft_prompt. Training cached text
+        # embeddings by (group, subgroup, bpm_bucket, time_sig); sending the
+        # session's real values gets us into the right bucket. Priority:
+        # explicit request param → MIDI-derived → "120" / "4/4" defaults.
+        req_bpm = params.get("bpm")
+        req_ts = params.get("time_sig") or params.get("timesignature")
+        bpm_str, ts_str = _resolve_bpm_timesig(req_bpm, req_ts, midi_path)
+
+        logger.info("🎵 Generating: prompt=%r dur=%.1f steps=%d cfg=%.1f seed=%d noise=%.2f(eff=%.2f) cov=%.2f midi=%s fsq=%s bpm=%s ts=%s",
                      prompt[:60], duration, steps, cfg, seed, noise_level, effective_noise,
-                     audio_cover, midi_tensor is not None, fsq_tokens is not None)
+                     audio_cover, midi_tensor is not None, fsq_tokens is not None,
+                     bpm_str, ts_str)
 
         with model_lock:
             # Use train-matched inference (direct decoder call, same as training_step)
@@ -2261,6 +2329,7 @@ def run_generation(task_id, params):
                 duration=duration, steps=steps, cfg=cfg, seed=seed,
                 cover_noise_strength=effective_noise,
                 audio_cover_strength=audio_cover,
+                bpm=bpm_str, time_sig=ts_str,
             )
 
         if audio_np is None:
@@ -2328,6 +2397,12 @@ def generate():
                      "audio_cover_strength", "drum_mode", "vox_mode",
                      "lyric_map",
                      "checkpoint", "ckpt", "timbre_preset",
+                     # bpm / time_sig tag the text prompt so training's
+                     # (group, subgroup, bpm_bucket, timesig) cache key
+                     # has a chance of matching. Frontend should send the
+                     # session BPM / meter; server falls back to MIDI-
+                     # derived values and finally to "120" / "4/4".
+                     "bpm", "time_sig", "timesignature",
                      # latent_id lets the frontend reuse an already-cached
                      # VAE latent (from upload time) instead of uploading
                      # audio for the server to re-encode. Resolved to
