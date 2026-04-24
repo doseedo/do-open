@@ -309,27 +309,16 @@ app = modal.App("doseedo-stemphonic-staging")
     enable_memory_snapshot=True,
 )
 class Stemphonic:
-    @modal.enter(snap=True)
-    def setup_cpu_state(self):
-        """Snapshot-phase init. Runs on a CPU machine WITHOUT GPU attached.
-
-        stemphonic_server.py is genuinely CPU-clean at module scope:
-          - handler=None, module=None at line 195-196
-          - load_model() is only called from __main__ guard (line 4966)
-            or lazily from Flask routes
-          - all module-scope torch.load() calls use map_location='cpu'
-
-        So we can import the whole server here, and the snapshot will
-        include the fully-initialized Flask app + all preset tensors
-        loaded to CPU. Cold restore from snapshot is ~5s vs ~60s without.
-
-        The first real request still triggers lazy model-to-GPU load, but
-        we proactively do that in setup_gpu_state() below.
+    @staticmethod
+    def _build_fs_and_paths():
+        """Rebuild the symlink tree + sys.path on every cold start.
+        Modal's memory snapshot captures Python memory but NOT filesystem
+        writes from the snap=True phase, so the /scratch/... symlinks built
+        pre-snapshot are GONE after restore. Without this helper being
+        called from setup_gpu_state too, `from acestep.handler import ...`
+        fails with ModuleNotFoundError and handler stays None forever.
         """
         import os, sys, pathlib
-
-        # ---- Build the symlink tree that makes stemphonic_server's
-        # ---- hardcoded /scratch/... and /mnt/data/... paths resolve ----
 
         os.makedirs("/scratch", exist_ok=True)
         os.makedirs("/mnt/data/system_home/arlo", exist_ok=True)
@@ -423,24 +412,29 @@ class Stemphonic:
             pathlib.Path(ephemeral).mkdir(parents=True, exist_ok=True)
 
         # ---- sys.path mirrors stemphonic_server.py ----
-        sys.path.insert(0, "/scratch/ACE-Step-1.5")
-        sys.path.insert(0, "/mnt/data/system_home/arlo/do2/stemphonic_trainer")
-        sys.path.insert(0, "/mnt/data/system_home/arlo/do2")
-        # latent_demucs.runtime does bareword `from distill_model import ...`
-        # so the student dir must be on sys.path.
-        sys.path.insert(0, "/mnt/data/system_home/arlo/do2/latent_demucs_student")
+        for p in (
+            "/scratch/Do/harmonymodule",
+            "/mnt/data/system_home/arlo/do2/latent_demucs_student",
+            "/mnt/data/system_home/arlo/do2",
+            "/mnt/data/system_home/arlo/do2/stemphonic_trainer",
+            "/scratch/ACE-Step-1.5",
+        ):
+            if p not in sys.path:
+                sys.path.insert(0, p)
         # NOTE: latent_panns_student and latent_whisper_student removed from
         # sys.path — both had `student_model.py` and whichever loaded first
         # poisoned sys.modules for the other. Both runtimes now use importlib
         # to load their own student_model.py by filepath.
-        sys.path.insert(0, "/scratch/Do/harmonymodule")
 
-        # ---- THE key import. stemphonic_server.py at module scope:
-        # ---- - creates Flask app
-        # ---- - loads 6 preset .pt files to CPU
-        # ---- - declares CKPT_REGISTRY, INSTRUMENT_SOUNDFONTS, etc.
-        # ---- - does NOT touch CUDA
-        # ---- All of this lands in the snapshot.
+    @modal.enter(snap=True)
+    def setup_cpu_state(self):
+        """Snapshot-phase init. Runs on a CPU machine WITHOUT GPU attached.
+        stemphonic_server.py is CPU-clean at module scope so we can import
+        and snapshot it. Cold restore is ~5s vs ~60s.
+        """
+        self._build_fs_and_paths()
+        # stemphonic_server at module scope creates the Flask app, loads
+        # CPU preset tensors, declares registries — all lands in snapshot.
         import stemphonic_server  # noqa: F401
         self._server_module = stemphonic_server
 
@@ -455,6 +449,10 @@ class Stemphonic:
           - queue-depth canary (max_containers=1 serialization warning)
         """
         import logging, os, threading, urllib.error, urllib.request, json as _json
+
+        # Filesystem writes from snap=True don't survive memory-snapshot
+        # restore — rebuild symlinks + sys.path before touching the server.
+        self._build_fs_and_paths()
 
         stemphonic_server = self._server_module
 

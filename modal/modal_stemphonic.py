@@ -491,27 +491,20 @@ app = modal.App("doseedo-stemphonic")
     enable_memory_snapshot=True,
 )
 class Stemphonic:
-    @modal.enter(snap=True)
-    def setup_cpu_state(self):
-        """Snapshot-phase init. Runs on a CPU machine WITHOUT GPU attached.
+    @staticmethod
+    def _build_fs_and_paths():
+        """Build the symlink tree + sys.path entries that
+        stemphonic_server's hardcoded /scratch/... and /mnt/data/... paths
+        (and downstream imports like acestep.handler) depend on.
 
-        stemphonic_server.py is genuinely CPU-clean at module scope:
-          - handler=None, module=None at line 195-196
-          - load_model() is only called from __main__ guard (line 4966)
-            or lazily from Flask routes
-          - all module-scope torch.load() calls use map_location='cpu'
-
-        So we can import the whole server here, and the snapshot will
-        include the fully-initialized Flask app + all preset tensors
-        loaded to CPU. Cold restore from snapshot is ~5s vs ~60s without.
-
-        The first real request still triggers lazy model-to-GPU load, but
-        we proactively do that in setup_gpu_state() below.
+        MUST run on every cold start, not just the snap=True phase. Modal's
+        memory snapshot captures Python memory (sys.modules, sys.path) but
+        NOT the filesystem writes from the snap-phase container — so on
+        post-restore cold starts the /scratch/ACE-Step-1.5 → /opt/ACE-Step-1.5
+        symlink is gone and `from acestep.handler import AceStepHandler`
+        dies with ModuleNotFoundError, leaving handler=None.
         """
         import os, sys, pathlib
-
-        # ---- Build the symlink tree that makes stemphonic_server's
-        # ---- hardcoded /scratch/... and /mnt/data/... paths resolve ----
 
         os.makedirs("/scratch", exist_ok=True)
         os.makedirs("/mnt/data/system_home/arlo", exist_ok=True)
@@ -614,18 +607,34 @@ class Stemphonic:
             pathlib.Path(ephemeral).mkdir(parents=True, exist_ok=True)
 
         # ---- sys.path mirrors stemphonic_server.py ----
-        sys.path.insert(0, "/scratch/ACE-Step-1.5")
-        sys.path.insert(0, "/mnt/data/system_home/arlo/do2/stemphonic_trainer")
-        sys.path.insert(0, "/mnt/data/system_home/arlo/do2")
-        # latent_demucs.runtime does bareword `from distill_model import ...`
-        # so the student dir must be on sys.path.
-        sys.path.insert(0, "/mnt/data/system_home/arlo/do2/latent_demucs_student")
+        # Insert-if-missing so calling this on every cold start doesn't
+        # grow sys.path indefinitely.
+        for p in (
+            "/scratch/Do/harmonymodule",
+            # latent_demucs.runtime does `from distill_model import ...`
+            # so the student dir must be on sys.path.
+            "/mnt/data/system_home/arlo/do2/latent_demucs_student",
+            "/mnt/data/system_home/arlo/do2",
+            "/mnt/data/system_home/arlo/do2/stemphonic_trainer",
+            "/scratch/ACE-Step-1.5",
+        ):
+            if p not in sys.path:
+                sys.path.insert(0, p)
         # NOTE: latent_panns_student and latent_whisper_student removed from
         # sys.path — both had `student_model.py` and whichever loaded first
         # poisoned sys.modules for the other. Both runtimes now use importlib
         # to load their own student_model.py by filepath.
-        sys.path.insert(0, "/scratch/Do/harmonymodule")
 
+    @modal.enter(snap=True)
+    def setup_cpu_state(self):
+        """Snapshot-phase init. Runs on a CPU machine WITHOUT GPU attached.
+
+        stemphonic_server.py is CPU-clean at module scope (handler=None,
+        module=None; all torch.load uses map_location='cpu'), so we can
+        import it here and snapshot the fully-initialized Flask app + all
+        preset tensors loaded to CPU. Cold restore is ~5s vs ~60s.
+        """
+        self._build_fs_and_paths()
         # ---- THE key import. stemphonic_server.py at module scope:
         # ---- - creates Flask app
         # ---- - loads 6 preset .pt files to CPU
@@ -646,6 +655,15 @@ class Stemphonic:
           - queue-depth canary (max_containers=1 serialization warning)
         """
         import logging, os, threading, urllib.error, urllib.request, json as _json
+
+        # Filesystem writes from the snap=True phase do NOT survive a
+        # memory-snapshot restore, so rebuild the symlink tree + sys.path
+        # before touching stemphonic_server. Without this, load_model's
+        # `from acestep.handler import AceStepHandler` fails with
+        # ModuleNotFoundError and handler stays None for the container's
+        # entire life, causing every /api/generate-stemphonic task to die
+        # with "'NoneType' object has no attribute 'text_tokenizer'".
+        self._build_fs_and_paths()
 
         stemphonic_server = self._server_module
 
