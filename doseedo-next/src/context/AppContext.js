@@ -1419,6 +1419,11 @@ function appReducer(state, action) {
         })) || []
       };
 
+      // Drop view-only fields so saved sessions can't override the live
+      // zoom defaults (the old default was 48; ignoring the stored value
+      // lets the current initialState win on every restore).
+      delete migratedPayload.trackHeight;
+
       return {
         ...state,
         ...migratedPayload
