@@ -164,7 +164,8 @@ const TimelineGrid = React.memo(({
 
     } else if (
       state.beatMap && state.beatMap.length >= beatsPerBar &&
-      meterDenominator === 4 &&
+      // Trust beatMap only when numerator still matches; SET_METER clears
+      // beatMap on override so this falls through to synthetic correctly.
       state.beatMap.reduce((m, b) => Math.max(m, b.pos), 0) === beatsPerBar
     ) {
       const bm = state.beatMap;

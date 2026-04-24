@@ -1283,7 +1283,13 @@ function appReducer(state, action) {
       // meter-log fan-out) to fire as if the user had flipped the
       // meter dropdown.
       if (n === state.beatsPerBar && d === state.meterDenominator) return state;
-      return { ...state, beatsPerBar: n, meterDenominator: d };
+      // Meter changed — the existing beatMap was tracked against the old
+      // numerator/denominator. Keeping it around makes the timeline+chord
+      // row render bars at stale positions (e.g. quarter-interval bars
+      // after user switches 7/4 → 7/8). Clear it; the detector reissues
+      // SET_BEAT_MAP when it has a fresh one, and synthetic fallback
+      // handles the interim from bpm + timelineOffset.
+      return { ...state, beatsPerBar: n, meterDenominator: d, beatMap: null };
     }
 
     case 'SET_TIMELINE_OFFSET':
