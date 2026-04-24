@@ -158,19 +158,22 @@ def generate_stemphonic(
                 B=B, T=T, device=device, dtype=dtype,
             )
             patch_size = getattr(handler.model.decoder, 'patch_size', 2)
-            # Decoder rounds T UP to the next multiple of patch_size for
-            # its hidden-state grid, so T=287 with patch_size=2 produces
-            # 144 tokens (not 143 = floor(287/2)). Floor-div here caused
-            # every MIDI hook to skip with
-            #   "size of tensor a (144) must match tensor b (143)"
-            # and the model saw no MIDI conditioning even though midi_tensor
-            # was populated.
+            # Decoder rounds T UP to patch_size multiples (T=287, patch=2
+            # → 144 tokens). Two alignment steps:
+            #   1. Pad/trim mf along the frame axis to T_dec*patch_size so
+            #      the reshape divides evenly. Without the pad-up branch,
+            #      odd T (e.g. 225 for 9s) failed with
+            #        shape '[1, 113, 2, -1]' is invalid for input of size …
+            #      because mf[:,:226] only had 225 frames.
+            #   2. Reshape + mean over patch dim → [B, T_dec, D_midi].
             T_dec = -(-T // patch_size)
+            needed = T_dec * patch_size
             mf = midi_feat
-            if mf.shape[1] > T_dec:
-                mf = mf[:, :T_dec * patch_size].reshape(B, T_dec, patch_size, -1).mean(dim=2)
-            elif mf.shape[1] < T_dec:
-                mf = F.pad(mf, (0, 0, 0, T_dec - mf.shape[1]))
+            if mf.shape[1] > needed:
+                mf = mf[:, :needed]
+            elif mf.shape[1] < needed:
+                mf = F.pad(mf, (0, 0, 0, needed - mf.shape[1]))
+            mf = mf.reshape(B, T_dec, patch_size, -1).mean(dim=2)
             module._midi_features_for_hook = mf
         else:
             module._midi_features_for_hook = None
