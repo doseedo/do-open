@@ -1697,7 +1697,10 @@ def generate_training_style(prompt, midi_tensor=None, duration=16.0, steps=50, c
                 B=1, T=T, device=device, dtype=dtype,
             )
             patch_size = getattr(handler.model.decoder, 'patch_size', 2)
-            T_dec = T // patch_size
+            # Ceiling-div: decoder token grid rounds T UP to patch_size
+            # multiples (T=287, patch=2 → 144). Floor-div produced 143 and
+            # the per-layer MIDI hook silently skipped with a shape mismatch.
+            T_dec = -(-T // patch_size)
             mf = midi_feat
             if mf.shape[1] > T_dec:
                 mf = mf[:, :T_dec * patch_size].reshape(1, T_dec, patch_size, -1).mean(dim=2)
@@ -1848,7 +1851,10 @@ def generate_with_model_api(prompt, midi_tensor=None, fsq_tokens=None,
                 B=1, T=T, device=device, dtype=dtype,
             )
             patch_size = getattr(handler.model.decoder, 'patch_size', 2)
-            T_dec = T // patch_size
+            # Ceiling-div: decoder token grid rounds T UP to patch_size
+            # multiples (T=287, patch=2 → 144). Floor-div produced 143 and
+            # the per-layer MIDI hook silently skipped with a shape mismatch.
+            T_dec = -(-T // patch_size)
             mf = midi_feat
             if mf.shape[1] > T_dec:
                 mf = mf[:, :T_dec * patch_size].reshape(1, T_dec, patch_size, -1).mean(dim=2)

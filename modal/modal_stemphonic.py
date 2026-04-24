@@ -282,20 +282,30 @@ def _ignore_patterns(*extra):
         "*.swp", "**/*.swp", "*.swo", "**/*.swo",
         "*.tmp", "**/*.tmp",
         "*.log", "**/*.log",
+        # Live training-run artifact dirs under _DO2 that dump multi-GB
+        # checkpoints while a training job runs. Modal's copy races the
+        # writer and trips "file modified during build". None of these
+        # are needed server-side — inference ckpts come from the volumes.
+        "polypitch-mask-unet-trainer", "**/polypitch-mask-unet-trainer",
+        "**/polypitch-mask-unet-trainer/**",
+        "stemphonic_trainer/runs", "**/stemphonic_trainer/runs",
+        "**/stemphonic_trainer/runs/**",
+        "stemphonic_trainer/checkpoints", "**/stemphonic_trainer/checkpoints",
+        "**/stemphonic_trainer/checkpoints/**",
     ]
     return base + list(extra)
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install(
-        # NOTE: fluidsynth + fluid-soundfont-gm deliberately omitted.
-        # The stemphonic_server.py MIDI→WAV render pipeline has moved to
-        # the latent soundfont path (latent_soundfont.synth, reading per-
-        # instrument .pt latents from /scratch/latent_soundfonts). The only
-        # 'fluidsynth' reference left in the server is a stale comment on
-        # line 735, and the INSTRUMENT_SOUNDFONTS sf2 dict (lines 117-137)
-        # is never iterated against a fluidsynth subprocess. Dropping this
-        # apt package saves ~400 MB of image size.
+        # fluidsynth + fluid-soundfont-gm restored 2026-04-24. The latent
+        # soundfont path is supposed to be the primary MIDI→latent route,
+        # but its Python package (`latent_soundfont`) isn't present in the
+        # Mac deploy tree, so _latent_sf_synthesize_midi always returns None
+        # and render_midi_to_audio falls back to fluidsynth. Without the
+        # binary AND a default .sf2, that fallback further falls to
+        # pretty_midi's pure-Python sine oscillator — which is what was
+        # producing the "sounds a bit off" renders the model conditioned on.
         "ffmpeg",
         "libsndfile1",
         "libsndfile1-dev",
@@ -303,6 +313,8 @@ image = (
         "libglib2.0-0",
         "git",
         "build-essential",
+        "fluidsynth",
+        "fluid-soundfont-gm",
     )
     # madmom==0.16.1 ships only an sdist, and its setup.py does
     # `from Cython.Build import cythonize` at import time. pip's per-package
