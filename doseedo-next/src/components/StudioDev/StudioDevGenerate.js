@@ -4,7 +4,7 @@
  * Wired to the stemphonic 130k Modal backend (/api/generate-stemphonic).
  * Instrument is picked from the left-sidebar palette (selectedInstrument
  * prop — group/subgroup). Drum / vocal mode derives from that. This
- * panel just handles prompt + advanced diffusion params.
+ * panel just handles advanced diffusion params.
  *
  * The currently selected track is auto-loaded as the generation input
  * (MIDI track → midiFile, audio track → refAudio — server runs
@@ -26,7 +26,6 @@ const ADV_SLIDERS = [
 
 export default function StudioDevGenerate({ onClose, embedded = false, selectedInstrument = null }) {
   const { state, dispatch } = useApp();
-  const [prompt, setPrompt] = useState('');
   const [running, setRunning] = useState(false);
   const [status,  setStatus]  = useState('');
   const [error,   setError]   = useState(null);
@@ -114,7 +113,10 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
       const isDrum = grp === 'drums';
       const isVox  = grp === 'vocals';
       const params = {
-        prompt: prompt || sub.replace(/_/g, ' '),
+        // No user-facing text prompt — server derives the caption from
+        // `instrument` via TRAINING_CAPTIONS. We still send the subgroup as
+        // `prompt` for the no-match fallback path.
+        prompt: sub.replace(/_/g, ' '),
         instrument: sub,
         timbre_preset: `${sub}:${selectedInstrument.sub || 'default'}`,
         steps: advParams.steps,
@@ -160,7 +162,7 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
             busId,
             track: {
               id: trackId,
-              name: `Gen · ${prompt.slice(0, 24) || selectedInstrument.label}`,
+              name: `Gen · ${selectedInstrument.label}`,
               audioUrl: firstUrl,
               duration: result.duration || params.duration,
               startPosition: 0,
@@ -204,11 +206,6 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
       )}
 
       <div className="sd-gen-body">
-        <div className="sd-label">Prompt</div>
-        <textarea className="sd-gen-textarea" rows={3}
-                  placeholder="e.g. warm rhodes, relaxed shuffle, 90 bpm…"
-                  value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-
         {selectedInstrument && (
           <div className="sd-gen-input-info">
             <span>Instrument</span>
