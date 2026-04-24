@@ -585,11 +585,15 @@ export default function StudioDev() {
           },
         },
       });
-      // Propagate detectedBpm/Meter onto any stem tracks that already
-      // exist. dispatchStrategy (virtualTrackEdit.js) reads these to know
-      // the source meter when building a keep/drop rearrange schedule;
-      // without them it falls back to project.bpm / project.meter and
-      // the schedule becomes identity (no rearrangement on meter change).
+      // Propagate rhythm analysis onto every stem track that already exists.
+      // virtualTrackEdit reads ALL of these off track.metadata when building
+      // meter-change schedules. Without barStarts + downbeatOffset, the
+      // drum converter's buildOnsetStretchSchedule falls through to
+      // synthBarStarts(downbeatOffset=0) → bar 1 in the output lands at
+      // dst=0 while the timeline ruler stays at timelineOffset=0.789s,
+      // and every substem drifts independently per play.
+      const propagatedBarStarts = (ra.beat_map || [])
+        .filter((b) => b.pos === 1).map((b) => b.t);
       (stateRef.current.buses || []).forEach((bus) => {
         (bus.tracks || []).forEach((track) => {
           if (track?.metadata?.parentTrackId !== trackId) return;
@@ -602,6 +606,10 @@ export default function StudioDev() {
                   detectedBpm: ra.bpm,
                   detectedMeter: ra.beatsPerBar,
                   detectedMeterDenominator: ra.meterDenominator,
+                  detectedGrouping: ra.grouping,
+                  barStarts: propagatedBarStarts,
+                  downbeatOffset: ra.downbeat_offset,
+                  tempoMap: ra.tempoMap,
                 },
               },
             },
@@ -869,6 +877,14 @@ export default function StudioDev() {
           detectedBpm: parentMetaNow.detectedBpm,
           detectedMeter: parentMetaNow.detectedMeter,
           detectedMeterDenominator: parentMetaNow.detectedMeterDenominator,
+          // Rhythm-analysis outputs — required by virtualTrackEdit's drum
+          // converter. Without barStarts + downbeatOffset the converter
+          // synthesizes bar 1 at dst=0, misaligning every substem against
+          // the ruler (timelineOffset still points at the real downbeat).
+          detectedGrouping: parentMetaNow.detectedGrouping,
+          barStarts: parentMetaNow.barStarts,
+          downbeatOffset: parentMetaNow.downbeatOffset,
+          tempoMap: parentMetaNow.tempoMap,
           // Per-stem librosa onsets — consumed by
           // virtualTrackEdit.buildMelodicProtectedSchedule to gate bar
           // drops around sustained notes. Empty array = silent/no hits.
