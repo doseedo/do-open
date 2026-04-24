@@ -31,8 +31,17 @@ export function useSessionSync(dispatch) {
   useEffect(() => {
     if (location.pathname !== '/studio') return;
     const params = new URLSearchParams(location.search);
-    const sid = params.get('session');
+    let sid = params.get('session');
     const shareToken = params.get('share_token') || params.get('t') || undefined;
+    // Fallback: if the early-access gate redirected /studio?session=<uuid>
+    // to /studio and dropped the query param, use the last-hydrated session
+    // id from localStorage. Only applies on the FIRST mount (guarded by
+    // hydratedSessionIdRef) so subsequent in-app navigation to /studio
+    // without a param doesn't re-hydrate. Skip the fallback when a
+    // shareToken is in the URL — share-token URLs are always explicit.
+    if (!sid && !shareToken && hydratedSessionIdRef.current == null) {
+      sid = sessionService.getLastSyncedSessionId();
+    }
     if (!sid || hydratedSessionIdRef.current === sid) return;
 
     hydratedSessionIdRef.current = sid;
@@ -61,6 +70,10 @@ export function useSessionSync(dispatch) {
         hydratedSessionRef.current = { id: sid, version: res?.version ?? null };
         lastStalePromptRef.current = null;
         sessionService.setActiveProject(sid);
+        // Remember the last successfully hydrated remote session so the
+        // effect above can fall back to it when the early-access gate
+        // eats the ?session= query param.
+        sessionService.setLastSyncedSessionId(sid);
         navigate('/studio', { replace: true });
       } catch (err) {
         if (cancelled) return;
@@ -69,6 +82,10 @@ export function useSessionSync(dispatch) {
           alert('Sign in to open this session.');
         } else if (err?.status === 404) {
           alert('Session not found or has been removed.');
+          // The fallback key pointed at a deleted session — clear it so
+          // the next /studio mount opens a blank editor instead of
+          // alerting again.
+          sessionService.clearLastSyncedSessionId();
           navigate('/studio', { replace: true });
         } else {
           alert(`Could not load session: ${err?.message || 'network error'}`);

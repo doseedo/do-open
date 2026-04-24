@@ -1928,14 +1928,29 @@ export default function StudioDev() {
         .filter((t) => !t.metadata?.isBusMaster)
         .map((t) => {
           const type = (t.metadata?.stemType || t.metadata?.instrument || t.name || '').toLowerCase();
+          // Multi-clip tracks from desktop session-sync land in
+          // metadata.clips with Logic's region schema. When present, render
+          // each as its own region in the timeline lane. Field names from
+          // logic_sync: {startPosition, duration} at minimum; legacy {s,e}
+          // or {start, duration} supported for forward-compat.
+          const mclips = Array.isArray(t.metadata?.clips) ? t.metadata.clips : null;
+          let clips;
+          if (mclips && mclips.length > 0) {
+            clips = mclips.map((c) => {
+              const s = Number(c.s ?? c.startPosition ?? c.start ?? 0) || 0;
+              const dur = Number(c.duration ?? c.length ?? 0) || 0;
+              const e = Number.isFinite(c.e) ? Number(c.e) : s + dur;
+              return { s, e: Math.max(s + 0.1, e) };
+            });
+          } else {
+            const s = t.startPosition || 0;
+            clips = [{ s, e: Math.max(s + 1, s + (t.duration || 4)) }];
+          }
           return {
             _real: { ...t, _busId: bus.id },
             name: t.name || t.metadata?.stemType || t.id,
             color: colorFor(type),
-            clips: [{
-              s: t.startPosition || 0,
-              e: Math.max((t.startPosition || 0) + 1, (t.startPosition || 0) + (t.duration || 4)),
-            }],
+            clips,
           };
         }),
     };

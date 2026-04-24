@@ -18,6 +18,13 @@ const SESSION_PREFIX = 'session-';
 const PROJECTS_KEY = 'projects';
 const ACTIVE_PROJECT_KEY = 'activeProject';
 const LAST_SESSION_KEY = 'lastSession';
+// Remote (desktop-synced) session UUID — separate from ACTIVE_PROJECT_KEY
+// which can be either a UUID or a local project name depending on the code
+// path that wrote it. useSessionSync persists this key ONLY on successful
+// hydration so it can fall back to the last-hydrated session when the
+// early-access gate redirects /studio?session=<uuid> to /studio and the
+// query param is dropped.
+const LAST_SYNCED_SESSION_ID_KEY = 'lastSyncedSessionId';
 
 /**
  * Get list of all project names
@@ -324,6 +331,24 @@ export function setActiveProject(projectName) {
  */
 export function clearActiveProject() {
   localStorage.removeItem(ACTIVE_PROJECT_KEY);
+}
+
+// Last-synced remote session UUID. See LAST_SYNCED_SESSION_ID_KEY comment.
+export function getLastSyncedSessionId() {
+  const v = localStorage.getItem(LAST_SYNCED_SESSION_ID_KEY);
+  // Basic UUID-ish validation so a stray local project name can't pose as
+  // a session id. (Don't require strict v4; desktop may emit any uuid.)
+  if (!v || typeof v !== 'string') return null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+}
+
+export function setLastSyncedSessionId(sessionId) {
+  if (!sessionId) return;
+  localStorage.setItem(LAST_SYNCED_SESSION_ID_KEY, sessionId);
+}
+
+export function clearLastSyncedSessionId() {
+  localStorage.removeItem(LAST_SYNCED_SESSION_ID_KEY);
 }
 
 /**

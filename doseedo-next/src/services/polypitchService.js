@@ -32,16 +32,34 @@ import { logPipeline } from './pipelineStatus';
 
 let _pipelinePromise = null;
 
+// A/B flag for the learned mask UNet.
+// - default (no query param, no localStorage key) → Hann4 classical fallback
+// - `?maskUnet=step15000` or `localStorage.polypitchMask = 'step15000'`
+//     → load /static/models/mask_unet_v1_step15000.onnx
+// Any other truthy value is treated as a direct URL.
+function resolveMaskUnetUrl() {
+  if (typeof window === 'undefined') return null;
+  const qs = new URLSearchParams(window.location.search).get('maskUnet');
+  const ls = (() => { try { return window.localStorage.getItem('polypitchMask'); } catch { return null; } })();
+  const v = qs ?? ls;
+  if (!v || v === 'off' || v === 'null' || v === 'hann4') return null;
+  if (v === 'step15000') return '/static/models/mask_unet_v1_step15000.onnx';
+  return v; // treat as direct URL
+}
+
 export function getPipeline() {
   if (!_pipelinePromise) {
     _pipelinePromise = (async () => {
-      logPipeline('polypitch', 'booting WebGPU kernels…');
+      const maskUrl = resolveMaskUnetUrl();
+      logPipeline('polypitch', `booting WebGPU kernels… (mask=${maskUrl ? 'unet:' + maskUrl : 'hann4'})`);
       const pipeline = await Pipeline.init({
-        // maskUNetUrl null → classical Hann4 harmonic mask (no ONNX).
-        // Wire a learned mask_unet.onnx URL here once it's trained.
-        maskUNetUrl: null,
+        maskUNetUrl: maskUrl,
       });
-      logPipeline('polypitch', 'ready (python-parity resample pitch-shift)', 'ok');
+      logPipeline(
+        'polypitch',
+        `ready (mask=${maskUrl ? 'unet' : 'hann4'}, python-parity resample pitch-shift)`,
+        'ok',
+      );
       return pipeline;
     })().catch((err) => {
       _pipelinePromise = null; // retry on next call
