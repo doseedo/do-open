@@ -1014,24 +1014,60 @@ export function getTrackSchedule(track, project) {
 const PERCUSSIVE_SUBSTEMS = new Set(['kick', 'snare', 'toms']);
 const HIHAT_SUBSTEMS = new Set(['hh', 'hat', 'hihat']);
 
-/** triplet idx 0-11 → tgt 16th idx (0-13) for 4+1.5+1.5 grouping of 7/8. */
-function tripletIdxTo16th_4_1p5_1p5(k) {
-  if (k < 0 || k >= 12) return -1;
-  const beat = Math.floor(k / 3);
-  const idx = k % 3;
-  if (beat < 2) return beat * 4 + idx;
-  return 8 + (beat - 2) * 3 + idx;
+/* ------------------------------------------------------------------
+ * TRIPLET_METER_RULES — triplet-source meter conversions.
+ *
+ * Separate from METER_RULES because the latter is eighth-coordinate and
+ * can't express triplet→16th re-quantization. When src is detected as
+ * triplet AND tgt can't fit triplets (any /8 or odd-numerator meter),
+ * we use these rules instead.
+ *
+ * Each rule defines:
+ *   srcTripletsPerBar     — always 12 for /4 sources, 9 for 3/4 etc.
+ *   tripletTo16th[k]      — src triplet k → tgt 16th idx (or -1 if dropped)
+ *   hh:    { path, srcTripletsInBar }  — hi-hat routing + WSOLA window
+ *   snare: { tripletSet }              — allowed src triplet positions
+ *   kick:  { boundary, interior, phraseLen, boundaryAt }
+ *                                       — phrase-aware triplet sets
+ *   general: { tripletSet }            — toms/ride/crash
+ * ------------------------------------------------------------------ */
+const TRIPLET_METER_RULES = {
+  '4/4->7/8': {
+    srcTripletsPerBar: 12,
+    // 4+1.5+1.5 grouping: src triplets 0-5 → tgt 16ths [0,1,2,4,5,6] (skip 3,7),
+    // src triplets 6-11 → tgt 16ths [8,9,10,11,12,13] (1:1).
+    tripletTo16th: [0, 1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13],
+    hh: { path: 'wsolaStretch', srcTripletsInBar: 13 },
+    snare: { tripletSet: [4, 7, 10] },       // backbeat "e" positions
+    kick: {
+      boundary: [0, 1, 3, 4, 6, 7, 9, 10],   // 8 hits incl. downbeat
+      interior: [1, 3, 4, 6, 7, 9, 10],      // 7 hits no downbeat
+      phraseLen: 4,                           // 4-bar phrase
+      boundaryAt: [0, 3],                     // phrase-mod-4 positions with downbeat
+    },
+    general: { tripletSet: [0, 1, 3, 4, 6, 7, 9, 10] },
+  },
+  // Add other triplet-aware meter pairs here (4/4↔3/4, 4/4↔5/4 etc.)
+  // as they're empirically tuned against hand-corrected references.
+};
+
+function tripletRuleFor(srcMeter, tgtMeter) {
+  const key = `${srcMeter[0]}/${srcMeter[1]}->${tgtMeter[0]}/${tgtMeter[1]}`;
+  return TRIPLET_METER_RULES[key] || null;
 }
 
 /**
- * Simple onset-to-onset WSOLA stretch schedule. Take the user's explanation:
- *   "take 14 of the triplets, time stretch so it fits the bar of 7, offset a bit"
+ * Triplet-source meter conversion. Reads TRIPLET_METER_RULES for the
+ * current meter pair and emits WSOLA stretch segments.
  *
- *   HI-HAT: per bar emit ONE rate≠1 segment that stretches 14 src triplet
- *     positions into the 7/8 tgt bar.
- *   KICK/SNARE/TOMS/RIDE/CRASH: find the nearest src onset to each expected
- *     triplet position in the bar, emit one stretch segment per consecutive
- *     (src, dst) pair. Rate varies by local src/dst gap.
+ *   HI-HAT (rule.hh.path === 'wsolaStretch'): per bar emit ONE rate≠1
+ *     segment stretching `srcTripletsInBar * srcTripletLen` → tgt bar.
+ *     User's method: "take 14 triplets, stretch to fit 7/8, offset to grid."
+ *
+ *   KICK / SNARE / TOMS / RIDE / CRASH: per bar, for each allowed src
+ *     triplet position, find nearest src onset; emit WSOLA stretch
+ *     between consecutive (srcT, dstT) pairs. Rate varies per segment
+ *     to match local src/tgt spacing.
  */
 function buildOnsetStretchSchedule({
   duration, onsets, srcMeter, tgtMeter, bpm, substemName,
@@ -1041,6 +1077,9 @@ function buildOnsetStretchSchedule({
   if (srcMeter[0] === tgtMeter[0] && srcMeter[1] === tgtMeter[1]) {
     return identitySchedule(duration, cropStart);
   }
+  const rule = tripletRuleFor(srcMeter, tgtMeter);
+  if (!rule) return [];   // no triplet handling for this meter pair
+
   const starts = (barStarts && barStarts.length >= 2)
     ? barStarts : synthBarStarts(duration, bpm, srcMeter, downbeatOffset);
   const [sn, sd] = srcMeter;
@@ -1052,10 +1091,9 @@ function buildOnsetStretchSchedule({
   const isHiHat = HIHAT_SUBSTEMS.has(substemName);
   const onsetsArr = Array.isArray(onsets) ? onsets : [];
 
-  const KICK_BOUNDARY = [0, 1, 3, 4, 6, 7, 9, 10];
-  const KICK_INTERIOR = [1, 3, 4, 6, 7, 9, 10];
-  const SNARE_EXP = [4, 7, 10];
-  const GENERAL_EXP = [0, 1, 3, 4, 6, 7, 9, 10];
+  // Rule-driven triplet sets per substem role.
+  const SNARE_EXP   = rule.snare?.tripletSet   || [];
+  const GENERAL_EXP = rule.general?.tripletSet || [];
 
   let firstActiveBarIdx = -1;
   for (let b = 0; b < starts.length - 1; b++) {
@@ -1076,26 +1114,26 @@ function buildOnsetStretchSchedule({
     dstCursor = starts[0];
   }
 
-  if (isHiHat) {
-    // ONE stretch segment per bar: src [sbs, sbs + 13*trp] → tgt bar.
-    // 14 hits across 13 src triplet intervals; only 1 triplet borrowed
-    // from next bar (vs 2 with 14*trp), so the last tgt 16th pulls audio
-    // just past the src bar boundary — softer than the downbeat accent
-    // that hit the last-16th at 14*trp.
+  if (isHiHat && rule.hh?.path === 'wsolaStretch') {
+    // ONE stretch segment per bar: src window = srcTripletsInBar * trp.
+    // Pulls that span of src triplets into the tgt bar. Rule-configured
+    // srcTripletsInBar (e.g. 13 for 4/4→7/8) controls how far we borrow
+    // from the next src bar — shorter = softer last-16th.
+    const tripletsInBar = rule.hh.srcTripletsInBar;
     for (let b = 0; b < starts.length - 1; b++) {
       const sbs = starts[b], sbe = starts[b + 1];
       const srcBarLen = sbe - sbs;
       if (srcBarLen <= EPS) continue;
       const srcEighthLen = srcBarLen / srcEighths;
       const tgtBarLen = srcEighthLen * tgtEighths;
-      const srcTripletLen = srcBarLen / 12;
-      const srcEnd = Math.min(duration, sbs + 13 * srcTripletLen);
+      const srcTripletLen = srcBarLen / rule.srcTripletsPerBar;
+      const srcEnd = Math.min(duration, sbs + tripletsInBar * srcTripletLen);
       if (srcEnd <= sbs + EPS) { dstCursor += tgtBarLen; continue; }
-      const rate = (srcEnd - sbs) / tgtBarLen;
+      const rateB = (srcEnd - sbs) / tgtBarLen;
       segs.push({
         srcStart: cropStart + sbs, srcEnd: cropStart + srcEnd,
         dstStart: dstCursor, dstEnd: dstCursor + tgtBarLen,
-        rate, fadeIn: 0.002, fadeOut: 0.01, kind: 'hhStretch',
+        rate: rateB, fadeIn: 0.002, fadeOut: 0.01, kind: 'hhStretch',
       });
       dstCursor += tgtBarLen;
     }
@@ -1103,6 +1141,12 @@ function buildOnsetStretchSchedule({
   }
 
   // Kick / snare / toms / ride / crash — per-onset placement w/ stretch.
+  // Each substem's allowed triplet positions come from the rule; kick's
+  // per-phrase filter picks boundary-bar vs interior-bar sets based on
+  // bar-mod-`phraseLen`.
+  const kickRule = rule.kick || { boundary: [], interior: [], phraseLen: 4, boundaryAt: [] };
+  const kickBoundarySet = new Set(kickRule.boundaryAt || [0]);
+  const tripletTo16th = rule.tripletTo16th || [];
   const mappings = [];
   let dstC = starts[0] > EPS ? starts[0] : 0;
   for (let b = 0; b < starts.length - 1; b++) {
@@ -1111,13 +1155,15 @@ function buildOnsetStretchSchedule({
     if (srcBarLen <= EPS) continue;
     const srcEighthLen = srcBarLen / srcEighths;
     const tgtBarLen = srcEighthLen * tgtEighths;
-    const srcTripletLen = srcBarLen / 12;
+    const srcTripletLen = srcBarLen / rule.srcTripletsPerBar;
     const tgtSlotLen = tgtBarLen / nTgtSlots;
     let expected;
     if (substemName === 'snare') expected = SNARE_EXP;
     else if (substemName === 'kick') {
-      const phrasePos = firstActiveBarIdx >= 0 ? (b - firstActiveBarIdx) % 4 : 0;
-      expected = (phrasePos === 0 || phrasePos === 3) ? KICK_BOUNDARY : KICK_INTERIOR;
+      const phrasePos = firstActiveBarIdx >= 0
+        ? (b - firstActiveBarIdx) % (kickRule.phraseLen || 4)
+        : 0;
+      expected = kickBoundarySet.has(phrasePos) ? kickRule.boundary : kickRule.interior;
     } else expected = GENERAL_EXP;
     const inBar = onsetsArr.filter((o) => o >= sbs && o < sbe);
     const used = new Set();
@@ -1131,8 +1177,8 @@ function buildOnsetStretchSchedule({
       }
       if (nearest === null) continue;
       used.add(nearest);
-      const tgt16th = tripletIdxTo16th_4_1p5_1p5(trpIdx);
-      if (tgt16th < 0 || tgt16th >= nTgtSlots) continue;
+      const tgt16th = tripletTo16th[trpIdx];
+      if (tgt16th === undefined || tgt16th < 0 || tgt16th >= nTgtSlots) continue;
       mappings.push({ srcT: nearest, dstT: dstC + tgt16th * tgtSlotLen });
     }
     dstC += tgtBarLen;
@@ -1682,6 +1728,11 @@ export function getTrackSubstemSchedules(track, project) {
   const tgtFitsTriplet = patternFitsTargetMeter(3, tgtMeter);
   const anyTriplet = ['kick', 'snare', 'toms', 'hh', 'ride', 'crash']
     .some((n) => Array.isArray(subOnsets[n]) && detectHitsPerBeat(subOnsets[n], duration, srcBpm) === 3);
+  // Triplet path only fires when a rule is defined for this meter pair.
+  // Other meter pairs fall through to the existing METER_RULES /
+  // buildPercussiveSubstemSchedule path — which works fine for
+  // non-triplet sources.
+  const hasTripletRule = !!tripletRuleFor(srcMeter, tgtMeter);
 
   const out = {};
   for (const [name, audioUrl] of Object.entries(subUrls)) {
@@ -1693,10 +1744,11 @@ export function getTrackSubstemSchedules(track, project) {
     if (identity) {
       schedule = identitySchedule(duration, cropStart);
       kind = 'identity';
-    } else if (hasOnsets && !tgtFitsTriplet && anyTriplet) {
-      // Triplet source + odd target (7/8 etc.): user's manual method —
-      // hi-hat = whole-bar WSOLA stretch (14 triplets → 7/8 bar),
-      // everything else = per-onset stretch at expected tgt 16th positions.
+    } else if (hasOnsets && !tgtFitsTriplet && anyTriplet && hasTripletRule) {
+      // Triplet source + odd target (7/8 etc.) + rule defined in
+      // TRIPLET_METER_RULES for this meter pair. User's manual method —
+      // hi-hat = whole-bar WSOLA stretch, others = per-onset stretch
+      // at expected tgt 16th positions.
       schedule = buildOnsetStretchSchedule({
         duration, onsets: onsetsHere,
         srcMeter, tgtMeter, bpm: srcBpm, substemName: name,
