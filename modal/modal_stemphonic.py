@@ -92,7 +92,10 @@ _IS_MAC = platform.system() == "Darwin"
 
 if _IS_MAC:
     _DO2      = Path.home() / "Downloads/Do"
-    _ACE_STEP = Path.home() / "Downloads/ACE-Step"
+    # ~/Downloads/ACE-Step is vanilla upstream and is missing the
+    # server-side additions (acestep/handler.py, core/generation/*).
+    # deploy_resources/ACE-Step-1.5 is the fork bundled with this repo.
+    _ACE_STEP = _DO2 / "deploy_resources/ACE-Step-1.5"
     # On Mac the harmonymodule tree lives inside the Do repo.
     _HARMONYMODULE = _DO2 / "home/arlo/harmonymodule"
 else:
@@ -656,13 +659,9 @@ class Stemphonic:
         """
         import logging, os, threading, urllib.error, urllib.request, json as _json
 
-        # Filesystem writes from the snap=True phase do NOT survive a
-        # memory-snapshot restore, so rebuild the symlink tree + sys.path
-        # before touching stemphonic_server. Without this, load_model's
-        # `from acestep.handler import AceStepHandler` fails with
-        # ModuleNotFoundError and handler stays None for the container's
-        # entire life, causing every /api/generate-stemphonic task to die
-        # with "'NoneType' object has no attribute 'text_tokenizer'".
+        # Rebuild the symlink tree + sys.path. Idempotent — safe even if
+        # Modal's memory-snapshot restore turns out to preserve them;
+        # cheap insurance against any future snapshot behavior change.
         self._build_fs_and_paths()
 
         stemphonic_server = self._server_module
