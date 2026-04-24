@@ -1012,252 +1012,6 @@ export function getTrackSchedule(track, project) {
  * ------------------------------------------------------------------ */
 
 const PERCUSSIVE_SUBSTEMS = new Set(['kick', 'snare', 'toms']);
-const HIHAT_SUBSTEMS = new Set(['hh', 'hat', 'hihat']);
-
-/* ------------------------------------------------------------------
- * TRIPLET_METER_RULES — triplet-source meter conversions.
- *
- * Separate from METER_RULES because the latter is eighth-coordinate and
- * can't express triplet→16th re-quantization. When src is detected as
- * triplet AND tgt can't fit triplets (any /8 or odd-numerator meter),
- * we use these rules instead.
- *
- * Each rule defines:
- *   srcTripletsPerBar     — always 12 for /4 sources, 9 for 3/4 etc.
- *   tripletTo16th[k]      — src triplet k → tgt 16th idx (or -1 if dropped)
- *   hh:    { path, srcTripletsInBar }  — hi-hat routing + WSOLA window
- *   snare: { tripletSet }              — allowed src triplet positions
- *   kick:  { boundary, interior, phraseLen, boundaryAt }
- *                                       — phrase-aware triplet sets
- *   general: { tripletSet }            — toms/ride/crash
- * ------------------------------------------------------------------ */
-const TRIPLET_METER_RULES = {
-  '4/4->7/8': {
-    srcTripletsPerBar: 12,
-    // 4+1.5+1.5 grouping: src triplets 0-5 → tgt 16ths [0,1,2,4,5,6] (skip 3,7),
-    // src triplets 6-11 → tgt 16ths [8,9,10,11,12,13] (1:1).
-    tripletTo16th: [0, 1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13],
-    hh: { path: 'wsolaStretch', srcTripletsInBar: 13 },
-    snare: { tripletSet: [4, 7, 10] },       // backbeat "e" positions
-    kick: {
-      boundary: [0, 1, 3, 4, 6, 7, 9, 10],   // 8 hits incl. downbeat
-      interior: [1, 3, 4, 6, 7, 9, 10],      // 7 hits no downbeat
-      phraseLen: 4,                           // 4-bar phrase
-      boundaryAt: [0, 3],                     // phrase-mod-4 positions with downbeat
-    },
-    general: { tripletSet: [0, 1, 3, 4, 6, 7, 9, 10] },
-  },
-  // Add other triplet-aware meter pairs here (4/4↔3/4, 4/4↔5/4 etc.)
-  // as they're empirically tuned against hand-corrected references.
-};
-
-function tripletRuleFor(srcMeter, tgtMeter) {
-  const key = `${srcMeter[0]}/${srcMeter[1]}->${tgtMeter[0]}/${tgtMeter[1]}`;
-  return TRIPLET_METER_RULES[key] || null;
-}
-
-/**
- * Triplet-source meter conversion. Reads TRIPLET_METER_RULES for the
- * current meter pair and emits WSOLA stretch segments.
- *
- *   HI-HAT (rule.hh.path === 'wsolaStretch'): per bar emit ONE rate≠1
- *     segment stretching `srcTripletsInBar * srcTripletLen` → tgt bar.
- *     User's method: "take 14 triplets, stretch to fit 7/8, offset to grid."
- *
- *   KICK / SNARE / TOMS / RIDE / CRASH: per bar, for each allowed src
- *     triplet position, find nearest src onset; emit WSOLA stretch
- *     between consecutive (srcT, dstT) pairs. Rate varies per segment
- *     to match local src/tgt spacing.
- */
-function buildOnsetStretchSchedule({
-  duration, onsets, srcMeter, tgtMeter, bpm, substemName,
-  downbeatOffset = 0, cropStart = 0, barStarts,
-}) {
-  if (!(duration > 0)) return [];
-  if (srcMeter[0] === tgtMeter[0] && srcMeter[1] === tgtMeter[1]) {
-    return identitySchedule(duration, cropStart);
-  }
-  const rule = tripletRuleFor(srcMeter, tgtMeter);
-  if (!rule) return [];   // no triplet handling for this meter pair
-
-  const starts = (barStarts && barStarts.length >= 2)
-    ? barStarts : synthBarStarts(duration, bpm, srcMeter, downbeatOffset);
-  const [sn, sd] = srcMeter;
-  const [tn, td] = tgtMeter;
-  const srcEighths = sn * (sd === 4 ? 2 : 1);
-  const tgtEighths = tn * (td === 4 ? 2 : 1);
-  const subdivPerEighth = chooseTargetSubdivPerEighth(bpm);
-  const nTgtSlots = tgtEighths * subdivPerEighth;
-  const isHiHat = HIHAT_SUBSTEMS.has(substemName);
-  const onsetsArr = Array.isArray(onsets) ? onsets : [];
-
-  // Rule-driven triplet sets per substem role.
-  const SNARE_EXP   = rule.snare?.tripletSet   || [];
-  const GENERAL_EXP = rule.general?.tripletSet || [];
-
-  // Phrase-alignment anchor: the first bar that has enough kick onsets to
-  // look like a full bar of groove, not a late-in-bar pickup. Without this,
-  // a src drum stem with 3-4 pickup kicks in bar N and the real groove
-  // starting in bar N+1 would see phrasePos = 0 at bar N, then bar N+1
-  // (the first REAL boundary bar) gets labeled phrasePos=1 (interior) and
-  // emits an interior-only pattern for the first groove bar. User's
-  // hand-corrected reference shows the first groove bar should be a
-  // boundary pattern [0, 1, 4, 5, 8, 9, 11, 12] — matched by setting the
-  // phrase anchor at the first bar with >=5 kick onsets (tuned to the
-  // standard 7-8-hit boundary/interior sets). Falls back to "any onset"
-  // for sparse substems (ride/crash/toms) via the substem-specific path.
-  const GROOVE_MIN = substemName === 'kick' ? 5 : 1;
-  let firstActiveBarIdx = -1;
-  let anyActiveBarIdx = -1;
-  for (let b = 0; b < starts.length - 1; b++) {
-    const barLen = starts[b + 1] - starts[b];
-    const inBar = onsetsArr.filter((o) => o >= starts[b] && o < starts[b + 1]);
-    if (inBar.length >= 1 && anyActiveBarIdx < 0) anyActiveBarIdx = b;
-    if (inBar.length >= GROOVE_MIN) {
-      // A "groove bar" has at least one hit in the first quarter of the bar —
-      // excludes pickup bars where onsets cluster in the last half of the
-      // bar. Without this, a drum stem whose pickup has 4-5 kicks in the
-      // final half of bar N and the real groove starting at bar N+1 would
-      // anchor phrase position at bar N, flipping bar N+1 from boundary
-      // (which the reference shows it should be) to interior.
-      const firstQuarterHits = inBar.filter(
-        (o) => (o - starts[b]) < barLen * 0.25,
-      ).length;
-      if (firstQuarterHits >= 1) { firstActiveBarIdx = b; break; }
-    }
-  }
-  if (firstActiveBarIdx < 0) firstActiveBarIdx = anyActiveBarIdx;
-
-  const segs = [];
-  let dstCursor = 0;
-  if (starts[0] > EPS) {
-    // Preroll plays raw source [0, starts[0]) at dst [0, starts[0]) so the
-    // pickup survives. It used to extend 500ms PAST starts[0] to preserve
-    // the acoustic tail of pickup hits — but that overlaps the mapped
-    // segments (which also begin at dst=starts[0]) and re-fires the first
-    // downbeat hit that's already in the raw source. With the preroll +
-    // mapped layer playing the same hit 500ms apart the downbeat smeared,
-    // and the per-substem overlap even shifted perceptually per play. Cap
-    // strictly at starts[0] — bar 1 onwards is owned by the mapped
-    // schedule. The mapped layer's first segment gets a short fadeIn to
-    // hide the pickup-tail chop.
-    segs.push({
-      srcStart: cropStart, srcEnd: cropStart + starts[0],
-      dstStart: 0, dstEnd: starts[0],
-      rate: 1, fadeIn: 0, fadeOut: 0.02, kind: 'preroll',
-    });
-    dstCursor = starts[0];
-  }
-
-  if (isHiHat && rule.hh?.path === 'wsolaStretch') {
-    // Per user's rule — "14 16ths in a bar of 7, don't remove the 2 you
-    // borrow from next bar". Each target 16th gets ONE hi-hat sample.
-    // Strategy: map each target 16th k (0..13) to its expected src time
-    //   wantSrc = sbs + k * srcTripletLen
-    // then paste the NEAREST detected hh onset's first ~16th worth of
-    // audio at the target slot. Using nearest-onset (not per-triplet
-    // window) fills early-bar slots that would otherwise be silent
-    // because the source happens to have no hh hit there — a borrowed
-    // sample keeps the 14-16th-per-bar density matching the reference.
-    for (let b = 0; b < starts.length - 1; b++) {
-      const sbs = starts[b], sbe = starts[b + 1];
-      const srcBarLen = sbe - sbs;
-      if (srcBarLen <= EPS) continue;
-      const srcEighthLen = srcBarLen / srcEighths;
-      const tgtBarLen = srcEighthLen * tgtEighths;
-      const srcTripletLen = srcBarLen / rule.srcTripletsPerBar;
-      const nTgtSixteenths = tgtEighths * 2;
-      const tgt16thLen = tgtBarLen / nTgtSixteenths;
-      for (let k = 0; k < nTgtSixteenths; k++) {
-        const wantSrc = sbs + k * srcTripletLen;
-        // Nearest hh onset to the wanted src time. Whole-stem scan.
-        let nearest = null, minDist = Infinity;
-        for (const o of onsetsArr) {
-          const d = Math.abs(o - wantSrc);
-          if (d < minDist) { minDist = d; nearest = o; }
-        }
-        if (nearest === null) continue;
-        const srcT = nearest;
-        const srcEndT = Math.min(duration, srcT + tgt16thLen);
-        if (srcEndT <= srcT + EPS) continue;
-        const dstT = dstCursor + k * tgt16thLen;
-        const dstEndT = dstT + tgt16thLen;
-        segs.push({
-          srcStart: cropStart + srcT, srcEnd: cropStart + srcEndT,
-          dstStart: dstT, dstEnd: dstEndT,
-          rate: 1, fadeIn: 0.001, fadeOut: 0.003, kind: 'hh16th',
-        });
-      }
-      dstCursor += tgtBarLen;
-    }
-    return segs;
-  }
-
-  // Kick / snare / toms / ride / crash — per-onset placement w/ stretch.
-  // Each substem's allowed triplet positions come from the rule; kick's
-  // per-phrase filter picks boundary-bar vs interior-bar sets based on
-  // bar-mod-`phraseLen`.
-  const kickRule = rule.kick || { boundary: [], interior: [], phraseLen: 4, boundaryAt: [] };
-  const kickBoundarySet = new Set(kickRule.boundaryAt || [0]);
-  const tripletTo16th = rule.tripletTo16th || [];
-  const mappings = [];
-  let dstC = starts[0] > EPS ? starts[0] : 0;
-  for (let b = 0; b < starts.length - 1; b++) {
-    const sbs = starts[b], sbe = starts[b + 1];
-    const srcBarLen = sbe - sbs;
-    if (srcBarLen <= EPS) continue;
-    const srcEighthLen = srcBarLen / srcEighths;
-    const tgtBarLen = srcEighthLen * tgtEighths;
-    const srcTripletLen = srcBarLen / rule.srcTripletsPerBar;
-    const tgtSlotLen = tgtBarLen / nTgtSlots;
-    let expected;
-    if (substemName === 'snare') expected = SNARE_EXP;
-    else if (substemName === 'kick') {
-      const phrasePos = firstActiveBarIdx >= 0
-        ? (b - firstActiveBarIdx) % (kickRule.phraseLen || 4)
-        : 0;
-      expected = kickBoundarySet.has(phrasePos) ? kickRule.boundary : kickRule.interior;
-    } else expected = GENERAL_EXP;
-    const inBar = onsetsArr.filter((o) => o >= sbs && o < sbe);
-    const used = new Set();
-    for (const trpIdx of expected) {
-      const expectedSrcT = sbs + trpIdx * srcTripletLen;
-      let nearest = null, minDist = srcTripletLen;
-      for (const o of inBar) {
-        if (used.has(o)) continue;
-        const d = Math.abs(o - expectedSrcT);
-        if (d < minDist) { minDist = d; nearest = o; }
-      }
-      if (nearest === null) continue;
-      used.add(nearest);
-      const tgt16th = tripletTo16th[trpIdx];
-      if (tgt16th === undefined || tgt16th < 0 || tgt16th >= nTgtSlots) continue;
-      mappings.push({ srcT: nearest, dstT: dstC + tgt16th * tgtSlotLen });
-    }
-    dstC += tgtBarLen;
-  }
-  mappings.sort((a, b) => a.srcT - b.srcT);
-  for (let i = 0; i < mappings.length; i++) {
-    const srcStart = mappings[i].srcT;
-    const dstStart = mappings[i].dstT;
-    const hasNext = i + 1 < mappings.length;
-    const srcEnd = hasNext ? mappings[i + 1].srcT : Math.min(duration, srcStart + 0.3);
-    const dstEnd = hasNext ? mappings[i + 1].dstT : dstStart + (srcEnd - srcStart);
-    if (srcEnd <= srcStart + EPS || dstEnd <= dstStart + EPS) continue;
-    const rate = (srcEnd - srcStart) / (dstEnd - dstStart);
-    // First mapped segment gets a slightly longer fadeIn to mask the
-    // preroll→mapped handoff at dst=starts[0]. Subsequent segments are
-    // onset-to-onset contiguous so 2ms is fine.
-    const fadeIn = (i === 0 && starts[0] > EPS) ? 0.015 : 0.002;
-    segs.push({
-      srcStart: cropStart + srcStart, srcEnd: cropStart + srcEnd,
-      dstStart, dstEnd,
-      rate, fadeIn, fadeOut: 0.01, kind: 'onsetStretch',
-    });
-  }
-  return segs;
-}
-
 const SUSTAIN_SUBSTEMS    = new Set(['hh', 'ride', 'crash']);
 
 /**
@@ -1774,58 +1528,30 @@ export function getTrackSubstemSchedules(track, project) {
     ? (meta.detectedGrouping || inferFiveFourGrouping(subOnsets, subStrengths, srcBpm, downbeatOffset))
     : null;
 
-  // Fall back to project.barStarts when the stem metadata didn't inherit
-  // the master's analyzed rhythm.
-  const resolvedBarStarts = (Array.isArray(meta.barStarts) && meta.barStarts.length >= 2)
-    ? meta.barStarts
-    : ((Array.isArray(project.barStarts) && project.barStarts.length >= 2) ? project.barStarts : null);
-  const resolvedDownbeat = typeof meta.downbeatOffset === 'number'
-    ? meta.downbeatOffset
-    : (typeof project.downbeatOffset === 'number' ? project.downbeatOffset : downbeatOffset);
-  const tgtFitsTriplet = patternFitsTargetMeter(3, tgtMeter);
-  const anyTriplet = ['kick', 'snare', 'toms', 'hh', 'ride', 'crash']
-    .some((n) => Array.isArray(subOnsets[n]) && detectHitsPerBeat(subOnsets[n], duration, srcBpm) === 3);
-  // Triplet path only fires when a rule is defined for this meter pair.
-  // Other meter pairs fall through to the existing METER_RULES /
-  // buildPercussiveSubstemSchedule path — which works fine for
-  // non-triplet sources.
-  const hasTripletRule = !!tripletRuleFor(srcMeter, tgtMeter);
-
   const out = {};
   for (const [name, audioUrl] of Object.entries(subUrls)) {
     if (!audioUrl) continue;
     let schedule;
     let kind;
-    const onsetsHere = subOnsets[name];
-    const hasOnsets = Array.isArray(onsetsHere) && onsetsHere.length > 0;
     if (identity) {
       schedule = identitySchedule(duration, cropStart);
       kind = 'identity';
-    } else if (hasOnsets && !tgtFitsTriplet && anyTriplet && hasTripletRule) {
-      // Triplet source + odd target (7/8 etc.) + rule defined in
-      // TRIPLET_METER_RULES for this meter pair. User's manual method —
-      // hi-hat = whole-bar WSOLA stretch, others = per-onset stretch
-      // at expected tgt 16th positions.
-      schedule = buildOnsetStretchSchedule({
-        duration, onsets: onsetsHere,
-        srcMeter, tgtMeter, bpm: srcBpm, substemName: name,
-        downbeatOffset: resolvedDownbeat, cropStart, barStarts: resolvedBarStarts,
-      });
-      kind = 'onsetStretch';
-    } else if (PERCUSSIVE_SUBSTEMS.has(name) && hasOnsets) {
+    } else if (PERCUSSIVE_SUBSTEMS.has(name) && Array.isArray(subOnsets[name]) && subOnsets[name].length > 0) {
       schedule = buildPercussiveSubstemSchedule({
-        duration, onsets: onsetsHere, strengths: subStrengths[name],
+        duration, onsets: subOnsets[name], strengths: subStrengths[name],
         srcMeter, tgtMeter, bpm: srcBpm, substemName: name,
-        downbeatOffset: resolvedDownbeat, cropStart, barStarts: resolvedBarStarts,
+        downbeatOffset, cropStart, barStarts: meta.barStarts,
         srcGrouping: meta.detectedGrouping || fiveFourGrouping || null,
         tgtGrouping: project.grouping || null,
       });
       kind = 'snap';
     } else {
+      // Sustain substem (hh/ride/crash) OR percussive substem with no
+      // onsets cached — fall through to the bar-rearrange path.
       schedule = buildMeterSchedule({
         duration, srcMeter, tgtMeter, bpm: srcBpm,
-        downbeatOffset: resolvedDownbeat, cropStart, barStarts: resolvedBarStarts,
-        tempoMap: meta.tempoMap || project.tempoMap || null,
+        downbeatOffset, cropStart, barStarts: meta.barStarts,
+        tempoMap: meta.tempoMap || null,
         tgtTempoMap: project.tempoMap || null,
         srcGrouping: meta.detectedGrouping || fiveFourGrouping || null,
         tgtGrouping: project.grouping || null,
