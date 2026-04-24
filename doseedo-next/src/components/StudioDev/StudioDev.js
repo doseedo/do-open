@@ -467,6 +467,29 @@ export default function StudioDev() {
     }
   }, [selectedTrack?.id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ---------- Debug bridge: auto-snapshot meter/tempo state ----------
+     Fires a `studio-state` mark whenever any rhythm-defining field changes,
+     so tailing /tmp/doseedo-studio-debug.jsonl shows what the timeline +
+     chord row are rendering against without any console-paste dance. */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const bm = state.beatMap;
+    const firstDownbeat = Array.isArray(bm) ? bm.find((b) => b?.pos === 1)?.t : null;
+    const bmMaxPos = Array.isArray(bm) && bm.length > 0
+      ? bm.reduce((m, b) => Math.max(m, b?.pos || 0), 0) : 0;
+    window.__doseedoDebug?.mark?.('studio-state', {
+      bpm: state.bpm,
+      beatsPerBar: state.beatsPerBar,
+      meterDenominator: state.meterDenominator,
+      timelineOffset: state.timelineOffset,
+      beatMapLen: Array.isArray(bm) ? bm.length : 0,
+      beatMapMaxPos: bmMaxPos,
+      firstDownbeatT: firstDownbeat ?? null,
+      tempoMapLen: Array.isArray(state.tempoMap) ? state.tempoMap.length : 0,
+      totalDuration: state.totalDuration,
+    });
+  }, [state.bpm, state.beatsPerBar, state.meterDenominator, state.timelineOffset, state.beatMap, state.tempoMap, state.totalDuration]);
+
   /* ---------- Actions ---------- */
   const togglePlay = useCallback(() => dispatch({ type: 'TOGGLE_PLAY' }), [dispatch]);
   const stopPlay = useCallback(() => {

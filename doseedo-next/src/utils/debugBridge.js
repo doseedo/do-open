@@ -147,18 +147,32 @@ export function installDebugBridge() {
   installed = true;
   if (typeof window === 'undefined') return;
 
-  // URL param sticky-save to localStorage.
+  // Auto-enable on localhost/dev so every /studio session captures logs
+  // without the user having to remember ?debug=1. Opt-out via ?debug=0.
+  // In production we stay dormant unless explicitly opted in.
+  const isLocalHost = (() => {
+    try {
+      const h = location.hostname;
+      return h === 'localhost' || h === '127.0.0.1' || h.endsWith('.local');
+    } catch { return false; }
+  })();
+
   try {
     const params = new URLSearchParams(window.location.search);
     if (params.get('debug') === '1') localStorage.setItem(STORAGE_KEY, 'on');
-    if (params.get('debug') === '0') localStorage.removeItem(STORAGE_KEY);
-    enabled = localStorage.getItem(STORAGE_KEY) === 'on';
+    if (params.get('debug') === '0') localStorage.setItem(STORAGE_KEY, 'off');
+    const stored = localStorage.getItem(STORAGE_KEY);
+    // Precedence: explicit 'off' wins on any host; 'on' wins; else localhost
+    // auto-enables, prod stays off.
+    if (stored === 'off') enabled = false;
+    else if (stored === 'on') enabled = true;
+    else enabled = isLocalHost;
   } catch {
-    enabled = false;
+    enabled = isLocalHost;
   }
 
   if (!enabled) {
-    hookGlobalBridge();   // expose enable() so user can turn it on at runtime
+    hookGlobalBridge();
     return;
   }
 
@@ -168,6 +182,10 @@ export function installDebugBridge() {
   hookErrors();
   hookGlobalBridge();
   push({ kind: 'session', msg: 'debugBridge installed', ua: navigator.userAgent, url: location.href });
+  // Loud console banner so it's obvious the bridge is active.
+  try {
+    originals.log?.('%c[doseedo-debug] bridge active — /tmp/doseedo-studio-debug.jsonl', 'color:#8B7FF0;font-weight:bold');
+  } catch {}
 }
 
 export function uninstallDebugBridge() {
