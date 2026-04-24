@@ -488,7 +488,33 @@ export default function StudioDev() {
       tempoMapLen: Array.isArray(state.tempoMap) ? state.tempoMap.length : 0,
       totalDuration: state.totalDuration,
     });
-  }, [state.bpm, state.beatsPerBar, state.meterDenominator, state.timelineOffset, state.beatMap, state.tempoMap, state.totalDuration]);
+    // Drum stem metadata — verifies the barStarts / downbeatOffset
+    // propagation fix actually landed on the drums stem track before the
+    // user flips meter. If meta.barStarts is empty/undefined here after
+    // rhythm analysis, the converter has no real downbeat anchor and the
+    // output misaligns against the ruler.
+    try {
+      for (const bus of (state.buses || [])) {
+        for (const t of (bus.tracks || [])) {
+          if (t?.metadata?.stemType !== 'drums' && t?.metadata?.instrument !== 'drums') continue;
+          const m = t.metadata || {};
+          const dbOnsets = m.drumSubstemOnsets || {};
+          window.__doseedoDebug?.mark?.('drum-stem-meta', {
+            trackId: t.id,
+            barStartsLen: Array.isArray(m.barStarts) ? m.barStarts.length : 0,
+            barStartsHead: Array.isArray(m.barStarts) ? m.barStarts.slice(0, 4) : null,
+            downbeatOffset: m.downbeatOffset ?? null,
+            detectedBpm: m.detectedBpm ?? null,
+            detectedMeter: m.detectedMeter ?? null,
+            detectedMeterDenominator: m.detectedMeterDenominator ?? null,
+            kickOnsetsHead: Array.isArray(dbOnsets.kick) ? dbOnsets.kick.slice(0, 6) : null,
+            snareOnsetsHead: Array.isArray(dbOnsets.snare) ? dbOnsets.snare.slice(0, 6) : null,
+            substemNames: Object.keys(m.drumSubstems || {}),
+          });
+        }
+      }
+    } catch {}
+  }, [state.bpm, state.beatsPerBar, state.meterDenominator, state.timelineOffset, state.beatMap, state.tempoMap, state.totalDuration, state.buses]);
 
   /* ---------- Actions ---------- */
   const togglePlay = useCallback(() => dispatch({ type: 'TOGGLE_PLAY' }), [dispatch]);
