@@ -450,6 +450,8 @@ export default function StudioDev() {
     state.beatsPerBar || 4,
     state.meterDenominator || 4,
     state.tempoMap || null,
+    state.beatMap || null,
+    state.timelineOffset || 0,
   );
 
   /* ---------- Auto-switch mode based on selected track type ---------- */
