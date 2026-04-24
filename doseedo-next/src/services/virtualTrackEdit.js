@@ -1105,11 +1105,20 @@ function buildOnsetStretchSchedule({
   const segs = [];
   let dstCursor = 0;
   if (starts[0] > EPS) {
-    const prerollEnd = Math.min(duration, starts[0] + 0.5);
+    // Preroll plays raw source [0, starts[0]) at dst [0, starts[0]) so the
+    // pickup survives. It used to extend 500ms PAST starts[0] to preserve
+    // the acoustic tail of pickup hits — but that overlaps the mapped
+    // segments (which also begin at dst=starts[0]) and re-fires the first
+    // downbeat hit that's already in the raw source. With the preroll +
+    // mapped layer playing the same hit 500ms apart the downbeat smeared,
+    // and the per-substem overlap even shifted perceptually per play. Cap
+    // strictly at starts[0] — bar 1 onwards is owned by the mapped
+    // schedule. The mapped layer's first segment gets a short fadeIn to
+    // hide the pickup-tail chop.
     segs.push({
-      srcStart: cropStart, srcEnd: cropStart + prerollEnd,
-      dstStart: 0, dstEnd: prerollEnd,
-      rate: 1, fadeIn: 0, fadeOut: 0.05, kind: 'preroll',
+      srcStart: cropStart, srcEnd: cropStart + starts[0],
+      dstStart: 0, dstEnd: starts[0],
+      rate: 1, fadeIn: 0, fadeOut: 0.02, kind: 'preroll',
     });
     dstCursor = starts[0];
   }
@@ -1192,10 +1201,14 @@ function buildOnsetStretchSchedule({
     const dstEnd = hasNext ? mappings[i + 1].dstT : dstStart + (srcEnd - srcStart);
     if (srcEnd <= srcStart + EPS || dstEnd <= dstStart + EPS) continue;
     const rate = (srcEnd - srcStart) / (dstEnd - dstStart);
+    // First mapped segment gets a slightly longer fadeIn to mask the
+    // preroll→mapped handoff at dst=starts[0]. Subsequent segments are
+    // onset-to-onset contiguous so 2ms is fine.
+    const fadeIn = (i === 0 && starts[0] > EPS) ? 0.015 : 0.002;
     segs.push({
       srcStart: cropStart + srcStart, srcEnd: cropStart + srcEnd,
       dstStart, dstEnd,
-      rate, fadeIn: 0.002, fadeOut: 0.01, kind: 'onsetStretch',
+      rate, fadeIn, fadeOut: 0.01, kind: 'onsetStretch',
     });
   }
   return segs;
