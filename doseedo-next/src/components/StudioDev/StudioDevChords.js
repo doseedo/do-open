@@ -38,6 +38,28 @@ export default function StudioDevChords() {
   };
 
   const BEATS_PER_BAR = state.beatsPerBar || 4;
+  const meterDen = state.meterDenominator || 4;
+  // One beat = quarter for /4 meters, eighth for /8. Affects synthetic
+  // (non-beatMap) time math for seconds-per-beat and seconds-per-bar.
+  const beatUnitFactor = meterDen === 8 ? 0.5 : 1;
+
+  // Cell grouping per bar. For 7/8 default 4+1.5+1.5 feel we render 4
+  // chord cells at eighth offsets [0, 2, 4, 6] with fr widths 2+2+1.5+1.5
+  // — playhead moves faster through the trailing pair. All other meters
+  // keep one cell per beat (the historical behavior).
+  const cellStartsPerBar = useMemo(
+    () => (meterDen === 8 && BEATS_PER_BAR === 7
+      ? [0, 2, 4, 6]
+      : Array.from({ length: BEATS_PER_BAR }, (_, i) => i)),
+    [meterDen, BEATS_PER_BAR],
+  );
+  const cellWidthsPerBar = useMemo(
+    () => (meterDen === 8 && BEATS_PER_BAR === 7
+      ? [2, 2, 1.5, 1.5]
+      : Array.from({ length: BEATS_PER_BAR }, () => 1)),
+    [meterDen, BEATS_PER_BAR],
+  );
+  const cellsPerBar = cellStartsPerBar.length;
 
   // First real downbeat in seconds. The rhythm analyzer writes a tempoMap
   // whose first entry (`tempoMap[0].t`) is the onset of bar 1 — for most
@@ -75,9 +97,10 @@ export default function StudioDevChords() {
       return lo;
     }
     const bpm = state.bpm || 120;
-    const spb = 60 / bpm;
+    // Synthetic fallback — eighth-note beats for /8 meters.
+    const spb = (60 / bpm) * beatUnitFactor;
     return Math.floor(pos / spb);
-  }, [state.playheadPosition, state.beatMap, state.bpm]);
+  }, [state.playheadPosition, state.beatMap, state.bpm, beatUnitFactor]);
 
   // Detector emits a sparse map keyed on chord-change beats; every beat in
   // between inherits the prior label. Carry it forward so sustained chords
@@ -133,10 +156,24 @@ export default function StudioDevChords() {
     return Math.max(BARS_VISIBLE, lastBar + 1);
   }, [lastChordBeat, BEATS_PER_BAR]);
 
-  const cells = Array.from(
-    { length: BARS_VISIBLE * BEATS_PER_BAR },
-    (_, i) => pageStartBar * BEATS_PER_BAR + i
-  );
+  // Per-bar cells. Each cell owns a beat range [beatStart, beatEnd) in
+  // the same per-eighth index space that state.chordTrack.chords uses,
+  // so chord storage + carry-forward still works untouched. For 7/8 the
+  // 4 cells are bar*7 + [0, 2, 4, 6] with ends [2, 4, 6, 7].
+  const cells = useMemo(() => {
+    const out = [];
+    for (let barOffset = 0; barOffset < BARS_VISIBLE; barOffset++) {
+      const bar = pageStartBar + barOffset;
+      for (let ci = 0; ci < cellsPerBar; ci++) {
+        const beatStart = bar * BEATS_PER_BAR + cellStartsPerBar[ci];
+        const beatEnd = ci + 1 < cellsPerBar
+          ? bar * BEATS_PER_BAR + cellStartsPerBar[ci + 1]
+          : (bar + 1) * BEATS_PER_BAR;
+        out.push({ bar, ci, beatStart, beatEnd });
+      }
+    }
+    return out;
+  }, [pageStartBar, cellsPerBar, cellStartsPerBar, BEATS_PER_BAR]);
 
   const canPrev = pageStartBar > 0;
   const canNext = pageStartBar + BARS_VISIBLE < totalBars;
@@ -150,13 +187,17 @@ export default function StudioDevChords() {
   const showPickup = pickupSec > 0 && pageStartBar === 0;
   const barSec = (state.beatMap && state.beatMap.length > BEATS_PER_BAR)
     ? Math.max(0.01, state.beatMap[BEATS_PER_BAR].t - state.beatMap[0].t)
-    : (60 / (state.bpm || 120)) * BEATS_PER_BAR;
+    : (60 / (state.bpm || 120)) * beatUnitFactor * BEATS_PER_BAR;
   const pickupFr = showPickup
     ? Math.min(BEATS_PER_BAR, Math.max(0.5, (pickupSec / barSec) * BEATS_PER_BAR))
     : 0;
+  // Per-bar column spec — 4fr × 1 for /4, "2fr 2fr 1.5fr 1.5fr" for 7/8.
+  // We always emit an explicit template now (the stylesheet's fixed
+  // repeat(32, 1fr) would misrender any non-/4 meter).
+  const barColsSpec = cellWidthsPerBar.map((w) => `${w}fr`).join(' ');
   const gridTemplate = showPickup
-    ? `${pickupFr}fr repeat(${BARS_VISIBLE * BEATS_PER_BAR}, minmax(0, 1fr))`
-    : undefined; // fall back to stylesheet's repeat(32, minmax(0, 1fr))
+    ? `${pickupFr}fr repeat(${BARS_VISIBLE}, ${barColsSpec})`
+    : `repeat(${BARS_VISIBLE}, ${barColsSpec})`;
 
   return (
     <div className="sd-chords">
@@ -188,19 +229,22 @@ export default function StudioDevChords() {
             <span className="sd-chord-symbol">pickup</span>
           </div>
         )}
-        {cells.map((b) => {
+        {cells.map((cell) => {
+          const b = cell.beatStart;
           const chord = filledChords[b];
-          const bar = Math.floor(b / BEATS_PER_BAR);
-          const beatInBar = b % BEATS_PER_BAR;
-          const isBarStart = beatInBar === 0;
-          const isPlaying = b === currentBeat;
-          // Only show the chord symbol on the beat where it *changes* or at
-          // the start of a bar — otherwise every beat would repeat the same
-          // label and the grid becomes noisy.
-          const showSymbol = chord && (chords[b] != null || isBarStart);
+          const isBarStart = cell.ci === 0;
+          const isPlaying = currentBeat >= cell.beatStart && currentBeat < cell.beatEnd;
+          // In 7/8 mode each of the 4 cells is a distinct chord slot, so
+          // all 4 show their (carried-forward) chord symbol. In /4 we keep
+          // the historical rule: only show at bar start or where the chord
+          // explicitly changes, otherwise the grid gets noisy with every
+          // beat repeating the same label.
+          const showSymbol = chord && (
+            meterDen === 8 || chords[b] != null || isBarStart
+          );
           return (
             <div
-              key={b}
+              key={`${cell.bar}-${cell.ci}`}
               className={`sd-chord-cell ${isBarStart ? 'bar-start' : ''} ${isPlaying ? 'playing' : ''} ${chord ? 'filled' : ''}`}
               onClick={() => setEditingBeat(b)}
               onContextMenu={(e) => {
@@ -208,7 +252,7 @@ export default function StudioDevChords() {
                 if (chords[b]) deleteChord(b);
               }}
             >
-              <span className="sd-chord-barlabel">{isBarStart ? bar + 1 : ''}</span>
+              <span className="sd-chord-barlabel">{isBarStart ? cell.bar + 1 : ''}</span>
               <span className="sd-chord-symbol">{showSymbol ? chord : ''}</span>
             </div>
           );
