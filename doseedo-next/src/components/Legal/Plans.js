@@ -1,63 +1,681 @@
-import React from 'react';
-import styles from './Legal.module.css';
+import React, { useEffect, useState } from 'react';
 
 /**
  * Plans / Pricing page — served at /plans.
  *
- * Placeholder content: the project doesn't have a Stripe-backed subscription
- * flow yet, so this page communicates what's free today and teases a future
- * Pro tier without committing to numbers. When real pricing lands, rewrite
- * this to pull tier data from the auth Cloud Run service (the /api/keys
- * endpoint already lives there) rather than hardcoding.
+ * Paper/technical workbench aesthetic matching the dashboard mock at
+ * daw/plans.jsx (Inter / JetBrains Mono / Lora on a warm off-white).
+ * App.js wraps this component with <LeftSidebar/> so we only render the
+ * content region (hero + plans grid + free strip + matrix + FAQ + closing).
+ *
+ * No Stripe wiring yet — the Provision buttons are visual-only. When the
+ * real flow lands, wire them through the auth Cloud Run service.
  */
-const Plans = () => (
-  <div className={styles.legal}>
-    <div className={styles.header}>
-      <h1 className={styles.title}>Plans</h1>
-      <p className={styles.lastUpdated}>Simple pricing. No lock-in.</p>
-    </div>
 
-    <div className={styles.content}>
-      <div className={styles.plansGrid}>
-        {/* Free tier — available now */}
-        <div className={styles.planCard}>
-          <div className={styles.planBadgeRow}>
-            <span className={styles.planTierName}>Free</span>
-            <span className={styles.planTierPrice}>$0</span>
-          </div>
-          <p className={styles.planTagline}>Everything you need to start making music in the browser.</p>
-          <ul className={styles.list}>
-            <li><i className="fa-solid fa-check"></i> <span>Full access to the DAW</span></li>
-            <li><i className="fa-solid fa-check"></i> <span>Browser-based plugin library</span></li>
-            <li><i className="fa-solid fa-check"></i> <span>Local session storage</span></li>
-            <li><i className="fa-solid fa-check"></i> <span>AI generation (fair-use limits)</span></li>
-          </ul>
-          <a href="/login" className={styles.planCtaPrimary}>Get started</a>
-        </div>
+const C = {
+  bg: '#e8e6e1',
+  surface: '#f2f0ea',
+  surface2: '#dcd9d1',
+  ink: '#15181c',
+  inkSoft: 'rgba(21,24,28,0.66)',
+  inkMute: 'rgba(21,24,28,0.40)',
+  inkFaint: 'rgba(21,24,28,0.22)',
+  rule: 'rgba(21,24,28,0.14)',
+  ruleStrong: 'rgba(21,24,28,0.30)',
+  accent: '#1d4c7a',
+  warm: '#c94f2c',
+  purple: '#AAB0EE',
+  sans: '"Inter",system-ui,sans-serif',
+  mono: '"JetBrains Mono",ui-monospace,Menlo,monospace',
+  head: '"Lora",Georgia,serif',
+};
 
-        {/* Pro tier — coming soon */}
-        <div className={`${styles.planCard} ${styles.planCardMuted}`}>
-          <div className={styles.planBadgeRow}>
-            <span className={styles.planTierName}>Pro</span>
-            <span className={styles.planTierPriceMuted}>Coming soon</span>
-          </div>
-          <p className={styles.planTagline}>Higher generation quotas, priority rendering, and cloud-synced sessions.</p>
-          <ul className={styles.list}>
-            <li><i className="fa-solid fa-circle-dot"></i> <span>Everything in Free</span></li>
-            <li><i className="fa-solid fa-circle-dot"></i> <span>Expanded AI generation limits</span></li>
-            <li><i className="fa-solid fa-circle-dot"></i> <span>Cloud session sync</span></li>
-            <li><i className="fa-solid fa-circle-dot"></i> <span>Priority support</span></li>
-          </ul>
-          <a href="/feedback" className={styles.planCtaSecondary}>Tell us what you'd pay for</a>
-        </div>
-      </div>
+const arrowPath = 'M5 12h14 M13 6l6 6-6 6';
 
-      <div className={styles.contactInfo}>
-        <p>Questions about pricing? We'd rather hear from you than guess —</p>
-        <a href="mailto:support@doseedo.com">support@doseedo.com</a>
-      </div>
-    </div>
-  </div>
+const Arrow = ({ size = 13, stroke = 1.8, color = 'currentColor' }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth={stroke}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ flexShrink: 0 }}
+  >
+    <path d={arrowPath} />
+  </svg>
 );
+
+function Topbar({ billing, setBilling }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '0 36px',
+        height: 48,
+        borderBottom: `1px solid ${C.rule}`,
+        background: C.surface,
+        fontFamily: C.mono,
+        fontSize: 10,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: C.inkMute,
+        flexWrap: 'wrap',
+      }}
+    >
+      <span>Dashboard</span>
+      <span style={{ color: C.inkFaint }}>/</span>
+      <span style={{ color: C.inkSoft }}>Info</span>
+      <span style={{ color: C.inkFaint }}>/</span>
+      <span>
+        <strong style={{ color: C.inkSoft, fontWeight: 500 }}>Plans</strong>
+      </span>
+      <span style={{ color: C.inkFaint }}>·</span>
+      <span>2 tiers · free tier available</span>
+      <div style={{ flex: 1 }} />
+      <div style={{ display: 'inline-flex', border: `1px solid ${C.rule}`, background: C.bg }}>
+        {[
+          ['monthly', 'Monthly'],
+          ['yearly', 'Yearly − 20%'],
+        ].map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setBilling(v)}
+            style={{
+              padding: '4px 10px',
+              fontFamily: C.mono,
+              fontSize: 10,
+              letterSpacing: 0.6,
+              textTransform: 'uppercase',
+              background: billing === v ? C.ink : 'transparent',
+              color: billing === v ? C.bg : C.inkSoft,
+              borderRight: v === 'monthly' ? `1px solid ${C.rule}` : 'none',
+              borderTop: 'none',
+              borderLeft: 'none',
+              borderBottom: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+      <span style={{ color: C.inkFaint }}>·</span>
+      <span>
+        billing · <strong style={{ color: C.inkSoft, fontWeight: 500 }}>stripe</strong>
+      </span>
+    </div>
+  );
+}
+
+function SectHead({ title, count, right }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 18, flexWrap: 'wrap' }}>
+      <h2 style={{ fontFamily: C.head, fontSize: 20, fontWeight: 600, letterSpacing: -0.3, margin: 0 }}>{title}</h2>
+      {count && (
+        <span style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', color: C.inkMute }}>
+          {count}
+        </span>
+      )}
+      <div style={{ flex: 1 }} />
+      {right}
+    </div>
+  );
+}
+
+function Hero() {
+  return (
+    <section style={{ marginBottom: 40, paddingBottom: 28, borderBottom: `1px solid ${C.rule}` }}>
+      <div style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase', color: C.inkMute, marginBottom: 12 }}>
+        § Plans &middot; Choose a tier
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.3fr) minmax(0,1fr)', gap: 60, alignItems: 'end' }}>
+        <h1 style={{ fontFamily: C.head, fontSize: 'clamp(32px, 4.2vw, 48px)', fontWeight: 600, letterSpacing: -1.2, lineHeight: 1.08, margin: 0 }}>
+          Two plans for producers who want&nbsp;the <span style={{ color: C.accent }}>full studio.</span>
+        </h1>
+        <div style={{ fontFamily: C.sans, fontSize: 13, color: C.inkSoft, lineHeight: 1.6, paddingBottom: 4, maxWidth: 420 }}>
+          Every tier includes the engine, stem separation, and commercial rights. Upgrade, downgrade, or cancel from the terminal at any time — prorated to the minute.
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PlanCard({ plan, billing, featured }) {
+  const price = billing === 'yearly' ? Math.round(plan.price * 0.8) : plan.price;
+  const yearTotal = price * 12;
+  const savings = (plan.price - price) * 12;
+  return (
+    <div
+      style={{
+        background: featured ? C.ink : C.surface,
+        color: featured ? C.bg : C.ink,
+        border: `1px solid ${featured ? C.ink : C.rule}`,
+        padding: '20px 22px 22px',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          top: -1,
+          right: -1,
+          background: featured ? C.purple : C.ink,
+          color: featured ? C.ink : C.purple,
+          fontFamily: C.mono,
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: 0.5,
+          padding: '3px 8px',
+        }}
+      >
+        {plan.sku}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase', color: featured ? 'rgba(232,230,225,.55)' : C.inkMute }}>
+          Tier · {plan.tier}
+        </div>
+        {featured && (
+          <div style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase', color: C.purple, background: 'rgba(170,176,238,.12)', padding: '2px 6px', border: `1px solid ${C.purple}55` }}>
+            recommended
+          </div>
+        )}
+      </div>
+      <div style={{ fontFamily: C.head, fontSize: 30, fontWeight: 600, letterSpacing: -0.6, lineHeight: 1, marginBottom: 8 }}>{plan.name}</div>
+      <div style={{ fontFamily: C.sans, fontSize: 13, color: featured ? 'rgba(232,230,225,.7)' : C.inkSoft, lineHeight: 1.5, marginBottom: 22, maxWidth: 360 }}>
+        {plan.tagline}
+      </div>
+
+      <div
+        style={{
+          background: featured ? '#0a0c0f' : C.bg,
+          border: `1px solid ${featured ? 'rgba(255,255,255,.1)' : C.rule}`,
+          padding: '16px 18px',
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 8,
+          marginBottom: 6,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div style={{ fontFamily: C.mono, fontWeight: 500, fontSize: 48, letterSpacing: -2, lineHeight: 1, color: featured ? C.purple : C.ink, fontFeatureSettings: '"tnum"' }}>
+          ${price}
+        </div>
+        <div style={{ fontFamily: C.mono, fontSize: 11, letterSpacing: 0.4, color: featured ? 'rgba(232,230,225,.5)' : C.inkMute }}>USD / mo</div>
+        <div style={{ flex: 1 }} />
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontFamily: C.mono, fontSize: 9, letterSpacing: 0.6, textTransform: 'uppercase', color: featured ? 'rgba(232,230,225,.5)' : C.inkMute }}>
+            {billing === 'yearly' ? 'billed yearly' : 'billed monthly'}
+          </div>
+          <div style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.3, color: featured ? 'rgba(232,230,225,.66)' : C.inkSoft, marginTop: 2, fontFeatureSettings: '"tnum"' }}>
+            {billing === 'yearly' ? `$${yearTotal}/yr` : `$${price * 12}/yr`}
+            {billing === 'yearly' && savings > 0 && (
+              <span style={{ color: featured ? C.purple : C.warm, marginLeft: 6 }}>−${savings}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        style={{
+          background: featured ? C.purple : C.ink,
+          color: featured ? C.ink : C.bg,
+          border: 0,
+          padding: '12px 16px',
+          marginTop: 16,
+          marginBottom: 22,
+          fontFamily: C.mono,
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: 0.8,
+          textTransform: 'uppercase',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          gap: 12,
+        }}
+      >
+        <span>{plan.cta}</span>
+        <Arrow size={13} color={featured ? C.ink : C.bg} stroke={1.8} />
+      </button>
+
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+        <div style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase', color: featured ? 'rgba(232,230,225,.5)' : C.inkMute, marginBottom: 4 }}>
+          Spec sheet
+        </div>
+        {plan.specs.map((s, i) => (
+          <div
+            key={i}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '110px 1fr',
+              gap: 14,
+              padding: '10px 0',
+              borderTop: `1px dashed ${featured ? 'rgba(232,230,225,.18)' : C.rule}`,
+              fontSize: 12,
+              lineHeight: 1.45,
+              alignItems: 'baseline',
+            }}
+          >
+            <div style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', color: featured ? 'rgba(232,230,225,.55)' : C.inkMute, whiteSpace: 'nowrap' }}>
+              {s.k}
+            </div>
+            <div
+              style={{
+                color: s.muted ? (featured ? 'rgba(232,230,225,.45)' : C.inkMute) : (featured ? C.bg : C.ink),
+                fontStyle: s.muted ? 'italic' : 'normal',
+                fontFamily: C.sans,
+                fontSize: 13,
+                fontWeight: s.bold ? 500 : 400,
+              }}
+            >
+              {s.v}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div
+        style={{
+          marginTop: 18,
+          paddingTop: 14,
+          borderTop: `1px solid ${featured ? 'rgba(232,230,225,.18)' : C.rule}`,
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontFamily: C.mono,
+          fontSize: 10,
+          letterSpacing: 0.5,
+          textTransform: 'uppercase',
+          color: featured ? 'rgba(232,230,225,.5)' : C.inkMute,
+        }}
+      >
+        <span>rev. {plan.rev}</span>
+        <span>commercial license ✓</span>
+      </div>
+    </div>
+  );
+}
+
+const PLANS = [
+  {
+    sku: 'DSD-PRO-020',
+    tier: 'I',
+    rev: '2026.04',
+    name: 'Pro',
+    tagline: 'For songwriters and producers working on a song or three at a time. Everything you need to ship, nothing you don’t.',
+    price: 20,
+    cta: 'Provision Pro',
+    specs: [
+      { k: 'Sessions', v: 'Unlimited · every take kept', bold: true },
+      { k: 'Engine time', v: '40 hours / month' },
+      { k: 'Generation', v: 'Standard queue' },
+      { k: 'Instruments', v: 'Curated instrument set' },
+      { k: 'Stem export', v: '48 kHz / 24-bit WAV · stems + mixdown' },
+      { k: 'Stem split', v: '— not included', muted: true },
+      { k: 'Score-to-pic', v: '— not included', muted: true },
+      { k: 'Collab seats', v: '1 (you)' },
+      { k: 'Devices', v: '2 simultaneous' },
+      { k: 'Support', v: 'Email · 48h SLA' },
+    ],
+  },
+  {
+    sku: 'DSD-MAX-100',
+    tier: 'II',
+    rev: '2026.04',
+    name: 'Max',
+    tagline: 'For scorers, studios, and producers who live inside doseedo. Unlimited everything, priority compute, early instrument access.',
+    price: 100,
+    cta: 'Provision Max',
+    specs: [
+      { k: 'Sessions', v: 'Unlimited · every take kept', bold: true },
+      { k: 'Engine time', v: 'Unlimited', bold: true },
+      { k: 'Generation', v: 'Priority · 4× faster', bold: true },
+      { k: 'Instruments', v: 'Full set + early access models' },
+      { k: 'Stem export', v: '48 / 96 kHz · 24-bit · stems + mix + master' },
+      { k: 'Stem split', v: 'Included · unlimited splits', bold: true },
+      { k: 'Score-to-pic', v: 'Frame-accurate cues · video import', bold: true },
+      { k: 'Collab seats', v: 'Up to 5 · shared sessions, comments' },
+      { k: 'Devices', v: 'Unlimited' },
+      { k: 'Support', v: 'Dedicated channel · studio hours' },
+    ],
+  },
+];
+
+function PlansGrid({ billing }) {
+  return (
+    <section style={{ marginBottom: 40 }}>
+      <SectHead
+        title="Available tiers"
+        count="2 plans"
+        right={
+          <span style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', color: C.inkMute }}>
+            prices · USD · ex. tax
+          </span>
+        }
+      />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14 }}>
+        <PlanCard plan={PLANS[0]} billing={billing} featured={false} />
+        <PlanCard plan={PLANS[1]} billing={billing} featured />
+      </div>
+    </section>
+  );
+}
+
+function FreeStrip() {
+  return (
+    <section style={{ marginBottom: 40 }}>
+      <div
+        style={{
+          background: C.surface,
+          border: `1px dashed ${C.ruleStrong}`,
+          padding: '18px 22px',
+          display: 'grid',
+          gridTemplateColumns: 'auto minmax(0,1fr) auto auto',
+          gap: 24,
+          alignItems: 'center',
+        }}
+      >
+        <div style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase', color: C.inkMute, whiteSpace: 'nowrap' }}>
+          DSD-FREE-000
+        </div>
+        <div>
+          <div style={{ fontFamily: C.sans, fontSize: 15, fontWeight: 600, letterSpacing: -0.1, marginBottom: 2 }}>
+            Free tier · no card required
+          </div>
+          <div style={{ fontFamily: C.sans, fontSize: 12, color: C.inkSoft, lineHeight: 1.5 }}>
+            2 hours engine time / month · curated instruments · personal use only · 1 device. Upgrade anytime — your sessions come with you.
+          </div>
+        </div>
+        <div style={{ fontFamily: C.mono, fontSize: 11, letterSpacing: 0.5, color: C.inkMute, textAlign: 'right' }}>
+          $0<span style={{ fontSize: 9, marginLeft: 4 }}>/MO</span>
+        </div>
+        <button
+          type="button"
+          style={{
+            padding: '8px 12px',
+            fontFamily: C.mono,
+            fontSize: 10,
+            letterSpacing: 0.8,
+            textTransform: 'uppercase',
+            background: C.bg,
+            border: `1px solid ${C.rule}`,
+            color: C.ink,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span>Open free room</span>
+          <Arrow size={11} stroke={1.8} />
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function Matrix() {
+  const rows = [
+    ['Engine time', '40 h / month', 'Unlimited'],
+    ['Generation speed', 'Standard', 'Priority · 4×'],
+    ['Instruments', 'Curated', 'Curated + early'],
+    ['Stem separation', '—', 'Unlimited'],
+    ['Score-to-picture', '—', 'Included'],
+    ['Sample rate', '48 kHz', '48 / 96 kHz'],
+    ['Collaborators', '1', 'Up to 5'],
+    ['Devices', '2', 'Unlimited'],
+    ['Commercial use', 'Yes', 'Yes'],
+    ['Support SLA', '48 h', '< 4 h · dedicated'],
+  ];
+  return (
+    <section style={{ marginBottom: 40 }}>
+      <SectHead
+        title="Spec matrix"
+        count="feature · tier · value"
+        right={
+          <span style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', color: C.inkMute }}>
+            ref. DSD-PRICE-01
+          </span>
+        }
+      />
+      <div style={{ background: C.surface, border: `1px solid ${C.rule}`, overflowX: 'auto' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1.4fr 1fr 1fr',
+            background: C.surface2,
+            borderBottom: `1px solid ${C.rule}`,
+            minWidth: 560,
+          }}
+        >
+          <div style={{ padding: '10px 16px', fontFamily: C.mono, fontSize: 10, letterSpacing: 0.7, textTransform: 'uppercase', color: C.inkMute }}>Feature</div>
+          <div style={{ padding: '10px 16px', fontFamily: C.mono, fontSize: 10, letterSpacing: 0.7, textTransform: 'uppercase', color: C.ink, borderLeft: `1px solid ${C.rule}` }}>Pro · $20</div>
+          <div style={{ padding: '10px 16px', fontFamily: C.mono, fontSize: 10, letterSpacing: 0.7, textTransform: 'uppercase', color: C.ink, borderLeft: `1px solid ${C.rule}`, background: 'rgba(170,176,238,.16)' }}>
+            Max · $100 <span style={{ color: C.purple }}>●</span>
+          </div>
+        </div>
+        {rows.map((r, i) => (
+          <div
+            key={i}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1.4fr 1fr 1fr',
+              borderBottom: i === rows.length - 1 ? 'none' : `1px solid ${C.rule}`,
+              minWidth: 560,
+            }}
+          >
+            <div style={{ padding: '11px 16px', fontFamily: C.sans, fontSize: 13, color: C.ink }}>{r[0]}</div>
+            <div style={{ padding: '11px 16px', fontFamily: C.mono, fontSize: 11, letterSpacing: 0.2, color: r[1] === '—' ? C.inkMute : C.inkSoft, borderLeft: `1px solid ${C.rule}` }}>{r[1]}</div>
+            <div style={{ padding: '11px 16px', fontFamily: C.mono, fontSize: 11, letterSpacing: 0.2, color: C.ink, borderLeft: `1px solid ${C.rule}`, background: 'rgba(170,176,238,.08)', fontWeight: 500 }}>{r[2]}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FAQ() {
+  const items = [
+    { q: 'Can I switch tiers mid-cycle?', a: 'Yes. Upgrades are prorated to the minute and billed immediately. Downgrades take effect at the start of the next cycle, so you never lose engine time you’ve already paid for.' },
+    { q: 'What happens to my sessions if I cancel?', a: 'Sessions move to read-only for 12 months. You can export stems, resume on the free tier, or come back to Pro/Max — nothing is deleted without explicit confirmation.' },
+    { q: 'Is the license really commercial?', a: 'Yes, on both paid tiers. Release on DSPs, sync to film, publish — no per-track fees, no surprise carve-outs. The exported audio is yours.' },
+    { q: 'Are there student / education rates?', a: 'Pro is 50% off with a verified .edu address or institutional email. Max is flat rate — the compute cost is the compute cost.' },
+    { q: 'Do I have to install anything?', a: 'No. doseedo runs in the browser. A desktop build (macOS / Windows) is available on both paid tiers and syncs to the same cloud sessions.' },
+  ];
+  const [open, setOpen] = useState(0);
+  return (
+    <section style={{ marginBottom: 40 }}>
+      <SectHead title="Frequently asked" count="5 · signed by billing team" />
+      <div style={{ background: C.surface, border: `1px solid ${C.rule}` }}>
+        {items.map((it, i) => (
+          <div key={i} style={{ borderTop: i > 0 ? `1px solid ${C.rule}` : 'none' }}>
+            <button
+              type="button"
+              onClick={() => setOpen(open === i ? -1 : i)}
+              style={{
+                width: '100%',
+                display: 'grid',
+                gridTemplateColumns: 'auto 1fr auto',
+                gap: 16,
+                alignItems: 'baseline',
+                padding: '14px 18px',
+                cursor: 'pointer',
+                textAlign: 'left',
+                background: 'transparent',
+                border: 'none',
+                color: 'inherit',
+              }}
+            >
+              <span style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.6, color: C.inkMute }}>
+                Q.{String(i + 1).padStart(2, '0')}
+              </span>
+              <span style={{ fontFamily: C.sans, fontSize: 14, fontWeight: 500, color: C.ink }}>{it.q}</span>
+              <span
+                style={{
+                  fontFamily: C.mono,
+                  fontSize: 13,
+                  color: C.inkSoft,
+                  transform: open === i ? 'rotate(45deg)' : 'none',
+                  transition: 'transform .15s',
+                }}
+              >
+                +
+              </span>
+            </button>
+            {open === i && (
+              <div style={{ padding: '0 18px 16px', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 16 }}>
+                <span style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.6, color: C.inkMute }}>
+                  A.{String(i + 1).padStart(2, '0')}
+                </span>
+                <span style={{ fontFamily: C.sans, fontSize: 13, color: C.inkSoft, lineHeight: 1.6, maxWidth: 720 }}>
+                  {it.a}
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Closing() {
+  return (
+    <section style={{ marginBottom: 20 }}>
+      <div
+        style={{
+          background: C.ink,
+          color: C.bg,
+          padding: '28px 32px',
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0,1fr) auto',
+          gap: 32,
+          alignItems: 'center',
+        }}
+      >
+        <div>
+          <div style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase', color: 'rgba(232,230,225,.5)', marginBottom: 10 }}>
+            § Provision
+          </div>
+          <div style={{ fontFamily: C.head, fontSize: 28, fontWeight: 600, letterSpacing: -0.6, lineHeight: 1.15, maxWidth: 640 }}>
+            Pick a tier. <span style={{ color: C.purple }}>The studio is already warm.</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            style={{
+              padding: '12px 18px',
+              fontFamily: C.mono,
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              background: 'transparent',
+              border: '1px solid rgba(232,230,225,.3)',
+              color: C.bg,
+              cursor: 'pointer',
+            }}
+          >
+            Provision Pro · $20
+          </button>
+          <button
+            type="button"
+            style={{
+              padding: '12px 18px',
+              fontFamily: C.mono,
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              background: C.purple,
+              border: 'none',
+              color: C.ink,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <span>Provision Max · $100</span>
+            <Arrow size={13} stroke={1.8} color={C.ink} />
+          </button>
+        </div>
+      </div>
+      <div
+        style={{
+          marginTop: 10,
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontFamily: C.mono,
+          fontSize: 10,
+          letterSpacing: 0.5,
+          textTransform: 'uppercase',
+          color: C.inkMute,
+          flexWrap: 'wrap',
+          gap: 8,
+        }}
+      >
+        <span>doseedo billing · stripe · 2026</span>
+        <span>cancel any time · prorated · no dark patterns</span>
+      </div>
+    </section>
+  );
+}
+
+// Inject the workbench Google Fonts once — Inter / JetBrains Mono / Lora
+// aren't bundled globally by Next, and this page leans on them hard.
+function useWorkbenchFonts() {
+  useEffect(() => {
+    const href =
+      'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Lora:wght@500;600;700&display=swap';
+    if (typeof document === 'undefined') return;
+    if (document.querySelector(`link[href="${href}"]`)) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.appendChild(link);
+  }, []);
+}
+
+const Plans = () => {
+  const [billing, setBilling] = useState('monthly');
+  useWorkbenchFonts();
+
+  return (
+    <main
+      style={{
+        minWidth: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        background: C.bg,
+        color: C.ink,
+        fontFamily: C.sans,
+        fontSize: 13,
+        minHeight: '100vh',
+        flex: 1,
+      }}
+    >
+      <Topbar billing={billing} setBilling={setBilling} />
+      <div style={{ flex: 1, overflow: 'auto', padding: '36px 40px 80px', maxWidth: 1200, width: '100%', boxSizing: 'border-box' }}>
+        <Hero />
+        <PlansGrid billing={billing} />
+        <FreeStrip />
+        <Matrix />
+        <FAQ />
+        <Closing />
+      </div>
+    </main>
+  );
+};
 
 export default Plans;
