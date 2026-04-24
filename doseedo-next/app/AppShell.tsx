@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useAuth } from '@clerk/nextjs';
 import { useEffect } from 'react';
+import { installDebugBridge } from '@/utils/debugBridge';
 
 // CSS import chain ported from src/index.js — order matters.
 import '@/styles/colors.css';
@@ -56,6 +57,7 @@ function ClerkTokenBridge() {
 }
 
 export default function AppShell() {
+  useEffect(() => { installDebugBridge(); }, []);
   return (
     <>
       <ClerkTokenBridge />
