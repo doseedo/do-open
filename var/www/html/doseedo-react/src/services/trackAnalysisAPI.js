@@ -115,9 +115,17 @@ export async function encodeLatentsBulk(urls) {
 }
 
 export async function repaintMeter({ stems, srcMeter, tgtMeter, srcBpm, tgtBpm, coverNoise = 0.55, prompt, downbeatOffset = 0 }) {
+  // Clerk Bearer token — same pattern as separateStemsAuto. Without it
+  // the Modal generation gate (_GATED_ROUTES in modal_stemphonic.py) 401s
+  // with "Authentication required for generation".
+  const token = (typeof window !== 'undefined' && typeof window.__clerkGetToken === 'function'
+      ? await window.__clerkGetToken().catch(() => null) : null)
+    || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+  const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
   const r = await fetch('/api/repaint-meter', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
+    credentials: 'include',
     body: JSON.stringify({
       stems,
       src_meter: srcMeter,
@@ -129,7 +137,13 @@ export async function repaintMeter({ stems, srcMeter, tgtMeter, srcBpm, tgtBpm, 
       downbeat_offset: downbeatOffset,
     }),
   });
-  if (!r.ok) throw new Error(`repaint-meter HTTP ${r.status}`);
+  if (!r.ok) {
+    if (r.status === 429) {
+      const { handleMaybeCreditGate } = await import('./outOfCreditsSignal');
+      await handleMaybeCreditGate(r);
+    }
+    throw new Error(`repaint-meter HTTP ${r.status}`);
+  }
   return r.json();
 }
 
