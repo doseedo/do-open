@@ -45,7 +45,6 @@ import Models from './components/Models/Models';
 import CreationView from './components/CreationView/CreationView';
 import StudioDev from './components/StudioDev/StudioDev';
 // ThemeEditor removed
-import LiquidGlassFilters from './components/LiquidGlassFilters/LiquidGlassFilters';
 
 const PROTECTED_PASSWORD = process.env.NEXT_PUBLIC_PROTECTED_PASSWORD || '***REDACTED***';
 
@@ -615,7 +614,6 @@ function AppContent() {
 
   return (
     <div className="App">
-      <LiquidGlassFilters />
       <LeftSidebar
         onBackToDashboard={handleBackToDashboard}
         onGoToHome={handleGoToHome}
