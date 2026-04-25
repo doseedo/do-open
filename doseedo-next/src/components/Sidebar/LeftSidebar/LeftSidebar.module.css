@@ -321,14 +321,14 @@
   border-color: var(--wb-rule-strong);
   color: var(--wb-ink);
 }
-.toolbarBtnActive {
+.toolbarBtn.toolbarBtnActive {
   background: var(--wb-ink);
   border-color: var(--wb-ink);
-  color: var(--wb-bg);
+  color: #ffffff;
 }
-.toolbarBtnActive:hover {
+.toolbarBtn.toolbarBtnActive:hover {
   background: var(--wb-ink);
-  color: var(--wb-bg);
+  color: #ffffff;
 }
 
 /* ---- Mobile ---- */
