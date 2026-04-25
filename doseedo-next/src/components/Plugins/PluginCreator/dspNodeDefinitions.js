@@ -245,6 +245,19 @@ export const NODE_CATEGORIES = {
         mix:     { default: 0.5, min: 0, max: 1, modulatable: true },
       },
     },
+    {
+      type: 'algo_reverb', label: 'Algo Reverb',
+      io: { in: 1, out: 2 },
+      params: {
+        algorithm:  { default: 'hall', options: ['room','hall','chamber','plate'] },
+        decay_time: { default: 2.5, unit: 's',  min: 0.1, max: 20,  skew: 0.4, modulatable: true },
+        pre_delay:  { default: 0,   unit: 'ms', min: 0,   max: 500, skew: 0.5, modulatable: true },
+        damping:    { default: 0.4, min: 0, max: 1, modulatable: true },
+        diffusion:  { default: 0.8, min: 0, max: 1, modulatable: true },
+        width:      { default: 0.7, min: 0, max: 1, modulatable: true },
+        mix:        { default: 0.3, min: 0, max: 1, modulatable: true },
+      },
+    },
   ],
 
   'Modulation': [
@@ -601,7 +614,19 @@ export const NODE_CATEGORIES = {
 
   'Spectral': [
     {
+      // SOLA / time-domain pitch shifter (R1). Lower latency (~10ms),
+      // gentler artifacts on small shifts; smears transients at extremes.
       type: 'pitch_shift', label: 'Pitch Shift',
+      io: { in: 1, out: 1 },
+      params: {
+        semitones: { default: 0, min: -24, max: 24, step: 1, modulatable: true },
+        mix:       { default: 1, min: 0, max: 1, modulatable: true },
+      },
+    },
+    {
+      // Phase-vocoder pitch shifter (R5). Higher latency (~46ms @ 2048 FFT),
+      // better quality at large shifts (±12 to ±24). Use this for creative effects.
+      type: 'pitch_shift_pv', label: 'Pitch Shift (PV)',
       io: { in: 1, out: 1 },
       params: {
         semitones: { default: 0, min: -24, max: 24, step: 1, modulatable: true },

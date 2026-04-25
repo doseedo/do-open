@@ -1,0 +1,293 @@
+/*
+ * ValidationPanel.module.css
+ *
+ * Internal-only A/B fidelity tool. Visual style intentionally utilitarian
+ * (mono numbers, dense tables, no chrome) — this is a developer surface,
+ * not a user-facing plugin UI.
+ *
+ * Note: CSS modules in Next.js forbid bare-element / :root selectors, so
+ * we scope EVERYTHING under a class. No globals leak out.
+ */
+
+.panel {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #e7e9ec;
+  background: #0f1216;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 12px;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.section {
+  background: #181b21;
+  border: 1px solid #262a32;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.h2 {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a93a0;
+  margin: 0 0 8px 0;
+  font-weight: 600;
+}
+
+.label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8a93a0;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fileBtn {
+  display: inline-block;
+  padding: 6px 10px;
+  border: 1px solid #2c3038;
+  border-radius: 4px;
+  background: #20242c;
+  color: #e7e9ec;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.fileBtn:hover { background: #272c35; }
+
+.fileBtn input { display: none; }
+
+.fileName {
+  font-size: 11px;
+  color: #8a93a0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.btn {
+  background: #294e8a;
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.btn:hover    { background: #355fa8; }
+.btn:disabled { background: #2a2e36; color: #5b6271; cursor: not-allowed; }
+
+.btnGhost {
+  background: transparent;
+  border: 1px solid #2c3038;
+  color: #c7cbd2;
+}
+
+.btnGhost:hover { background: #1e2228; }
+
+.select {
+  background: #20242c;
+  border: 1px solid #2c3038;
+  color: #e7e9ec;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  width: 100%;
+}
+
+.slider {
+  width: 100%;
+  -webkit-appearance: none;
+  background: transparent;
+  margin: 4px 0;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 3px;
+  background: #2c3038;
+  border-radius: 2px;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 12px;
+  width: 12px;
+  border-radius: 50%;
+  background: #4f86d6;
+  border: 1px solid #6ea0e8;
+  margin-top: -5px;
+  cursor: pointer;
+}
+
+.paramRow {
+  display: grid;
+  grid-template-columns: 90px 1fr 60px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.paramLabel {
+  font-size: 11px;
+  color: #c7cbd2;
+}
+
+.paramValue {
+  font-size: 10px;
+  color: #8a93a0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.metricCard {
+  background: #11141a;
+  border: 1px solid #262a32;
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+
+.metricLabel {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a93a0;
+  margin-bottom: 2px;
+}
+
+.metricValue {
+  font-size: 18px;
+  color: #e7e9ec;
+  font-variant-numeric: tabular-nums;
+}
+
+.metricGood { color: #5fcf75; }
+.metricWarn { color: #d6b04f; }
+.metricBad  { color: #d65f5f; }
+
+.canvasWrap {
+  background: #0a0c10;
+  border: 1px solid #262a32;
+  border-radius: 4px;
+  padding: 4px;
+  position: relative;
+}
+
+.canvasWrap canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.canvasLabel {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #8a93a0;
+  pointer-events: none;
+}
+
+.barChart {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 60px;
+  background: #0a0c10;
+  border: 1px solid #262a32;
+  border-radius: 4px;
+  padding: 4px;
+}
+
+.bar {
+  flex: 1;
+  background: linear-gradient(to top, #4f86d6 0%, #6ea0e8 100%);
+  min-width: 4px;
+  border-radius: 1px 1px 0 0;
+  position: relative;
+}
+
+.barLabels {
+  display: flex;
+  gap: 1px;
+  font-size: 8px;
+  color: #8a93a0;
+  padding: 2px 4px 0 4px;
+  margin-top: 2px;
+}
+
+.barLabels span {
+  flex: 1;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.goldenTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.goldenTable th,
+.goldenTable td {
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 1px solid #20242c;
+}
+
+.goldenTable th {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a93a0;
+  font-weight: 500;
+}
+
+.statusPass { color: #5fcf75; }
+.statusFail { color: #d65f5f; }
+.statusErr  { color: #d6b04f; font-style: italic; }
+
+.help {
+  font-size: 10px;
+  color: #6b7280;
+  line-height: 1.5;
+  padding: 6px 0;
+}
+
+.help code {
+  background: #11141a;
+  padding: 1px 4px;
+  border-radius: 2px;
+}

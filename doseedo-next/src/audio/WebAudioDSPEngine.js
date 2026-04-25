@@ -10,6 +10,17 @@
  *   engine.dispose();
  */
 
+// ── R1-R9 builder modules (Phase 1 runtime expansion) ─────────────────────
+import r1Builders, { ensureR1Worklets } from './builders/r1.js';
+import r2Builders from './builders/r2.js';
+import r3Builders from './builders/r3.js';
+import r4Builders from './builders/r4.js';
+import r5Builders from './builders/r5.js';
+import { R8_BUILDERS, ensureR8WorkletsLoaded } from './builders/r8.js';
+import r9Builders from './builders/r9.js';
+import ModRouter from './ModRouter.js';
+import { NODE_CATEGORIES } from '../components/Plugins/PluginCreator/dspNodeDefinitions.js';
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function scaleParam(norm, param) {
@@ -329,7 +340,15 @@ function buildCompressor(ctx, node, paramDefs) {
     if (typeof val === 'string' && val.startsWith('@')) {
       const paramId = val.slice(1);
       if (key === 'makeup' || key === 'makeup_gain') {
-        targets[paramId] = { audioParam: makeup.gain, paramDef: paramDefs[paramId] };
+        // Logic stores makeup gain in dB. Without dbToLinear, a 0 dB makeup
+        // would write 0 to gain.value and silence the chain. (R11 finding.)
+        const pDef = paramDefs[paramId];
+        const isDb = pDef?.unit === 'dB' || pDef?.unit === 'db';
+        targets[paramId] = {
+          audioParam: makeup.gain,
+          paramDef: pDef,
+          scale: isDb ? dbToLinear : undefined,
+        };
       }
     }
   }
@@ -809,6 +828,21 @@ const NODE_BUILDERS = {
   mixer: buildMixer, mix_bus: buildMixer,
   // Passthrough for unsupported types
   dc_blocker: buildGain, mix: buildGain, splitter: buildGain, merger: buildGain,
+
+  // ── Phase 1 runtime expansion (R1-R9). Spreads later in the object so they
+  // override any wrong stub mappings above (e.g. multitap_delay→buildDelay,
+  // convolution→buildReverb).
+  ...r1Builders,    // bitcrusher, multitap_delay (real), convolution (real),
+                    // envelope_follower, pitch_shift (SOLA), comb, math_*
+  ...r2Builders,    // wdf_diode_clipper, wdf_tube_triode, wdf_tube_amp,
+                    // wdf_transistor_clipper, wdf_tone_stack
+  ...r3Builders,    // wdf_tape_sat, wdf_transformer, wdf_rc_filter,
+                    // wdf_rlc_filter, wdf_power_supply_sag
+  ...r4Builders,    // circuit_fender_bassman, circuit_pultec_eq,
+                    // circuit_tape_machine, circuit_tube_preamp
+  ...r5Builders,    // pitch_shift_pv (phase-vocoder), spectral_filter, spectral_freeze
+  ...R8_BUILDERS,   // sidechain, compressor_sc, gate_sc
+  ...r9Builders,    // algo_reverb (FDN, 4 algos)
 };
 
 // ── Main Engine Class ──────────────────────────────────────────────────────
@@ -852,6 +886,33 @@ export default class WebAudioDSPEngine {
     if (this.ctx.state === 'suspended') {
       this.ctx.resume().catch(() => {});
     }
+    // Phase 1 worklets: kick off async registration so that by the time
+    // the graph is built (usually after a user gesture) the worklet
+    // processors are available. Builders fall back to non-worklet paths
+    // if registration hasn't completed — safe but lower fidelity.
+    this._ensurePhase1Worklets();
+  }
+
+  _ensurePhase1Worklets() {
+    if (!this.ctx || this._phase1WorkletsKicked) return;
+    this._phase1WorkletsKicked = true;
+    try { ensureR1Worklets(this.ctx); } catch (e) { /* non-fatal */ }
+    try { ensureR8WorkletsLoaded(this.ctx); } catch (e) { /* non-fatal */ }
+  }
+
+  _buildNodeSchemaMap() {
+    if (this._nodeSchemaCache) return this._nodeSchemaCache;
+    const map = {};
+    for (const list of Object.values(NODE_CATEGORIES || {})) {
+      for (const def of list) map[def.type] = def;
+    }
+    this._nodeSchemaCache = map;
+    return map;
+  }
+
+  setBPM(bpm) {
+    this.bpm = bpm;
+    if (this._modRouter) this._modRouter.setBPM(bpm);
   }
 
   getContextState() {
@@ -964,12 +1025,23 @@ export default class WebAudioDSPEngine {
       }
     }
 
-    // Connect based on edges
+    // Connect based on edges. Edges may carry an optional `input` field
+    // naming a target input slot (default 0). Required for sidechain key
+    // routing (R8): a `sidechain` source feeds compressor_sc/gate_sc via
+    // `{ source, target, input: 1 }`. The 3-arg connect() form is always
+    // backward-compatible with the 2-arg call we used previously.
     for (const edge of graph.edges) {
       const src = builtNodes[edge.source];
       const tgt = builtNodes[edge.target];
-      if (src && tgt) {
-        try { src.output.connect(tgt.input); } catch (e) { /* ignore connection errors */ }
+      if (!src || !tgt) continue;
+      const slot = edge.input ?? 0;
+      const tgtNode = (tgt.inputs && tgt.inputs[slot]) || tgt.input;
+      try {
+        src.output.connect(tgtNode, 0, slot);
+      } catch (e) {
+        // Slot mismatch on a non-sidechain target — try the conventional
+        // path so we don't tear down the whole graph.
+        try { src.output.connect(tgt.input); } catch (e2) { /* ignore */ }
       }
     }
 
@@ -983,10 +1055,28 @@ export default class WebAudioDSPEngine {
 
     this._chainInput = inputNode?.input || this.masterGain;
     this.nodes = Object.values(builtNodes);
+    this._builtNodesById = builtNodes;
 
     // Apply initial parameter values
     for (const [paramId, normVal] of Object.entries(this.paramValues)) {
       this._applyParam(paramId, normVal);
+    }
+
+    // R7: wire LFO/macro/mod_envelope/midi_cc "ghost" nodes to live AudioParams
+    if (this._modRouter) { this._modRouter.dispose(); this._modRouter = null; }
+    if (graph?.nodes && graph.nodes.some(n => n.type === 'lfo' || n.type === 'macro' || n.type === 'mod_envelope' || n.type === 'midi_cc')) {
+      try {
+        this._modRouter = new ModRouter(
+          this.ctx,
+          graph,
+          this._builtNodesById,
+          this.paramDefs,
+          { nodeSchema: this._buildNodeSchemaMap(), bpm: this.bpm || 120 },
+        );
+        this._modRouter.resolveTargets();
+      } catch (e) {
+        console.warn('[WebAudioDSPEngine] ModRouter init failed:', e);
+      }
     }
   }
 
@@ -1118,9 +1208,14 @@ export default class WebAudioDSPEngine {
   }
 
   _teardownGraph() {
+    if (this._modRouter) {
+      try { this._modRouter.dispose(); } catch (e) { /* ignore */ }
+      this._modRouter = null;
+    }
     this.oscillators.forEach(o => { try { o.stop(); } catch (e) {} });
     this.oscillators = [];
     this.nodes = [];
+    this._builtNodesById = null;
     this.paramTargets = {};
     this._compressorNodes = [];
     if (this.sourceNode) {

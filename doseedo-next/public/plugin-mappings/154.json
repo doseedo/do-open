@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "plugin_id": "154",
+  "plugin_name": "Compressor",
+  "au_type": "aufx",
+  "au_subtype": "dyna",
+  "au_manufacturer": "appl",
+  "calibration_source": "r11_mock",
+  "notes": "Hand-rolled mock so PluginAdapter has something to load before R10's calibration output ships. Curve fits are plausible defaults; replace with R10 output when available.",
+
+  "web_topology": {
+    "dspChain": [
+      {
+        "type": "compressor",
+        "id": "comp_core",
+        "params": {
+          "threshold": "@threshold",
+          "ratio":     "@ratio",
+          "attack":    "@attack",
+          "release":   "@release",
+          "knee":      "@knee",
+          "makeup":    "@makeup"
+        }
+      }
+    ],
+    "parameters": [
+      { "id": "threshold", "label": "Threshold", "min": -60, "max":   0, "default": -20, "unit": "dB",  "skew": 1.0 },
+      { "id": "ratio",     "label": "Ratio",     "min":   1, "max":  20, "default":   4, "unit": ":1",  "skew": 0.5 },
+      { "id": "attack",    "label": "Attack",    "min": 0.1, "max": 1000,"default":   3, "unit": "ms",  "skew": 0.3 },
+      { "id": "release",   "label": "Release",   "min":   1, "max": 2000,"default": 250, "unit": "ms",  "skew": 0.3 },
+      { "id": "knee",      "label": "Knee",      "min":   0, "max":  40, "default":  30, "unit": "dB",  "skew": 1.0 },
+      { "id": "makeup",    "label": "Makeup",    "min": -12, "max":  24, "default":   0, "unit": "dB",  "skew": 1.0 }
+    ],
+    "routing": { "input": "stereo", "chain": [], "output": "stereo" }
+  },
+
+  "param_map": [
+    {
+      "logic_id": 0,
+      "logic_name": "Threshold",
+      "web_param": "threshold",
+      "curve": "linear",
+      "domain": [-60.0, 0.0],
+      "range":  [-60.0, 0.0]
+    },
+    {
+      "logic_id": 1,
+      "logic_name": "Ratio",
+      "web_param": "ratio",
+      "curve": "piecewise",
+      "domain": [1.0, 30.0],
+      "range":  [1.0, 20.0],
+      "breakpoints": [
+        [1.0, 1.0],
+        [2.0, 2.0],
+        [4.0, 4.0],
+        [8.0, 8.0],
+        [16.0, 16.0],
+        [30.0, 20.0]
+      ]
+    },
+    {
+      "logic_id": 2,
+      "logic_name": "Attack",
+      "web_param": "attack",
+      "curve": "log",
+      "domain": [0.0, 1.0],
+      "range":  [0.1, 1000.0]
+    },
+    {
+      "logic_id": 3,
+      "logic_name": "Release",
+      "web_param": "release",
+      "curve": "log",
+      "domain": [0.0, 1.0],
+      "range":  [1.0, 2000.0]
+    },
+    {
+      "logic_id": 4,
+      "logic_name": "Knee",
+      "web_param": "knee",
+      "curve": "linear",
+      "domain": [0.0, 1.0],
+      "range":  [0.0, 40.0]
+    },
+    {
+      "logic_id": 5,
+      "logic_name": "Gain",
+      "web_param": "makeup",
+      "curve": "linear",
+      "domain": [-12.0, 24.0],
+      "range":  [-12.0, 24.0]
+    }
+  ],
+
+  "param_map_by_name": {
+    "Threshold": "threshold",
+    "Ratio":     "ratio",
+    "Attack":    "attack",
+    "Release":   "release",
+    "Knee":      "knee",
+    "Gain":      "makeup",
+    "Make Up":   "makeup"
+  }
+}
