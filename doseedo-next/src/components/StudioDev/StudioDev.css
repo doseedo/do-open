@@ -2202,3 +2202,22 @@ input[type=range].sd-midi-note-bend::-moz-range-thumb {
 .sd-pipeline-log li[data-kind="error"] .sd-pipeline-log-msg { color: #e04040; }
 .sd-pipeline-log li[data-kind="ok"]    .sd-pipeline-log-msg { color: #7dd89a; }
 
+/* ============================================================
+   Loading overlay — half-transparent cream wash on /studio entry.
+   Hidden once the first pipelineStatus 'ok' event arrives (ONNX
+   model ready) or after a 4s safety timeout.
+   ============================================================ */
+.studio-dev .sd-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(232, 230, 225, 0.55);
+  pointer-events: auto;
+  z-index: 9999;
+  opacity: 1;
+  transition: opacity 0.35s ease;
+}
+.studio-dev .sd-loading-overlay.sd-loading-overlay--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+

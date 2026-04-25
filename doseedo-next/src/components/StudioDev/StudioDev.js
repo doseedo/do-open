@@ -42,7 +42,7 @@ import * as saveService from '../../services/saveService';
 // They read/dispatch AppContext directly, so dropping them in Just Works.
 import StudioDevMidi from './StudioDevMidi';
 import PipelineStatus from './PipelineStatus';
-import { logPipeline, clearPipelineLog } from '../../services/pipelineStatus';
+import { logPipeline, clearPipelineLog, subscribe as subscribePipeline } from '../../services/pipelineStatus';
 import StudioDevMidiBrowser from './StudioDevMidiBrowser';
 import StudioDevWaveform from './StudioDevWaveform';
 import StudioDevFX from './StudioDevFX';
@@ -384,6 +384,33 @@ export default function StudioDev() {
   const [rightTab, setRightTab] = useState('session');
   const [sessionBusExpanded, setSessionBusExpanded] = useState({}); // busId → boolean
   const [historyFilterMe, setHistoryFilterMe] = useState(false);    // History tab: only show my commits
+
+  // Cream-wash loading overlay shown on /studio entry until ONNX models
+  // (latentEncoder / polypitch / etc.) report ready. Cleared on the first
+  // pipelineStatus 'ok' event, or after a 4s safety timeout.
+  const [studioLoading, setStudioLoading] = useState(true);
+  useEffect(() => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; setStudioLoading(false); } };
+    const unsub = subscribePipeline((evt) => {
+      if (evt && evt.kind === 'ok') finish();
+    });
+    const t = setTimeout(finish, 4000);
+    return () => { unsub(); clearTimeout(t); };
+  }, []);
+
+  // On /studio entry, if the sidebar was visibly expanded (typical when
+  // arriving from /dashboard, where it's force-expanded), give the user
+  // ~600ms of context then smoothly collapse it. CSS handles the width
+  // transition (LeftSidebar.module.css: transition: width 0.2s ease).
+  // Skip entirely if the sidebar is already collapsed.
+  useEffect(() => {
+    if (!state.sidebar.isExpanded) return;
+    const t = setTimeout(() => dispatch({ type: 'TOGGLE_SIDEBAR' }), 600);
+    return () => clearTimeout(t);
+    // Mount-only: capture initial sidebar state, ignore later toggles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Clerk user — used for commit author attribution. Push into the
   // sessionHistory module so the auto-logger (which runs inside the
@@ -2209,6 +2236,10 @@ export default function StudioDev() {
 
   return (
     <div className="studio-dev" style={{ left: state.sidebar.isExpanded ? 220 : 48 }}>
+      <div
+        className={`sd-loading-overlay ${studioLoading ? '' : 'sd-loading-overlay--hidden'}`}
+        aria-hidden="true"
+      />
       {/* ================== HEADER ================== */}
       <header className="wb-menubar">
         <div className="wb-brand" style={{ cursor: 'pointer' }} onClick={() => setActiveMode('welcome')}>
