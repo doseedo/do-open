@@ -514,487 +514,130 @@ function AppContent() {
     setShowMidiBrowser(false); // Hide MIDI browser when showing chat
   };
 
-  // /studio is the workbench-themed StudioDev: bypasses the classic
-  // navbar/sidebar/DAW chrome and renders the from-scratch studio. Uses
-  // the same AppContext + audio engine so every button here is wired to
-  // the production state.
-  if (location.pathname === '/studio') {
-    return (
-      <PasswordGate routeName="Studio">
-        <StudioDev />
-      </PasswordGate>
-    );
-  }
+  // ---- Single LeftSidebar instance for the entire SPA ----
+  // The sidebar renders ONCE at the App root so navigating between
+  // workbench routes (/dashboard, /studio, /projects, …) doesn't
+  // unmount/remount it — the same DOM node persists, so width
+  // transitions are smooth and no auto-expand effect re-fires per
+  // route change. Each route below returns just its content.
+  const viewFlags = {
+    isHomeView:      currentView === 'home',
+    isDashboardView: currentView === 'dashboard' || currentView === 'projects',
+    isSearchView:    currentView === 'search',
+    isUserInfoView:  currentView === 'userinfo',
+    isToolsView:     currentView === 'tools',
+    isWhatsNewView:  currentView === 'whatsnew',
+    isResearchView:  currentView === 'research',
+    isDownloadsView: currentView === 'downloads',
+    isPluginsView:   currentView === 'plugins',
+    isModelsView:    currentView === 'models',
+  };
 
-  // Show home view with sidebar. /dashboard now renders the workbench
-  // Dashboard template (slideshow + Jump Back In + Activity + Trending +
-  // Your Week) with the sidebar's Home entry highlighted.
-  if (currentView === 'home') {
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-          isHomeView={true}
-        />
+  // Route content selector — returns just the route's content, no chrome.
+  const renderRouteContent = () => {
+    // /studio is the workbench-themed StudioDev: gated, renders the
+    // from-scratch studio; the LeftSidebar above stays mounted.
+    if (location.pathname === '/studio') {
+      return (
+        <PasswordGate routeName="Studio">
+          <StudioDev />
+        </PasswordGate>
+      );
+    }
+    if (currentView === 'home') {
+      return (
         <Dashboard
           onCreateNew={handleCreateNew}
           onLoadProject={handleLoadProject}
         />
-      </div>
-    );
-  }
-
-  // Show projects view (flat sessions table). Distinct from /dashboard —
-  // the full project list lives here, with ProjectCard rows for rename /
-  // delete / load.
-  if (currentView === 'projects') {
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-          isDashboardView={true}
-        />
+      );
+    }
+    if (currentView === 'projects') {
+      return (
         <Projects
           onCreateNew={handleCreateNew}
           onLoadProject={handleLoadProject}
         />
-      </div>
-    );
-  }
-
-  // Show search view with sidebar
-  if (currentView === 'search') {
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-          isSearchView={true}
-        />
-        <Search />
-      </div>
-    );
-  }
-
-  // Show user info view with sidebar
-  if (currentView === 'userinfo') {
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-          isUserInfoView={true}
-        />
-        <UserInfo onLogout={handleGoToHome} />
-      </div>
-    );
-  }
-
-  // Show tools view with sidebar (password protected)
-  if (currentView === 'tools') {
-    return (
-      <PasswordGate routeName="Tools">
-        <div className="App">
-          <LiquidGlassFilters />
-          <LeftSidebar
-            onBackToDashboard={handleBackToDashboard}
-            onGoToHome={handleGoToHome}
-            onGoToSearch={handleGoToSearch}
-            onGoToUserInfo={handleGoToUserInfo}
-            onGoToTools={handleGoToTools}
-            onGoToWhatsNew={handleGoToWhatsNew}
-            onGoToResearch={handleGoToResearch}
-            onGoToDownloads={handleGoToDownloads}
-            onGoToPlugins={handleGoToPlugins}
-            onToggleSearch={handleToggleSearch}
-            onShowGenerationPanel={handleShowGenerationPanel}
-            onShowMidiBrowser={handleShowMidiBrowser}
-            showMidiBrowser={showMidiBrowser}
-            onToggleChat={handleToggleChat}
-            showChatWindow={showChatWindow}
-            isToolsView={true}
-          />
+      );
+    }
+    if (currentView === 'search') return <Search />;
+    if (currentView === 'userinfo') return <UserInfo onLogout={handleGoToHome} />;
+    if (currentView === 'tools') {
+      return (
+        <PasswordGate routeName="Tools">
           <Tools />
-          </div>
-      </PasswordGate>
-    );
-  }
-
-  // Show what's new view with sidebar
-  if (currentView === 'whatsnew') {
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-          isWhatsNewView={true}
-        />
-        <WhatsNew />
-      </div>
-    );
-  }
-
-  // Show research view with sidebar
-  if (currentView === 'research') {
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-          isResearchView={true}
-        />
-        <Research />
-      </div>
-    );
-  }
-
-  // Show downloads view with sidebar
-  if (currentView === 'downloads') {
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-          isDownloadsView={true}
-        />
-        <Downloads />
-      </div>
-    );
-  }
-
-  // Show about/privacy/terms/help/feedback/plans views with sidebar.
-  // Help, Feedback, and Plans aren't strictly "legal" pages but they reuse
-  // Legal.module.css and the same sidebar-plus-centered-content layout, so
-  // they ride this branch.
-  if (
-    currentView === 'about' ||
-    currentView === 'privacy' ||
-    currentView === 'terms' ||
-    currentView === 'help' ||
-    currentView === 'feedback' ||
-    currentView === 'plans'
-  ) {
-    const LegalComponent =
-      currentView === 'about' ? About :
-      currentView === 'privacy' ? Privacy :
-      currentView === 'terms' ? Terms :
-      currentView === 'help' ? Help :
-      currentView === 'feedback' ? Feedback :
-      Plans;
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-        />
-        <LegalComponent />
-      </div>
-    );
-  }
-
-  // Show plugins view with sidebar
-  if (currentView === 'plugins') {
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-          isPluginsView={true}
-        />
-        <Plugins />
-      </div>
-    );
-  }
-
-  // Show models catalog view with sidebar
-  if (currentView === 'models') {
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-          isModelsView={true}
-        />
-        <Models />
-      </div>
-    );
-  }
-
-  // Show creation detail view with sidebar
-  if (currentView === 'creation') {
-    const cid = location.pathname.split('/')[2];
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-        />
-        <CreationView creationId={cid} />
-      </div>
-    );
-  }
-
-  // Show public profile view with sidebar
-  if (currentView === 'publicProfile') {
-    const profileUsername = location.pathname.split('/')[2];
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-        />
-        <PublicProfile username={profileUsername} />
-      </div>
-    );
-  }
-
-  // Show DO1 view with sidebar (legacy route, not in nav)
-  if (currentView === 'do1') {
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-        />
-        <DO1 />
-      </div>
-    );
-  }
-
-  // Show dashboard view with sidebar
-  if (currentView === 'dashboard') {
-    return (
-      <div className="App">
-        <LiquidGlassFilters />
-        <LeftSidebar
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          onShowGenerationPanel={handleShowGenerationPanel}
-          onShowMidiBrowser={handleShowMidiBrowser}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-          isDashboardView={true}
-        />
+        </PasswordGate>
+      );
+    }
+    if (currentView === 'whatsnew') return <WhatsNew />;
+    if (currentView === 'research') return <Research />;
+    if (currentView === 'downloads') return <Downloads />;
+    if (
+      currentView === 'about' ||
+      currentView === 'privacy' ||
+      currentView === 'terms' ||
+      currentView === 'help' ||
+      currentView === 'feedback' ||
+      currentView === 'plans'
+    ) {
+      const LegalComponent =
+        currentView === 'about'    ? About    :
+        currentView === 'privacy'  ? Privacy  :
+        currentView === 'terms'    ? Terms    :
+        currentView === 'help'     ? Help     :
+        currentView === 'feedback' ? Feedback :
+        Plans;
+      return <LegalComponent />;
+    }
+    if (currentView === 'plugins') return <Plugins />;
+    if (currentView === 'models') return <Models />;
+    if (currentView === 'creation') {
+      const cid = location.pathname.split('/')[2];
+      return <CreationView creationId={cid} />;
+    }
+    if (currentView === 'publicProfile') {
+      const profileUsername = location.pathname.split('/')[2];
+      return <PublicProfile username={profileUsername} />;
+    }
+    if (currentView === 'do1') return <DO1 />;
+    if (currentView === 'dashboard') {
+      return (
         <div id="main-content">
           <Dashboard
             onCreateNew={handleCreateNew}
             onLoadProject={handleLoadProject}
           />
         </div>
-      </div>
-    );
-  }
+      );
+    }
+    return null;
+  };
 
-  // No matching view — fall through to null. Should not be reached; every
-  // valid currentView has an explicit branch above.
-  return null;
+  return (
+    <div className="App">
+      <LiquidGlassFilters />
+      <LeftSidebar
+        onBackToDashboard={handleBackToDashboard}
+        onGoToHome={handleGoToHome}
+        onGoToSearch={handleGoToSearch}
+        onGoToUserInfo={handleGoToUserInfo}
+        onGoToTools={handleGoToTools}
+        onGoToWhatsNew={handleGoToWhatsNew}
+        onGoToResearch={handleGoToResearch}
+        onGoToDownloads={handleGoToDownloads}
+        onGoToPlugins={handleGoToPlugins}
+        onGoToModels={handleGoToModels}
+        onToggleSearch={handleToggleSearch}
+        onShowGenerationPanel={handleShowGenerationPanel}
+        onShowMidiBrowser={handleShowMidiBrowser}
+        showMidiBrowser={showMidiBrowser}
+        onToggleChat={handleToggleChat}
+        showChatWindow={showChatWindow}
+        {...viewFlags}
+      />
+      {renderRouteContent()}
+    </div>
+  );
 }
 
 /**

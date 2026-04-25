@@ -53,7 +53,6 @@ import { renderTrackFlexPitch } from '../../services/flexPitchRender';
 import StudioDevGenerate from './StudioDevGenerate';
 import StudioDevChat from './StudioDevChat';
 import AutomationWindow from '../AutomationWindow/AutomationWindow';
-import LeftSidebar from '../Sidebar/LeftSidebar/LeftSidebar';
 import OutOfCreditsModal from './OutOfCreditsModal';
 import StudioDevFileMenu from './StudioDevFileMenu';
 import { useAgentWebSocket } from '../ChatWindow/useAgentWebSocket';
@@ -2274,26 +2273,10 @@ export default function StudioDev() {
       </header>
 
       {/* ================== MAIN SPLIT ================== */}
+      {/* The shared LeftSidebar nav rail is rendered once at the App
+          root (src/App.js) so it persists across route changes — no
+          unmount/remount jump when navigating /dashboard ↔ /studio. */}
       <div className="sd-main">
-        {/* -------- LEFT NAV RAIL — shared dashboard sidebar -------- */}
-        <LeftSidebar
-          onBackToDashboard={() => navigate('/projects')}
-          onGoToHome={() => navigate('/dashboard')}
-          onGoToSearch={() => navigate('/search')}
-          onGoToUserInfo={() => navigate('/profile')}
-          onGoToTools={() => navigate('/tools')}
-          onGoToWhatsNew={() => navigate('/whats-new')}
-          onGoToResearch={() => navigate('/research')}
-          onGoToDownloads={() => navigate('/downloads')}
-          onGoToPlugins={() => navigate('/plugins')}
-          onGoToModels={() => navigate('/models')}
-          onShowGenerationPanel={() => setSidebarPanel('instruments')}
-          onShowMidiBrowser={() => setSidebarPanel((p) => p === 'browse' ? 'instruments' : 'browse')}
-          showMidiBrowser={sidebarPanel === 'browse'}
-          onToggleChat={() => setSidebarPanel((p) => p === 'chat' ? 'instruments' : 'chat')}
-          showChatWindow={sidebarPanel === 'chat'}
-        />
-
         {/* -------- LEFT SIDEBAR (swaps content by panel) -------- */}
         <aside className="sd-sidebar" style={{ width: sidebarWidth, flex: `0 0 ${sidebarWidth}px` }}>
           {sidebarPanel === 'instruments' && (
