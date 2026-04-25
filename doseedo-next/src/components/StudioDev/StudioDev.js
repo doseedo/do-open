@@ -2253,6 +2253,7 @@ export default function StudioDev() {
           <div className="wb-brand__version">v0.42.1</div>
         </div>
         <div className="wb-divider">│</div>
+        <StudioDevFileMenu />
         <nav className="wb-menu">
           <button className="wb-menu__item" onClick={() => undo()}>Undo</button>
           <button className="wb-menu__item" onClick={() => redo()}>Redo</button>
@@ -2264,11 +2265,6 @@ export default function StudioDev() {
         <div className="wb-menubar__meta">
           PROJECT: {(state.projectName || 'untitled').toLowerCase().replace(/\s+/g, '_')}.dsd · SR 48kHz · 24bit ·
           {' '}{autosaveStatus === 'saving' ? 'saving' : autosaveStatus === 'saved' ? 'saved' : autosaveStatus === 'failed' ? 'save failed' : 'idle'}
-        </div>
-        {/* Retain the File dropdown as a tiny pinned slot at the far right so
-            New/Open/Save/Save As/Export shortcuts still exist. */}
-        <div className="wb-brand" style={{ marginLeft: 6 }}>
-          <StudioDevFileMenu />
         </div>
       </header>
 
