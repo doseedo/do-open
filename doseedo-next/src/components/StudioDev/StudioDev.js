@@ -21,6 +21,7 @@ import {
   refsAtCommit,
   createCommit as sh_createCommit,
   nextBranchName as sh_nextBranchName,
+  autoArchiveBranchName as sh_autoArchiveBranchName,
   setCurrentAuthor as sh_setCurrentAuthor,
   labelForAction as sh_labelForAction,
 } from '../../services/sessionHistory';
@@ -2066,19 +2067,28 @@ export default function StudioDev() {
 
   const historyRevertToCommit = useCallback((commit) => {
     if (!commit?.snapshot) return;
-    const parentId = state.sessionHistory?.refs?.[state.sessionHistory?.currentBranch] || null;
+    const history = state.sessionHistory;
+    const currentTipId = history?.refs?.[history?.currentBranch] || null;
+    // Auto-archive the pre-revert tip so the abandoned line of work is
+    // still visible under a branch label rather than only by raw id.
+    const archiveBranchName = currentTipId ? sh_autoArchiveBranchName(history, currentTipId) : null;
     const label = `Revert to "${commit.label}" (${commit.id.slice(0, 8)})`;
     // Clone the target snapshot so the new commit's snapshot is
     // independent from the original (so later edits don't mutate it).
     const snapshot = JSON.parse(JSON.stringify(commit.snapshot));
     const newCommit = sh_createCommit({
-      parentId, label, actionType: 'HISTORY_REVERT', snapshot,
+      parentId: currentTipId, label, actionType: 'HISTORY_REVERT', snapshot,
     });
     dispatch({
       type: 'HISTORY_REVERT_TO_COMMIT',
-      payload: { commit: newCommit, targetCommit: commit },
+      payload: { commit: newCommit, targetCommit: commit, archiveBranchName, archiveTipId: currentTipId },
     });
   }, [dispatch, state.sessionHistory]);
+
+  const historyCheckoutBranch = useCallback((branchName) => {
+    if (!branchName) return;
+    dispatch({ type: 'HISTORY_CHECKOUT_BRANCH', payload: { branchName } });
+  }, [dispatch]);
 
   const historyBranchFromCommit = useCallback((commit) => {
     if (!commit?.id) return;
@@ -2993,9 +3003,20 @@ export default function StudioDev() {
                           {(isHead || branches.length > 0) && (
                             <div className="sd-commit-refs">
                               {isHead && <span className="sd-commit-ref head">HEAD</span>}
-                              {branches.map((b) => (
-                                <span key={b} className="sd-commit-ref">{b}</span>
-                              ))}
+                              {branches.map((b) => {
+                                const isCurrent = b === history.currentBranch;
+                                return (
+                                  <button
+                                    key={b}
+                                    className={`sd-commit-ref sd-commit-ref-btn ${isCurrent ? 'current' : ''}`}
+                                    onClick={() => !isCurrent && historyCheckoutBranch(b)}
+                                    disabled={isCurrent}
+                                    title={isCurrent ? 'Current branch' : `Switch to ${b}`}
+                                  >
+                                    {b}
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
                           <div className="sd-commit-actions">

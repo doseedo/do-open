@@ -1671,12 +1671,19 @@ function appReducer(state, action) {
 
     case 'HISTORY_REVERT_TO_COMMIT': {
       // Write a new commit with parent=current HEAD and snapshot=target
-      // commit's snapshot. HEAD advances on the current branch; the old
-      // tip remains reachable via its own commit id. Preview flag
-      // cleared so live state becomes the new commit.
-      const { commit: newCommit, targetCommit } = action.payload;
+      // commit's snapshot. HEAD advances on the current branch. To keep
+      // the OLD branch tip "still visible" (the user's words), we
+      // simultaneously stamp an `archive-<short>` branch ref at the
+      // pre-revert tip — that ref doesn't move when the current branch
+      // advances, so the prior line of work shows up in the History
+      // list under its own branch label and can be checked back out.
+      const { commit: newCommit, targetCommit, archiveBranchName, archiveTipId } = action.payload;
       if (!newCommit || !targetCommit?.snapshot) return state;
-      const next = recordCommit(state.sessionHistory, newCommit);
+      let history = state.sessionHistory;
+      if (archiveBranchName && archiveTipId && history.commits?.[archiveTipId]) {
+        history = { ...history, refs: { ...history.refs, [archiveBranchName]: archiveTipId } };
+      }
+      const next = recordCommit(history, newCommit);
       return {
         ...state,
         ...targetCommit.snapshot,
@@ -1685,6 +1692,24 @@ function appReducer(state, action) {
         previewCommitId: null,
         history: state.history,
         sessionHistory: next,
+      };
+    }
+
+    case 'HISTORY_CHECKOUT_BRANCH': {
+      // Switch currentBranch to the named ref and load its tip's
+      // snapshot into live state. No commit is written.
+      const { branchName } = action.payload;
+      const tipId = state.sessionHistory?.refs?.[branchName];
+      const tip = tipId ? state.sessionHistory.commits[tipId] : null;
+      if (!tip?.snapshot) return state;
+      return {
+        ...state,
+        ...tip.snapshot,
+        selectedTrack: null,
+        selectedBus: null,
+        previewCommitId: null,
+        history: state.history,
+        sessionHistory: { ...state.sessionHistory, currentBranch: branchName, head: tipId },
       };
     }
 

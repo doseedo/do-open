@@ -1482,6 +1482,12 @@
   border: 1px solid var(--hifi-rule);
 }
 .sd-commit-ref.head { color: var(--hifi-accent); border-color: var(--hifi-accent); }
+.sd-commit-ref-btn { cursor: pointer; }
+.sd-commit-ref-btn:hover:not(:disabled) {
+  color: var(--hifi-ink); border-color: var(--hifi-ink-mute);
+}
+.sd-commit-ref-btn.current { color: var(--hifi-ink); border-color: var(--hifi-ink); cursor: default; }
+.sd-commit-ref-btn:disabled { opacity: 1; }
 .sd-commit-actions {
   display: flex; gap: 4px; margin-top: 2px; flex-wrap: wrap;
 }

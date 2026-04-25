@@ -137,6 +137,18 @@ export function nextBranchName(history, base = 'branch') {
   return `${base}-${n}`;
 }
 
+// Pick an unused branch name to "archive" the current tip onto when a
+// destructive operation (revert) advances a branch's HEAD. Naming it
+// after the short commit id keeps it findable in the History list.
+export function autoArchiveBranchName(history, commitId) {
+  const used = new Set(Object.keys(history.refs || {}));
+  const short = (commitId || '').replace(/^c-/, '').slice(0, 6);
+  let name = `archive-${short}`;
+  let n = 2;
+  while (used.has(name)) { name = `archive-${short}-${n}`; n++; }
+  return name;
+}
+
 // ---------- queries --------------------------------------------------
 export function listCommitsDesc(history) {
   return Object.values(history.commits || {}).sort((a, b) => b.timestamp - a.timestamp);
