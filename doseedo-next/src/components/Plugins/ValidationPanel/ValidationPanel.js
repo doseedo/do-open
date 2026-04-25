@@ -137,12 +137,7 @@ async function buildR11Bridge() {
   try {
     mod = await import('../../../lib/PluginAdapter.js');
   } catch {
-    try {
-      // Engine-tree alternative path some branches use.
-      mod = await import('../../../audio/PluginAdapter');
-    } catch {
-      return null;
-    }
+    return null;
   }
   const Cls = mod && (mod.default || mod.PluginAdapter);
   if (!Cls || typeof Cls !== 'function') return null;
@@ -192,19 +187,6 @@ async function buildR11Bridge() {
 }
 
 async function resolvePluginAdapter() {
-  // Prefer the spec'd `render`-shape (some agents may ship it directly).
-  try {
-    const mod = await import('../../../audio/PluginAdapter');
-    if (mod && mod.default && typeof mod.default.render === 'function') {
-      return { adapter: mod.default, kind: 'r11' };
-    }
-    if (mod && typeof mod.render === 'function') {
-      return { adapter: mod, kind: 'r11' };
-    }
-  } catch {
-    /* fall through to instantiate-bridge */
-  }
-
   const bridge = await buildR11Bridge();
   if (bridge) return { adapter: bridge, kind: 'r11-bridge' };
   return { adapter: fallbackPluginAdapter, kind: 'fallback' };
