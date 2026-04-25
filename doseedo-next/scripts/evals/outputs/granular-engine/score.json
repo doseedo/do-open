@@ -1,0 +1,113 @@
+{
+  "name": "granular-engine",
+  "validation": {
+    "ok": true,
+    "errors": []
+  },
+  "scorecard": {
+    "criteria": [
+      {
+        "name": "archetype",
+        "pass": true,
+        "detail": "got \"Granular Synthesizer\", expected contains one of [granular]"
+      },
+      {
+        "name": "chassis",
+        "pass": true,
+        "detail": "got \"plugin-window\", expected \"plugin-window\""
+      },
+      {
+        "name": "canvas",
+        "pass": true,
+        "detail": "got 1200x800, expected ~1000x720"
+      },
+      {
+        "name": "row-kinds",
+        "pass": true,
+        "detail": "got [module-strip, eq-strip]"
+      },
+      {
+        "name": "knobs",
+        "pass": true,
+        "detail": "got 33, expected 10..40"
+      },
+      {
+        "name": "sliders",
+        "pass": true,
+        "detail": "got 0, expected 0..4"
+      },
+      {
+        "name": "module-kinds",
+        "pass": true,
+        "detail": "got [wavetable-osc, xy-pad, mod-lane]"
+      },
+      {
+        "name": "accent-hue",
+        "pass": true,
+        "detail": "got H=230, distance=90° (tolerance 180°)"
+      }
+    ],
+    "passed": 8,
+    "total": 8,
+    "counts": {
+      "knobs": 33,
+      "sliders": 0,
+      "buttons": 0,
+      "rowKinds": [
+        "module-strip",
+        "eq-strip"
+      ],
+      "moduleKinds": [
+        "wavetable-osc",
+        "xy-pad",
+        "mod-lane"
+      ]
+    }
+  },
+  "meta": {
+    "name": "NEBULA",
+    "productType": "Granular Synthesizer",
+    "version": "v1",
+    "canvas": [
+      1200,
+      800
+    ],
+    "chassis": "plugin-window",
+    "theme": "dark-teal-cyan"
+  },
+  "paletteAccent": "oklch(0.80 0.13 230)",
+  "counts": {
+    "knobs": 33,
+    "sliders": 0,
+    "buttons": 0,
+    "rowKinds": [
+      "module-strip",
+      "eq-strip"
+    ],
+    "moduleKinds": [
+      "wavetable-osc",
+      "xy-pad",
+      "mod-lane"
+    ]
+  },
+  "latency": {
+    "visionMs": 16917,
+    "dslMs": null,
+    "usage": null
+  },
+  "visionAnswers": {
+    "palette": "The dominant colors are dark gray/black, with accents of light gray, teal, and a subtle hint of cyan. The accent color is light gray, and the LED glow color is a soft cyan.",
+    "controls": "KNOB:, SLIDER:, BUTTON:, LED:, DISPLAY:, METER:, OR KEYBOARD:, GRANULATION:, SPACE:, GROWING SPACE:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SCALE:, SHAPE:, FOG, SPEED SYNC:, OFFSET:, DENSITY SYNC:, PITCH:, PITCH:, SC",
+    "text": "Grain Controls, GRANULATION, SPACE, PORTAL OUTPUT"
+  },
+  "truthGaps": [
+    "no xy-pad component",
+    "no mod-lane (step/curve editor) component",
+    "no macro-knob with tick-ring",
+    "no asymmetric pane layout (all current rows are full-width)",
+    "no variable-sweep knob option (only 270° knobs)",
+    "no brand-plate outside header",
+    "no DRY/WET histogram",
+    "no side-rail primitive"
+  ]
+}

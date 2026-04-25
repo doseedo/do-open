@@ -1,0 +1,408 @@
+{
+  "meta": {
+    "name": "NEBULA",
+    "productType": "Analog-Modeled Polysynth",
+    "version": "v1.1",
+    "canvas": [
+      1200,
+      800
+    ],
+    "chassis": "plugin-window",
+    "theme": "cyan-dark"
+  },
+  "palette": {
+    "bg": [
+      "oklch(0.15 0.005 210)",
+      "oklch(0.19 0.006 210)",
+      "oklch(0.23 0.007 210)",
+      "oklch(0.28 0.008 210)",
+      "oklch(0.33 0.009 210)"
+    ],
+    "ink": [
+      "oklch(0.88 0.01 210)",
+      "oklch(0.72 0.01 210)",
+      "oklch(0.52 0.01 210)",
+      "oklch(0.40 0.008 210)"
+    ],
+    "line": "oklch(0.30 0.008 210)",
+    "lineSoft": "oklch(0.26 0.006 210)",
+    "accent": "oklch(0.80 0.15 210)",
+    "led": "oklch(0.80 0.15 210)",
+    "ok": "oklch(0.75 0.14 155)",
+    "warn": "oklch(0.72 0.17 30)"
+  },
+  "type": {
+    "brand": "IBM Plex Serif",
+    "ui": "Inter",
+    "mono": "JetBrains Mono"
+  },
+  "header": {
+    "tabs": [
+      "MAIN",
+      "MIX",
+      "FX",
+      "MATRIX",
+      "GLOBAL"
+    ],
+    "preset": {
+      "name": "Glacier Pad",
+      "author": "Luna Frost"
+    }
+  },
+  "rows": [
+    {
+      "kind": "module-strip",
+      "height": 340,
+      "modules": [
+        {
+          "kind": "sub",
+          "label": "SUB",
+          "waveform": "saw",
+          "oct": "-2",
+          "crs": "—",
+          "knobs": [
+            {
+              "label": "PAN",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "pan"
+            },
+            {
+              "label": "LEVEL",
+              "value": 0.65,
+              "format": "raw"
+            }
+          ]
+        },
+        {
+          "kind": "wavetable-osc",
+          "id": "A",
+          "label": "A",
+          "active": false,
+          "flex": 1.3,
+          "header": {
+            "engine": "WAVETABLE",
+            "tableName": "Glacial Flow",
+            "dest": "F1"
+          },
+          "meta": [
+            {
+              "k": "OCT",
+              "v": "+2"
+            },
+            {
+              "k": "SEM",
+              "v": "-4"
+            },
+            {
+              "k": "FIN",
+              "v": "-41"
+            },
+            {
+              "k": "CRS",
+              "v": "-64.0"
+            }
+          ],
+          "display": {
+            "variant": "wavetable-stacked"
+          },
+          "knobs": [
+            {
+              "label": "PAN",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "pan",
+              "primary": true
+            },
+            {
+              "label": "WT POS",
+              "value": 0.3,
+              "format": "raw"
+            },
+            {
+              "label": "UNISON",
+              "value": 0.25,
+              "format": "count"
+            },
+            {
+              "label": "DETUNE",
+              "value": 0.3,
+              "format": "raw"
+            },
+            {
+              "label": "BLEND",
+              "value": 0.5,
+              "format": "raw"
+            },
+            {
+              "label": "LEVEL",
+              "value": 0.72,
+              "format": "raw"
+            }
+          ]
+        },
+        {
+          "kind": "wavetable-osc",
+          "id": "B",
+          "label": "B",
+          "flex": 1.3,
+          "header": {
+            "engine": "WAVETABLE",
+            "tableName": "Frost Stack"
+          },
+          "meta": [
+            {
+              "k": "OCT",
+              "v": "-2"
+            },
+            {
+              "k": "SEM",
+              "v": "-7"
+            },
+            {
+              "k": "FIN",
+              "v": "0"
+            },
+            {
+              "k": "CRS",
+              "v": "64.0"
+            }
+          ],
+          "display": {
+            "variant": "wavetable-stepped"
+          },
+          "knobs": [
+            {
+              "label": "PAN",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "pan"
+            },
+            {
+              "label": "WT POS",
+              "value": 0.6,
+              "format": "raw"
+            },
+            {
+              "label": "UNISON",
+              "value": 0.4,
+              "format": "count"
+            },
+            {
+              "label": "DETUNE",
+              "value": 0.35,
+              "format": "raw"
+            },
+            {
+              "label": "BLEND",
+              "value": 0.5,
+              "format": "raw"
+            },
+            {
+              "label": "LEVEL",
+              "value": 0.68,
+              "format": "raw"
+            }
+          ]
+        },
+        {
+          "kind": "noise",
+          "label": "NOISE",
+          "header": {
+            "tableName": "Frost"
+          },
+          "knobs": [
+            {
+              "label": "PAN",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "pan"
+            },
+            {
+              "label": "LEVEL",
+              "value": 0.55,
+              "format": "raw"
+            }
+          ]
+        },
+        {
+          "kind": "filter",
+          "label": "FILTER",
+          "hue": "cyan",
+          "header": {
+            "routing": "Ladder 4Pole"
+          },
+          "modes": [
+            "PRE",
+            "A",
+            "B",
+            "C",
+            "POST",
+            "VIZ"
+          ],
+          "activeMode": 1,
+          "knobs": [
+            {
+              "label": "CUTOFF",
+              "value": 0.6,
+              "format": "hz"
+            },
+            {
+              "label": "RES",
+              "value": 0.4,
+              "format": "raw"
+            },
+            {
+              "label": "PAN",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "pan"
+            },
+            {
+              "label": "DRIVE",
+              "value": 0.3,
+              "format": "raw"
+            },
+            {
+              "label": "DAMP",
+              "value": 0.45,
+              "format": "raw"
+            },
+            {
+              "label": "MIX",
+              "value": 0.7,
+              "format": "raw"
+            },
+            {
+              "label": "LEVEL",
+              "value": 0.65,
+              "format": "raw"
+            }
+          ]
+        },
+        {
+          "kind": "envelope",
+          "label": "ENV · AMP",
+          "dest": "VOL",
+          "display": {
+            "variant": "env-curve"
+          },
+          "knobs": [
+            {
+              "label": "ATK",
+              "value": 0.15,
+              "format": "ms"
+            },
+            {
+              "label": "DEC",
+              "value": 0.25,
+              "format": "ms"
+            },
+            {
+              "label": "SUS",
+              "value": 0.6,
+              "format": "percent"
+            },
+            {
+              "label": "REL",
+              "value": 0.35,
+              "format": "ms"
+            },
+            {
+              "label": "HOLD",
+              "value": 0.1,
+              "format": "ms"
+            }
+          ]
+        },
+        {
+          "kind": "lfo",
+          "label": "LFO 1",
+          "dest": "PITCH",
+          "display": {
+            "variant": "lfo-curve"
+          },
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.4,
+              "format": "hz"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.6,
+              "format": "percent"
+            },
+            {
+              "label": "PHASE",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "raw"
+            }
+          ]
+        },
+        {
+          "kind": "macros",
+          "label": "MACROS",
+          "knobs": [
+            {
+              "label": "M1",
+              "value": 0.4,
+              "primary": true
+            },
+            {
+              "label": "M2",
+              "value": 0.6
+            },
+            {
+              "label": "M3",
+              "value": 0.3
+            },
+            {
+              "label": "M4",
+              "value": 0.7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "mod-matrix",
+      "height": 220,
+      "panels": [
+        {
+          "kind": "velocity",
+          "label": "VELOCITY",
+          "display": {
+            "variant": "velocity-curve",
+            "curve": 1.4
+          },
+          "knobs": [
+            {
+              "label": "CURVE",
+              "value": 0.6,
+              "format": "raw"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.7,
+              "format": "percent"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "keyboard-strip",
+      "height": 70,
+      "spec": {
+        "octaves": 5,
+        "pressed": [
+          48,
+          52,
+          55
+        ]
+      }
+    }
+  ]
+}

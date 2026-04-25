@@ -1,0 +1,458 @@
+{
+  "meta": {
+    "name": "NEBULA",
+    "productType": "Granular Synthesizer",
+    "version": "v1",
+    "canvas": [
+      1200,
+      800
+    ],
+    "chassis": "plugin-window",
+    "theme": "dark-teal-cyan"
+  },
+  "palette": {
+    "bg": [
+      "oklch(0.12 0.005 260)",
+      "oklch(0.18 0.007 260)",
+      "oklch(0.24 0.009 260)",
+      "oklch(0.30 0.011 260)",
+      "oklch(0.36 0.013 260)"
+    ],
+    "ink": [
+      "oklch(0.92 0.015 260)",
+      "oklch(0.75 0.012 260)",
+      "oklch(0.55 0.010 260)",
+      "oklch(0.42 0.008 260)"
+    ],
+    "line": "oklch(0.32 0.012 260)",
+    "lineSoft": "oklch(0.26 0.010 260)",
+    "accent": "oklch(0.80 0.13 230)",
+    "accent2": "oklch(0.72 0.12 30)",
+    "led": "oklch(0.80 0.13 230)",
+    "ok": "oklch(0.75 0.14 155)",
+    "warn": "oklch(0.72 0.17 30)"
+  },
+  "type": {
+    "brand": "Space Grotesk",
+    "ui": "Inter",
+    "mono": "JetBrains Mono"
+  },
+  "rows": [
+    {
+      "kind": "module-strip",
+      "height": 340,
+      "modules": [
+        {
+          "kind": "wavetable-osc",
+          "id": "A",
+          "label": "GRAIN",
+          "active": true,
+          "flex": 1.4,
+          "header": {
+            "engine": "GRANULAR",
+            "tableName": "Portal Output",
+            "dest": "F1"
+          },
+          "meta": [
+            {
+              "k": "OCT",
+              "v": "-1"
+            },
+            {
+              "k": "SEM",
+              "v": "0"
+            },
+            {
+              "k": "FIN",
+              "v": "0"
+            },
+            {
+              "k": "CRS",
+              "v": "0.0"
+            }
+          ],
+          "display": {
+            "variant": "granular-sample"
+          },
+          "knobs": [
+            {
+              "label": "WARP",
+              "value": 0.3,
+              "format": "raw",
+              "accent": "ok"
+            },
+            {
+              "label": "SCAN",
+              "value": 0.6,
+              "format": "raw",
+              "accent": "ok"
+            },
+            {
+              "label": "DENSITY",
+              "value": 0.4,
+              "format": "raw",
+              "accent": "ok"
+            },
+            {
+              "label": "LENGTH",
+              "value": 0.5,
+              "format": "raw",
+              "accent": "ok"
+            },
+            {
+              "label": "PAN",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "pan",
+              "accent": "ok"
+            },
+            {
+              "label": "LEVEL",
+              "value": 0.7,
+              "format": "raw",
+              "accent": "ok"
+            },
+            {
+              "label": "OFFSET",
+              "value": 0.2,
+              "format": "raw",
+              "accent": "ok"
+            },
+            {
+              "label": "DIR",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "raw",
+              "accent": "ok"
+            },
+            {
+              "label": "PITCH",
+              "value": 0.4,
+              "bipolar": true,
+              "format": "semi",
+              "accent": "ok"
+            }
+          ]
+        },
+        {
+          "kind": "xy-pad",
+          "label": "SPACE",
+          "background": "constellation",
+          "cursor": [
+            0.4,
+            0.6
+          ],
+          "axisLabels": [
+            "X POSITION",
+            "Y POSITION"
+          ]
+        },
+        {
+          "kind": "mod-lane",
+          "label": "GROWING SPACE",
+          "mode": "curve",
+          "points": [
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1
+          ],
+          "color": "accent",
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.4,
+              "format": "hz"
+            },
+            {
+              "label": "HUMANIZE",
+              "value": 0.3,
+              "format": "percent"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.6,
+              "format": "percent"
+            }
+          ]
+        },
+        {
+          "kind": "mod-lane",
+          "label": "DENSITY SYNC",
+          "mode": "step",
+          "points": [
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1
+          ],
+          "color": "accent2",
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.4,
+              "format": "hz"
+            },
+            {
+              "label": "HUMANIZE",
+              "value": 0.3,
+              "format": "percent"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.6,
+              "format": "percent"
+            }
+          ]
+        },
+        {
+          "kind": "mod-lane",
+          "label": "PITCH",
+          "mode": "curve",
+          "points": [
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1
+          ],
+          "color": "ok",
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.4,
+              "format": "hz"
+            },
+            {
+              "label": "HUMANIZE",
+              "value": 0.3,
+              "format": "percent"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.6,
+              "format": "percent"
+            }
+          ]
+        },
+        {
+          "kind": "mod-lane",
+          "label": "SCALE",
+          "mode": "curve",
+          "points": [
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1
+          ],
+          "color": "warn",
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.4,
+              "format": "hz"
+            },
+            {
+              "label": "HUMANIZE",
+              "value": 0.3,
+              "format": "percent"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.6,
+              "format": "percent"
+            }
+          ]
+        },
+        {
+          "kind": "mod-lane",
+          "label": "SHAPE",
+          "mode": "curve",
+          "points": [
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1
+          ],
+          "color": "accent",
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.4,
+              "format": "hz"
+            },
+            {
+              "label": "HUMANIZE",
+              "value": 0.3,
+              "format": "percent"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.6,
+              "format": "percent"
+            }
+          ]
+        },
+        {
+          "kind": "mod-lane",
+          "label": "FOG",
+          "mode": "curve",
+          "points": [
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1
+          ],
+          "color": "accent2",
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.4,
+              "format": "hz"
+            },
+            {
+              "label": "HUMANIZE",
+              "value": 0.3,
+              "format": "percent"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.6,
+              "format": "percent"
+            }
+          ]
+        },
+        {
+          "kind": "mod-lane",
+          "label": "SPEED SYNC",
+          "mode": "curve",
+          "points": [
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1
+          ],
+          "color": "ok",
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.4,
+              "format": "hz"
+            },
+            {
+              "label": "HUMANIZE",
+              "value": 0.3,
+              "format": "percent"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.6,
+              "format": "percent"
+            }
+          ]
+        },
+        {
+          "kind": "mod-lane",
+          "label": "OFFSET",
+          "mode": "curve",
+          "points": [
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+            1
+          ],
+          "color": "warn",
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.4,
+              "format": "hz"
+            },
+            {
+              "label": "HUMANIZE",
+              "value": 0.3,
+              "format": "percent"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.6,
+              "format": "percent"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "eq-strip",
+      "height": 72,
+      "io": {
+        "in": {
+          "label": "GAIN",
+          "value": 0.5
+        },
+        "out": {
+          "labels": [
+            "WIDTH",
+            "GAIN"
+          ],
+          "values": [
+            0.6,
+            0.55
+          ]
+        }
+      },
+      "eq": {
+        "cutLeft": 0.15,
+        "cutRight": 0.85,
+        "tone": 0.5
+      }
+    }
+  ]
+}

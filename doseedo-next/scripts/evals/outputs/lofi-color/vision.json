@@ -1,0 +1,13 @@
+{
+  "answers": {
+    "palette": "The interface has a dark background with a cream/light beige accent. The 'WOW 2 FLUTTER' and 'DECAY' buttons have a light green/teal highlight.",
+    "controls": "KNOB:, SLIDER:, BUTTON:, LED:, DISPLAY:, METER:, KEYBOARD:\nNOISE, WOBBLE, DISTORT, DIGITAL, SPACE, MAGNETIC",
+    "text": "RC-20, Vinyl 1, TUBEPAIR, WOW 2 FLUTTER, RATE DIGIT BITS, DECAY, WEAR FLUTTER, STEREO, DROPOUTS, FLEX, NOISE, WOBBLE, DISTORT, DIGITAL, SPACE, MAGNETIC, xlnaudio"
+  },
+  "latencies": {
+    "palette": 3586,
+    "controls": 3343,
+    "text": 3675
+  },
+  "totalMs": 10604
+}

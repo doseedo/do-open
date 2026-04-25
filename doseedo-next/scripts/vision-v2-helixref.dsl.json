@@ -1,0 +1,460 @@
+{
+  "meta": {
+    "name": "AURORA",
+    "productType": "Wavetable Synthesizer",
+    "version": "v1.1",
+    "canvas": [
+      1440,
+      900
+    ],
+    "chassis": "plugin-window",
+    "theme": "dark-cyan"
+  },
+  "palette": {
+    "bg": [
+      "oklch(0.12 0.005 60)",
+      "oklch(0.18 0.006 60)",
+      "oklch(0.24 0.007 60)",
+      "oklch(0.30 0.008 60)",
+      "oklch(0.36 0.009 60)"
+    ],
+    "ink": [
+      "oklch(0.88 0.01 60)",
+      "oklch(0.72 0.01 60)",
+      "oklch(0.52 0.01 60)",
+      "oklch(0.40 0.008 60)"
+    ],
+    "line": "oklch(0.30 0.008 60)",
+    "lineSoft": "oklch(0.26 0.006 60)",
+    "accent": "oklch(0.62 0.15 180)",
+    "led": "oklch(0.62 0.15 180)",
+    "ok": "oklch(0.75 0.14 155)",
+    "warn": "oklch(0.62 0.15 30)"
+  },
+  "type": {
+    "brand": "Bitter",
+    "ui": "Inter",
+    "mono": "JetBrains Mono",
+    "display": "Bitter"
+  },
+  "header": {
+    "tabs": [
+      "MAIN",
+      "MIX",
+      "FX",
+      "MATRIX",
+      "GLOBAL"
+    ],
+    "preset": {
+      "name": "At Thermorr...F1",
+      "author": "Thermorr Labs"
+    }
+  },
+  "rows": [
+    {
+      "kind": "module-strip",
+      "height": 340,
+      "modules": [
+        {
+          "kind": "wavetable-osc",
+          "id": "A",
+          "label": "A",
+          "active": false,
+          "flex": 1.3,
+          "header": {
+            "engine": "WAVETABLE",
+            "tableName": "Default Shapes"
+          },
+          "meta": [
+            {
+              "k": "OCT",
+              "v": "+2"
+            },
+            {
+              "k": "SEM",
+              "v": "-4"
+            },
+            {
+              "k": "FIN",
+              "v": "-41"
+            },
+            {
+              "k": "CRS",
+              "v": "-64.0"
+            }
+          ],
+          "display": {
+            "variant": "wavetable-stacked"
+          },
+          "knobs": [
+            {
+              "label": "PAN",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "pan",
+              "primary": true
+            },
+            {
+              "label": "WT POS",
+              "value": 0.3,
+              "format": "raw"
+            },
+            {
+              "label": "UNISON",
+              "value": 0.25,
+              "format": "count"
+            },
+            {
+              "label": "DETUNE",
+              "value": 0.3,
+              "format": "raw"
+            },
+            {
+              "label": "BLEND",
+              "value": 0.5,
+              "format": "raw"
+            },
+            {
+              "label": "LEVEL",
+              "value": 0.72,
+              "format": "raw"
+            }
+          ]
+        },
+        {
+          "kind": "wavetable-osc",
+          "id": "B",
+          "label": "B",
+          "flex": 1.3,
+          "header": {
+            "engine": "WAVETABLE",
+            "tableName": "ALU Slap"
+          },
+          "meta": [
+            {
+              "k": "OCT",
+              "v": "-2"
+            },
+            {
+              "k": "SEM",
+              "v": "-7"
+            },
+            {
+              "k": "FIN",
+              "v": "0"
+            },
+            {
+              "k": "CRS",
+              "v": "64.0"
+            }
+          ],
+          "display": {
+            "variant": "wavetable-stepped"
+          },
+          "knobs": [
+            {
+              "label": "PAN",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "pan"
+            },
+            {
+              "label": "WT POS",
+              "value": 0.6,
+              "format": "raw"
+            },
+            {
+              "label": "UNISON",
+              "value": 0.4,
+              "format": "count"
+            },
+            {
+              "label": "DETUNE",
+              "value": 0.35,
+              "format": "raw"
+            },
+            {
+              "label": "BLEND",
+              "value": 0.5,
+              "format": "raw"
+            },
+            {
+              "label": "LEVEL",
+              "value": 0.68,
+              "format": "raw"
+            }
+          ]
+        },
+        {
+          "kind": "noise",
+          "label": "NOISE",
+          "header": {
+            "tableName": "White"
+          },
+          "knobs": [
+            {
+              "label": "PAN",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "pan"
+            },
+            {
+              "label": "LEVEL",
+              "value": 0.55,
+              "format": "raw"
+            }
+          ]
+        },
+        {
+          "kind": "filter",
+          "label": "FILTER 1",
+          "hue": "cyan",
+          "header": {
+            "routing": "Low-Pass 24"
+          },
+          "modes": [
+            "PRE",
+            "A",
+            "B",
+            "C",
+            "POST",
+            "VIZ"
+          ],
+          "activeMode": 1,
+          "knobs": [
+            {
+              "label": "CUTOFF",
+              "value": 0.6,
+              "format": "hz"
+            },
+            {
+              "label": "RES",
+              "value": 0.4,
+              "format": "raw"
+            },
+            {
+              "label": "PAN",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "pan"
+            },
+            {
+              "label": "DRIVE",
+              "value": 0.3,
+              "format": "raw"
+            },
+            {
+              "label": "DAMP",
+              "value": 0.45,
+              "format": "raw"
+            },
+            {
+              "label": "MIX",
+              "value": 0.7,
+              "format": "raw"
+            },
+            {
+              "label": "LEVEL",
+              "value": 0.65,
+              "format": "raw"
+            }
+          ]
+        },
+        {
+          "kind": "filter",
+          "label": "FILTER 2",
+          "hue": "cyan",
+          "active": true,
+          "header": {
+            "routing": "Plate Verb"
+          },
+          "modes": [
+            "PRE",
+            "A",
+            "B",
+            "C",
+            "POST",
+            "VIZ"
+          ],
+          "activeMode": 0,
+          "knobs": [
+            {
+              "label": "CUTOFF",
+              "value": 0.55,
+              "format": "hz"
+            },
+            {
+              "label": "RES",
+              "value": 0.5,
+              "format": "raw"
+            },
+            {
+              "label": "PAN",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "pan"
+            },
+            {
+              "label": "DRIVE",
+              "value": 0.4,
+              "format": "raw"
+            },
+            {
+              "label": "DAMP",
+              "value": 0.5,
+              "format": "raw"
+            },
+            {
+              "label": "MIX",
+              "value": 0.6,
+              "format": "raw"
+            },
+            {
+              "label": "LEVEL",
+              "value": 0.6,
+              "format": "raw"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "mod-matrix",
+      "height": 220,
+      "panels": [
+        {
+          "kind": "macros",
+          "label": "MACROS",
+          "knobs": [
+            {
+              "label": "M1",
+              "value": 0.4,
+              "primary": true
+            },
+            {
+              "label": "M2",
+              "value": 0.6
+            },
+            {
+              "label": "M3",
+              "value": 0.3
+            },
+            {
+              "label": "M4",
+              "value": 0.7
+            },
+            {
+              "label": "M5",
+              "value": 0.5
+            },
+            {
+              "label": "M6",
+              "value": 0.2
+            },
+            {
+              "label": "M7",
+              "value": 0.55
+            },
+            {
+              "label": "M8",
+              "value": 0.45
+            }
+          ]
+        },
+        {
+          "kind": "envelope",
+          "label": "ENV 1 · AMP",
+          "dest": "VOL",
+          "display": {
+            "variant": "env-curve"
+          },
+          "knobs": [
+            {
+              "label": "ATK",
+              "value": 0.15,
+              "format": "ms"
+            },
+            {
+              "label": "DEC",
+              "value": 0.25,
+              "format": "ms"
+            },
+            {
+              "label": "SUS",
+              "value": 0.6,
+              "format": "percent"
+            },
+            {
+              "label": "REL",
+              "value": 0.35,
+              "format": "ms"
+            },
+            {
+              "label": "HOLD",
+              "value": 0.1,
+              "format": "ms"
+            }
+          ]
+        },
+        {
+          "kind": "lfo",
+          "label": "LFO 1",
+          "dest": "PITCH",
+          "display": {
+            "variant": "lfo-curve"
+          },
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.4,
+              "format": "hz"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.6,
+              "format": "percent"
+            },
+            {
+              "label": "PHASE",
+              "value": 0.5,
+              "bipolar": true,
+              "format": "raw"
+            }
+          ]
+        },
+        {
+          "kind": "velocity",
+          "label": "VELOCITY",
+          "display": {
+            "variant": "velocity-curve",
+            "curve": 1.4
+          },
+          "knobs": [
+            {
+              "label": "CURVE",
+              "value": 0.6,
+              "format": "raw"
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.7,
+              "format": "percent"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "keyboard-strip",
+      "height": 70,
+      "spec": {
+        "octaves": 5,
+        "pressed": [
+          48,
+          52,
+          55
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "answers": {
+    "palette": "The interface predominantly uses dark gray and black as its background. The accent color is a lighter gray, and the LED glow is a bright cyan/light blue.",
+    "controls": "KNOB:, SLIDER:, BUTTON:, LED:, DISPLAY:, METER:, OR KEYBOARD:, REND:, FIND, WHITE, REVERB, FLITER, MAIN",
+    "text": "OSC, MIX, FX, MATRIX, GLOBAL, WAVABLE, DEFAULT SHAPES, ALU SLAP, WHITE, NOISE, FILTER, REVERB, F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At"
+  },
+  "latencies": {
+    "palette": 2807,
+    "controls": 2240,
+    "text": 12813
+  },
+  "totalMs": 17860
+}

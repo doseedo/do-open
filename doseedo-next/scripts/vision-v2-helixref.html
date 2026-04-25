@@ -1,0 +1,1946 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AURORA — ref-renderer preview</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <style>
+    html, body { margin: 0; padding: 0; background: #0a0908; color: #d9d4cd;
+      font-family: system-ui, sans-serif; min-height: 100vh; }
+    #root { display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; padding: 20px; box-sizing: border-box; }
+    /* Ref-renderer stylesheet. All color / font tokens come from CSS custom
+ * properties set inline on .rr-shell by renderDSL.js. This file defines
+ * only layout + structural styling — never hardcoded colors. Intentional
+ * exception: fallback grey/black values so the editor doesn't blow up
+ * when a token is missing.
+ */
+
+/* reset within the shell only */
+.rr-shell, .rr-shell * { box-sizing: border-box; }
+
+.rr-shell {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-0, #0f0e0d);
+  color: var(--ink, #d9d4cd);
+  border: 1px solid var(--line, #3a3632);
+  border-radius: 8px;
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6),
+              inset 0 0 0 1px var(--bg-3, #2a2724);
+  overflow: hidden;
+  font-feature-settings: "tnum";
+  font-size: 12px;
+  position: relative;
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/* Header                                                          */
+
+.rr-header {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  padding: 0 12px;
+  gap: 12px;
+  background: var(--bg-1, #1a1816);
+  border-bottom: 1px solid var(--line, #3a3632);
+  flex-shrink: 0;
+}
+.rr-brand { display: flex; align-items: center; gap: 10px; }
+.rr-brand__logo {
+  width: 30px; height: 30px; border-radius: 4px;
+  background: var(--accent, oklch(0.78 0.15 70));
+  color: var(--bg-0, #0f0e0d);
+  font-family: var(--font-brand, serif);
+  font-weight: 700;
+  font-size: 20px;
+  display: flex; align-items: center; justify-content: center;
+}
+.rr-brand__name {
+  font-family: var(--font-brand, serif);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  font-size: 16px;
+  color: var(--ink, #d9d4cd);
+}
+.rr-brand__sub {
+  font-family: var(--font-mono, monospace);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  color: var(--ink-dim, #9a958e);
+  text-transform: uppercase;
+}
+
+.rr-tabs { display: flex; gap: 4px; margin-left: 12px; }
+.rr-tab {
+  padding: 4px 10px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--ink-dim, #9a958e);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: var(--bg-2, #241f1b);
+}
+.rr-tab.is-active {
+  color: var(--accent, oklch(0.78 0.15 70));
+  border-color: var(--accent-deep, #5a4628);
+  background: var(--bg-3, #2a2724);
+}
+
+.rr-patchbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 10px;
+  background: var(--bg-2, #241f1b);
+  border-radius: 3px;
+  margin-left: auto;
+  border: 1px solid var(--line, #3a3632);
+}
+.rr-patchbar__name {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--accent, oklch(0.78 0.15 70));
+}
+.rr-patchbar__meta { display: flex; gap: 4px; font-size: 9px; }
+.rr-k { color: var(--ink-faint, #6a665f); }
+.rr-v { color: var(--ink-dim, #9a958e); }
+
+/* ────────────────────────────────────────────────────────────── */
+/* Body + rows                                                     */
+
+.rr-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  min-height: 0;
+  overflow: hidden;
+}
+.rr-row {
+  display: flex;
+  gap: 4px;
+  min-height: 0;
+}
+.rr-row--modules   { background: var(--bg-1, #1a1816); }
+.rr-row--modmatrix { background: var(--bg-1, #1a1816); }
+.rr-row--keyboard  { background: var(--bg-0, #0f0e0d); padding: 0; }
+.rr-row--buttons {
+  background: var(--bg-1, #1a1816);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 10px;
+  gap: 10px;
+}
+.rr-row--sliders {
+  background: var(--bg-1, #1a1816);
+  padding: 10px;
+  flex-direction: column;
+  gap: 4px;
+}
+.rr-row--led {
+  background: var(--bg-1, #1a1816);
+  flex-direction: column;
+  padding: 10px;
+}
+.rr-row--unknown {
+  color: var(--warn, #d07a68);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/* Module chassis                                                  */
+
+.rr-mod {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1, #1a1816);
+  border: 1px solid var(--line, #3a3632);
+  border-radius: 5px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.rr-mod--panel { flex: 1; }
+.rr-mod--unknown {
+  color: var(--warn, #d07a68);
+  font-family: var(--font-mono, monospace);
+  padding: 4px;
+  font-size: 10px;
+}
+
+.rr-mod__head {
+  display: flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 8px;
+  background: var(--bg-2, #241f1b);
+  border-bottom: 1px solid var(--line, #3a3632);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim, #9a958e);
+  font-weight: 600;
+}
+.rr-mod__head.is-active {
+  background: color-mix(in oklab, var(--accent, #d8a860) 10%, var(--bg-2, #241f1b));
+  border-bottom-color: var(--accent-deep, #5a4628);
+  color: var(--accent, oklch(0.78 0.15 70));
+}
+.rr-mod__label { color: inherit; }
+.rr-mod__mini-label {
+  font-size: 8px;
+  color: var(--ink-faint, #6a665f);
+  border: 1px solid var(--line, #3a3632);
+  padding: 0 3px;
+  border-radius: 2px;
+}
+.rr-mod__panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim, #9a958e);
+  background: var(--bg-2, #241f1b);
+  border-bottom: 1px solid var(--line, #3a3632);
+}
+
+.rr-mod__body {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  gap: 4px;
+  flex: 1;
+  min-height: 0;
+}
+.rr-mod__panel-body {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+}
+.rr-mod__spacer { flex: 1; }
+
+.rr-mod__sub-head {
+  display: flex; align-items: center; gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--bg-2, #241f1b);
+  border-radius: 3px;
+  font-size: 10px;
+}
+.rr-mod__sub-head.rr-center { justify-content: center; }
+.rr-mod__table-name { color: var(--ink, #d9d4cd); font-weight: 500; font-size: 11px; }
+
+.rr-mod__meta-row {
+  display: flex; justify-content: space-around;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line-soft, #2a2724);
+}
+.rr-mod__meta {
+  display: flex; flex-direction: column; align-items: center;
+  font-size: 8.5px;
+  color: var(--ink-faint, #6a665f);
+}
+.rr-mod__meta .rr-value {
+  font-family: var(--font-mono, monospace);
+  color: var(--ink-dim, #9a958e);
+}
+.rr-mod__meta-col {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 4px;
+  border-bottom: 1px solid var(--line-soft, #2a2724);
+}
+.rr-mod__metarow {
+  display: flex; justify-content: space-between;
+  font-size: 9px;
+}
+.rr-label { color: var(--ink-faint, #6a665f); font-size: 9px; letter-spacing: 0.08em; }
+.rr-readout { color: var(--ink-dim, #9a958e); font-family: var(--font-mono, monospace); font-size: 10px; }
+.rr-readout--dim { color: var(--ink-faint, #6a665f); }
+.rr-readout--amber { color: var(--accent, oklch(0.78 0.15 70)); font-family: var(--font-mono, monospace); }
+.rr-tiny-num {
+  font-size: 8px; padding: 1px 3px;
+  border: 1px solid var(--line, #3a3632);
+  color: var(--ink-dim, #9a958e);
+  border-radius: 2px;
+  font-family: var(--font-mono, monospace);
+}
+.rr-spacer { flex: 1; }
+
+.rr-mod__display {
+  background: var(--bg-0, #0f0e0d);
+  border-radius: 3px;
+  height: 110px;
+  padding: 4px;
+  overflow: hidden;
+}
+.rr-mod__display--tall { height: 150px; }
+
+.rr-mod__display-footer {
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 4px;
+  font-size: 9px;
+  color: var(--ink-faint, #6a665f);
+}
+
+.rr-mod__knob-row {
+  display: flex; gap: 3px;
+  align-items: flex-start;
+  padding: 6px 4px;
+  border-top: 1px solid var(--line-soft, #2a2724);
+  justify-content: space-around;
+}
+.rr-mod__knob-row--tall { height: 120px; flex-direction: column; align-items: center; }
+.rr-mod__knob-row--col  { flex-direction: column; align-items: center; gap: 6px; }
+.rr-mod__knob-row--secondary { padding-top: 4px; }
+.rr-mod__knob-row--panel { padding: 4px; justify-content: space-around; }
+
+.rr-mod__wave-select {
+  display: flex; gap: 2px;
+  padding: 4px 0;
+  justify-content: center;
+}
+.rr-wsi {
+  padding: 2px;
+  color: var(--ink-faint, #6a665f);
+}
+.rr-wsi.is-on { color: var(--accent, oklch(0.78 0.15 70)); }
+
+.rr-mod__filter-modes {
+  display: flex; gap: 2px; padding: 3px 2px;
+}
+.rr-fm {
+  flex: 1;
+  font-size: 9px;
+  text-align: center;
+  padding: 2px 0;
+  color: var(--ink-faint, #6a665f);
+  background: var(--bg-2, #241f1b);
+  border: 1px solid var(--line, #3a3632);
+  border-radius: 2px;
+}
+.rr-fm.is-on {
+  background: var(--accent-deep, #5a4628);
+  color: var(--accent, oklch(0.78 0.15 70));
+  border-color: var(--accent, oklch(0.78 0.15 70));
+}
+
+.rr-macros {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 8px;
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/* Knob                                                            */
+
+.rr-knob {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  user-select: none;
+}
+.rr-knob__label {
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint, #6a665f);
+  text-transform: uppercase;
+}
+.rr-knob--primary .rr-knob__label { color: var(--accent, oklch(0.78 0.15 70)); }
+.rr-knob__value {
+  font-family: var(--font-mono, monospace);
+  font-size: 9px;
+  color: var(--ink-dim, #9a958e);
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/* VSlider                                                         */
+
+.rr-vslider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.rr-vslider__track {
+  width: 6px;
+  background: var(--bg-0, #0f0e0d);
+  border: 1px solid var(--line, #3a3632);
+  border-radius: 2px;
+  position: relative;
+  flex: 1;
+  cursor: ns-resize;
+}
+.rr-vslider__fill {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  border-radius: 0 0 2px 2px;
+}
+.rr-vslider__cap {
+  position: absolute;
+  left: -6px; right: -6px;
+  height: 10px;
+  background: var(--ink, #d9d4cd);
+  border: 1px solid var(--accent, oklch(0.78 0.15 70));
+  border-radius: 1px;
+  transform: translateY(50%);
+}
+.rr-vslider__label {
+  font-size: 8.5px;
+  text-align: center;
+  color: var(--ink-faint, #6a665f);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  line-height: 1.15;
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/* LED                                                             */
+
+.rr-led {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/* Chip + Select                                                   */
+
+.rr-chip {
+  font-size: 9px;
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: var(--bg-2, #241f1b);
+  border: 1px solid var(--line, #3a3632);
+  color: var(--ink-faint, #6a665f);
+  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.06em;
+}
+.rr-chip.is-on {
+  background: var(--accent-deep, #5a4628);
+  color: var(--accent, oklch(0.78 0.15 70));
+  border-color: var(--accent, oklch(0.78 0.15 70));
+}
+
+.rr-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  background: var(--bg-2, #241f1b);
+  border: 1px solid var(--line, #3a3632);
+  border-radius: 2px;
+  color: var(--ink, #d9d4cd);
+}
+.rr-select__label { color: var(--ink-faint, #6a665f); }
+.rr-select__caret { color: var(--ink-faint, #6a665f); }
+.rr-select.is-amber { color: var(--accent, oklch(0.78 0.15 70)); }
+
+/* ────────────────────────────────────────────────────────────── */
+/* Slider bank + brackets                                          */
+
+.rr-slider-bank {
+  display: flex;
+  gap: 8px;
+  justify-content: space-around;
+  flex: 1;
+}
+.rr-bracket-grid {
+  display: grid;
+  gap: 8px;
+}
+.rr-bracket { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.rr-bracket__line {
+  height: 2px;
+  background: var(--ink-dim, #9a958e);
+  width: 100%;
+}
+.rr-bracket__label {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--ink-dim, #9a958e);
+  text-transform: uppercase;
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/* Program / Param buttons                                         */
+
+.rr-progbtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.rr-progbtn__num {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--ink-faint, #6a665f);
+}
+.rr-progbtn__name {
+  font-size: 10px;
+  color: var(--ink, #d9d4cd);
+  text-align: center;
+  min-height: 14px;
+}
+.rr-progbtn__btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-3, #2a2724);
+  border: 2px solid var(--line, #3a3632);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+.rr-progbtn__btn.is-active {
+  background: var(--accent, oklch(0.78 0.15 70));
+  border-color: var(--accent-deep, #5a4628);
+}
+
+.rr-parambtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.rr-parambtn__led-wrap { height: 10px; display: flex; align-items: center; }
+.rr-parambtn__led {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--bg-4, #35302a);
+}
+.rr-parambtn__led.is-on {
+  background: var(--led, oklch(0.78 0.15 70));
+  box-shadow: 0 0 4px var(--led, oklch(0.78 0.15 70));
+}
+.rr-parambtn__btn {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--bg-3, #2a2724);
+  border: 2px solid var(--line, #3a3632);
+  cursor: pointer;
+}
+.rr-parambtn__btn.is-active {
+  background: var(--accent, oklch(0.78 0.15 70));
+  border-color: var(--accent-deep, #5a4628);
+}
+.rr-parambtn__label {
+  font-size: 8.5px;
+  color: var(--ink-dim, #9a958e);
+  text-align: center;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/* LED display (STRATA)                                            */
+
+.rr-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-0, #0f0e0d);
+  border: 1px solid var(--line, #3a3632);
+  border-radius: 4px;
+  padding: 10px 14px;
+  gap: 14px;
+}
+.rr-seg-host {
+  display: flex;
+  align-items: center;
+}
+.rr-seg-display {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.rr-units {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rr-unit {
+  font-size: 9px;
+  color: var(--ink-faint, #6a665f);
+  letter-spacing: 0.08em;
+}
+.rr-unit.is-on { color: var(--led, oklch(0.78 0.15 70)); }
+
+.rr-open-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.rr-open-indicator__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ok, oklch(0.75 0.14 155));
+  box-shadow: 0 0 4px var(--ok, oklch(0.75 0.14 155));
+}
+.rr-open-indicator__lbl {
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint, #6a665f);
+}
+
+.rr-display-captions {
+  display: flex;
+  justify-content: space-between;
+  font-size: 8.5px;
+  color: var(--ink-faint, #6a665f);
+  letter-spacing: 0.1em;
+  padding: 2px 4px;
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/* Stereo meter                                                    */
+
+.rr-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rr-meter__scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 7.5px;
+  color: var(--ink-faint, #6a665f);
+  letter-spacing: 0.06em;
+}
+.rr-meter__row {
+  display: flex; align-items: center; gap: 4px;
+}
+.rr-meter__ch {
+  font-size: 8px;
+  color: var(--ink-dim, #9a958e);
+  width: 10px;
+}
+.rr-meter__bar {
+  display: flex;
+  gap: 1px;
+}
+.rr-meter__seg {
+  width: 10px; height: 6px;
+  background: var(--bg-3, #2a2724);
+  border-radius: 1px;
+}
+.rr-meter__seg.is-on {
+  background: var(--ok, oklch(0.75 0.14 155));
+  box-shadow: 0 0 3px var(--ok, oklch(0.75 0.14 155));
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/* Error                                                           */
+
+.rr-error {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: #ff8a8a;
+  background: #1a0e0e;
+  padding: 14px;
+  border: 1px solid #552;
+  border-radius: 4px;
+  white-space: pre-wrap;
+}
+
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="env,react" data-type="module">
+    const { useState, useRef, useEffect, useMemo } = React;
+
+    // ─── primitives/index.js ───
+/**
+ * Primitive components — Knob, VSlider, LED, Chip, Select, SegDigit.
+ * Ported from /Users/hydroadmin/Downloads/plugin editor/helix/knobs.jsx
+ * and /Users/hydroadmin/Downloads/plugin editor/strata/app.jsx.
+ *
+ * Parametric — never hard-coded to a plugin's palette. Colors come from
+ * CSS custom properties set by the DSL renderer (see palette.css).
+ */
+
+// ────────────────────────────────────────────────────────────────
+// Arc helpers for the rotary knob
+
+function polarToCartesian(cx, cy, r, angleDeg) {
+  const rad = (angleDeg - 90) * (Math.PI / 180);
+  return [cx + Math.cos(rad) * r, cy + Math.sin(rad) * r];
+}
+function arcPath(cx, cy, r, a1, a2) {
+  const [x1, y1] = polarToCartesian(cx, cy, r, a1);
+  const [x2, y2] = polarToCartesian(cx, cy, r, a2);
+  const large = Math.abs(a2 - a1) > 180 ? 1 : 0;
+  const sweep = a2 > a1 ? 1 : 0;
+  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} ${sweep} ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+}
+
+// ────────────────────────────────────────────────────────────────
+// Knob — 270° rotary with value arc, tick, and optional bipolar layout
+
+const ACCENT_VAR = {
+  primary: 'var(--accent)',
+  secondary: 'var(--accent2, var(--accent))',
+  ok: 'var(--ok)',
+  warn: 'var(--warn)',
+};
+
+function formatKnobValue(v, format, min = 0, max = 1) {
+  const raw = min + v * (max - min);
+  switch (format) {
+    case 'percent': return `${Math.round(v * 100)}%`;
+    case 'db':      return `${(v * 24 - 12).toFixed(1)}dB`;
+    case 'semi':    return `${Math.round(v * 24 - 12)}`;
+    case 'hz':      return `${Math.round(20 + v * (20000 - 20))}`;
+    case 'ms':      return `${Math.round(v * 5000)}ms`;
+    case 'count':   return `${Math.round(raw)}`;
+    case 'pan':     return raw === 0.5 ? 'C' : raw > 0.5 ? `R${Math.round((raw - 0.5) * 200)}` : `L${Math.round((0.5 - raw) * 200)}`;
+    case 'raw':
+    default:        return raw.toFixed(2);
+  }
+}
+function Knob({
+  label,
+  value = 0.5,
+  size = 34,
+  bipolar = false,
+  format = 'raw',
+  accent = 'primary',
+  primary = false,
+  showValue = true,
+}) {
+  const [v, setV] = useState(value);
+  const drag = useRef(null);
+  useEffect(() => { setV(value); }, [value]);
+
+  const startA = -135, endA = 135;
+  const angle = startA + v * (endA - startA);
+
+  const r = size / 2 - 3;
+  const cx = size / 2, cy = size / 2;
+  const accentColor = ACCENT_VAR[accent] || ACCENT_VAR.primary;
+
+  const trackD = arcPath(cx, cy, r, startA, endA);
+  const valD = bipolar
+    ? arcPath(cx, cy, r, Math.min(0, angle), Math.max(0, angle))
+    : arcPath(cx, cy, r, startA, angle);
+
+  const [tickX, tickY] = polarToCartesian(cx, cy, r - 2, angle);
+  const [tickInX, tickInY] = polarToCartesian(cx, cy, r - 10, angle);
+
+  const onDown = (e) => {
+    e.preventDefault();
+    drag.current = { y: e.clientY, v };
+    const onMove = (ev) => {
+      const dy = drag.current.y - ev.clientY;
+      setV(Math.max(0, Math.min(1, drag.current.v + dy / 150)));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  return (
+    <div className={`rr-knob ${primary ? 'rr-knob--primary' : ''}`} onMouseDown={onDown}>
+      <svg width={size} height={size} style={{ cursor: 'ns-resize', display: 'block' }}>
+        <path d={trackD} stroke="var(--line)" strokeWidth="2" fill="none" strokeLinecap="round" />
+        <path d={valD}   stroke={accentColor} strokeWidth="2" fill="none" strokeLinecap="round" />
+        <circle cx={cx} cy={cy} r={r - 5} fill="var(--bg-3)" stroke="var(--line)" strokeWidth="0.5" />
+        <line x1={tickInX} y1={tickInY} x2={tickX} y2={tickY} stroke={accentColor} strokeWidth="2" strokeLinecap="round" />
+      </svg>
+      {label && <div className="rr-knob__label">{label}</div>}
+      {showValue && <div className="rr-knob__value">{formatKnobValue(v, format)}</div>}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Vertical slider
+function VSlider({ label, value = 0.7, height = 70, accent = 'primary' }) {
+  const [v, setV] = useState(value);
+  const drag = useRef(null);
+  useEffect(() => { setV(value); }, [value]);
+
+  const accentColor = ACCENT_VAR[accent] || ACCENT_VAR.primary;
+
+  const onDown = (e) => {
+    e.preventDefault();
+    drag.current = { y: e.clientY, v };
+    const onMove = (ev) => {
+      const dy = drag.current.y - ev.clientY;
+      setV(Math.max(0, Math.min(1, drag.current.v + dy / height)));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  return (
+    <div className="rr-vslider" style={{ height: height + 18 }}>
+      <div className="rr-vslider__track" onMouseDown={onDown}>
+        <div
+          className="rr-vslider__fill"
+          style={{ height: `${v * 100}%`, background: accentColor, opacity: 0.85 }}
+        />
+        <div
+          className="rr-vslider__cap"
+          style={{ bottom: `${v * 100}%`, borderColor: accentColor }}
+        />
+      </div>
+      {label && (
+        <div
+          className="rr-vslider__label"
+          dangerouslySetInnerHTML={{ __html: label }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// LED dot
+function LED({ on = false, color = 'ok', size = 7 }) {
+  const tone =
+    color === 'amber' ? 'var(--accent)' :
+    color === 'red'   ? 'var(--warn)' :
+    color === 'blue'  ? 'var(--info, oklch(0.72 0.10 230))' :
+                        'var(--ok, oklch(0.75 0.14 155))';
+  return (
+    <div
+      className="rr-led"
+      style={{
+        width: size,
+        height: size,
+        background: on ? tone : 'var(--bg-4)',
+        boxShadow: on ? `0 0 6px ${tone}` : 'inset 0 0 0 1px var(--line)',
+      }}
+    />
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Chip — used as tab, dest-badge, tiny pill button
+function Chip({ label, on = false, muted = false, amber = false }) {
+  return (
+    <span
+      className={`rr-chip ${on ? 'is-on' : ''} ${muted ? 'is-muted' : ''} ${amber ? 'is-amber' : ''}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Select — visual-only dropdown
+function Select({ label, value, amber = false, width }) {
+  return (
+    <div
+      className={`rr-select ${amber ? 'is-amber' : ''}`}
+      style={width ? { width, justifyContent: 'space-between' } : null}
+    >
+      {label && <span className="rr-select__label">{label}</span>}
+      <span className="rr-select__value">{value}</span>
+      <span className="rr-select__caret">▾</span>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// 7-segment digit — ported from strata/app.jsx
+
+const SEG_MAP = {
+  '0': 'abcdef', '1': 'bc', '2': 'abged', '3': 'abgcd', '4': 'fgbc',
+  '5': 'afgcd', '6': 'afgecd', '7': 'abc', '8': 'abcdefg', '9': 'abcdfg',
+  '-': 'g', ' ': '', '.': '.',
+};
+
+const SEG_PATHS = {
+  a: 'M4 2 L8 2 L36 2 L40 6 L36 10 L8 10 L4 6 Z',
+  b: 'M42 4 L46 8 L46 36 L42 40 L38 36 L38 12 Z',
+  c: 'M42 44 L46 48 L46 76 L42 80 L38 76 L38 52 Z',
+  d: 'M4 82 L8 78 L36 78 L40 82 L36 86 L8 86 Z',
+  e: 'M2 44 L6 48 L6 76 L2 80 L-2 76 L-2 48 Z',
+  f: 'M2 4 L6 8 L6 36 L2 40 L-2 36 L-2 8 Z',
+  g: 'M4 44 L8 40 L36 40 L40 44 L36 48 L8 48 Z',
+};
+function SegDigit({ ch, size = 56, on = true }) {
+  const segs = SEG_MAP[ch] || '';
+  const w = size * 0.6, h = size;
+  const segCol = (s) => (segs.includes(s) && on ? 'var(--led)' : 'var(--led-off, oklch(0.2 0.01 60))');
+  const segGlow = (s) => (segs.includes(s) && on ? 'drop-shadow(0 0 3px var(--led-glow, var(--led)))' : 'none');
+  return (
+    <svg width={w} height={h} viewBox="-4 0 50 90" style={{ display: 'block' }}>
+      {['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((s) => (
+        <path key={s} d={SEG_PATHS[s]} fill={segCol(s)} style={{ filter: segGlow(s) }} />
+      ))}
+    </svg>
+  );
+}
+function SegDot({ size = 56, on = true }) {
+  return (
+    <svg width={size * 0.18} height={size} viewBox="0 0 12 90" style={{ display: 'block' }}>
+      <circle
+        cx="6" cy="82" r="4"
+        fill={on ? 'var(--led)' : 'var(--led-off, oklch(0.2 0.01 60))'}
+        style={{ filter: on ? 'drop-shadow(0 0 3px var(--led-glow, var(--led)))' : 'none' }}
+      />
+    </svg>
+  );
+}
+function SegDisplay({ value = '2.4', size = 52 }) {
+  const out = [];
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === '.') out.push(<SegDot key={i} size={size} />);
+    else out.push(<SegDigit key={i} ch={value[i]} size={size} />);
+  }
+  return <div className="rr-seg-display">{out}</div>;
+}
+
+// ────────────────────────────────────────────────────────────────
+// Stereo meter — ported from strata
+function StereoMeter({ lChannel = 5, rChannel = 4, segs = 7 }) {
+  const lit = [Math.min(segs, lChannel), Math.min(segs, rChannel)];
+  return (
+    <div className="rr-meter">
+      <div className="rr-meter__scale">
+        <span>24</span><span>18</span><span>12</span><span>6</span><span>0dB</span>
+      </div>
+      {['L', 'R'].map((ch, idx) => (
+        <div className="rr-meter__row" key={ch}>
+          <span className="rr-meter__ch">{ch}</span>
+          <div className="rr-meter__bar">
+            {Array.from({ length: segs }, (_, i) => (
+              <div
+                key={i}
+                className={`rr-meter__seg ${i < lit[idx] ? 'is-on' : ''}`}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Program button (large filled circle + label + number) — STRATA
+function ProgramButton({ n, name, active, onClick }) {
+  return (
+    <div className="rr-progbtn">
+      <div className="rr-progbtn__num">{n}</div>
+      <div className="rr-progbtn__name">{name}</div>
+      <button
+        className={`rr-progbtn__btn ${active ? 'is-active' : ''}`}
+        onClick={onClick}
+      />
+    </div>
+  );
+}
+function ParamButton({ label, ledOn, active, onClick }) {
+  return (
+    <div className="rr-parambtn">
+      <div className="rr-parambtn__led-wrap">
+        <div className={`rr-parambtn__led ${ledOn ? 'is-on' : ''}`} />
+      </div>
+      <button
+        className={`rr-parambtn__btn ${active ? 'is-active' : ''}`}
+        onClick={onClick}
+      />
+      <div
+        className="rr-parambtn__label"
+        dangerouslySetInnerHTML={{ __html: label }}
+      />
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Tiny geometric glyphs — ported wholesale from helix/knobs.jsx
+const Icon = {
+  chev: (d) => (
+    <svg width="10" height="10" viewBox="0 0 10 10">
+      <path
+        d={d === 'l' ? 'M6 2 L3 5 L6 8' : d === 'r' ? 'M4 2 L7 5 L4 8' : d === 'd' ? 'M2 4 L5 7 L8 4' : 'M2 6 L5 3 L8 6'}
+        stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round"
+      />
+    </svg>
+  ),
+  sine: () => (
+    <svg width="16" height="10" viewBox="0 0 16 10">
+      <path d="M1 5 Q4 1 8 5 T15 5" stroke="currentColor" strokeWidth="1.2" fill="none" />
+    </svg>
+  ),
+  saw: () => (
+    <svg width="16" height="10" viewBox="0 0 16 10">
+      <path d="M1 8 L7 2 L7 8 L13 2 L13 8" stroke="currentColor" strokeWidth="1.2" fill="none" />
+    </svg>
+  ),
+  sq: () => (
+    <svg width="16" height="10" viewBox="0 0 16 10">
+      <path d="M1 8 L1 3 L5 3 L5 8 L9 8 L9 3 L13 3 L13 8" stroke="currentColor" strokeWidth="1.2" fill="none" />
+    </svg>
+  ),
+  tri: () => (
+    <svg width="16" height="10" viewBox="0 0 16 10">
+      <path d="M1 8 L5 2 L9 8 L13 2" stroke="currentColor" strokeWidth="1.2" fill="none" />
+    </svg>
+  ),
+};
+
+
+// ─── displays/index.js ───
+/**
+ * Procedural displays — pure SVG, all styling via CSS custom properties.
+ * Ported 1:1 from /Users/hydroadmin/Downloads/plugin editor/helix/displays.jsx
+ * and a new FilterCurve/EnvCurve that takes cutoff/res/atk/dec/sus/rel
+ * as props (the reference had them hard-coded).
+ */
+
+// ────────────────────────────────────────────────────────────────
+// Wavetable — stacked flyover (OSC A, B)
+function WavetableStacked({ layers = 14, variant = 'sin' }) {
+  const lines = [];
+  for (let i = 0; i < layers; i++) {
+    const yOff = 8 + i * 6;
+    const amp = 22 - i * 1.1;
+    const phase = i * 0.4;
+    let d = '';
+    for (let x = 0; x <= 240; x += 4) {
+      const t = x / 240;
+      let y;
+      if (variant === 'saw') {
+        y = yOff + amp * (2 * (t - Math.floor(t + 0.5))) * (1 - i * 0.04);
+      } else {
+        y = yOff + amp * Math.sin(t * Math.PI * 3 + phase) * Math.exp(-t * 0.3) * (1 - i * 0.04);
+      }
+      d += (x === 0 ? 'M' : 'L') + x + ' ' + y.toFixed(2) + ' ';
+    }
+    const opacity = 0.25 + (i / layers) * 0.75;
+    lines.push(<path key={i} d={d} stroke="var(--accent)" strokeWidth="1" fill="none" opacity={opacity} />);
+  }
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 240 110" preserveAspectRatio="none">
+      {[0, 1, 2, 3].map((i) => (
+        <line key={i} x1="0" x2="240" y1={i * 28} y2={i * 28} stroke="var(--line-soft)" strokeWidth="0.5" />
+      ))}
+      {lines}
+    </svg>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Wavetable — stepped morph
+function WavetableStepped({ layers = 10 }) {
+  const lines = [];
+  for (let i = 0; i < layers; i++) {
+    const yOff = 12 + i * 9;
+    const amp = 18 - i * 0.6;
+    const steps = 8 + i;
+    let d = '';
+    for (let s = 0; s <= steps; s++) {
+      const x = (s / steps) * 240;
+      const y = yOff - amp + (s % 2) * amp * 2 * (1 - s / steps);
+      d += (s === 0 ? 'M' : 'L') + x + ' ' + y.toFixed(2) + ' ';
+    }
+    const opacity = 0.35 + (i / layers) * 0.65;
+    lines.push(<path key={i} d={d} stroke="var(--accent)" strokeWidth="1" fill="none" opacity={opacity} />);
+  }
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 240 110" preserveAspectRatio="none">
+      {[0, 1, 2, 3].map((i) => (
+        <line key={i} x1="0" x2="240" y1={i * 28} y2={i * 28} stroke="var(--line-soft)" strokeWidth="0.5" />
+      ))}
+      {lines}
+    </svg>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Granular sample
+function GranularSample({ cursor = 0.23 }) {
+  const bars = [];
+  for (let i = 0; i < 120; i++) {
+    const t = i / 120;
+    const env = Math.pow(1 - Math.abs(t - 0.3) * 2, 2) * (1 - t * 0.5);
+    const noise = (Math.sin(i * 1.7) * 0.5 + Math.sin(i * 0.83) * 0.5) * 0.5 + 0.5;
+    const h = Math.max(2, Math.abs(env * noise) * 45);
+    bars.push(<rect key={i} x={i * 2.1} y={55 - h} width="1.3" height={h * 2} fill="var(--ok)" opacity={0.85} />);
+  }
+  const cur = cursor * 260;
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 260 110" preserveAspectRatio="none">
+      <line x1="0" x2="260" y1="55" y2="55" stroke="var(--line-soft)" strokeWidth="0.5" />
+      {bars}
+      <line x1={cur} x2={cur} y1="5" y2="105" stroke="var(--accent)" strokeWidth="1" opacity="0.8" />
+      <rect x={cur - 3} y="3" width="6" height="4" fill="var(--accent)" />
+    </svg>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Noise waveform
+function NoiseWave() {
+  const bars = [];
+  for (let i = 0; i < 60; i++) {
+    const h = (Math.sin(i * 1.3) * 0.5 + Math.cos(i * 2.1) * 0.5 + ((i * 17) % 7) / 7) * 25 + 8;
+    bars.push(<rect key={i} x={i * 2} y={55 - h / 2} width="1.2" height={h} fill="var(--ink-dim)" opacity={0.7} />);
+  }
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 120 110" preserveAspectRatio="none">
+      <line x1="0" x2="120" y1="55" y2="55" stroke="var(--line-soft)" strokeWidth="0.5" />
+      {bars}
+    </svg>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Filter response curve — parametric: cutoff/res/hue
+function FilterCurve({ cutoff = 0.4, res = 0.4, hue = 'amber' }) {
+  const pts = [];
+  const c = Math.max(0.05, Math.min(0.95, cutoff));
+  for (let i = 0; i <= 80; i++) {
+    const x = i / 80;
+    const cutoffEffect = 1 / (1 + Math.pow(x / c, 8));
+    const resonance = Math.exp(-Math.pow((x - c) / 0.05, 2)) * (0.3 + res);
+    const y = Math.max(0.02, Math.min(1, cutoffEffect + resonance));
+    pts.push([x * 160, 85 - y * 75]);
+  }
+  const d = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1].toFixed(1)).join(' ');
+  const fill = d + ` L 160 90 L 0 90 Z`;
+  const color = hue === 'warn' ? 'var(--warn)' : hue === 'ok' ? 'var(--ok)' : 'var(--accent)';
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 160 95" preserveAspectRatio="none">
+      {[0, 1, 2, 3].map((i) => (
+        <line key={i} x1="0" x2="160" y1={20 + i * 18} y2={20 + i * 18} stroke="var(--line-soft)" strokeWidth="0.5" />
+      ))}
+      <path d={fill} fill={color} opacity="0.12" />
+      <path d={d} stroke={color} strokeWidth="1.3" fill="none" />
+    </svg>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// ADSR envelope curve — parametric
+function EnvCurve({ atk = 0.15, dec = 0.25, sus = 0.6, rel = 0.35 }) {
+  const x0 = 20, x1 = 320;
+  const yTop = 35, yBot = 135;
+  const span = x1 - x0;
+  const ax = x0 + atk * span * 0.25;
+  const dx = ax + dec * span * 0.25;
+  const sx = x0 + span * 0.72;
+  const rx = x1;
+  const ay = yTop;
+  const dy = yTop + (1 - sus) * (yBot - yTop);
+  const sy = dy;
+  const ry = yBot;
+
+  const d = `M ${x0} ${yBot} L ${ax} ${ay} Q ${ax + 8} ${ay + 5} ${dx} ${dy} L ${sx} ${sy} Q ${sx + 30} ${sy + 10} ${rx} ${ry}`;
+
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 340 150" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="rr-env-grad" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%"   stopColor="var(--accent)" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {[0, 1, 2, 3].map((i) => (
+        <line key={i} x1="20" x2="320" y1={25 + i * 37} y2={25 + i * 37} stroke="var(--line-soft)" strokeWidth="0.5" />
+      ))}
+      {[0, 1, 2, 3, 4].map((i) => (
+        <line key={`v${i}`} x1={20 + i * 75} x2={20 + i * 75} y1="20" y2="140" stroke="var(--line-soft)" strokeWidth="0.5" />
+      ))}
+      <path d={`${d} L ${rx} ${yBot} L ${x0} ${yBot} Z`} fill="url(#rr-env-grad)" />
+      <path d={d} stroke="var(--accent)" strokeWidth="1.5" fill="none" />
+      {[[ax, ay], [dx, dy], [sx, sy], [rx, ry]].map(([cx, cy], i) => (
+        <circle key={i} cx={cx} cy={cy} r="3" fill="var(--accent)" />
+      ))}
+    </svg>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// LFO curve — accepts [x,y] points, 0..1 normalized
+function LFOCurve({ points }) {
+  const defaultPts = [
+    [10, 90], [40, 40], [90, 20], [140, 30], [190, 70],
+    [220, 110], [190, 140], [140, 130], [100, 100], [60, 120], [30, 140],
+  ];
+  const pts = points && points.length > 2 ? points.map(([x, y]) => [x * 240, y * 160]) : defaultPts;
+  const d = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 240 160" preserveAspectRatio="xMidYMid meet">
+      <line x1="0" x2="240" y1="80" y2="80" stroke="var(--line-soft)" strokeWidth="0.5" />
+      <path d={d} stroke="var(--accent)" strokeWidth="1.3" fill="none" />
+      {pts.map((p, i) => (
+        <circle
+          key={i}
+          cx={p[0]}
+          cy={p[1]}
+          r="3"
+          fill={i === 0 || i === pts.length - 1 ? 'var(--accent)' : 'var(--bg-1)'}
+          stroke="var(--accent)"
+          strokeWidth="1.3"
+        />
+      ))}
+    </svg>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Velocity curve
+function VelocityCurve({ curve = 1 }) {
+  // curve < 1 ⇒ soft, > 1 ⇒ aggressive. Draws y = x^curve on [0,1].
+  const pts = [];
+  for (let i = 0; i <= 24; i++) {
+    const t = i / 24;
+    const y = Math.pow(t, curve);
+    pts.push([10 + t * 100, 125 - y * 110]);
+  }
+  const d = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 120 140" preserveAspectRatio="none">
+      {[0, 1, 2, 3].map((i) => (
+        <line key={i} x1="0" x2="120" y1={10 + i * 40} y2={10 + i * 40} stroke="var(--line-soft)" strokeWidth="0.5" />
+      ))}
+      <path d={d} stroke="var(--ok)" strokeWidth="1.5" fill="none" />
+      <circle cx={pts[0][0]} cy={pts[0][1]} r="2.5" fill="var(--ok)" />
+      <circle cx={pts[pts.length - 1][0]} cy={pts[pts.length - 1][1]} r="2.5" fill="var(--ok)" />
+    </svg>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Keyboard strip
+function Keyboard({ octaves = 4, pressed = [] }) {
+  const whitesPerOct = 7;
+  const totalWhites = octaves * whitesPerOct;
+  const whiteW = 100 / totalWhites;
+  const blackPattern = [true, true, false, true, true, true, false]; // after C,D,F,G,A
+  const whiteNames = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+
+  const pressedSet = new Set(pressed);
+
+  const whites = [];
+  const blacks = [];
+  let midi = 24; // C1-ish
+  for (let o = 0; o < octaves; o++) {
+    for (let w = 0; w < whitesPerOct; w++) {
+      const idx = o * whitesPerOct + w;
+      const x = idx * whiteW;
+      whites.push(
+        <rect
+          key={`w${idx}`}
+          x={`${x}%`} y="0"
+          width={`${whiteW}%`}
+          height="100%"
+          fill={pressedSet.has(midi) ? 'var(--accent)' : 'var(--ink)'}
+          stroke="var(--line)"
+          strokeWidth="0.3"
+        />
+      );
+      // one black key per white except at E, B
+      if (blackPattern[w]) {
+        const bx = x + whiteW * 0.7;
+        const bw = whiteW * 0.6;
+        blacks.push(
+          <rect
+            key={`b${idx}`}
+            x={`${bx}%`} y="0"
+            width={`${bw}%`}
+            height="62%"
+            fill={pressedSet.has(midi + 1) ? 'var(--accent)' : 'var(--bg-0)'}
+            stroke="var(--line)"
+            strokeWidth="0.3"
+          />
+        );
+      }
+      midi += blackPattern[w] ? 2 : 1;
+    }
+  }
+
+  return (
+    <svg width="100%" height="100%" preserveAspectRatio="none" style={{ display: 'block' }}>
+      {whites}
+      {blacks}
+    </svg>
+  );
+}
+
+
+// ─── modules/index.js ───
+/**
+ * Module-kind renderers. Each takes a ModuleSpec from the DSL and
+ * composes primitives + displays at the reference proportions. These
+ * are what give the rendered plugin its "hand-crafted" quality — the
+ * DSL picks the kind, the renderer owns the layout math.
+ *
+ * Reference: /Users/hydroadmin/Downloads/plugin editor/helix/oscillators.jsx
+ * and helix/modmatrix.jsx.
+ */
+
+
+
+// ────────────────────────────────────────────────────────────────
+// Shared module header
+
+function ModuleHead({ label, on = true, active = false, dest, mono = false }) {
+  return (
+    <div className={`rr-mod__head ${active ? 'is-active' : ''}`}>
+      <LED on={on} color={active ? 'amber' : 'ok'} />
+      <span className="rr-mod__label">{label}</span>
+      <span className="rr-spacer" />
+      {mono && <span className="rr-mod__mini-label">M</span>}
+      {dest && <Chip label={dest} on />}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// SubOsc — narrow column, waveform selector, PAN knob + LEVEL slider
+function SubOscModule({ module: m }) {
+  const wave = m.waveform || 'sine';
+  return (
+    <div className="rr-mod" style={{ width: 72, flex: '0 0 72px' }}>
+      <ModuleHead label={m.label || 'SUB'} mono on />
+      <div className="rr-mod__body">
+        <div className="rr-mod__meta-col">
+          <div className="rr-mod__metarow"><span className="rr-label">OCT</span><span className="rr-readout">{m.oct ?? '-2'}</span></div>
+          <div className="rr-mod__metarow"><span className="rr-label">CRS</span><span className="rr-readout">{m.crs ?? '—'}</span></div>
+        </div>
+        <div className="rr-mod__wave-select">
+          <span className={`rr-wsi ${wave === 'sine' ? 'is-on' : ''}`}>{Icon.sine()}</span>
+          <span className={`rr-wsi ${wave === 'tri'  ? 'is-on' : ''}`}>{Icon.tri()}</span>
+          <span className={`rr-wsi ${wave === 'sq'   ? 'is-on' : ''}`}>{Icon.sq()}</span>
+          <span className={`rr-wsi ${wave === 'saw'  ? 'is-on' : ''}`}>{Icon.saw()}</span>
+        </div>
+        <div className="rr-mod__spacer" />
+      </div>
+      <div className="rr-mod__knob-row rr-mod__knob-row--tall">
+        <Knob label="PAN"   value={(m.knobs?.[0]?.value) ?? 0.5} size={34} bipolar format="pan" primary />
+        <div style={{ height: 6 }} />
+        <VSlider label="LEVEL" value={(m.knobs?.[1]?.value) ?? 0.65} height={38} />
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// WavetableOsc — the core Helix module. Takes variant for the display.
+function WavetableOscModule({ module: m }) {
+  const variant = m.display?.variant || 'wavetable-stacked';
+  const Display =
+    variant === 'wavetable-stepped' ? WavetableStepped :
+    variant === 'granular-sample'   ? GranularSample :
+                                      WavetableStacked;
+  const isGranular = variant === 'granular-sample';
+  const knobs = m.knobs || [];
+  const flex = m.flex ?? 1.3;
+
+  return (
+    <div className="rr-mod" style={{ flex }}>
+      <ModuleHead
+        label={m.label || m.id ? `OSC ${m.id || m.label}` : 'OSC'}
+        dest={m.header?.dest}
+        active={!!m.active}
+        on
+      />
+      <div className="rr-mod__body">
+        <div className="rr-mod__sub-head">
+          {Icon.chev('d')}
+          <span className="rr-mod__table-name">{m.header?.tableName || 'Table'}</span>
+          <Select value={m.header?.engine || 'WAVETABLE'} />
+        </div>
+        {m.meta && m.meta.length > 0 && (
+          <div className="rr-mod__meta-row">
+            {m.meta.map((mt, i) => (
+              <div key={i} className="rr-mod__meta">
+                <span className="rr-label">{mt.k}</span>
+                <span className="rr-value">{mt.v}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="rr-mod__display">
+          <Display />
+        </div>
+        <div className="rr-mod__display-footer">
+          <span className="rr-tiny-num">{m.id || '1'}</span>
+          <span className="rr-readout--dim">φ</span>
+          <span className="rr-readout">180°</span>
+          <span className="rr-spacer" />
+          {isGranular ? (
+            <>
+              <Select value="ONE-SHOT" />
+              <span className="rr-label">UNISON</span>
+              <span className="rr-readout--amber">1</span>
+            </>
+          ) : (
+            <>
+              <span className="rr-label">RAND</span>
+              <span className="rr-readout">100</span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="rr-mod__knob-row">
+        {knobs.slice(0, 6).map((k, i) => (
+          <Knob
+            key={i}
+            label={k.label}
+            value={k.value}
+            bipolar={!!k.bipolar}
+            format={k.format || 'raw'}
+            size={30}
+            accent={k.accent || (isGranular ? 'ok' : 'primary')}
+            primary={!!k.primary}
+          />
+        ))}
+      </div>
+      {knobs.length > 6 && (
+        <div className="rr-mod__knob-row rr-mod__knob-row--secondary">
+          {knobs.slice(6, 12).map((k, i) => (
+            <Knob
+              key={i}
+              label={k.label}
+              value={k.value}
+              bipolar={!!k.bipolar}
+              format={k.format || 'raw'}
+              size={26}
+              accent={k.accent || 'ok'}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Noise
+function NoiseModule({ module: m }) {
+  return (
+    <div className="rr-mod" style={{ width: 132, flex: '0 0 132px' }}>
+      <ModuleHead label={m.label || 'NOISE'} on />
+      <div className="rr-mod__body">
+        <div className="rr-mod__sub-head rr-center">
+          <span className="rr-mod__table-name">{m.header?.tableName || 'Cream'}</span>
+        </div>
+        <div className="rr-mod__display">
+          <NoiseWave />
+        </div>
+        <div className="rr-mod__display-footer">
+          <span className="rr-label">STEREO</span>
+          <span className="rr-readout--amber">0</span>
+        </div>
+      </div>
+      <div className="rr-mod__knob-row rr-mod__knob-row--col">
+        {(m.knobs || [{ label: 'PAN', value: 0.5 }, { label: 'LEVEL', value: 0.6 }]).slice(0, 2).map((k, i) => (
+          <Knob
+            key={i}
+            label={k.label}
+            value={k.value}
+            bipolar={!!k.bipolar}
+            format={k.format || 'raw'}
+            size={i === 0 ? 36 : 32}
+            primary={i === 0}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Filter
+function FilterModule({ module: m }) {
+  const modes = m.modes || ['PRE', 'A', 'B', 'C', 'POST', 'VIZ'];
+  const active = m.activeMode ?? 1;
+  const cutoffKnob = (m.knobs || []).find((k) => k.label.toLowerCase().includes('cut'));
+  const resKnob    = (m.knobs || []).find((k) => k.label.toLowerCase().startsWith('res'));
+  return (
+    <div className="rr-mod" style={{ width: 186, flex: '0 0 186px' }}>
+      <ModuleHead label={m.label || 'FILTER'} active={!!m.active} on />
+      <div className="rr-mod__body">
+        <div className="rr-mod__sub-head rr-center">
+          {Icon.chev('l')}
+          <span className="rr-mod__table-name">{m.header?.routing || 'Low-Pass 24'}</span>
+          {Icon.chev('r')}
+        </div>
+        <div className="rr-mod__display">
+          <FilterCurve cutoff={cutoffKnob?.value ?? 0.4} res={resKnob?.value ?? 0.4} hue={m.hue || 'amber'} />
+        </div>
+        <div className="rr-mod__filter-modes">
+          {modes.map((mode, i) => (
+            <span key={mode} className={`rr-fm ${i === active ? 'is-on' : ''}`}>{mode}</span>
+          ))}
+        </div>
+      </div>
+      <div className="rr-mod__knob-row">
+        {(m.knobs || []).slice(0, 3).map((k, i) => (
+          <Knob key={i} label={k.label} value={k.value} bipolar={!!k.bipolar} format={k.format || 'raw'} size={30} />
+        ))}
+      </div>
+      {(m.knobs || []).length > 3 && (
+        <div className="rr-mod__knob-row rr-mod__knob-row--secondary">
+          {m.knobs.slice(3, 7).map((k, i) => (
+            <Knob key={i} label={k.label} value={k.value} bipolar={!!k.bipolar} format={k.format || 'raw'} size={26} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Envelope (ADSR)
+function EnvelopeModule({ module: m }) {
+  const byLabel = (prefix) => (m.knobs || []).find((k) => k.label.toLowerCase().startsWith(prefix));
+  const atk = byLabel('a')?.value ?? 0.15;
+  const dec = byLabel('d')?.value ?? 0.25;
+  const sus = byLabel('s')?.value ?? 0.6;
+  const rel = byLabel('r')?.value ?? 0.35;
+
+  return (
+    <div className="rr-mod rr-mod--panel">
+      <div className="rr-mod__panel-head">
+        <span>{m.label || 'ENVELOPE'}</span>
+        <Chip label={m.dest || 'VOL'} on />
+      </div>
+      <div className="rr-mod__panel-body">
+        <div className="rr-mod__display rr-mod__display--tall">
+          <EnvCurve atk={atk} dec={dec} sus={sus} rel={rel} />
+        </div>
+        <div className="rr-mod__knob-row rr-mod__knob-row--panel">
+          {(m.knobs || []).map((k, i) => (
+            <Knob key={i} label={k.label} value={k.value} format={k.format || 'ms'} size={28} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// LFO
+function LFOModule({ module: m }) {
+  return (
+    <div className="rr-mod rr-mod--panel">
+      <div className="rr-mod__panel-head">
+        <span>{m.label || 'LFO'}</span>
+        <Chip label={m.dest || 'PITCH'} on />
+      </div>
+      <div className="rr-mod__panel-body">
+        <div className="rr-mod__display rr-mod__display--tall">
+          <LFOCurve points={m.display?.points} />
+        </div>
+        <div className="rr-mod__knob-row rr-mod__knob-row--panel">
+          {(m.knobs || []).map((k, i) => (
+            <Knob key={i} label={k.label} value={k.value} format={k.format || 'raw'} size={28} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Macros — 4 or 8 generic assignable macros
+function MacrosModule({ module: m }) {
+  return (
+    <div className="rr-mod rr-mod--panel">
+      <div className="rr-mod__panel-head">
+        <span>{m.label || 'MACROS'}</span>
+      </div>
+      <div className="rr-mod__panel-body">
+        <div className="rr-macros">
+          {(m.knobs || []).slice(0, 8).map((k, i) => (
+            <Knob key={i} label={k.label} value={k.value} size={32} primary={!!k.primary} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Velocity
+function VelocityModule({ module: m }) {
+  const curve = m.display?.curve ?? 1;
+  return (
+    <div className="rr-mod rr-mod--panel">
+      <div className="rr-mod__panel-head">
+        <span>{m.label || 'VELOCITY'}</span>
+      </div>
+      <div className="rr-mod__panel-body">
+        <div className="rr-mod__display rr-mod__display--tall">
+          <VelocityCurve curve={curve} />
+        </div>
+        <div className="rr-mod__knob-row rr-mod__knob-row--panel">
+          {(m.knobs || [{ label: 'CURVE', value: 0.5 }, { label: 'DEPTH', value: 0.7 }]).map((k, i) => (
+            <Knob key={i} label={k.label} value={k.value} size={28} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Module dispatcher
+function renderModule(module, idx) {
+  switch (module.kind) {
+    case 'sub':              return <SubOscModule        key={idx} module={module} />;
+    case 'wavetable-osc':    return <WavetableOscModule  key={idx} module={module} />;
+    case 'noise':            return <NoiseModule         key={idx} module={module} />;
+    case 'filter':           return <FilterModule        key={idx} module={module} />;
+    case 'envelope':         return <EnvelopeModule      key={idx} module={module} />;
+    case 'lfo':              return <LFOModule           key={idx} module={module} />;
+    case 'macros':           return <MacrosModule        key={idx} module={module} />;
+    case 'velocity':         return <VelocityModule      key={idx} module={module} />;
+    default:
+      return (
+        <div key={idx} className="rr-mod rr-mod--unknown">
+          <div className="rr-mod__head">unknown: {module.kind}</div>
+        </div>
+      );
+  }
+}
+
+
+// ─── rows/index.js ───
+/**
+ * Row renderers — module-strip, mod-matrix, keyboard-strip, button-row,
+ * slider-bank, led-display. Each consumes a RowSpec and emits a
+ * horizontally-laid-out band in the plugin canvas.
+ */
+
+
+
+
+// ────────────────────────────────────────────────────────────────
+function ModuleStripRow({ row }) {
+  return (
+    <div className="rr-row rr-row--modules" style={{ height: row.height || 340 }}>
+      {(row.modules || []).map((mod, i) => renderModule(mod, i))}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+function ModMatrixRow({ row }) {
+  // mod-matrix rows are panels side-by-side, each rendered via the module
+  // dispatcher using the panel's `kind` as the module kind.
+  return (
+    <div className="rr-row rr-row--modmatrix" style={{ height: row.height || 220 }}>
+      {(row.panels || []).map((panel, i) =>
+        renderModule(
+          { ...panel, kind: panel.kind },
+          i,
+        ),
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+function KeyboardStripRow({ row }) {
+  const { spec = {} } = row;
+  return (
+    <div className="rr-row rr-row--keyboard" style={{ height: row.height || 70 }}>
+      <Keyboard octaves={spec.octaves || 4} pressed={spec.pressed || []} />
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+function ButtonRow({ row }) {
+  const buttons = row.buttons || [];
+  const isProgram = row.style === 'program';
+  return (
+    <div className={`rr-row rr-row--buttons ${isProgram ? 'is-program' : 'is-param'}`} style={{ height: row.height || 82 }}>
+      {buttons.map((b, i) =>
+        isProgram ? (
+          <ProgramButton
+            key={i}
+            n={b.n ?? i + 1}
+            name={b.name || b.label}
+            active={!!b.active}
+          />
+        ) : (
+          <ParamButton
+            key={i}
+            label={b.label || ''}
+            ledOn={!!b.ledOn}
+            active={!!b.active}
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+function SliderBankRow({ row }) {
+  const sliders = row.sliders || [];
+  const brackets = row.brackets || [];
+  return (
+    <div className="rr-row rr-row--sliders" style={{ height: row.height || 180 }}>
+      <div className="rr-slider-bank">
+        {sliders.map((s, i) => (
+          <VSlider
+            key={i}
+            label={s.label}
+            value={s.value ?? 0.5}
+            height={s.height || 140}
+            accent={s.accent || 'primary'}
+          />
+        ))}
+      </div>
+      {brackets.length > 0 && (
+        <div
+          className="rr-bracket-grid"
+          style={{ gridTemplateColumns: `repeat(${sliders.length}, 1fr)` }}
+        >
+          {brackets.map((br, i) => {
+            const [from, to] = br.span || [0, sliders.length - 1];
+            return (
+              <div
+                key={i}
+                className="rr-bracket"
+                style={{ gridColumn: `${from + 1} / span ${to - from + 1}` }}
+              >
+                <div className="rr-bracket__line" />
+                <div className="rr-bracket__label">{br.label}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+function LedDisplayRow({ row }) {
+  const spec = row.spec || {};
+  const units = spec.units || ['sec', 'ms', 'Hz', 'kHz'];
+  const activeUnit = spec.activeUnit || 0;
+  return (
+    <div className="rr-row rr-row--led" style={{ height: row.height || 140 }}>
+      <div className="rr-display">
+        {spec.meter && (
+          <StereoMeter
+            lChannel={spec.meter.lChannel ?? 5}
+            rChannel={spec.meter.rChannel ?? 4}
+          />
+        )}
+        <div className="rr-seg-host">
+          <SegDisplay value={spec.value || '2.4'} size={spec.digitSize || 50} />
+        </div>
+        <div className="rr-units">
+          {units.map((u, i) => (
+            <div key={u} className={`rr-unit ${i === activeUnit ? 'is-on' : ''}`}>{u}</div>
+          ))}
+        </div>
+        {spec.indicator && (
+          <div className="rr-open-indicator">
+            <div className="rr-open-indicator__dot" />
+            <div className="rr-open-indicator__lbl">{spec.indicator}</div>
+          </div>
+        )}
+      </div>
+      {spec.captions && (
+        <div className="rr-display-captions">
+          {spec.captions.map((c, i) => <span key={i}>{c}</span>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// Row dispatcher
+function renderRow(row, idx) {
+  switch (row.kind) {
+    case 'module-strip':   return <ModuleStripRow   key={idx} row={row} />;
+    case 'mod-matrix':     return <ModMatrixRow     key={idx} row={row} />;
+    case 'keyboard-strip': return <KeyboardStripRow key={idx} row={row} />;
+    case 'button-row':     return <ButtonRow        key={idx} row={row} />;
+    case 'slider-bank':    return <SliderBankRow    key={idx} row={row} />;
+    case 'led-display':    return <LedDisplayRow    key={idx} row={row} />;
+    default:
+      return (
+        <div key={idx} className="rr-row rr-row--unknown" style={{ height: row.height || 100 }}>
+          unknown row: {row.kind}
+        </div>
+      );
+  }
+}
+
+
+// ─── renderDSL.js ───
+/**
+ * renderDSL(dsl) → React element. Pure function: same DSL → same tree.
+ *
+ * - Injects palette as CSS custom properties on a root container.
+ * - Wires Google Fonts from dsl.type.
+ * - Walks dsl.rows and delegates to row renderers.
+ */
+
+
+
+// Google Font loader — idempotent, attaches a <link> per unique family
+const loadedFonts = new Set();
+function loadGoogleFont(family) {
+  if (!family || loadedFonts.has(family)) return;
+  loadedFonts.add(family);
+  if (typeof document === 'undefined') return;
+  const href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replace(/%20/g, '+')}:wght@400;500;600;700&display=swap`;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  link.dataset.rrFont = family;
+  document.head.appendChild(link);
+}
+
+function buildPaletteVars(palette, type) {
+  const p = palette || {};
+  const t = type || {};
+  const vars = {};
+
+  (p.bg || []).forEach((c, i) => { vars[`--bg-${i}`] = c; });
+  (p.ink || []).forEach((c, i) => {
+    const name = ['--ink', '--ink-dim', '--ink-faint', '--ink-ghost'][i] || `--ink-${i}`;
+    vars[name] = c;
+  });
+  if (p.line)      vars['--line'] = p.line;
+  if (p.lineSoft)  vars['--line-soft'] = p.lineSoft;
+  if (p.accent)    vars['--accent'] = p.accent;
+  if (p.accent2)   vars['--accent2'] = p.accent2;
+  if (p.led)       { vars['--led'] = p.led; vars['--led-glow'] = p.led; }
+  if (p.ok)        vars['--ok'] = p.ok;
+  if (p.warn)      vars['--warn'] = p.warn;
+
+  if (t.ui)      vars['--font-ui']    = `'${t.ui}', system-ui, sans-serif`;
+  if (t.mono)    vars['--font-mono']  = `'${t.mono}', ui-monospace, monospace`;
+  if (t.brand)   vars['--font-brand'] = `'${t.brand}', serif`;
+  if (t.display) vars['--font-display'] = `'${t.display}', sans-serif`;
+
+  return vars;
+}
+
+function Header({ header, meta }) {
+  if (!header) return null;
+  return (
+    <div className="rr-header">
+      <div className="rr-brand">
+        <div className="rr-brand__logo">{(meta?.name || 'X')[0]}</div>
+        <div>
+          <div className="rr-brand__name">{meta?.name}</div>
+          <div className="rr-brand__sub">
+            {(meta?.productType || '').toUpperCase()}{meta?.version ? ' · ' + meta.version : ''}
+          </div>
+        </div>
+      </div>
+      {header.tabs && (
+        <div className="rr-tabs">
+          {header.tabs.map((t, i) => (
+            <div key={t} className={`rr-tab ${i === 0 ? 'is-active' : ''}`}>{t}</div>
+          ))}
+        </div>
+      )}
+      {header.preset && (
+        <div className="rr-patchbar">
+          <span className="rr-patchbar__name">
+            PRESET — {header.preset.name}
+          </span>
+          <span className="rr-patchbar__meta">
+            <span className="rr-k">AUTHOR</span>
+            <span className="rr-v">{header.preset.author || '—'}</span>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+function RenderDSL({ dsl, fit = true }) {
+  useEffect(() => {
+    const t = dsl?.type;
+    if (t) {
+      loadGoogleFont(t.brand);
+      loadGoogleFont(t.ui);
+      loadGoogleFont(t.mono);
+      if (t.display) loadGoogleFont(t.display);
+    }
+  }, [dsl?.type?.brand, dsl?.type?.ui, dsl?.type?.mono, dsl?.type?.display]);
+
+  if (!dsl) return null;
+
+  const [canvasW, canvasH] = dsl.meta?.canvas || [1280, 800];
+  const vars = buildPaletteVars(dsl.palette, dsl.type);
+
+  return (
+    <div
+      className={`rr-shell rr-chassis--${dsl.meta?.chassis || 'plugin-window'}`}
+      style={{
+        ...vars,
+        width: canvasW,
+        height: canvasH,
+        fontFamily: vars['--font-ui'] || 'system-ui, sans-serif',
+      }}
+    >
+      <Header header={dsl.header} meta={dsl.meta} />
+      <div className="rr-body">
+        {(dsl.rows || []).map((row, i) => renderRow(row, i))}
+      </div>
+    </div>
+  );
+}
+
+// Convenience: validate and either render or show errors.
+function RenderDSLSafe({ dsl }) {
+  const { ok, errors } = validatePluginDSL(dsl);
+  if (!ok) {
+    return (
+      <pre className="rr-error">
+        DSL invalid:{'\n'}
+        {errors.map((e) => `  - ${e}`).join('\n')}
+      </pre>
+    );
+  }
+  return <RenderDSL dsl={dsl} />;
+}
+RenderDSL;
+
+
+
+    const DSL = {"meta":{"name":"AURORA","productType":"Wavetable Synthesizer","version":"v1.1","canvas":[1440,900],"chassis":"plugin-window","theme":"dark-cyan"},"palette":{"bg":["oklch(0.12 0.005 60)","oklch(0.18 0.006 60)","oklch(0.24 0.007 60)","oklch(0.30 0.008 60)","oklch(0.36 0.009 60)"],"ink":["oklch(0.88 0.01 60)","oklch(0.72 0.01 60)","oklch(0.52 0.01 60)","oklch(0.40 0.008 60)"],"line":"oklch(0.30 0.008 60)","lineSoft":"oklch(0.26 0.006 60)","accent":"oklch(0.62 0.15 180)","led":"oklch(0.62 0.15 180)","ok":"oklch(0.75 0.14 155)","warn":"oklch(0.62 0.15 30)"},"type":{"brand":"Bitter","ui":"Inter","mono":"JetBrains Mono","display":"Bitter"},"header":{"tabs":["MAIN","MIX","FX","MATRIX","GLOBAL"],"preset":{"name":"At Thermorr...F1","author":"Thermorr Labs"}},"rows":[{"kind":"module-strip","height":340,"modules":[{"kind":"wavetable-osc","id":"A","label":"A","active":false,"flex":1.3,"header":{"engine":"WAVETABLE","tableName":"Default Shapes"},"meta":[{"k":"OCT","v":"+2"},{"k":"SEM","v":"-4"},{"k":"FIN","v":"-41"},{"k":"CRS","v":"-64.0"}],"display":{"variant":"wavetable-stacked"},"knobs":[{"label":"PAN","value":0.5,"bipolar":true,"format":"pan","primary":true},{"label":"WT POS","value":0.3,"format":"raw"},{"label":"UNISON","value":0.25,"format":"count"},{"label":"DETUNE","value":0.3,"format":"raw"},{"label":"BLEND","value":0.5,"format":"raw"},{"label":"LEVEL","value":0.72,"format":"raw"}]},{"kind":"wavetable-osc","id":"B","label":"B","flex":1.3,"header":{"engine":"WAVETABLE","tableName":"ALU Slap"},"meta":[{"k":"OCT","v":"-2"},{"k":"SEM","v":"-7"},{"k":"FIN","v":"0"},{"k":"CRS","v":"64.0"}],"display":{"variant":"wavetable-stepped"},"knobs":[{"label":"PAN","value":0.5,"bipolar":true,"format":"pan"},{"label":"WT POS","value":0.6,"format":"raw"},{"label":"UNISON","value":0.4,"format":"count"},{"label":"DETUNE","value":0.35,"format":"raw"},{"label":"BLEND","value":0.5,"format":"raw"},{"label":"LEVEL","value":0.68,"format":"raw"}]},{"kind":"noise","label":"NOISE","header":{"tableName":"White"},"knobs":[{"label":"PAN","value":0.5,"bipolar":true,"format":"pan"},{"label":"LEVEL","value":0.55,"format":"raw"}]},{"kind":"filter","label":"FILTER 1","hue":"cyan","header":{"routing":"Low-Pass 24"},"modes":["PRE","A","B","C","POST","VIZ"],"activeMode":1,"knobs":[{"label":"CUTOFF","value":0.6,"format":"hz"},{"label":"RES","value":0.4,"format":"raw"},{"label":"PAN","value":0.5,"bipolar":true,"format":"pan"},{"label":"DRIVE","value":0.3,"format":"raw"},{"label":"DAMP","value":0.45,"format":"raw"},{"label":"MIX","value":0.7,"format":"raw"},{"label":"LEVEL","value":0.65,"format":"raw"}]},{"kind":"filter","label":"FILTER 2","hue":"cyan","active":true,"header":{"routing":"Plate Verb"},"modes":["PRE","A","B","C","POST","VIZ"],"activeMode":0,"knobs":[{"label":"CUTOFF","value":0.55,"format":"hz"},{"label":"RES","value":0.5,"format":"raw"},{"label":"PAN","value":0.5,"bipolar":true,"format":"pan"},{"label":"DRIVE","value":0.4,"format":"raw"},{"label":"DAMP","value":0.5,"format":"raw"},{"label":"MIX","value":0.6,"format":"raw"},{"label":"LEVEL","value":0.6,"format":"raw"}]}]},{"kind":"mod-matrix","height":220,"panels":[{"kind":"macros","label":"MACROS","knobs":[{"label":"M1","value":0.4,"primary":true},{"label":"M2","value":0.6},{"label":"M3","value":0.3},{"label":"M4","value":0.7},{"label":"M5","value":0.5},{"label":"M6","value":0.2},{"label":"M7","value":0.55},{"label":"M8","value":0.45}]},{"kind":"envelope","label":"ENV 1 · AMP","dest":"VOL","display":{"variant":"env-curve"},"knobs":[{"label":"ATK","value":0.15,"format":"ms"},{"label":"DEC","value":0.25,"format":"ms"},{"label":"SUS","value":0.6,"format":"percent"},{"label":"REL","value":0.35,"format":"ms"},{"label":"HOLD","value":0.1,"format":"ms"}]},{"kind":"lfo","label":"LFO 1","dest":"PITCH","display":{"variant":"lfo-curve"},"knobs":[{"label":"RATE","value":0.4,"format":"hz"},{"label":"DEPTH","value":0.6,"format":"percent"},{"label":"PHASE","value":0.5,"bipolar":true,"format":"raw"}]},{"kind":"velocity","label":"VELOCITY","display":{"variant":"velocity-curve","curve":1.4},"knobs":[{"label":"CURVE","value":0.6,"format":"raw"},{"label":"DEPTH","value":0.7,"format":"percent"}]}]},{"kind":"keyboard-strip","height":70,"spec":{"octaves":5,"pressed":[48,52,55]}}]};
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<RenderDSL dsl={DSL} />);
+
+    // Signal ready for Playwright
+    window.__renderReady = true;
+  </script>
+</body>
+</html>

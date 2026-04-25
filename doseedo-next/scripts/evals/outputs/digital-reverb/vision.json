@@ -1,0 +1,13 @@
+{
+  "answers": {
+    "palette": "The dominant colors are dark gray/black, cream/off-white, and red. The background tone is a dark gray/black. The accent color is a bright red. The LED glow color is a bright red.",
+    "controls": "KNOB:, SLIDER:, BUTTON:, LED:, DISPLAY:, METER:, KEYBOARD:, REMED:, NOISE:, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF,",
+    "text": "Lexicon, Digital Reverb, 224, Program, Headroom, Mix"
+  },
+  "latencies": {
+    "palette": 1914,
+    "controls": 12894,
+    "text": 1127
+  },
+  "totalMs": 15935
+}

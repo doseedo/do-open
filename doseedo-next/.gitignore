@@ -23,3 +23,11 @@ next-env.d.ts
 # models need to be served to the browser.
 !public/static/models/*.onnx
 !public/static/models/*.onnx.data
+
+# Re-ignore the 254MB mask UNet weights — too large for git (GitHub 100MB
+# hard limit). Served from R2 / CDN at runtime.
+public/static/models/mask_unet_v1_step15000.onnx
+public/static/models/mask_unet_v1_step15000.onnx.data
+
+# Local agent tooling (not part of repo)
+.claude/

@@ -1,0 +1,273 @@
+{
+  "meta": {
+    "name": "VHS-88",
+    "productType": "Analog Grain / Lo-Fi Color Plugin",
+    "version": "v1",
+    "canvas": [
+      1000,
+      820
+    ],
+    "chassis": "plugin-window",
+    "theme": "charcoal-ice-blue"
+  },
+  "palette": {
+    "bg": [
+      "oklch(0.16 0.008 260)",
+      "oklch(0.20 0.010 260)",
+      "oklch(0.25 0.012 260)",
+      "oklch(0.30 0.014 260)",
+      "oklch(0.35 0.016 260)"
+    ],
+    "ink": [
+      "oklch(0.92 0.015 260)",
+      "oklch(0.75 0.012 260)",
+      "oklch(0.55 0.010 260)",
+      "oklch(0.42 0.008 260)"
+    ],
+    "line": "oklch(0.32 0.012 260)",
+    "lineSoft": "oklch(0.26 0.010 260)",
+    "accent": "oklch(0.80 0.13 230)",
+    "accent2": "oklch(0.72 0.12 30)",
+    "led": "oklch(0.80 0.13 230)",
+    "ok": "oklch(0.75 0.14 155)",
+    "warn": "oklch(0.72 0.17 30)"
+  },
+  "type": {
+    "brand": "Space Grotesk",
+    "ui": "Inter",
+    "mono": "JetBrains Mono"
+  },
+  "header": {
+    "tabs": [
+      "MAIN",
+      "MIX",
+      "FX",
+      "MATRIX",
+      "GLOBAL"
+    ],
+    "preset": {
+      "name": "Ferric Saturation 04",
+      "author": "Ash Keller"
+    }
+  },
+  "rows": [
+    {
+      "kind": "module-strip",
+      "height": 260,
+      "modules": [
+        {
+          "kind": "character-module",
+          "label": "TAPE",
+          "tint": "oklch(0.55 0.15 30)",
+          "typeSelect": "VINYL 1",
+          "knobs": [
+            {
+              "label": "TONE",
+              "value": 0.4
+            },
+            {
+              "label": "ROUTING",
+              "value": 0.75
+            },
+            {
+              "label": "FOLLOW",
+              "value": 0.35
+            },
+            {
+              "label": "DUCK",
+              "value": 0.55
+            }
+          ],
+          "fluxLane": true
+        },
+        {
+          "kind": "character-module",
+          "label": "WARP",
+          "tint": "oklch(0.55 0.12 60)",
+          "morph": {
+            "a": "WOW",
+            "b": "FLUTTER",
+            "position": 0.4
+          },
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.4
+            },
+            {
+              "label": "DEPTH",
+              "value": 0.5
+            },
+            {
+              "label": "STEREO",
+              "value": 0.6
+            },
+            {
+              "label": "MIX",
+              "value": 0.6
+            }
+          ],
+          "fluxLane": true
+        },
+        {
+          "kind": "character-module",
+          "label": "TUBE",
+          "tint": "oklch(0.50 0.10 120)",
+          "typeSelect": "TUBEPAIR",
+          "knobs": [
+            {
+              "label": "FOCUS",
+              "value": 0.55
+            },
+            {
+              "label": "MIX",
+              "value": 0.6
+            }
+          ],
+          "fluxLane": true
+        },
+        {
+          "kind": "character-module",
+          "label": "BITS",
+          "tint": "oklch(0.50 0.08 240)",
+          "morph": {
+            "a": "RATE",
+            "b": "BITS",
+            "position": 0.5
+          },
+          "knobs": [
+            {
+              "label": "FOCUS",
+              "value": 0.45
+            },
+            {
+              "label": "SMOOTH",
+              "value": 0.45
+            },
+            {
+              "label": "MIX",
+              "value": 0.6
+            }
+          ],
+          "fluxLane": true
+        },
+        {
+          "kind": "character-module",
+          "label": "ROOM",
+          "tint": "oklch(0.55 0.10 175)",
+          "knobs": [
+            {
+              "label": "DECAY",
+              "value": 0.65
+            },
+            {
+              "label": "PREDELAY",
+              "value": 0.4
+            },
+            {
+              "label": "STEREO",
+              "value": 0.6
+            },
+            {
+              "label": "FOCUS",
+              "value": 0.35
+            }
+          ],
+          "fluxLane": true
+        },
+        {
+          "kind": "character-module",
+          "label": "TAPE",
+          "tint": "oklch(0.35 0.06 270)",
+          "morph": {
+            "a": "WEAR",
+            "b": "FLUTTER",
+            "position": 0.55
+          },
+          "knobs": [
+            {
+              "label": "RATE",
+              "value": 0.5
+            },
+            {
+              "label": "DROPOUTS",
+              "value": 0.4
+            },
+            {
+              "label": "STEREO",
+              "value": 0.5
+            }
+          ],
+          "fluxLane": true
+        }
+      ]
+    },
+    {
+      "kind": "character-row",
+      "height": 150,
+      "knobs": [
+        {
+          "label": "GRAIN",
+          "value": 0.3,
+          "active": true,
+          "tint": "oklch(0.55 0.15 30)"
+        },
+        {
+          "label": "WARP",
+          "value": 0.55,
+          "active": true,
+          "tint": "oklch(0.55 0.12 60)"
+        },
+        {
+          "label": "CRUSH",
+          "value": 0.45,
+          "active": true,
+          "tint": "oklch(0.50 0.10 120)"
+        },
+        {
+          "label": "BITS",
+          "value": 0.7,
+          "active": false,
+          "tint": "oklch(0.50 0.08 240)"
+        },
+        {
+          "label": "ROOM",
+          "value": 0.4,
+          "active": true,
+          "tint": "oklch(0.55 0.10 175)"
+        },
+        {
+          "label": "TAPE",
+          "value": 0.6,
+          "active": true,
+          "tint": "oklch(0.60 0.13 230)"
+        }
+      ]
+    },
+    {
+      "kind": "eq-strip",
+      "height": 72,
+      "io": {
+        "in": {
+          "label": "GAIN",
+          "value": 0.5
+        },
+        "out": {
+          "labels": [
+            "WIDTH",
+            "GAIN"
+          ],
+          "values": [
+            0.6,
+            0.55
+          ]
+        }
+      },
+      "eq": {
+        "cutLeft": 0.15,
+        "cutRight": 0.85,
+        "tone": 0.5
+      }
+    }
+  ]
+}

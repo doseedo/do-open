@@ -1,0 +1,114 @@
+{
+  "name": "wavetable-synth",
+  "validation": {
+    "ok": true,
+    "errors": []
+  },
+  "scorecard": {
+    "criteria": [
+      {
+        "name": "archetype",
+        "pass": true,
+        "detail": "got \"Wavetable Synthesizer\", expected contains one of [wavetable]"
+      },
+      {
+        "name": "chassis",
+        "pass": true,
+        "detail": "got \"plugin-window\", expected \"plugin-window\""
+      },
+      {
+        "name": "canvas",
+        "pass": true,
+        "detail": "got 1280x800, expected ~1440x900"
+      },
+      {
+        "name": "row-kinds",
+        "pass": true,
+        "detail": "got [module-strip, mod-matrix, keyboard-strip]"
+      },
+      {
+        "name": "knobs",
+        "pass": true,
+        "detail": "got 52, expected 30..60"
+      },
+      {
+        "name": "sliders",
+        "pass": true,
+        "detail": "got 0, expected 0..10"
+      },
+      {
+        "name": "module-kinds",
+        "pass": true,
+        "detail": "got [wavetable-osc, noise, filter, macros, envelope, lfo, velocity]"
+      },
+      {
+        "name": "accent-hue",
+        "pass": true,
+        "detail": "got H=230, distance=160° (tolerance 180°)"
+      }
+    ],
+    "passed": 8,
+    "total": 8,
+    "counts": {
+      "knobs": 52,
+      "sliders": 0,
+      "buttons": 0,
+      "rowKinds": [
+        "module-strip",
+        "mod-matrix",
+        "keyboard-strip"
+      ],
+      "moduleKinds": [
+        "wavetable-osc",
+        "noise",
+        "filter",
+        "macros",
+        "envelope",
+        "lfo",
+        "velocity"
+      ]
+    }
+  },
+  "meta": {
+    "name": "Atmosphere",
+    "productType": "Wavetable Synthesizer",
+    "version": "v1.0",
+    "canvas": [
+      1280,
+      800
+    ],
+    "chassis": "plugin-window",
+    "theme": "dark-gray-cyan"
+  },
+  "paletteAccent": "oklch(0.80 0.15 230)",
+  "counts": {
+    "knobs": 52,
+    "sliders": 0,
+    "buttons": 0,
+    "rowKinds": [
+      "module-strip",
+      "mod-matrix",
+      "keyboard-strip"
+    ],
+    "moduleKinds": [
+      "wavetable-osc",
+      "noise",
+      "filter",
+      "macros",
+      "envelope",
+      "lfo",
+      "velocity"
+    ]
+  },
+  "latency": {
+    "visionMs": 17860,
+    "dslMs": null,
+    "usage": null
+  },
+  "visionAnswers": {
+    "palette": "The interface predominantly uses dark gray and black as its background. The accent color is a lighter gray, and the LED glow is a bright cyan/light blue.",
+    "controls": "KNOB:, SLIDER:, BUTTON:, LED:, DISPLAY:, METER:, OR KEYBOARD:, REND:, FIND, WHITE, REVERB, FLITER, MAIN",
+    "text": "OSC, MIX, FX, MATRIX, GLOBAL, WAVABLE, DEFAULT SHAPES, ALU SLAP, WHITE, NOISE, FILTER, REVERB, F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At Thermorr...F1, At"
+  },
+  "truthGaps": []
+}

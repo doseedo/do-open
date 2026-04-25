@@ -139,3 +139,10 @@ var/www/html/soundfont_tests/
 # Archives
 *.tar.gz
 .vercel
+
+# Local agent tooling (not part of repo)
+.claude/
+.agents/
+
+# Deploy staging area (contains embedded ACE-Step git repo + symlinks)
+deploy_resources/

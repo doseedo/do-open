@@ -1,0 +1,111 @@
+{
+  "name": "lofi-color",
+  "validation": {
+    "ok": true,
+    "errors": []
+  },
+  "scorecard": {
+    "criteria": [
+      {
+        "name": "archetype",
+        "pass": true,
+        "detail": "got \"Analog Grain / Lo-Fi Color Plugin\", expected contains one of [color, lofi, lo-fi, tape, character, color]"
+      },
+      {
+        "name": "chassis",
+        "pass": true,
+        "detail": "got \"plugin-window\", expected \"plugin-window\""
+      },
+      {
+        "name": "canvas",
+        "pass": true,
+        "detail": "got 1000x820, expected ~1000x820"
+      },
+      {
+        "name": "row-kinds",
+        "pass": true,
+        "detail": "got [module-strip, character-row, eq-strip]"
+      },
+      {
+        "name": "knobs",
+        "pass": true,
+        "detail": "got 20, expected 16..48"
+      },
+      {
+        "name": "sliders",
+        "pass": true,
+        "detail": "got 0, expected 0..6"
+      },
+      {
+        "name": "module-kinds",
+        "pass": true,
+        "detail": "got [character-module]"
+      },
+      {
+        "name": "accent-hue",
+        "pass": true,
+        "detail": "got H=230, distance=150° (tolerance 180°)"
+      }
+    ],
+    "passed": 8,
+    "total": 8,
+    "counts": {
+      "knobs": 20,
+      "sliders": 0,
+      "buttons": 0,
+      "rowKinds": [
+        "module-strip",
+        "character-row",
+        "eq-strip"
+      ],
+      "moduleKinds": [
+        "character-module"
+      ]
+    }
+  },
+  "meta": {
+    "name": "VHS-88",
+    "productType": "Analog Grain / Lo-Fi Color Plugin",
+    "version": "v1",
+    "canvas": [
+      1000,
+      820
+    ],
+    "chassis": "plugin-window",
+    "theme": "charcoal-ice-blue"
+  },
+  "paletteAccent": "oklch(0.80 0.13 230)",
+  "counts": {
+    "knobs": 20,
+    "sliders": 0,
+    "buttons": 0,
+    "rowKinds": [
+      "module-strip",
+      "character-row",
+      "eq-strip"
+    ],
+    "moduleKinds": [
+      "character-module"
+    ]
+  },
+  "latency": {
+    "visionMs": 10604,
+    "dslMs": null,
+    "usage": null
+  },
+  "visionAnswers": {
+    "palette": "The interface has a dark background with a cream/light beige accent. The 'WOW 2 FLUTTER' and 'DECAY' buttons have a light green/teal highlight.",
+    "controls": "KNOB:, SLIDER:, BUTTON:, LED:, DISPLAY:, METER:, KEYBOARD:\nNOISE, WOBBLE, DISTORT, DIGITAL, SPACE, MAGNETIC",
+    "text": "RC-20, Vinyl 1, TUBEPAIR, WOW 2 FLUTTER, RATE DIGIT BITS, DECAY, WEAR FLUTTER, STEREO, DROPOUTS, FLEX, NOISE, WOBBLE, DISTORT, DIGITAL, SPACE, MAGNETIC, xlnaudio"
+  },
+  "truthGaps": [
+    "no character-row row kind",
+    "no character-knob primitive (big cream-faced with bypass LED)",
+    "no morph-selector primitive",
+    "no flux-lane display",
+    "no tinted module variant (each column needs own accent hue)",
+    "no EQ-strip row kind (IN/EQ/OUT inline)",
+    "no magnitude-slider primitive",
+    "no preset-picker primitive"
+  ]
+}

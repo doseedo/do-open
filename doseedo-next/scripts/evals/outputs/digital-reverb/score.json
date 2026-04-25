@@ -1,0 +1,93 @@
+{
+  "name": "digital-reverb",
+  "validation": {
+    "ok": true,
+    "errors": []
+  },
+  "scorecard": {
+    "criteria": [
+      {
+        "name": "archetype",
+        "pass": true,
+        "detail": "got \"Digital Reverb\", expected contains one of [reverb]"
+      },
+      {
+        "name": "chassis",
+        "pass": true,
+        "detail": "got \"rack-hardware\", expected \"rack-hardware\""
+      },
+      {
+        "name": "canvas",
+        "pass": true,
+        "detail": "got 480x780, expected ~480x780"
+      },
+      {
+        "name": "row-kinds",
+        "pass": true,
+        "detail": "got [led-display, button-row, slider-bank]"
+      },
+      {
+        "name": "knobs",
+        "pass": true,
+        "detail": "got 0, expected 0..0"
+      },
+      {
+        "name": "sliders",
+        "pass": true,
+        "detail": "got 6, expected 4..8"
+      },
+      {
+        "name": "accent-hue",
+        "pass": true,
+        "detail": "got H=25, distance=0° (tolerance 180°)"
+      }
+    ],
+    "passed": 7,
+    "total": 7,
+    "counts": {
+      "knobs": 0,
+      "sliders": 6,
+      "buttons": 16,
+      "rowKinds": [
+        "led-display",
+        "button-row",
+        "slider-bank"
+      ],
+      "moduleKinds": []
+    }
+  },
+  "meta": {
+    "name": "VORTEX",
+    "productType": "Digital Reverb",
+    "version": "v1",
+    "canvas": [
+      480,
+      780
+    ],
+    "chassis": "rack-hardware",
+    "theme": "cream-faceplate-red-led"
+  },
+  "paletteAccent": "oklch(0.62 0.22 25)",
+  "counts": {
+    "knobs": 0,
+    "sliders": 6,
+    "buttons": 16,
+    "rowKinds": [
+      "led-display",
+      "button-row",
+      "slider-bank"
+    ],
+    "moduleKinds": []
+  },
+  "latency": {
+    "visionMs": 15935,
+    "dslMs": null,
+    "usage": null
+  },
+  "visionAnswers": {
+    "palette": "The dominant colors are dark gray/black, cream/off-white, and red. The background tone is a dark gray/black. The accent color is a bright red. The LED glow color is a bright red.",
+    "controls": "KNOB:, SLIDER:, BUTTON:, LED:, DISPLAY:, METER:, KEYBOARD:, REMED:, NOISE:, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF, SOLO, IMMED, SYS, REAR, MODE, DRY/WET, SYS, IMMED, SYS, REAR, MODE, DIV, LN, OFF,",
+    "text": "Lexicon, Digital Reverb, 224, Program, Headroom, Mix"
+  },
+  "truthGaps": []
+}

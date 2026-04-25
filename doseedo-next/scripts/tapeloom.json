@@ -1,0 +1,72 @@
+{
+  "meta": {
+    "name": "TapeLoom",
+    "productType": "Stereo Bus Processor",
+    "version": "v1.1",
+    "canvas": [560, 640],
+    "chassis": "rack-hardware",
+    "theme": "cream-faceplate-orange-amber"
+  },
+  "palette": {
+    "bg": [
+      "oklch(0.92 0.025 82)",
+      "oklch(0.88 0.022 82)",
+      "oklch(0.78 0.020 82)",
+      "oklch(0.55 0.015 82)"
+    ],
+    "ink": [
+      "oklch(0.22 0.01 60)",
+      "oklch(0.40 0.01 60)",
+      "oklch(0.55 0.01 60)"
+    ],
+    "line": "oklch(0.58 0.015 60)",
+    "lineSoft": "oklch(0.72 0.012 60)",
+    "accent": "oklch(0.62 0.22 25)",
+    "led": "oklch(0.62 0.22 25)",
+    "ok": "oklch(0.65 0.16 140)",
+    "warn": "oklch(0.62 0.22 25)"
+  },
+  "type": {
+    "brand": "Bitter",
+    "ui": "IBM Plex Sans",
+    "mono": "IBM Plex Mono",
+    "display": "Bitter"
+  },
+  "rows": [
+    {
+      "kind": "led-display",
+      "height": 110,
+      "spec": {
+        "value": "-12.4",
+        "digitSize": 54,
+        "units": ["dB", "sec", "ms", "Hz", "kHz"],
+        "activeUnit": 0,
+        "meter": { "lChannel": 5, "rChannel": 4 },
+        "indicator": "LINK",
+        "captions": ["INPUT · dB", "OUTPUT · dB"]
+      }
+    },
+    {
+      "kind": "slider-bank",
+      "height": 220,
+      "sliders": [
+        { "label": "DRIVE",   "value": 0.6, "accent": "primary" },
+        { "label": "INPUT",   "value": 0.4, "accent": "secondary" },
+        { "label": "OUTPUT",  "value": 0.5, "accent": "secondary" },
+        { "label": "BIAS",    "value": 0.3, "format": "percent" },
+        { "label": "TONE",    "value": 0.5, "format": "raw" },
+        { "label": "LOW-CUT", "value": 0.2, "format": "hz" }
+      ]
+    },
+    {
+      "kind": "button-row",
+      "style": "param-led",
+      "height": 82,
+      "buttons": [
+        { "label": "Tape Speed", "active": true, "ledOn": true },
+        { "label": "Tape Type",  "active": true, "ledOn": true },
+        { "label": "LINK",       "active": true, "ledOn": true }
+      ]
+    }
+  ]
+}
