@@ -2215,9 +2215,36 @@ input[type=range].sd-midi-note-bend::-moz-range-thumb {
   z-index: 9999;
   opacity: 1;
   transition: opacity 0.35s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .studio-dev .sd-loading-overlay.sd-loading-overlay--hidden {
   opacity: 0;
   pointer-events: none;
+}
+.studio-dev .sd-loading-overlay__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.studio-dev .sd-loading-overlay__label {
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--wb-ink-soft);
+}
+.studio-dev .sd-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--wb-rule);
+  border-top-color: var(--wb-ink);
+  border-radius: 50%;
+  animation: sd-loading-spin 0.9s linear infinite;
+}
+@keyframes sd-loading-spin {
+  to { transform: rotate(360deg); }
 }
 

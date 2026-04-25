@@ -2238,8 +2238,14 @@ export default function StudioDev() {
     <div className="studio-dev" style={{ left: state.sidebar.isExpanded ? 220 : 48 }}>
       <div
         className={`sd-loading-overlay ${studioLoading ? '' : 'sd-loading-overlay--hidden'}`}
-        aria-hidden="true"
-      />
+        role="status"
+        aria-live="polite"
+      >
+        <div className="sd-loading-overlay__inner">
+          <div className="sd-loading-spinner" aria-hidden="true" />
+          <div className="sd-loading-overlay__label">Loading studio</div>
+        </div>
+      </div>
       {/* ================== HEADER ================== */}
       <header className="wb-menubar">
         <div className="wb-brand" style={{ cursor: 'pointer' }} onClick={() => setActiveMode('welcome')}>
