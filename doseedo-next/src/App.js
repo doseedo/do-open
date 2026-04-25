@@ -40,36 +40,12 @@ import Help from './components/Legal/Help';
 import Feedback from './components/Legal/Feedback';
 import Plans from './components/Legal/Plans';
 import ChordWindow from './components/ChordWindow/ChordWindow';
-import AudioLabeler from './components/AudioLabeler/AudioLabeler';
-import DataMonitor from './components/DataMonitor/DataMonitor';
-import AdminUsers from './components/AdminUsers/AdminUsers';
 import DO1 from './components/DO1/DO1';
 import Models from './components/Models/Models';
 import CreationView from './components/CreationView/CreationView';
 import StudioDev from './components/StudioDev/StudioDev';
 // ThemeEditor removed
 import LiquidGlassFilters from './components/LiquidGlassFilters/LiquidGlassFilters';
-
-// === DEMO COMPONENTS (editable without affecting /studio) ===
-import NavbarDemo from './components-demo/Navbar/Navbar';
-import LeftSidebarDemo from './components-demo/Sidebar/LeftSidebar/LeftSidebar';
-import TrackInfoSidebarDemo from './components-demo/Sidebar/RightSidebar/TrackInfoSidebar';
-import GenerationPanelOptimizedDemo from './components-demo/GenerationPanel/GenerationPanelOptimized';
-import MIDIBrowserDemo from './components-demo/MIDIBrowser/MIDIBrowser';
-import ChatWindowDemo from './components-demo/ChatWindow/ChatWindow';
-import VideoUploadOptimizedDemo from './components-demo/VideoUpload/VideoUploadOptimized';
-import ModeSelectorDemo from './components-demo/ModeSelector/ModeSelector';
-import MIDIChartDemo from './components-demo/MIDIChart/MIDIChart';
-import AudioWaveformDemo from './components-demo/AudioWaveform/AudioWaveform';
-import ImageViewerDemo from './components-demo/ImageViewer/ImageViewer';
-import FXViewDemo from './components-demo/FXView/FXView';
-import DAWOptimizedDemo from './components-demo/DAW/DAWOptimized';
-import ResizeBarDemo from './components-demo/ResizeBar/ResizeBar';
-import VerticalResizeBarDemo from './components-demo/ResizeBar/VerticalResizeBar';
-import ChordWindowDemo from './components-demo/ChordWindow/ChordWindow';
-// ThemeEditorDemo removed
-import LiquidGlassFiltersDemo from './components-demo/LiquidGlassFilters/LiquidGlassFilters';
-import CinemaModeDemo from './components-demo/CinemaMode/CinemaMode';
 
 const PROTECTED_PASSWORD = process.env.NEXT_PUBLIC_PROTECTED_PASSWORD || '***REDACTED***';
 
@@ -219,15 +195,6 @@ function AppContent() {
     if (typeof document !== 'undefined') {
       document.body.classList.toggle('workbench-theme', isWorkbench);
       document.body.classList.toggle('theme-hifi-purple', isHifiPurple);
-      // Lazy-load the legacy pre-workbench stylesheet ONLY when the
-      // user is actually on the legacy DAW route. Keeps 3.5k lines of
-      // input[type=range] / button / body rules out of the workbench
-      // bundle. Once loaded it stays in the document (fine — only
-      // side-affects /studio-legacy styling which already needs it).
-      if (p === '/studio-legacy') {
-        import(/* webpackChunkName: "legacy-style" */ './assets/css/original-style5.css')
-          .catch((err) => console.warn('[legacy-style] load failed:', err?.message || err));
-      }
       return () => {
         document.body.classList.remove('workbench-theme');
         document.body.classList.remove('theme-hifi-purple');
@@ -317,16 +284,8 @@ function AppContent() {
                       location.pathname.startsWith('/plugins') ? 'plugins' :
                       location.pathname === '/models' ? 'models' :
                       location.pathname === '/studio' ? 'daw' :
-                      location.pathname === '/studio-legacy' ? 'daw' :
-                      location.pathname === '/demo' ? 'daw' :
-                      location.pathname === '/label' ? 'label' :
-                      location.pathname === '/monitor' ? 'monitor' :
-                      location.pathname === '/admin' ? 'admin' :
                       location.pathname === '/DO1' ? 'do1' :
                       location.pathname === '/' ? 'home' : 'home';
-
-  // Check if we're in demo mode
-  const isDemo = location.pathname === '/demo';
 
   // Redirect root based on auth status - retry multiple times to handle cookie timing.
   // Note: the primary gate lives in public/index.html as an inline <script> that
@@ -434,9 +393,9 @@ function AppContent() {
   // panelWidth IS the bus-label column width. Single source of truth.
   const busLabelWidth = panelWidth;
 
-  // Publish as CSS variable + custom event (components-demo components
-  // still listen to the event; prod components receive busLabelWidth as
-  // a prop). Keep the event alive so Demo side doesn't silently break.
+  // Publish as CSS variable + custom event. Prod components receive
+  // busLabelWidth as a prop; the custom event is kept for any listeners
+  // that still read off it.
   useEffect(() => {
     document.documentElement.style.setProperty('--bus-label-width', `${busLabelWidth}px`);
     window.dispatchEvent(new CustomEvent('busLabelWidthChanged', { detail: busLabelWidth }));
@@ -555,10 +514,10 @@ function AppContent() {
     setShowMidiBrowser(false); // Hide MIDI browser when showing chat
   };
 
-  // /studio is now the workbench-themed StudioDev: bypasses the classic
+  // /studio is the workbench-themed StudioDev: bypasses the classic
   // navbar/sidebar/DAW chrome and renders the from-scratch studio. Uses
   // the same AppContext + audio engine so every button here is wired to
-  // the production state. The previous /studio lives at /studio-legacy.
+  // the production state.
   if (location.pathname === '/studio') {
     return (
       <PasswordGate routeName="Studio">
@@ -971,24 +930,6 @@ function AppContent() {
     );
   }
 
-  // Show audio labeler view (standalone, no sidebar needed)
-  if (currentView === 'label') {
-    return (
-      <div className="App">
-        <AudioLabeler />
-      </div>
-    );
-  }
-
-  // Show data monitor view (standalone, no sidebar needed)
-  if (currentView === 'monitor') {
-    return (
-      <div className="App">
-        <DataMonitor />
-      </div>
-    );
-  }
-
   // Show DO1 view with sidebar (legacy route, not in nav)
   if (currentView === 'do1') {
     return (
@@ -1013,15 +954,6 @@ function AppContent() {
           showChatWindow={showChatWindow}
         />
         <DO1 />
-      </div>
-    );
-  }
-
-  // Show admin view (standalone, no sidebar)
-  if (currentView === 'admin') {
-    return (
-      <div className="App">
-        <AdminUsers />
       </div>
     );
   }
@@ -1060,385 +992,9 @@ function AppContent() {
     );
   }
 
-  // Show DAW view - use demo components for /demo route (password protected)
-  if (isDemo) {
-    return (
-      <PasswordGate routeName="Demo">
-      <div className="App">
-        <LiquidGlassFiltersDemo />
-
-        {/* Cinema Mode Overlay */}
-        <CinemaModeDemo
-          videoContent={
-            contentMode === 'fx' ? (
-              <FXViewDemo />
-            ) : contentMode === 'video' ? (
-              <VideoUploadOptimizedDemo />
-            ) : contentMode === 'midi' ? (
-              <MIDIChartDemo />
-            ) : contentMode === 'audio' ? (
-              <AudioWaveformDemo />
-            ) : (
-              <ImageViewerDemo />
-            )
-          }
-          leftPanel={
-            <div className="startcontainer scrollable" style={{ height: '100%', overflowY: 'auto' }}>
-              {showChatWindow ? (
-                <ChatWindowDemo onClose={() => setShowChatWindow(false)} />
-              ) : showMidiBrowser ? (
-                <MIDIBrowserDemo onClose={() => setShowMidiBrowser(false)} />
-              ) : (
-                <GenerationPanelOptimizedDemo />
-              )}
-            </div>
-          }
-          rightPanel={<TrackInfoSidebarDemo embedded={true} />}
-          bottomPanel={
-            <DAWOptimizedDemo
-              maxTracksHeight={300}
-              onTracksHeightChange={() => {}}
-              panelWidth={window.innerWidth}
-              pluginMode={false}
-            />
-          }
-          leftPanelWidth={304}
-          rightPanelWidth={320}
-          bottomPanelHeight={300}
-        />
-
-        <NavbarDemo />
-        <LeftSidebarDemo
-          onBackToDashboard={handleBackToDashboard}
-          onGoToHome={handleGoToHome}
-          onGoToSearch={handleGoToSearch}
-          onGoToUserInfo={handleGoToUserInfo}
-          onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-          onToggleSearch={handleToggleSearch}
-          showMidiBrowser={showMidiBrowser}
-          onToggleChat={handleToggleChat}
-          showChatWindow={showChatWindow}
-        />
-        <TrackInfoSidebarDemo />
-        <div id="main-content">
-          <div id="wrapper" style={{ position: 'relative' }}>
-            <div
-              ref={contentRef}
-              className="content"
-              style={{
-                // panelWidth IS the column width now — no subtraction needed.
-                // minWidth:0 overrides the `.content { min-width: 160px }`
-                // media-query rule in original-style5.css so the sidebar
-                // can shrink down to the ResizeBar's 200px floor.
-                width: `${panelWidth}px`,
-                minWidth: 0,
-                height: `${panelHeight}px`,
-                overflow: 'hidden'
-              }}
-            >
-              <div className="startcontainer scrollable" style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
-                {showChatWindow ? (
-                  <ChatWindowDemo onClose={() => setShowChatWindow(false)} />
-                ) : showMidiBrowser ? (
-                  <MIDIBrowserDemo onClose={() => setShowMidiBrowser(false)} />
-                ) : (
-                  <GenerationPanelOptimizedDemo />
-                )}
-              </div>
-            </div>
-
-            {!state.pluginMode && !state.cinemaMode && (
-              <ResizeBarDemo
-                // ResizeBar uses absolute X (clientX-based). Translate from
-                // column width → absolute X by adding the sidebar offset.
-                leftPosition={leftOffset + panelWidth}
-                onResize={handleResize}
-                minWidth={minWidth}
-                maxWidth={maxWidth}
-              />
-            )}
-
-            <div style={{
-              height: `${panelHeight}px`,
-              flex: 1,
-              minWidth: 0,
-              display: 'flex',
-              flexDirection: 'row',
-              background: 'var(--gradient-glow-subtle)',
-              position: 'relative'
-            }}>
-              <ModeSelectorDemo
-                selectedMode={contentMode}
-                onModeChange={setContentMode}
-              />
-
-              <div style={{
-                flex: 1,
-                minWidth: 0,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                position: 'relative',
-                zIndex: 1
-              }}>
-                <div style={{
-                  height: state.pluginMode ? `${panelHeight - pluginDawHeight}px` : '100%',
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  position: 'relative'
-                }}>
-                  {contentMode === 'fx' ? (
-                    <FXViewDemo />
-                  ) : contentMode === 'video' ? (
-                    <VideoUploadOptimizedDemo />
-                  ) : contentMode === 'midi' ? (
-                    <MIDIChartDemo />
-                  ) : contentMode === 'audio' ? (
-                    <AudioWaveformDemo />
-                  ) : (
-                    <ImageViewerDemo />
-                  )}
-
-                  {contentMode !== 'fx' && !state.pluginMode && <ChordWindowDemo />}
-                </div>
-
-                {state.pluginMode && (
-                  <VerticalResizeBarDemo
-                    topPosition={panelHeight - pluginDawHeight}
-                    onResize={handlePluginDawResize}
-                    minHeight={100}
-                    maxHeight={panelHeight - 100}
-                  />
-                )}
-
-                {state.pluginMode && (
-                  <div style={{
-                    height: `${pluginDawHeight}px`,
-                    minHeight: 0,
-                    overflow: 'hidden',
-                    background: 'var(--daw-bg)'
-                  }}>
-                    <DAWOptimizedDemo
-                      maxTracksHeight={pluginDawHeight - 50}
-                      onTracksHeightChange={() => {}}
-                      panelWidth={panelWidth}
-                      pluginMode={state.pluginMode}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {!state.pluginMode && !state.cinemaMode && (
-              <VerticalResizeBarDemo
-                topPosition={panelHeight}
-                onResize={handleVerticalResize}
-                minHeight={300}
-                maxHeight={1000}
-              />
-            )}
-
-            {!state.pluginMode && (
-              <div style={{
-                marginTop: '10px',
-                width: `calc(100% - ${leftOffset}px)`,
-                position: 'relative',
-                marginLeft: '0px',
-                overflowX: 'auto',
-                overflowY: 'visible'
-              }}>
-                <DAWOptimizedDemo
-                  maxTracksHeight={dawTracksHeight}
-                  onTracksHeightChange={setDawTracksHeight}
-                  panelWidth={panelWidth}
-                  pluginMode={state.pluginMode}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-      </PasswordGate>
-    );
-  }
-
-  // Show legacy DAW view — the classic /studio pre-workbench UI. Now lives
-  // at /studio-legacy; the default /studio renders StudioDev (see early
-  // return above). /demo still lands here because it has its own demo
-  // wiring farther up the tree.
-  return (
-    <PasswordGate routeName="Studio">
-    <div className="App">
-      <LiquidGlassFilters />
-      <Navbar />
-      <LeftSidebar
-        onBackToDashboard={handleBackToDashboard}
-        onGoToHome={handleGoToHome}
-        onGoToSearch={handleGoToSearch}
-        onGoToUserInfo={handleGoToUserInfo}
-        onGoToTools={handleGoToTools}
-          onGoToWhatsNew={handleGoToWhatsNew}
-          onGoToResearch={handleGoToResearch}
-          onGoToDownloads={handleGoToDownloads}
-          onGoToPlugins={handleGoToPlugins}
-          onGoToModels={handleGoToModels}
-        onToggleSearch={handleToggleSearch}
-        showMidiBrowser={showMidiBrowser}
-        onToggleChat={handleToggleChat}
-        showChatWindow={showChatWindow}
-      />
-      {/* Show track info sidebar for both tracks and buses */}
-      <TrackInfoSidebar />
-      <div id="main-content">
-        <div id="wrapper" style={{ position: 'relative' }}>
-          {/* Top Left: Generation Panel or MIDI Browser or Chat Window */}
-          <div
-            ref={contentRef}
-            className="content"
-            style={{
-              width: `${panelWidth}px`,
-              minWidth: 0,
-              height: `${panelHeight}px`,
-              overflow: 'hidden'
-            }}
-          >
-            <div className="startcontainer scrollable" style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
-              {showChatWindow ? (
-                <ChatWindow onClose={() => setShowChatWindow(false)} />
-              ) : showMidiBrowser ? (
-                <MIDIBrowser onClose={() => setShowMidiBrowser(false)} />
-              ) : (
-                <GenerationPanelOptimized />
-              )}
-            </div>
-          </div>
-
-          {/* Horizontal Resize Bar */}
-          {!state.pluginMode && (
-            <ResizeBar
-              leftPosition={leftOffset + panelWidth}
-              onResize={handleResize}
-              minWidth={minWidth}
-              maxWidth={maxWidth}
-            />
-          )}
-
-          {/* Top Right: Mode Selector + Video Upload or MIDI Chart (with DAW in bottom third in Plugin Mode) */}
-          <div style={{
-            height: `${panelHeight}px`,
-            flex: 1,
-            minWidth: 0,
-            display: 'flex',
-            flexDirection: 'row',
-            background: 'var(--gradient-glow-subtle)',
-            position: 'relative'
-          }}>
-            {/* Mode Selector Column - now absolutely positioned over content */}
-            <ModeSelector
-              selectedMode={contentMode}
-              onModeChange={setContentMode}
-            />
-
-            {/* Content Area - In plugin mode, split into video/midi/audio content (top 2/3) and DAW (bottom 1/3) */}
-            <div style={{
-              flex: 1,
-              minWidth: 0,
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              position: 'relative',
-              zIndex: 1
-            }}>
-              {/* Top section: Video/MIDI/Audio/Image/FX content */}
-              <div style={{
-                height: state.pluginMode ? `${panelHeight - pluginDawHeight}px` : '100%',
-                minHeight: 0,
-                overflow: 'hidden',
-                position: 'relative'  // For chord window positioning
-              }}>
-                {contentMode === 'fx' ? (
-                  <FXView />
-                ) : contentMode === 'video' ? (
-                  <VideoUploadOptimized />
-                ) : contentMode === 'midi' ? (
-                  <MIDIChart />
-                ) : contentMode === 'audio' ? (
-                  <AudioWaveform />
-                ) : (
-                  <ImageViewer />
-                )}
-
-                {/* Chord Window - appears in lower 1/3, but not in FX mode or plugin mode */}
-                {contentMode !== 'fx' && !state.pluginMode && <ChordWindow />}
-              </div>
-
-              {/* Vertical Resize Bar for Plugin Mode - between content and DAW */}
-              {state.pluginMode && (
-                <VerticalResizeBar
-                  topPosition={panelHeight - pluginDawHeight}
-                  onResize={handlePluginDawResize}
-                  minHeight={100}
-                  maxHeight={panelHeight - 100}
-                />
-              )}
-
-              {/* DAW in lower third - only shown in plugin mode */}
-              {state.pluginMode && (
-                <div style={{
-                  height: `${pluginDawHeight}px`,
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  background: 'var(--daw-bg)'
-                }}>
-                  <DAWOptimized
-                    maxTracksHeight={pluginDawHeight - 50}
-                    onTracksHeightChange={() => {}}
-                    busLabelWidth={busLabelWidth}
-                    pluginMode={state.pluginMode}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Vertical Resize Bar - only in normal mode */}
-          {!state.pluginMode && (
-            <VerticalResizeBar
-              topPosition={panelHeight}
-              onResize={handleVerticalResize}
-              minHeight={300}
-              maxHeight={1000}
-            />
-          )}
-
-          {/* Bottom: DAW - only shown in normal mode */}
-          {!state.pluginMode && (
-            <div style={{
-              marginTop: '10px',
-              width: `calc(100% - ${leftOffset}px)`,
-              position: 'relative',
-              marginLeft: '0px',
-              overflowX: 'auto',
-              overflowY: 'visible'
-            }}>
-              <DAWOptimized
-                maxTracksHeight={dawTracksHeight}
-                onTracksHeightChange={setDawTracksHeight}
-                busLabelWidth={busLabelWidth}
-                pluginMode={state.pluginMode}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-    </PasswordGate>
-  );
+  // No matching view — fall through to null. Should not be reached; every
+  // valid currentView has an explicit branch above.
+  return null;
 }
 
 /**

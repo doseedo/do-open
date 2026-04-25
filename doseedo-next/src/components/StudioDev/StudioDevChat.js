@@ -1,7 +1,12 @@
 /*
- * StudioDevChat — themed chat panel for /studio-dev. Wraps the existing
- * useAgentWebSocket hook (same WS endpoint the production ChatWindow
- * uses), but with a minimal hi-fi UI.
+ * StudioDevChat — themed chat panel for /studio-dev. The chat WebSocket
+ * itself is owned by StudioDev (so it survives panel switches and feeds
+ * the A5 live param-delta listener); this component just renders against
+ * the hook handle passed in via `chatWs`.
+ *
+ * Backwards-compatible: if the prop is missing (e.g. mounted outside
+ * StudioDev), fall back to spinning up an own WS via useAgentWebSocket.
+ * This keeps any one-off / preview embeddings working.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
@@ -12,9 +17,15 @@ import { useAgentWebSocket } from '../ChatWindow/useAgentWebSocket';
 //   busy:    bool — agent is working
 //   wsState: 'connecting' | 'open' | 'closed'
 //   sendChat(text): dispatches a user message
-export default function StudioDevChat({ onClose }) {
+export default function StudioDevChat({ onClose, chatWs }) {
   const { state } = useApp();
-  const hook = useAgentWebSocket(state) || {};
+  // Prefer the lifted hook from StudioDev. The fallback spins up its own
+  // WS only when no parent passed one in — never both.
+  // Always call the hook (rules of hooks), but disable the WS when the
+  // parent already lifted one — that path returns sentinel state without
+  // opening a connection.
+  const fallback = useAgentWebSocket(state, { enabled: !chatWs });
+  const hook = chatWs || fallback || {};
   const { messages = [], busy = false, wsState = 'closed', sendChat } = hook;
 
   const [input, setInput] = useState('');

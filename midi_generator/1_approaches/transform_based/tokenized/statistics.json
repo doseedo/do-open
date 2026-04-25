@@ -1,9 +1,0 @@
-{
-  "n_pieces": 690,
-  "total_tokens": 130399,
-  "vocabulary_size": 27679,
-  "min_length": 1,
-  "max_length": 2216,
-  "mean_length": 188.9840579710145,
-  "median_length": 110.5
-}

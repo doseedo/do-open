@@ -53,9 +53,11 @@ import { renderTrackFlexPitch } from '../../services/flexPitchRender';
 import StudioDevGenerate from './StudioDevGenerate';
 import StudioDevChat from './StudioDevChat';
 import AutomationWindow from '../AutomationWindow/AutomationWindow';
-import StudioDevNav from './StudioDevNav';
+import LeftSidebar from '../Sidebar/LeftSidebar/LeftSidebar';
 import OutOfCreditsModal from './OutOfCreditsModal';
 import StudioDevFileMenu from './StudioDevFileMenu';
+import { useAgentWebSocket } from '../ChatWindow/useAgentWebSocket';
+import { useLiveParamDeltas } from '../../hooks/useLiveParamDeltas';
 
 import './StudioDev.css';
 
@@ -324,6 +326,22 @@ export default function StudioDev() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
+  // A5 — Lift the chat WebSocket to the studio session level.
+  //
+  // The chat panel (StudioDevChat) used to own the WS, but it's only
+  // mounted when sidebarPanel==='chat'. Lifting the hook here keeps the
+  // socket alive for the whole session so two things work even when the
+  // chat panel is closed:
+  //   1. Live plugin param deltas from doo_hook → web DSP graph.
+  //   2. Sync status / agent push messages.
+  // StudioDevChat now consumes this via the `chatWs` prop instead of
+  // calling useAgentWebSocket itself (which would spawn a second WS).
+  const chatWs = useAgentWebSocket(state);
+  // Attach the param_delta listener to the lifted WS. Hook is a no-op
+  // when the socket is closed/connecting; it self-attaches on each WS
+  // instance change.
+  useLiveParamDeltas(chatWs.wsRef);
+
   const [activeTab, setActiveTab] = useState('Instruments');
   // For the Instruments tab: null → show group tiles, group-id → show its subgroups.
   const [activeInstGroup, setActiveInstGroup] = useState(null);
@@ -343,7 +361,6 @@ export default function StudioDev() {
   //   'instruments' (default) · 'chat' · 'browse' · 'generate'
   const [sidebarPanel, setSidebarPanel] = useState('instruments');
   const [showChords,  setShowChords]  = useState(true);
-  const [navExpanded, setNavExpanded] = useState(false);
   // Loop region is local UI — the production reducer doesn't persist it yet.
   // { start, end } in seconds; null = no loop.
   const [loopRegion, setLoopRegion] = useState(null);
@@ -2191,7 +2208,7 @@ export default function StudioDev() {
   };
 
   return (
-    <div className="studio-dev">
+    <div className="studio-dev" style={{ left: state.sidebar.isExpanded ? 220 : 48 }}>
       {/* ================== HEADER ================== */}
       <header className="wb-menubar">
         <div className="wb-brand" style={{ cursor: 'pointer' }} onClick={() => setActiveMode('welcome')}>
@@ -2221,18 +2238,23 @@ export default function StudioDev() {
 
       {/* ================== MAIN SPLIT ================== */}
       <div className="sd-main">
-        {/* -------- LEFT NAV RAIL (collapsed by default) -------- */}
-        <StudioDevNav
-          expanded={navExpanded}
-          onToggleExpanded={() => setNavExpanded((v) => !v)}
-          // The wand ("generate") icon is the home/default view — it maps to
-          // the instrument palette (which IS the generation tab). Chat and
-          // Browse swap the sidebar content and toggle back to instruments
-          // when re-clicked.
-          activePanel={sidebarPanel === 'instruments' ? 'generate' : sidebarPanel}
-          onOpenGenerate={() => setSidebarPanel('instruments')}
-          onOpenBrowse={()   => setSidebarPanel((p) => p === 'browse' ? 'instruments' : 'browse')}
-          onOpenChat={()     => setSidebarPanel((p) => p === 'chat'   ? 'instruments' : 'chat')}
+        {/* -------- LEFT NAV RAIL — shared dashboard sidebar -------- */}
+        <LeftSidebar
+          onBackToDashboard={() => navigate('/projects')}
+          onGoToHome={() => navigate('/dashboard')}
+          onGoToSearch={() => navigate('/search')}
+          onGoToUserInfo={() => navigate('/profile')}
+          onGoToTools={() => navigate('/tools')}
+          onGoToWhatsNew={() => navigate('/whats-new')}
+          onGoToResearch={() => navigate('/research')}
+          onGoToDownloads={() => navigate('/downloads')}
+          onGoToPlugins={() => navigate('/plugins')}
+          onGoToModels={() => navigate('/models')}
+          onShowGenerationPanel={() => setSidebarPanel('instruments')}
+          onShowMidiBrowser={() => setSidebarPanel((p) => p === 'browse' ? 'instruments' : 'browse')}
+          showMidiBrowser={sidebarPanel === 'browse'}
+          onToggleChat={() => setSidebarPanel((p) => p === 'chat' ? 'instruments' : 'chat')}
+          showChatWindow={sidebarPanel === 'chat'}
         />
 
         {/* -------- LEFT SIDEBAR (swaps content by panel) -------- */}
@@ -2476,7 +2498,10 @@ export default function StudioDev() {
           )}
 
           {sidebarPanel === 'chat' && (
-            <StudioDevChat onClose={() => setSidebarPanel('instruments')} />
+            <StudioDevChat
+              onClose={() => setSidebarPanel('instruments')}
+              chatWs={chatWs}
+            />
           )}
 
           {sidebarPanel === 'browse' && (

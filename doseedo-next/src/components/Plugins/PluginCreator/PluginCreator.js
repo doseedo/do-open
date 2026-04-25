@@ -27,6 +27,7 @@ import ModMatrixWithSliders from "./ModMatrixWithSliders";
 import ADSRDisplay from "./ADSRDisplay";
 import MSEGEditor from "./MSEGEditor";
 import EQCurveDisplay from "./EQCurveDisplay";
+import RefRendererDevPanel from "./refRenderer/RefRendererDevPanel";
 import styles from "./PluginCreator.module.css";
 
 const GUIDE_THRESHOLD = 5; // px for smart guide snapping
@@ -2736,6 +2737,7 @@ const PluginCreator = () => {
           )}
         </div>
       )}
+      <RefRendererDevPanel />
     </div>
     </PluginContext.Provider>
   );

@@ -2,8 +2,9 @@
 
 // Backend origins — matches the GCLB `bassify` url-map.
 // Override per environment via Vercel project env vars if needed.
+// NOTE: the chatbot is proxied server-side by app/api/chat/route.ts (which
+// holds the VLLM_API_KEY). It is NOT a Next rewrite — no CHATBOT origin here.
 const AUTH     = process.env.NEXT_PUBLIC_AUTH_ORIGIN     || 'https://doseedo-api.fly.dev';
-const CHATBOT  = process.env.NEXT_PUBLIC_CHATBOT_ORIGIN  || 'https://doseedo-chatbot-1028528394180.us-central1.run.app';
 const MODAL    = process.env.NEXT_PUBLIC_MODAL_ORIGIN    || 'https://arlo--doseedo-stemphonic-stemphonic-wsgi.modal.run';
 const BACKEND  = process.env.NEXT_PUBLIC_BACKEND_ORIGIN  || 'https://backend10-1028528394180.us-central1.run.app';
 const FRAMER   = process.env.NEXT_PUBLIC_FRAMER_ORIGIN   || 'https://heartwarming-friday-546447.framer.app';
@@ -97,9 +98,10 @@ const nextConfig = {
       { source: '/api/keys',               destination: `${AUTH}/api/keys` },
       { source: '/api/keys/:path*',        destination: `${AUTH}/api/keys/:path*` },
 
-      // Chatbot
-      { source: '/api/chat',         destination: `${CHATBOT}/api/chat` },
-      { source: '/api/chat/:path*',  destination: `${CHATBOT}/api/chat/:path*` },
+      // Chatbot — handled by app/api/chat/route.ts (server-side proxy to
+      // the Modal vLLM deployment, with VLLM_API_KEY injected from Vercel
+      // env vars). No rewrite here: a route handler at /api/chat takes
+      // precedence over rewrites and lets us keep the key off the wire.
 
       // Modal (stemphonic + all ML inference — the stemphonic_server WSGI
       // app exposes ~30 routes, most of which were previously behind the
@@ -137,8 +139,6 @@ const nextConfig = {
       { source: '/api/detect-chords',               destination: `${MODAL}/api/detect-chords` },
       { source: '/api/repaint-meter',               destination: `${MODAL}/api/repaint-meter` },
       { source: '/api/regen-stem-for-chord',        destination: `${MODAL}/api/regen-stem-for-chord` },
-      { source: '/api/generate-score-from-video',   destination: `${MODAL}/api/generate-score-from-video` },
-      { source: '/api/generate-score-from-video/:path*', destination: `${MODAL}/api/generate-score-from-video/:path*` },
       { source: '/api/transcribe-vocals',           destination: `${MODAL}/api/transcribe-vocals` },
       { source: '/api/analyze-rhythm',              destination: `${MODAL}/api/analyze-rhythm` },
       { source: '/api/vae-version',                 destination: `${MODAL}/api/vae-version` },

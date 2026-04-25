@@ -1,1 +1,0 @@
-epoch,train_loss,val_loss,reconstruction_loss,sparsity_loss,locality_loss,orthogonality_loss,learning_rate,epoch_time,avg_feature_sparsity,timestamp

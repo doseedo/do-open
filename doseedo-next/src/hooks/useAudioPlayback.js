@@ -8,6 +8,7 @@ import { LRUBufferCache } from '../utils/lruBufferCache';
 import { computeClipPlayback } from '../utils/clipScheduling';
 import { scheduleAutomation, clearAutomation } from '../services/automationPlayback';
 import PluginAdapter from '../lib/PluginAdapter';
+import liveTrackChainRegistry from '../lib/liveTrackChainRegistry';
 
 // R11 splice — feature flag for live web-DSP plugin chains. When unset/empty
 // (the default), the entire PluginAdapter path is bypassed and behavior is
@@ -127,10 +128,17 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     if (!LIVE_PLUGINS_ENABLED) return null;
     const adapter = pluginAdapterRef.current;
     if (!adapter) return null;
-    const logicPlugins = track?.logicPlugins;
+    // sessionSyncAPI._adaptTrack surfaces logicPlugins on metadata, so
+    // accept either layout. New code prefers the top-level field.
+    const logicPlugins = track?.logicPlugins ?? track?.metadata?.logicPlugins;
     if (!Array.isArray(logicPlugins) || logicPlugins.length === 0) return null;
     try {
-      const chain = await adapter.buildTrackChain(track);
+      // PluginAdapter expects logicPlugins at the top level — pass a
+      // shallow override so a metadata-nested record still resolves.
+      const trackForAdapter = track?.logicPlugins
+        ? track
+        : { ...track, logicPlugins };
+      const chain = await adapter.buildTrackChain(trackForAdapter);
       if (!chain || chain.fallback) return null;
       return chain;
     } catch (err) {
@@ -140,6 +148,42 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       return null;
     }
   }, []);
+
+  // A5 — register/unregister live PluginAdapter chains in the singleton
+  // registry so useLiveParamDeltas can look slots up by ginstid/trackIndex
+  // when doo_hook fires a param_delta. Falls back gracefully when the
+  // sync record lacks those identifiers — A5's lookup tries every key.
+  const _registerChain = (track, chain) => {
+    if (!chain || !track) return;
+    try {
+      const meta = track.metadata || {};
+      const ginstid =
+        typeof track.logicGinstid === 'number' ? track.logicGinstid
+        : typeof meta.logicGinstid === 'number' ? meta.logicGinstid
+        : null;
+      const trackIndex =
+        typeof track.logicTrackIndex === 'number' ? track.logicTrackIndex
+        : typeof meta.logicTrackIndex === 'number' ? meta.logicTrackIndex
+        : null;
+      liveTrackChainRegistry.register(track.id, {
+        trackIndex,
+        ginstid,
+        slots: chain.slots || [],
+        // A2 owns disposal; the registry never invokes dispose itself.
+        // We mirror it here as a no-op so unit tests can opt-in.
+        dispose: undefined,
+      });
+    } catch (err) {
+      console.warn(`[A5] registry.register failed for ${track?.id || '?'}:`, err?.message || err);
+    }
+  };
+  const _unregisterChain = (trackId) => {
+    if (trackId == null) return;
+    try { liveTrackChainRegistry.unregister(trackId); } catch (_) {}
+  };
+  const _clearRegistry = () => {
+    try { liveTrackChainRegistry.clear(); } catch (_) {}
+  };
 
   // Initialize audio context, Tuna FX, and MIDI player
   useEffect(() => {
@@ -202,6 +246,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
           try { chain.dispose && chain.dispose(); } catch (_) {}
         }
         trackChainsRef.current.clear();
+        _clearRegistry();
       } catch (_) {}
       if (pluginAdapterRef.current) {
         try { pluginAdapterRef.current.clearCache && pluginAdapterRef.current.clearCache(); } catch (_) {}
@@ -545,6 +590,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
           try { chain.dispose && chain.dispose(); } catch (_) {}
         }
         trackChainsRef.current.clear();
+        _clearRegistry();
       }
 
       // Get all tracks from ref (not prop) to avoid recreating this callback
@@ -1147,10 +1193,15 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             }
             return;
           }
+          // Build a quick map so we can register against the originating
+          // track record (the registry needs trackIndex / ginstid, which
+          // live on the synced track object — not on the chain itself).
+          const candidatesById = new Map(chainCandidates.map((t) => [t.id, t]));
           for (const [trackId, chain] of built) {
             if (chain) {
               prebuiltChains.set(trackId, chain);
               trackChainsRef.current.set(trackId, chain);
+              _registerChain(candidatesById.get(trackId), chain);
             }
           }
           if (prebuiltChains.size > 0) {
@@ -1492,6 +1543,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
           try { chain.dispose && chain.dispose(); } catch (_) {}
         }
         trackChainsRef.current.clear();
+        _clearRegistry();
       }
     };
   }, []);

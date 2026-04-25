@@ -7,10 +7,8 @@
  * the old chord fall through to the "closest new chord tone" fallback anyway,
  * so non-chord tones (passing tones, melody leaps) still end up musical.
  *
- * Upstream reference: midi_generator/transformation/voice_leading_optimizer.py
- * and harmonymodule/generate_improved_voices.py both implement richer DP-based
- * voice leading (Levine / Tymoczko-style). We can upgrade to a DP chooser
- * once this nearest-tone path is proven end-to-end with polypitch.
+ * We can upgrade to a DP-based voice-leader (Levine / Tymoczko-style) once
+ * this nearest-tone path is proven end-to-end with polypitch.
  *
  * Chord parsing: reuses detectChordsFromMIDI's CHORD_TEMPLATES so the round-
  * trip (midi → chord label → midi) matches what the detector emits.

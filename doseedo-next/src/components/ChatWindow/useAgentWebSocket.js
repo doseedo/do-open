@@ -25,8 +25,15 @@ function nextId() { return `msg_${++_msgId}_${Date.now()}`; }
 /**
  * Hook: manages WebSocket connection, message state, and agent protocol.
  * @param {Object} dawState - current DAW state from AppContext
+ * @param {Object} [opts]
+ * @param {boolean} [opts.enabled=true] - when false, don't open a WS.
+ *   Used by StudioDevChat as a fallback path: when the chat panel is
+ *   embedded inside a parent that already lifted useAgentWebSocket and
+ *   passed the handle down, we still need to call the hook (rules of
+ *   hooks) but must NOT spawn a second connection.
  */
-export function useAgentWebSocket(dawState) {
+export function useAgentWebSocket(dawState, opts = {}) {
+  const enabled = opts.enabled !== false;
   const { dispatch } = useApp();
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -186,40 +193,6 @@ export function useAgentWebSocket(dawState) {
         case 'remove_track':
           dispatch({ type: 'DELETE_TRACK', payload: { trackId: action.track_id } });
           break;
-        case 'generate_score_from_video': {
-          // Use the video's scene boundaries (already in state) to call the score endpoint
-          const sceneChanges = dawState?.video?.sceneChanges || [];
-          const sceneTempos = dawState?.video?.sceneTempos || [];
-          if (sceneChanges.length < 2) {
-            console.warn('[agent] no scene changes available — can\'t generate score');
-            break;
-          }
-          const sceneDurations = [];
-          for (let i = 0; i < sceneChanges.length - 1; i++) {
-            sceneDurations.push(sceneChanges[i + 1] - sceneChanges[i]);
-          }
-          const padded = [...sceneTempos];
-          while (padded.length < sceneDurations.length) padded.push(sceneTempos[sceneTempos.length - 1] || 120);
-          fetch('/api/generate-score-from-video', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              scene_durations: sceneDurations,
-              scene_tempos: padded,
-              key: action.key || 'C',
-              scale_type: action.scale_type || 'minor',
-              genre: action.genre || 'cinematic',
-              render_audio: !!action.render_audio,
-            }),
-          }).then(r => r.json()).then(score => {
-            if (score.error) throw new Error(score.error);
-            const chordsNum = {};
-            Object.entries(score.chord_map || {}).forEach(([k, v]) => { chordsNum[parseInt(k, 10)] = v; });
-            dispatch({ type: 'SET_CHORDS', payload: chordsNum });
-            console.log('[agent] score generated, chords applied');
-          }).catch(e => console.error('[agent] score gen failed:', e));
-          break;
-        }
         case 'toggle_chat':
           // no-op — agent can't close itself for safety
           break;
@@ -369,6 +342,13 @@ export function useAgentWebSocket(dawState) {
 
   // ── WebSocket connection management ──
   useEffect(() => {
+    if (!enabled) {
+      // Disabled (parent already owns a WS). Stay in 'closed' so the UI
+      // doesn't flash 'connecting…' before falling through to the lifted
+      // hook handle on first render.
+      setWsState('closed');
+      return undefined;
+    }
     let ws;
     let alive = true;
 
@@ -421,7 +401,7 @@ export function useAgentWebSocket(dawState) {
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
       if (ws) ws.close();
     };
-  }, [handleMessage]); // reconnect if handler ref changes (shouldn't with useCallback)
+  }, [handleMessage, enabled]); // reconnect if handler ref changes (shouldn't with useCallback)
 
   return {
     messages,
@@ -443,5 +423,10 @@ export function useAgentWebSocket(dawState) {
     setMode,
     setModel,
     pushSystemMessage,
+    // A5 — exposed so a lifted owner (e.g. StudioDev) can mount
+    // useLiveParamDeltas(wsRef) without spawning a second WS connection.
+    // The ref is stable across reconnects; the listener attaches in a
+    // useEffect that re-runs when ws.current changes.
+    wsRef,
   };
 }

@@ -918,8 +918,20 @@ export default class WebAudioDSPEngine {
   _ensurePhase1Worklets() {
     if (!this.ctx || this._phase1WorkletsKicked) return;
     this._phase1WorkletsKicked = true;
-    try { ensureR1Worklets(this.ctx); } catch (e) { /* non-fatal */ }
-    try { ensureR8WorkletsLoaded(this.ctx); } catch (e) { /* non-fatal */ }
+    // Both helpers are async — the synchronous try/catch only catches a
+    // throw from the *call*; rejected promises must be swallowed via
+    // .catch() to avoid unhandled-rejection noise on contexts that lack
+    // an audioWorklet (test mocks, older Safari, OfflineAudioContext on
+    // browsers that haven't shipped worklet support yet). Builders carry
+    // their own non-worklet fallback path, so a swallowed failure is safe.
+    try {
+      const p = ensureR1Worklets(this.ctx);
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (e) { /* non-fatal */ }
+    try {
+      const p = ensureR8WorkletsLoaded(this.ctx);
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (e) { /* non-fatal */ }
   }
 
   _buildNodeSchemaMap() {

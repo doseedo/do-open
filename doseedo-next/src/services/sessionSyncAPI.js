@@ -204,9 +204,24 @@ function _adaptTrack(t, flexByAuflGid = new Map()) {
     color: t.color,
     cropStart: Number(t.cropStart) || 0,
     cropEnd: Number(t.cropEnd) || 0,
+    // R11 / A5 — surface the Logic plugin list and the identifiers used
+    // to match a running web chain to a doo_hook param_delta event at
+    // the top level. PluginAdapter.buildTrackChain reads track.logicPlugins
+    // directly; the registry reads logicTrackIndex / logicGinstid.
+    ...(Array.isArray(t.logicPlugins) ? { logicPlugins: t.logicPlugins } : {}),
+    ...(typeof t.logicTrackIndex === 'number'
+      ? { logicTrackIndex: t.logicTrackIndex } : {}),
+    ...(typeof t.logicGinstid === 'number'
+      ? { logicGinstid: t.logicGinstid } : {}),
     metadata: {
       source: 'desktop-sync',
-      ...(t.logicPlugins ? { logicPlugins: t.logicPlugins } : {}),
+      // Keep a copy under metadata for legacy consumers that read from
+      // metadata. New code should prefer the top-level fields above.
+      ...(Array.isArray(t.logicPlugins) ? { logicPlugins: t.logicPlugins } : {}),
+      ...(typeof t.logicTrackIndex === 'number'
+        ? { logicTrackIndex: t.logicTrackIndex } : {}),
+      ...(typeof t.logicGinstid === 'number'
+        ? { logicGinstid: t.logicGinstid } : {}),
       ...(clips.length > 0 ? { clips } : {}),
       ...(flexTime ? { flexTime } : {}),
       ...passthrough,

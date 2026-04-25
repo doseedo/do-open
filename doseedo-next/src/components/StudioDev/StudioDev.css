@@ -1530,61 +1530,6 @@
 }
 .sd-overlay-body { flex: 1; overflow: auto; background: var(--hifi-bg); }
 
-/* ---------- Left nav rail ---------- */
-.sd-nav {
-  width: 56px; flex: 0 0 56px;
-  background: var(--hifi-surface);
-  border-right: 1px solid var(--hifi-rule);
-  display: flex; flex-direction: column;
-  padding: 12px 0;
-  transition: width 150ms ease, flex-basis 150ms ease;
-  overflow: hidden;
-}
-.sd-nav.expanded { width: 200px; flex: 0 0 200px; }
-.sd-nav-toggle {
-  margin: 0 8px 8px; padding: 10px 12px;
-  background: transparent; border: 1px solid var(--hifi-rule); border-radius: 6px;
-  color: var(--hifi-ink-soft); cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-}
-.sd-nav-toggle:hover { color: var(--hifi-ink); border-color: var(--hifi-rule-strong); }
-.sd-nav-section { display: flex; flex-direction: column; padding: 4px 8px; gap: 2px; }
-.sd-nav-divider {
-  height: 1px; background: var(--hifi-rule); margin: 8px 14px;
-}
-.sd-nav-spacer { flex: 1; }
-.sd-nav-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 12px; border-radius: 6px;
-  background: transparent; border: 0; color: var(--hifi-ink-soft);
-  font-family: var(--hifi-sans); font-size: 13px;
-  cursor: pointer; text-align: left; min-height: 40px;
-}
-.sd-nav-item:hover { background: rgba(21, 24, 28,0.04); color: var(--hifi-ink); }
-.sd-nav-item.active {
-  background: var(--hifi-accent-soft); color: var(--hifi-accent);
-  border: 1px solid rgba(29, 76, 122, 0.3);
-}
-.sd-nav-item i { width: 16px; text-align: center; flex-shrink: 0; }
-.sd-nav-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-/* "More" submenu — float outward so it's visible even when collapsed */
-.sd-nav-more {
-  position: absolute; left: 100%; top: 0; margin-left: 6px;
-  background: var(--hifi-surface); border: 1px solid var(--hifi-rule-strong);
-  border-radius: 6px; padding: 4px; min-width: 140px;
-  z-index: 40; box-shadow: 0 12px 32px rgba(0,0,0,0.5);
-}
-.sd-nav-more-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px; border-radius: 4px;
-  background: transparent; border: 0; color: var(--hifi-ink);
-  width: 100%; font-family: var(--hifi-sans); font-size: 12px;
-  cursor: pointer; text-align: left;
-}
-.sd-nav-more-item:hover { background: var(--hifi-surface-2); }
-.sd-nav-more-item i { width: 14px; text-align: center; }
-
 /* ---------- File menu ---------- */
 .sd-filemenu { position: relative; }
 .sd-filemenu-btn {

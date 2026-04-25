@@ -96,12 +96,9 @@ if _IS_MAC:
     # server-side additions (acestep/handler.py, core/generation/*).
     # deploy_resources/ACE-Step-1.5 is the fork bundled with this repo.
     _ACE_STEP = _DO2 / "deploy_resources/ACE-Step-1.5"
-    # On Mac the harmonymodule tree lives inside the Do repo.
-    _HARMONYMODULE = _DO2 / "home/arlo/harmonymodule"
 else:
     _DO2      = Path("/home/arlo/do2")
     _ACE_STEP = Path("/scratch/ACE-Step-1.5")
-    _HARMONYMODULE = Path("/scratch/Do/harmonymodule")
 
 
 # ---------------------------------------------------------------------------
@@ -437,15 +434,6 @@ image = (
         ignore=_ignore_patterns(),
         copy=True,
     )
-    # harmonymodule (420 KB) — legacy /scratch/Do/harmonymodule import path.
-    # On Mac this lives inside the Do git repo at home/arlo/harmonymodule;
-    # on the GPU server it's /scratch/Do/harmonymodule.
-    .add_local_dir(
-        str(_HARMONYMODULE),
-        remote_path="/opt/harmonymodule",
-        ignore=_ignore_patterns(),
-        copy=True,
-    )
     # Soundfonts, latent checkpoints, and the PANNs label CSV all live in
     # the `stemphonic-models` Modal volume (uploaded once from GCS).
     # @enter symlinks `/scratch/soundfonts`, `/scratch/latent_*_ckpts/*`,
@@ -540,8 +528,6 @@ class Stemphonic:
         # Source code dirs → image-baked locations
         link("/mnt/data/system_home/arlo/do2", "/opt/do2")
         link("/home/arlo/do2", "/opt/do2")
-        os.makedirs("/scratch/Do", exist_ok=True)
-        link("/scratch/Do/harmonymodule", "/opt/harmonymodule")
 
         # ACE-Step: source baked (minus checkpoints), checkpoints on volume.
         # Can't just symlink the whole /scratch/ACE-Step-1.5 dir because we
@@ -625,7 +611,6 @@ class Stemphonic:
         # Insert-if-missing so calling this on every cold start doesn't
         # grow sys.path indefinitely.
         for p in (
-            "/scratch/Do/harmonymodule",
             # latent_demucs.runtime does `from distill_model import ...`
             # so the student dir must be on sys.path.
             "/mnt/data/system_home/arlo/do2/latent_demucs_student",
@@ -715,7 +700,6 @@ class Stemphonic:
             "/api/separate-stemphonic",
             "/api/repaint-meter",
             "/api/regen-stem-for-chord",
-            "/api/generate-score-from-video",
             "/api/transcribe-vocals",
             "/separate-stems",
         })
@@ -927,7 +911,6 @@ class Stemphonic:
             "/separate-stems":                "separate-stems",
             "/api/repaint-meter":             "repaint",
             "/api/regen-stem-for-chord":      "regen-stem",
-            "/api/generate-score-from-video": "video-score",
         }
         # For polling endpoints we need to know which route family they
         # belong to so the after_request hook can find the right task dict
@@ -1121,54 +1104,17 @@ class Stemphonic:
                     if isinstance(body, dict):
                         if body.get("task_id"):
                             task_ids.append(body["task_id"])
-                        if body.get("audio_task_id"):
-                            # /api/generate-score-from-video spawns a stemphonic
-                            # audio render — treat its downstream outputs as
-                            # stemphonic kind (it goes through run_generation).
-                            task_ids.append(body["audio_task_id"])
                         # repaint-meter returns {"results": [{task_id, ...}, ...]}
                         for entry in (body.get("results") or []):
                             if isinstance(entry, dict) and entry.get("task_id"):
                                 task_ids.append(entry["task_id"])
                     for tid in task_ids:
-                        # video-score spawns into the `tasks` dict as kind
-                        # "stemphonic" (shared run_generation), so the poll
-                        # family resolver maps it correctly.
-                        resolved_kind = "stemphonic" if path == "/api/generate-score-from-video" else kind
                         with _task_lock:
                             _task_owners[tid] = {
                                 "user_id": user_id,
-                                "kind": resolved_kind,
+                                "kind": kind,
                                 "created_at": _gt.time(),
                             }
-
-                    # /api/generate-score-from-video also produces a MIDI file
-                    # synchronously at SCORE_OUTPUT_DIR/<score_id>/score.mid.
-                    # Persist it inline (not via the polling-task machinery
-                    # since score_id is not a task_id in the `tasks` dict).
-                    if path == "/api/generate-score-from-video" and isinstance(body, dict):
-                        score_id = body.get("score_id")
-                        if score_id:
-                            try:
-                                score_dir_root = getattr(
-                                    self._server_module, "SCORE_OUTPUT_DIR",
-                                    "/scratch/stemphonic_outputs/scores",
-                                )
-                                # Reuse _persist_task_outputs by passing the
-                                # score_id as task_id — R2 key becomes
-                                # generations/<user_id>/<score_id>/score.mid
-                                # which is still unique per user.
-                                persisted = _persist_task_outputs(
-                                    user_id, score_id, "video-score", score_dir_root,
-                                )
-                                if persisted:
-                                    body["r2"] = persisted if len(persisted) > 1 else persisted[0]
-                                    response.set_data(_gj.dumps(body))
-                            except Exception as e:
-                                _r2_log.exception(
-                                    "inline persist (video-score) crashed score_id=%s: %s",
-                                    score_id, e,
-                                )
 
                 # Synchronous /api/separate-stemphonic returns the audio_url
                 # and task_id inline — persist immediately.

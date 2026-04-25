@@ -1,8 +1,0 @@
-{
-  "n_sequences": 216,
-  "total_tokens": 1872,
-  "vocab_size": 86,
-  "avg_length": 8.666666666666666,
-  "max_length": 28,
-  "n_leaves": 45
-}
