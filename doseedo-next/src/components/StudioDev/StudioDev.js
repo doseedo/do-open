@@ -49,8 +49,10 @@ import StudioDevFX from './StudioDevFX';
 import StudioDevVideo from './StudioDevVideo';
 import StudioDevChords from './StudioDevChords';
 import { applyChordChange as polypitchApplyChordChange } from '../../services/polypitchChordSync';
+import { renderTrackFlexPitch } from '../../services/flexPitchRender';
 import StudioDevGenerate from './StudioDevGenerate';
 import StudioDevChat from './StudioDevChat';
+import AutomationWindow from '../AutomationWindow/AutomationWindow';
 import StudioDevNav from './StudioDevNav';
 import OutOfCreditsModal from './OutOfCreditsModal';
 import StudioDevFileMenu from './StudioDevFileMenu';
@@ -470,6 +472,43 @@ export default function StudioDev() {
     return out;
   }, [state.buses]);
 
+  // Flex-pitch render trigger. When the desktop syncs flexPitchNotes and
+  // any track carries a clip with `flexPitch` metadata, render that
+  // track's audio through polypitchService and swap audioUrl. Idempotent
+  // via flexPitchRender's internal cache + polypitchRendered flag.
+  useEffect(() => {
+    const fpNotes = state.flexPitchNotes;
+    if (!Array.isArray(fpNotes) || fpNotes.length === 0) return;
+    for (const bus of state.buses || []) {
+      for (const track of (bus.tracks || [])) {
+        if (track.metadata?.polypitchRendered) continue;
+        if (track.metadata?.isBusMaster) continue;
+        const hasFlexClip = (track.metadata?.clips || []).some((c) => c?.flexPitch);
+        if (!hasFlexClip) continue;
+        renderTrackFlexPitch({
+          track: { ...track, busId: bus.id },
+          flexPitchNotes: fpNotes,
+          onRendered: (newUrl) => {
+            dispatch({
+              type: 'UPDATE_TRACK',
+              payload: {
+                busId: bus.id, trackId: track.id,
+                updates: {
+                  audioUrl: newUrl,
+                  metadata: {
+                    ...(track.metadata || {}),
+                    polypitchRendered: true,
+                    flexPitchRenderedAt: Date.now(),
+                  },
+                },
+              },
+            });
+          },
+        });
+      }
+    }
+  }, [state.flexPitchNotes, state.buses, dispatch]);
+
   const { seek } = useAudioPlayback(
     tracksForPlayback,
     state.isPlaying,
@@ -483,6 +522,7 @@ export default function StudioDev() {
     state.tempoMap || null,
     state.beatMap || null,
     state.timelineOffset || 0,
+    state.cycleRegion || null,
   );
 
   /* ---------- Auto-switch mode based on selected track type ---------- */
@@ -2579,6 +2619,31 @@ export default function StudioDev() {
                 <Icon k="plus" size={12} /> Add track
               </button>
             </div>
+
+            {/* Single shared automation window. Toggled via TrackInfoSidebar's
+                "Edit Automation" button; the reducer binds it to the
+                selected track's volume lane and persists edits back to
+                track.automation.volume so playback picks them up. */}
+            {state.automationWindow?.isVisible && (
+              <div style={{ borderTop: '1px solid #222', borderBottom: '1px solid #222', background: '#0a0a0a' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', fontSize: 11, color: '#888' }}>
+                  <span>
+                    Automation —{' '}
+                    {(state.buses || []).flatMap((b) => b.tracks || [])
+                      .find((t) => t.id === state.automationWindow.trackId)?.name
+                      || '(no track)'}
+                    {' · '}
+                    {state.automationWindow.paramType || 'volume'}
+                  </span>
+                  <button
+                    style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer' }}
+                    onClick={() => dispatch({ type: 'CLOSE_AUTOMATION_WINDOW' })}
+                    title="Close automation editor"
+                  >×</button>
+                </div>
+                <AutomationWindow />
+              </div>
+            )}
 
             <div
               className={`sd-timeline ${isDraggingFile ? 'sd-drag-over' : ''}`}

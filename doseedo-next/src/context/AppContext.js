@@ -65,11 +65,17 @@ const initialState = {
     audioCoverStrength: 0.5,         // Fraction of steps using cover-mode encoder
   },
 
-  // Automation state
+  // Automation state — single window, one editor for one (track, paramType)
+  // pair at a time. Toggled from TrackInfoSidebar. `points` is the editor's
+  // working copy; persistence lives at track.automation[paramType] so
+  // playback (useAudioPlayback) reads the saved lane, not the editor buffer.
   automationWindow: {
     isVisible: false,
-    points: [],
-    resolution: { width: 0, height: 100 }
+    trackId: null,                 // selected track being automated
+    busId: null,                   // parent bus (for state lookups)
+    paramType: 'volume',           // 'volume' | 'pan'
+    points: [],                    // [{time: seconds, value: number, curve?: 'linear'|'hold'}]
+    resolution: { width: 0, height: 100 },
   },
 
   // UI state
@@ -342,14 +348,87 @@ function appReducer(state, action) {
         }
       };
 
-    case 'UPDATE_AUTOMATION_POINTS':
+    case 'OPEN_AUTOMATION_WINDOW': {
+      // Bind the window to (trackId, busId, paramType) and seed `points`
+      // from track.automation[paramType] so the editor opens on top of
+      // the existing lane (even if it was authored in Logic and arrived
+      // via the desktop sync). When the lane doesn't exist yet, the
+      // editor creates default edge points on first interaction.
+      const { trackId, busId, paramType = 'volume' } = action.payload || {};
+      let points = [];
+      const targetBus = (state.buses || []).find((b) => b.id === busId)
+                     || (state.buses || []).find((b) => (b.tracks || []).some((t) => t.id === trackId));
+      const targetTrack = targetBus?.tracks?.find((t) => t.id === trackId);
+      const lane = targetTrack?.automation?.[paramType];
+      if (Array.isArray(lane)) points = lane.map((p) => ({ ...p }));
       return {
         ...state,
         automationWindow: {
           ...state.automationWindow,
-          points: action.payload
-        }
+          isVisible: true,
+          trackId,
+          busId: targetBus?.id || busId || null,
+          paramType,
+          points,
+        },
       };
+    }
+
+    case 'CLOSE_AUTOMATION_WINDOW':
+      return {
+        ...state,
+        automationWindow: {
+          ...state.automationWindow,
+          isVisible: false,
+        },
+      };
+
+    case 'UPDATE_AUTOMATION_POINTS': {
+      // Two-write update: keep the editor buffer in sync AND persist back
+      // to the bound track's automation lane so playback picks it up
+      // without a re-open. When no track is bound (legacy flow), only the
+      // editor buffer changes — the original session-level behavior.
+      const points = Array.isArray(action.payload) ? action.payload : [];
+      const { trackId, busId, paramType } = state.automationWindow || {};
+      let buses = state.buses;
+      if (trackId && paramType) {
+        buses = (state.buses || []).map((bus) => {
+          if (busId && bus.id !== busId) return bus;
+          if (!(bus.tracks || []).some((t) => t.id === trackId)) return bus;
+          return {
+            ...bus,
+            tracks: bus.tracks.map((t) => {
+              if (t.id !== trackId) return t;
+              const automation = { ...(t.automation || {}), [paramType]: points };
+              return { ...t, automation };
+            }),
+          };
+        });
+      }
+      return {
+        ...state,
+        buses,
+        automationWindow: {
+          ...state.automationWindow,
+          points,
+        },
+      };
+    }
+
+    case 'UPDATE_TRACK_AUTOMATION': {
+      const { trackId, paramType, points } = action.payload || {};
+      if (!trackId || !paramType || !Array.isArray(points)) return state;
+      return {
+        ...state,
+        buses: (state.buses || []).map((bus) => ({
+          ...bus,
+          tracks: (bus.tracks || []).map((t) => {
+            if (t.id !== trackId) return t;
+            return { ...t, automation: { ...(t.automation || {}), [paramType]: points } };
+          }),
+        })),
+      };
+    }
 
     case 'TOGGLE_SIDEBAR':
       return {

@@ -24,9 +24,48 @@ class MIDIPlayer {
     this.isLoaded = false;
     this.yAxisRatio = Math.pow(2, 1 / 12);
     this.timeScale = 1;
+    // Default output sink for playNote/playDrum (overridable per-call via
+    // opts.destination). Set by attachToContext to the main graph's master
+    // (or a specific bus node); otherwise falls back to this.masterGain.
+    this._defaultDestination = null;
+    this._external = false;          // using main-graph AudioContext?
   }
 
-  /** Create the AudioContext + masterGain. No sample download. */
+  /**
+   * Attach the MIDI player to an existing AudioContext and route output to
+   * the given destination node. Call this from useAudioPlayback right after
+   * creating the main context + masterGain. All subsequent playNote /
+   * playDrum calls use the shared context and flow through `destinationNode`,
+   * which means the master fader (and bus mute/solo, if destinationNode is
+   * a bus GainNode) apply to MIDI just like to audio tracks.
+   *
+   * Safe to call before or after initialize(); migrates a previously-created
+   * own-context cleanly. Idempotent against repeat calls with the same args.
+   */
+  attachToContext(ctx, destinationNode) {
+    if (!ctx || !destinationNode) return;
+    if (this.audioContext === ctx && this._defaultDestination === destinationNode) return;
+    this.stopAll();
+    // If we had our OWN context from a prior initialize(), close it — two
+    // contexts per origin is allowed but wastes hardware decoders.
+    if (this.audioContext && this.audioContext !== ctx && !this._external) {
+      try { this.audioContext.close(); } catch (_) {}
+    }
+    // Also disconnect a previous masterGain (from an earlier attach).
+    if (this.masterGain) {
+      try { this.masterGain.disconnect(); } catch (_) {}
+    }
+    this.audioContext = ctx;
+    this.masterGain = ctx.createGain();
+    this.masterGain.gain.value = 1.0;
+    this.masterGain.connect(destinationNode);
+    this._defaultDestination = destinationNode;
+    this._external = true;
+    this.isLoaded = true;
+  }
+
+  /** Create an OWN AudioContext + masterGain for standalone use.
+   *  No-op if already attached to an external context. No sample download. */
   async initialize() {
     if (this.isLoaded) return;
     try {
@@ -34,6 +73,8 @@ class MIDIPlayer {
       this.masterGain = this.audioContext.createGain();
       this.masterGain.gain.value = 1.0;
       this.masterGain.connect(this.audioContext.destination);
+      this._defaultDestination = this.masterGain;
+      this._external = false;
       this.isLoaded = true;
     } catch (error) {
       console.error('❌ Failed to init audio context:', error);
@@ -65,9 +106,12 @@ class MIDIPlayer {
    * @param {number} duration  seconds
    * @param {number} time      audioContext time (0 = now)
    * @param {object} opts
-   *   opts.span   {number} rows covered (default 1)
-   *   opts.bend   {number} [0,1] — span travel amount. 0 = static mid.
-   *   opts.curve  {number} [-1,+1] — shape: -1 log, 0 linear, +1 exp
+   *   opts.span        {number} rows covered (default 1)
+   *   opts.bend        {number} [0,1] — span travel amount. 0 = static mid.
+   *   opts.curve       {number} [-1,+1] — shape: -1 log, 0 linear, +1 exp
+   *   opts.destination {AudioNode} override output — pass a per-bus GainNode
+   *                   so bus mute/solo/gain apply to this note. Defaults to
+   *                   the player's own masterGain (preview path).
    * @returns {object|null}
    */
   playNote(midiNote, velocity = 0.8, duration = 1.0, time = 0, opts = {}) {
@@ -122,7 +166,8 @@ class MIDIPlayer {
       gain.gain.linearRampToValueAtTime(peak, when + attack);
       gain.gain.setValueAtTime(peak, when + Math.max(attack, duration - release));
       gain.gain.exponentialRampToValueAtTime(0.0001, when + duration);
-      osc.connect(gain).connect(this.masterGain);
+      const dest = opts.destination || this._defaultDestination || this.masterGain;
+      osc.connect(gain).connect(dest);
       osc.start(when);
       osc.stop(when + duration + 0.05);
       const node = { osc, gain };
@@ -141,18 +186,24 @@ class MIDIPlayer {
   /**
    * GM drum hit (Web Audio synth — kick/snare/hh/…). Unchanged from the
    * soundfont era; only pitched playback is sine now.
+   *
+   * @param {object} opts
+   *   opts.destination {AudioNode} override output — pass a per-bus GainNode
+   *                   to route through bus mute/solo/gain. Defaults to the
+   *                   player's own masterGain (preview path).
    */
-  playDrum(midiNote, velocity = 0.8, time = 0) {
+  playDrum(midiNote, velocity = 0.8, time = 0, opts = {}) {
     if (!this.audioContext) {
       try {
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         this.masterGain = this.audioContext.createGain();
         this.masterGain.gain.value = 1.0;
         this.masterGain.connect(this.audioContext.destination);
+        this._defaultDestination = this.masterGain;
       } catch (e) { return null; }
     }
     const ctx = this.audioContext;
-    const dest = this.masterGain || ctx.destination;
+    const dest = opts.destination || this._defaultDestination || this.masterGain || ctx.destination;
     const t0 = time || ctx.currentTime;
     const v = Math.max(0, Math.min(1, velocity));
 
@@ -260,15 +311,27 @@ class MIDIPlayer {
   }
 
   async resume() {
-    if (this.audioContext && this.masterGain) {
-      if (this.audioContext.state === 'suspended') await this.audioContext.resume();
-      this.masterGain.gain.setValueAtTime(1.0, this.audioContext.currentTime);
+    if (!this.audioContext || !this.masterGain) return;
+    // When attached to the main graph, the parent (useAudioPlayback) owns
+    // context resume — calling it here would race and is unnecessary. We
+    // still re-open our own masterGain in case stopAll() silenced it.
+    if (!this._external && this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
     }
+    this.masterGain.gain.setValueAtTime(1.0, this.audioContext.currentTime);
   }
 
   dispose() {
     this.stopAll();
-    if (this.audioContext) { this.audioContext.close(); this.audioContext = null; }
+    // Never close an external context — that's the main-graph context and
+    // closing it would silence the whole DAW.
+    if (this.audioContext && !this._external) {
+      try { this.audioContext.close(); } catch (_) {}
+    }
+    this.audioContext = null;
+    this.masterGain = null;
+    this._defaultDestination = null;
+    this._external = false;
     this.isLoaded = false;
   }
 }

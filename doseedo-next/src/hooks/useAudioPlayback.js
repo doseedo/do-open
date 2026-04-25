@@ -4,9 +4,17 @@ import tunaFX from '../services/tunaFX';
 import { isMaskPlaybackReady, setGains as setMaskGains, setActiveStem, seek as maskSeek, play as maskPlay, stop as maskStop } from '../services/maskPlayback';
 import { dispatchStrategy, getTrackSubstemSchedules, resumeFromPlayhead } from '../services/virtualTrackEdit';
 import { getStretchedBuffer } from '../services/wsolaStretch';
+import { LRUBufferCache } from '../utils/lruBufferCache';
+import { computeClipPlayback } from '../utils/clipScheduling';
+import { scheduleAutomation, clearAutomation } from '../services/automationPlayback';
 
-// Global audio buffer cache (shared across all instances)
-const audioBufferCache = new Map();
+// Global audio buffer cache — byte-capped LRU to keep a long session's worth
+// of synced projects from OOM-ing the tab. At 48kHz stereo float32, the cap
+// below holds ~22 minutes of audio before the oldest buffer gets bumped.
+const audioBufferCache = new LRUBufferCache({
+  maxBytes: 512 * 1024 * 1024,
+  name: 'audioBufferCache',
+});
 const RESUME_ATTACK_SECONDS = 0.005;
 
 function isRenderablePlaybackTrack(track) {
@@ -41,11 +49,22 @@ function normalizeStemForMaskPlayback(track) {
  * Custom hook for managing audio playback across multiple tracks
  * Integrates with global state via dispatch
  */
-export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10, currentPlayheadPosition = 0, bpm = 120, masterGain = 0.8, beatsPerBar = 4, meterDenominator = 4, tempoMap = null, beatMap = null, timelineOffset = 0) {
+export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10, currentPlayheadPosition = 0, bpm = 120, masterGain = 0.8, beatsPerBar = 4, meterDenominator = 4, tempoMap = null, beatMap = null, timelineOffset = 0, cycleRegion = null) {
   const audioContextRef = useRef(null);
   const masterGainNodeRef = useRef(null); // Master gain node for overall volume control
   const sourceNodesRef = useRef([]);
   const gainNodesRef = useRef(new Map()); // Map of trackId -> gainNode for real-time updates
+  // Per-bus GainNode keyed by busId. Topology:
+  //   track source → trackGain → busGain[busId] → masterGain → destination
+  // Bus gain holds bus.gain × bus-level mute/solo state. Track gain holds
+  // track.gain × track-level mute/solo. Multiplicative. Persists across
+  // pause/play cycles so fader automation stays put.
+  const busGainNodesRef = useRef(new Map());
+  // Per-track aux send GainNodes — Map<trackId, GainNode[]>. A track can
+  // tap its postfader signal into N destination bus inputs at custom
+  // levels. Stored separately from gainNodesRef so the gain-update effect
+  // can reach send levels without iterating sources.
+  const sendGainNodesRef = useRef(new Map());
   const startTimeRef = useRef(0);
   const pauseTimeRef = useRef(0);
   const animationFrameRef = useRef(null);
@@ -56,6 +75,25 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
   const hasStartedPlaybackRef = useRef(false); // Track if playback has actually started
   const playbackSessionRef = useRef(0); // Invalidate stale late-load scheduling across pause/play cycles
   const playRef = useRef(null); // Latest play() fn — called by the meter-change live-reschedule effect
+  const seekRef = useRef(null); // Latest seek() fn — called by the cycle-loop wrap in updatePlayhead
+  const cycleLoopGuardRef = useRef(0); // debounce loop wraparound to avoid double-fires
+
+  // Lazily create the bus GainNode for a given busId and return it. Called
+  // at schedule time and from the real-time gain-update effect. If busId is
+  // falsy, falls back to masterGain so tracks that bypass the bus model
+  // (legacy / test) still play.
+  const ensureBusGain = (busId) => {
+    const master = masterGainNodeRef.current;
+    if (!busId || !master || !audioContextRef.current) return master;
+    let node = busGainNodesRef.current.get(busId);
+    if (!node) {
+      node = audioContextRef.current.createGain();
+      node.gain.value = 1.0;   // real-time effect will clamp per mute/solo
+      node.connect(master);
+      busGainNodesRef.current.set(busId, node);
+    }
+    return node;
+  };
 
   // Initialize audio context, Tuna FX, and MIDI player
   useEffect(() => {
@@ -81,10 +119,12 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     masterGainNodeRef.current.connect(audioContextRef.current.destination);
 
 
-    // Initialize MIDI player
-    midiPlayer.initialize().catch(err => {
-      console.error('Failed to initialize MIDI player:', err);
-    });
+    // Attach the MIDI player to the main graph. One shared AudioContext
+    // (no drift against audio tracks) and all MIDI output flows through
+    // masterGain (master fader + any future FX apply uniformly). For
+    // bus-aware routing, playback passes the track's busGainNode as
+    // opts.destination per playNote call — see the MIDI notes loop below.
+    midiPlayer.attachToContext(audioContextRef.current, masterGainNodeRef.current);
 
     return () => {
       tunaFX.destroy();
@@ -105,9 +145,19 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     tracksRef.current = tracks;
   }, [tracks]);
 
-  // Update gain nodes in real-time when track settings change (without restarting playback)
+  // Update gain nodes in real-time when track settings change (without
+  // restarting playback). Split model: per-bus GainNode holds bus.gain +
+  // bus-level mute/solo; per-track GainNode holds track.gain + track-level
+  // mute/solo. The two multiply through the signal chain so net audible
+  // gain matches the old single-node precomputed `finalGain` exactly.
+  //
+  // Old precedence (kept for parity): bus-mute zeros everything; bus-solo
+  // overrides track mute/solo entirely (solo'd bus plays even if its
+  // tracks are muted); otherwise track solo/mute applies.
   useEffect(() => {
-    if (!isPlaying || gainNodesRef.current.size === 0) return;
+    if (!isPlaying) return;
+    const ctx = audioContextRef.current;
+    if (!ctx) return;
 
     const voTracks = (tracks.vo || []).filter(isRenderablePlaybackTrack);
     const musicTracks = (tracks.music || []).filter(isRenderablePlaybackTrack);
@@ -120,36 +170,67 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
 
     const allTracks = [...voTracks, ...musicTracks, ...sfxTracks, ...midiAudioTracks, ...audioTracks];
 
-    // Check if any track has solo enabled
     const hasSoloTracks = allTracks.some(track => track.isSolo);
     const hasBusSolo = allTracks.some(t => t._busSolo);
 
+    // Per-bus pass: collect unique bus state (all tracks on a bus carry
+    // the same snapshot of bus.gain/mute/solo, so first seen wins).
+    const busInfo = new Map();   // busId → { gain, muted, solo }
+    for (const t of allTracks) {
+      if (!t._busId || busInfo.has(t._busId)) continue;
+      busInfo.set(t._busId, {
+        gain:  typeof t._busGain === 'number' ? t._busGain : 1.0,
+        muted: !!t._busMuted,
+        solo:  !!t._busSolo,
+      });
+    }
+    const now = ctx.currentTime;
+    for (const [busId, info] of busInfo) {
+      const node = busGainNodesRef.current.get(busId);
+      if (!node) continue;
+      let g;
+      if (info.muted)                  g = 0;
+      else if (hasBusSolo && !info.solo) g = 0;
+      else                             g = info.gain;
+      node.gain.setTargetAtTime(g, now, 0.01);
+    }
+
+    // Per-track pass: track node holds track.gain × (track mute/solo).
+    // When bus-solo is active, track mute/solo is IGNORED (parity with
+    // pre-refactor behavior); the bus node has already zeroed non-solo
+    // buses, so this just lets solo'd-bus tracks pass through cleanly.
+    //
+    // Automation interaction: if the track has a volume lane and the
+    // gate is open, re-schedule the lane against the current transport
+    // position rather than stomping the param with a static value.
+    // setValueAtTime would override the in-flight ramp; scheduleAutomation
+    // cancels and re-anchors so live edits to the lane are heard.
+    if (gainNodesRef.current.size === 0) return;
     allTracks.forEach(track => {
       const gainNode = gainNodesRef.current.get(track.id);
       if (!gainNode) return;
-
-      // Apply bus-level mute/solo
-      const busMuted = track._busMuted || false;
-      const busSolo = track._busSolo || false;
-      const busGain = track._busGain || 1.0;
-
-      // Determine if this track should play
-      let shouldPlay = false;
-      if (busMuted) {
-        shouldPlay = false;
-      } else if (hasBusSolo) {
-        shouldPlay = busSolo;
-      } else if (hasSoloTracks) {
-        shouldPlay = track.isSolo;
+      let trackGate;
+      if (hasBusSolo)                       trackGate = 1;
+      else if (hasSoloTracks)               trackGate = track.isSolo ? 1 : 0;
+      else                                  trackGate = track.isMuted ? 0 : 1;
+      const baseGain = (track.gain || 1.0) * trackGate;
+      const volLane = track.automation?.volume;
+      const hasVolAuto = trackGate > 0 && Array.isArray(volLane) && volLane.length > 0;
+      if (hasVolAuto) {
+        // Re-anchor automation at the live transport position so edits
+        // are heard immediately. startTimeRef is the AudioContext anchor
+        // for transport time 0, so currentTransport = ctx.currentTime -
+        // startTimeRef.current.
+        const transportTime = audioContextRef.current.currentTime - (startTimeRef.current || 0);
+        scheduleAutomation(gainNode.gain, volLane, {
+          audioContextCurrentTime: audioContextRef.current.currentTime,
+          schedulingStartTime: audioContextRef.current.currentTime,
+          anchorTimelineTime: transportTime,
+          fallbackValue: baseGain,
+        });
       } else {
-        shouldPlay = !track.isMuted;
+        gainNode.gain.setTargetAtTime(baseGain, now, 0.01);
       }
-
-      // Calculate final gain
-      const finalGain = shouldPlay ? (track.gain || 1.0) * busGain : 0;
-
-      // Update gain node in real-time (smooth ramp to avoid clicks)
-      gainNode.gain.setTargetAtTime(finalGain, audioContextRef.current.currentTime, 0.01);
     });
 
     // Also update mask playback gains for stem tracks
@@ -224,6 +305,22 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       if (track.f0Audio) {
         audioUrls.push(track.f0Audio);
       }
+      // Per-clip variants: when the desktop emits metadata.clips (Logic
+      // regions with per-clip source offsets + optional root/stretch),
+      // pre-warm each clip's actual playback buffer. Skip rootUrl unless
+      // playbackPath='root_stretch' — in 'variant' (SPEED mode) rootUrl
+      // is informational and would waste bandwidth on a file we never
+      // play. Legacy clips without `playbackPath` get both pre-warmed
+      // since the scheduler's heuristic could pick either.
+      const clips = track.metadata?.clips;
+      if (Array.isArray(clips)) {
+        for (const c of clips) {
+          if (c?.url) audioUrls.push(c.url);
+          if (c?.rootUrl && c.playbackPath !== 'variant') {
+            audioUrls.push(c.rootUrl);
+          }
+        }
+      }
     });
     const uniqueUrls = [...new Set(audioUrls.filter(Boolean))];
 
@@ -294,6 +391,36 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     const currentTime = audioContextRef.current.currentTime - startTimeRef.current;
     dispatch({ type: 'UPDATE_PLAYHEAD', payload: currentTime });
 
+    // ── Cycle / loop region ─────────────────────────────────────────
+    // Logic emits cycleRegion as { enabled, start_ticks, end_ticks }. When
+    // active and the playhead crosses end_ticks, snap back to start_ticks
+    // and re-schedule. Linear-bpm tick→sec conversion is good enough for
+    // SPEED-mode projects (no tempo ramp); a tempoMap-aware version would
+    // walk the map for projects with mid-cycle tempo changes.
+    if (cycleRegion && cycleRegion.enabled
+        && Number.isFinite(Number(cycleRegion.start_ticks))
+        && Number.isFinite(Number(cycleRegion.end_ticks))
+        && (bpm > 0)) {
+      const tickToSec = 60 / (960 * bpm);
+      const cycStart = Number(cycleRegion.start_ticks) * tickToSec;
+      const cycEnd   = Number(cycleRegion.end_ticks)   * tickToSec;
+      if (cycEnd > cycStart && currentTime >= cycEnd) {
+        const ctxNow = audioContextRef.current.currentTime;
+        // 50ms guard so a slow seek doesn't double-fire on the next frame.
+        if (ctxNow - cycleLoopGuardRef.current > 0.05) {
+          cycleLoopGuardRef.current = ctxNow;
+          const fn = seekRef.current;
+          if (typeof fn === 'function') {
+            fn(cycStart);
+            // Don't fall through to the totalDuration check; seek owns the
+            // next frame.
+            animationFrameRef.current = requestAnimationFrame(updatePlayhead);
+            return;
+          }
+        }
+      }
+    }
+
     if (currentTime >= totalDuration) {
       // End of playback
       dispatch({ type: 'SET_PLAYING', payload: false });
@@ -302,7 +429,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     }
 
     animationFrameRef.current = requestAnimationFrame(updatePlayhead);
-  }, [dispatch, totalDuration]);
+  }, [dispatch, totalDuration, cycleRegion, bpm]);
 
   /**
    * Start playback from current position
@@ -348,6 +475,13 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       );
 
       const allTracks = [...voTracks, ...musicTracks, ...sfxTracks, ...drumTracks, ...midiAudioTracks, ...audioTracks];
+
+      // Bus arrival order — used to resolve aux sends' bus_sub_index
+      // (1-based) against actual bus IDs in this session.
+      const allBusIds = [];
+      for (const t of allTracks) {
+        if (t._busId && !allBusIds.includes(t._busId)) allBusIds.push(t._busId);
+      }
 
       // Check if any track has solo enabled
       const hasSoloTracks = allTracks.some(track => track.isSolo);
@@ -430,10 +564,121 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         return audioBuffer;
       };
 
-      const scheduleOrDefer = (track, finalGain) => {
+      const scheduleOrDefer = (track, trackLocalGain) => {
         const url = track.audioUrl;
         if (!url) return;
         const trackStartTime = track.startPosition || 0;
+
+        // Per-bus GainNode. Track gain connects here instead of masterGain;
+        // bus handles its own gain/mute/solo independently.
+        const busGainNode = ensureBusGain(track._busId);
+
+        // ── Per-track sink: gain + (optional) pan + automation ──────────
+        // Topology when pan exists/automated:
+        //   sources → trackGain → trackPan → busGain → master
+        // Otherwise:
+        //   sources → trackGain → busGain → master
+        // Sub-schedulers receive `trackGain` as existingTrackGain so the
+        // sink is created exactly once per play() per track. Volume and
+        // pan automation lanes are scheduled here against the live
+        // transport anchor.
+        const volLane = track.automation?.volume;
+        const panLane = track.automation?.pan;
+        const hasVolAuto = Array.isArray(volLane) && volLane.length > 0;
+        const hasPanAuto = Array.isArray(panLane) && panLane.length > 0;
+        const staticPan = Number(track.pan) || 0;
+        const wantPanNode = hasPanAuto || Math.abs(staticPan) > 1e-3;
+
+        const trackGain = audioContext.createGain();
+        trackGain.gain.value = trackLocalGain;
+
+        let trackPan = null;
+        if (wantPanNode && typeof audioContext.createStereoPanner === 'function') {
+          trackPan = audioContext.createStereoPanner();
+          trackPan.pan.value = Math.max(-1, Math.min(1, staticPan));
+          trackGain.connect(trackPan);
+          trackPan.connect(busGainNode);
+        } else {
+          trackGain.connect(busGainNode);
+        }
+        gainNodesRef.current.set(track.id, trackGain);
+
+        if (hasVolAuto) {
+          const r = scheduleAutomation(trackGain.gain, volLane, {
+            audioContextCurrentTime: audioContext.currentTime,
+            schedulingStartTime,
+            anchorTimelineTime: currentPlayheadTime,
+            fallbackValue: trackLocalGain,
+          });
+          console.log(`  📈 vol-auto ${track.name || track.id}: ${r.scheduledCount} pts ahead, anchor=${r.paramAtAnchor.toFixed(3)}`);
+        }
+        if (trackPan && hasPanAuto) {
+          const r = scheduleAutomation(trackPan.pan, panLane, {
+            audioContextCurrentTime: audioContext.currentTime,
+            schedulingStartTime,
+            anchorTimelineTime: currentPlayheadTime,
+            fallbackValue: staticPan,
+          });
+          console.log(`  📈 pan-auto ${track.name || track.id}: ${r.scheduledCount} pts ahead, anchor=${r.paramAtAnchor.toFixed(3)}`);
+        }
+
+        // ── Aux sends ───────────────────────────────────────────────────
+        // Each enabled send taps trackGain (postfader) and feeds another
+        // bus's GainNode at the send's level. Multi-output: trackGain
+        // connects to its primary bus (above) AND to one sendGain per
+        // active send. Mute/solo at the SOURCE track propagates because
+        // the tap is post-trackGain — silencing the track silences sends.
+        //
+        // Bus resolution: Logic ships `bus_sub_index` (1-based, by mixer
+        // slot). We map it to allBusIds[bus_sub_index - 1] using the bus
+        // arrival order from this play() pass. When the index doesn't
+        // resolve to a known bus (e.g. send to a Logic bus the web hasn't
+        // seen as a track's _busId yet), we log and skip.
+        const sendDescriptors = Array.isArray(track.metadata?.sends) ? track.metadata.sends : [];
+        const trackSendNodes = [];
+        for (const send of sendDescriptors) {
+          if (!send || !send.enabled) continue;
+          const level = Number(send.level);
+          if (!Number.isFinite(level) || level <= 0) continue;
+          const idx = Number(send.bus_sub_index);
+          let destBusId = null;
+          if (typeof send.busId === 'string' && send.busId) {
+            destBusId = send.busId;
+          } else if (Number.isFinite(idx) && idx > 0 && idx <= allBusIds.length) {
+            destBusId = allBusIds[idx - 1];
+          }
+          if (!destBusId) {
+            console.warn(
+              `[send] ${track.name || track.id} slot ${send.slot}: ` +
+              `bus_sub_index ${idx} unresolved (have ${allBusIds.length} buses); skipping`,
+            );
+            continue;
+          }
+          const destNode = ensureBusGain(destBusId);
+          if (!destNode) continue;
+          const sendGain = audioContext.createGain();
+          sendGain.gain.value = level;
+          trackGain.connect(sendGain);
+          sendGain.connect(destNode);
+          trackSendNodes.push({ slot: send.slot, busId: destBusId, gainNode: sendGain });
+        }
+        if (trackSendNodes.length > 0) {
+          sendGainNodesRef.current.set(track.id, trackSendNodes);
+          const summary = trackSendNodes.map((s) => `${s.busId}@${s.gainNode.gain.value.toFixed(2)}`).join(', ');
+          console.log(`  📤 sends ${track.name || track.id}: ${summary}`);
+        }
+
+        // Logic flex-time region shift (Slicing algorithm). Applied to
+        // the track's wall-clock schedule, not its UI startPosition —
+        // the clip stays visually on-grid, only audio timing moves.
+        const flexOffset = Number(track.metadata?.flexTime?.offsetSeconds) || 0;
+        if (flexOffset !== 0) {
+          const tCount = track.metadata?.flexTime?.transients?.length || 0;
+          console.log(
+            `  ⏱ flex ${track.name || track.id}: ${(flexOffset * 1000).toFixed(2)}ms ` +
+            `(${tCount} transient${tCount === 1 ? '' : 's'})`,
+          );
+        }
 
         // ── Drum substem fan-out ───────────────────────────────────────
         const substems = getTrackSubstemSchedules(track, projectMeter);
@@ -446,19 +691,16 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             .filter(({ audioUrl }) => audioBufferCache.has(audioUrl)).length;
           const total = Object.keys(substems).length;
           console.log(`🥁 fan-out ${track.name || track.id}: ${total} drum substems (${cachedCount} cached, ${total - cachedCount} late-loading)`);
-          // Create the shared per-track gain once and register it under
-          // the parent track id so the gain-update loop reaches it.
-          const trackGain = audioContext.createGain();
-          trackGain.gain.value = finalGain;
-          trackGain.connect(masterGainNodeRef.current);
-          gainNodesRef.current.set(track.id, trackGain);
-
+          // The shared per-track gain (and optional pan/automation) was
+          // created and registered at the top of scheduleOrDefer; substem
+          // sources just sum into it. Don't create a second one.
           for (const [name, { audioUrl, schedule, kind }] of Object.entries(substems)) {
             const scheduleSubstem = (when, anchor) => {
               const { sources } = scheduleTrackWithSchedule(
-                audioContext, audioUrl, schedule, finalGain, trackStartTime,
-                when, anchor, masterGainNodeRef.current,
+                audioContext, audioUrl, schedule, trackLocalGain, trackStartTime,
+                when, anchor, busGainNode,
                 trackGain,    // <- share the parent's gain node
+                flexOffset,
               );
               sourceNodesRef.current.push(...sources);
               return sources.length;
@@ -489,6 +731,73 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
           return;
         }
 
+        // ── Per-clip path (Logic regions with source offsets + stretch) ──
+        // Each clip is an independent AudioBufferSourceNode reading its own
+        // slice of either the pre-rendered variant wav (rate=1) or the
+        // original root wav (playbackRate=stretchRatio). One trackGain is
+        // shared across all clips so mute/solo/fader still operate on the
+        // track as a whole.
+        //
+        // Gate: per-clip only when it adds value (multi-clip, flex-variant
+        // stretch, or a non-trivial source offset). Single-clip tracks
+        // with a zero offset fall through to the single-buffer path, which
+        // keeps its meter-change + vocal/bass schedule strategies intact.
+        // Meter-change rearrangement isn't implemented per-clip yet; a
+        // future step can port virtualTrackEdit into this branch.
+        const clipList = track.metadata?.clips;
+        const clipPathUseful = Array.isArray(clipList) && clipList.length > 0 && (
+          clipList.length > 1 ||
+          clipList.some((c) => c && c.rootUrl && Number(c.stretchRatio) > 0 && c.stretchRatio !== 1) ||
+          clipList.some((c) => c && Math.abs(Number(c.sourceOffsetSeconds) || 0) > 1e-4)
+        );
+        if (clipPathUseful) {
+          const schedClips = () => {
+            const { sources } = scheduleTrackClips(
+              audioContext, clipList, trackLocalGain,
+              currentPlayheadTime, schedulingStartTime, busGainNode,
+              trackGain,   // reuse the per-track sink (gain + automation)
+            );
+            if (sources.length > 0) sourceNodesRef.current.push(...sources);
+            return sources.length;
+          };
+
+          // Fast path: if every buffer we need is already in cache, schedule
+          // synchronously (same as scheduleTrackWithSchedule's cached path).
+          const needsLate = clipList.some((c) => {
+            if (!c) return false;
+            const primary = c.rootUrl || c.url;
+            return primary && !audioBufferCache.has(primary);
+          });
+          if (!needsLate) {
+            schedClips();
+            return;
+          }
+
+          // Slow path: one or more clip buffers haven't arrived yet. Kick
+          // off fetches in parallel, then schedule once everything's in.
+          const urlsToLoad = new Set();
+          for (const c of clipList) {
+            if (!c) continue;
+            if (c.url && !audioBufferCache.has(c.url)) urlsToLoad.add(c.url);
+            if (c.rootUrl && !audioBufferCache.has(c.rootUrl)) urlsToLoad.add(c.rootUrl);
+          }
+          (async () => {
+            try {
+              await Promise.all([...urlsToLoad].map((u) => ensureBuffer(u)));
+              if (!isSessionActive()) {
+                console.log(`  🎬 ${track.name || track.id} clip late-load: session stale`);
+                return;
+              }
+              const livePlayhead = audioContext.currentTime - startTimeRef.current;
+              const n = schedClips();
+              console.log(`  🎬 Late-scheduled ${n} clip source(s) for ${track.name || track.id}`);
+            } catch (err) {
+              console.warn(`  ❌ Clip late-load failed for ${track.name || track.id}:`, err?.message || err);
+            }
+          })();
+          return;
+        }
+
         // ── Regular single-buffer path ────────────────────────────────
         // Dispatcher picks per-stem-type strategy: vocals get word-
         // protected schedule, bass gets melodic-protected, others fall
@@ -516,9 +825,10 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
           }
         }
         if (audioBufferCache.has(url)) {
-          const { sources, gainNode } = scheduleTrackWithSchedule(
-            audioContext, url, schedule, finalGain, trackStartTime,
-            currentPlayheadTime, schedulingStartTime, masterGainNodeRef.current,
+          const { sources } = scheduleTrackWithSchedule(
+            audioContext, url, schedule, trackLocalGain, trackStartTime,
+            currentPlayheadTime, schedulingStartTime, busGainNode,
+            trackGain, flexOffset,
           );
           if (track.metadata?.polypitchRendered) {
             const buf = audioBufferCache.get(url);
@@ -527,7 +837,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             const N = Math.min(ch.length, 96000); // sample first 2s at 48k
             for (let i = 0; i < N; i++) { const v = ch[i]; sum += v*v; const a = Math.abs(v); if (a > peak) peak = a; }
             const rms = Math.sqrt(sum / Math.max(1, N));
-            console.log(`  🎹 scheduled polypitch ${track.metadata?.stemType || '?'} dur=${buf.duration.toFixed(2)}s rms(2s)=${rms.toFixed(5)} peak(2s)=${peak.toFixed(4)} gain=${finalGain.toFixed(2)} segs=${sources.length} from=${url.slice(0, 40)}…`);
+            console.log(`  🎹 scheduled polypitch ${track.metadata?.stemType || '?'} dur=${buf.duration.toFixed(2)}s rms(2s)=${rms.toFixed(5)} peak(2s)=${peak.toFixed(4)} gain(track)=${trackLocalGain.toFixed(2)} segs=${sources.length} from=${url.slice(0, 40)}…`);
             // Post-decode click scan: measure sample discontinuities on the
             // decoded AudioBuffer (after WAV→AudioBuffer conversion by
             // audioContext.decodeAudioData). This confirms the blob content
@@ -556,13 +866,12 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
               console.log(`  🎹 post-decode click scan: clean (calmMax=${calmMax.toExponential(2)})`);
             }
           }
-          if (gainNode) {
-            sourceNodesRef.current.push(...sources);
-            gainNodesRef.current.set(track.id, gainNode);
-          }
+          sourceNodesRef.current.push(...sources);
           return;
         }
         // Not cached — fire async, schedule on arrival if still playing.
+        // Closure-capture trackGain so the late-scheduled sources sum into
+        // the same per-track sink (already wired to bus + automation).
         (async () => {
           try {
             const audioBuffer = await ensureBuffer(url);
@@ -570,13 +879,13 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             const livePlayhead = audioContext.currentTime - startTimeRef.current;
             const trackDuration = track.duration || audioBuffer.duration;
             if (livePlayhead > trackStartTime + trackDuration) return;  // already past
-            const { sources, gainNode } = scheduleTrackWithSchedule(
-              audioContext, url, schedule, finalGain, trackStartTime,
-              livePlayhead, audioContext.currentTime, masterGainNodeRef.current,
+            const { sources } = scheduleTrackWithSchedule(
+              audioContext, url, schedule, trackLocalGain, trackStartTime,
+              livePlayhead, audioContext.currentTime, busGainNode,
+              trackGain, flexOffset,
             );
-            if (gainNode) {
+            if (sources.length > 0) {
               sourceNodesRef.current.push(...sources);
-              gainNodesRef.current.set(track.id, gainNode);
               const tag = track.metadata?.polypitchRendered ? '🎹 Late-scheduled polypitch' : '🔈 Late-scheduled';
               console.log(`  ${tag}: ${track.metadata?.stemType || track.name || url} at live playhead ${livePlayhead.toFixed(2)}s (${sources.length} seg(s))`);
             }
@@ -673,35 +982,53 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         var tracksToSchedule = allTracks;
       }
 
-      // Load and schedule tracks (non-stem when mask playback active, all otherwise)
+      // Load and schedule tracks (non-stem when mask playback active, all otherwise).
+      // Bus-level gating (mute/solo and bus.gain) now lives on a per-bus
+      // GainNode (ensureBusGain). Per-track gating is on the track's
+      // GainNode. We still decide whether to spin up source nodes at all
+      // based on the combined shouldPlay — scheduling a 100%-muted track
+      // wastes decode/buffer work for zero signal.
+      const hasBusSolo = allTracks.some(t => t._busSolo);
+
+      // Prime each bus node's initial gain synchronously BEFORE any source
+      // starts. The real-time gain-update effect also applies it (via
+      // setTargetAtTime), but effects run after React commits, which races
+      // source.start() and can leak a few ms of 1.0-gain audio on a muted
+      // bus. Write .value directly here so the first sample is silent.
+      const seenBuses = new Set();
+      for (const t of allTracks) {
+        if (!t._busId || seenBuses.has(t._busId)) continue;
+        seenBuses.add(t._busId);
+        const node = ensureBusGain(t._busId);
+        const bGain = typeof t._busGain === 'number' ? t._busGain : 1.0;
+        let g;
+        if (t._busMuted)                     g = 0;
+        else if (hasBusSolo && !t._busSolo)  g = 0;
+        else                                 g = bGain;
+        node.gain.value = g;
+      }
+
       for (const track of tracksToSchedule) {
-        // Apply bus-level mute/solo first
         const busMuted = track._busMuted || false;
-        const busSolo = track._busSolo || false;
-        const busGain = track._busGain || 1.0;
+        const busSolo  = track._busSolo  || false;
 
-        // Check if ANY bus has solo enabled
-        const hasBusSolo = allTracks.some(t => t._busSolo);
-
-        // Determine if this track should play
-        // Priority: bus solo > bus mute > track solo > track mute
-        let shouldPlay = false;
+        // shouldPlay — same precedence as before: bus mute blocks the whole
+        // bus; bus-solo overrides per-track solo/mute; track solo/mute apply
+        // only when no bus is solo'd.
+        let shouldPlay;
         if (busMuted) {
-          // Bus is muted - don't play any tracks from this bus
           shouldPlay = false;
         } else if (hasBusSolo) {
-          // Some bus has solo - only play tracks from solo'd buses
           shouldPlay = busSolo;
         } else if (hasSoloTracks) {
-          // Some track has solo - only play solo'd tracks
-          shouldPlay = track.isSolo;
+          shouldPlay = !!track.isSolo;
         } else {
-          // Normal mode - play non-muted tracks
           shouldPlay = !track.isMuted;
         }
 
-        // Calculate final gain (bus gain * track gain)
-        const finalGain = (track.gain || 1.0) * busGain;
+        // Track-local gain only; bus.gain lives on the bus node.
+        const trackLocalGain = track.gain || 1.0;
+        const busGainNode = ensureBusGain(track._busId);
 
         if (shouldPlay) {
           // Check if this is a drum track with multiple hits
@@ -711,7 +1038,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             // Schedule each drum hit individually
             for (const hit of track.drumHits) {
               const hitTime = hit.startTime || 0;
-              const hitGain = (hit.velocity || 1.0) * finalGain;
+              const hitGain = (hit.velocity || 1.0) * trackLocalGain;
 
               // Only schedule hits that haven't been played yet
               if (currentPlayheadTime <= hitTime + 1) { // +1 for drum hit duration
@@ -725,7 +1052,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
                   0, // No crop for drum hits
                   currentPlayheadTime,
                   schedulingStartTime,
-                  masterGainNodeRef.current // Master gain node
+                  busGainNode, // per-bus gain, feeds into master
                 );
 
                 if (source && gainNode) {
@@ -743,7 +1070,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             const trackDuration = track.duration || track.length || 10;
             const trackEndTime = trackStartTime + trackDuration;
             if (currentPlayheadTime <= trackEndTime) {
-              scheduleOrDefer(track, finalGain);
+              scheduleOrDefer(track, trackLocalGain);
             } else {
               console.log(`  ⏭ Skipping track (playhead already past): ${track.name || track.audioUrl}`);
             }
@@ -759,12 +1086,12 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
               const { source, gainNode } = scheduleTrack(
                 audioContext,
                 track.f0Audio,
-                finalGain,
+                trackLocalGain,
                 trackStartTime,
                 0, // No crop for F0
                 currentPlayheadTime,
                 schedulingStartTime,
-                masterGainNodeRef.current
+                busGainNode,
               );
 
               if (source && gainNode) {
@@ -805,11 +1132,15 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
 
               notesToPlay.forEach(note => {
                 const notePlayTime = midiStartTime + note.time;
+                // Track-local velocity only; bus.gain is applied by the
+                // bus GainNode we pass as opts.destination so the MIDI
+                // track respects bus mute/solo/fader exactly like audio.
                 midiPlayer.playNote(
                   note.note,
-                  note.velocity * finalGain, // Apply track/bus gain to velocity
+                  note.velocity * trackLocalGain,
                   note.duration,
-                  notePlayTime
+                  notePlayTime,
+                  { destination: busGainNode }
                 );
               });
             } else {
@@ -831,6 +1162,9 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
   // Keep a ref to the latest play() fn so the meter-change effect below
   // can re-invoke it without bloating its own dep list.
   useEffect(() => { playRef.current = play; }, [play]);
+  // seekRef is read by the cycle-loop wrap inside updatePlayhead. Same
+  // forward-declaration trick as playRef — keeps useCallback deps from
+  // exploding while letting the RAF loop reach the latest seek().
 
   // Live reschedule on bpm / meter change while playing. Schedules are
   // derived from (project bpm, project meter, track metadata), so when the
@@ -948,6 +1282,11 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     }
   }, [pause, dispatch, play]);
 
+  // Bind seekRef so updatePlayhead's cycle-loop branch can call the latest
+  // seek without taking it as a useCallback dep (would re-create the RAF
+  // loop every render). Same forward-decl pattern as playRef.
+  useEffect(() => { seekRef.current = seek; }, [seek]);
+
   /**
    * Handle play/pause based on isPlaying prop
    */
@@ -1003,11 +1342,18 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
  *
  * @param {AudioContext} audioContext - Web Audio API context
  * @param {string} audioUrl - URL to audio file (used as cache key)
- * @param {number} gain - Volume level (0-1)
+ * @param {number} gain - Track-local gain (track.gain × track-level gate).
+ *   Bus.gain and bus mute/solo live on `outputNode` (the bus GainNode).
  * @param {number} trackStartTime - When track starts on timeline (seconds)
  * @param {number} trackCropStart - Cropped portion at start of track (seconds)
  * @param {number} currentPlayheadTime - Current playhead position on timeline (seconds)
  * @param {number} schedulingStartTime - AudioContext.currentTime at start of scheduling (seconds)
+ * @param {AudioNode} outputNode - Where this track sums into. Typically the
+ *   per-bus GainNode returned by ensureBusGain(track._busId). Falls back
+ *   to masterGainNode for trackless test paths.
+ * @param {number} [flexOffsetSeconds=0] - Logic-style flex-time shift on the
+ *   region: negative pulls content earlier, positive pushes later. The UI
+ *   position (trackStartTime) is untouched — only scheduling moves.
  */
 function scheduleTrack(
   audioContext,
@@ -1017,7 +1363,8 @@ function scheduleTrack(
   trackCropStart,
   currentPlayheadTime,
   schedulingStartTime,
-  masterGainNode
+  outputNode,
+  flexOffsetSeconds = 0,
 ) {
   try {
     // Get cached audio buffer (should already be loaded)
@@ -1034,29 +1381,31 @@ function scheduleTrack(
     source.buffer = audioBuffer;
 
     source.connect(gainNode);
-    // TEMPORARY: Bypass FX chain for testing - connect directly to master
-    // Signal chain: source → gainNode → master gain → destination
-    gainNode.connect(masterGainNode);
-    // Original FX routing (disabled for testing):
-    // gainNode.connect(tunaFX.getFXBusInput());
+    // Signal chain: source → trackGain → outputNode (bus gain) → master → destination
+    // (FX chain on outputNode is a future hook; per-bus inserts go here.)
+    gainNode.connect(outputNode);
 
     // Calculate when to start playback in AudioContext time
     // If playhead is before track start, schedule for future
     // If playhead is after track start, start immediately but offset into the audio
     // Use schedulingStartTime as reference to ensure consistency
 
+    // Flex-time: the region's playback clock is nominal minus flexOffset.
+    // A -16ms flex makes the audio play 16ms earlier than its UI position.
+    const effectiveStart = trackStartTime + (flexOffsetSeconds || 0);
+
     let when = 0; // When to start in AudioContext time
     let offset = trackCropStart; // Where to start within the audio buffer
 
-    if (currentPlayheadTime < trackStartTime) {
+    if (currentPlayheadTime < effectiveStart) {
       // Playhead hasn't reached this track yet - schedule for future
-      const delayUntilTrackStart = trackStartTime - currentPlayheadTime;
+      const delayUntilTrackStart = effectiveStart - currentPlayheadTime;
       when = schedulingStartTime + delayUntilTrackStart;
       offset = trackCropStart; // Start from beginning (plus crop)
     } else {
       // Playhead is already past track start - start immediately but offset
       when = schedulingStartTime;
-      const timeIntoTrack = currentPlayheadTime - trackStartTime;
+      const timeIntoTrack = currentPlayheadTime - effectiveStart;
       offset = trackCropStart + timeIntoTrack; // Skip ahead to current position
 
       // Don't play if we're past the end of the audio
@@ -1096,7 +1445,7 @@ function scheduleTrack(
  * Signal chain per track:
  *
  *   [ seg0 source → seg0 fadeGain ─┐
- *   [ seg1 source → seg1 fadeGain ─┼── track gain ── master
+ *   [ seg1 source → seg1 fadeGain ─┼── trackGain ── outputNode (bus gain) ── master
  *   [ segN source → segN fadeGain ─┘
  *
  * Most segments play at rate 1 (rearrange-only schedules). When a
@@ -1115,11 +1464,16 @@ function scheduleTrack(
  *
  * Returns { sources: [...], gainNode }. Callers push every element of
  * `sources` into sourceNodesRef so pause()/stop() tears them all down.
+ *
+ * `gain` is track-local (track.gain × track-level gate); bus.gain and
+ * bus-level mute/solo live on `outputNode`. `outputNode` is the per-bus
+ * GainNode from ensureBusGain(track._busId).
  */
 function scheduleTrackWithSchedule(
   audioContext, audioUrl, schedule, gain, trackStartTime,
-  currentPlayheadTime, schedulingStartTime, masterGainNode,
+  currentPlayheadTime, schedulingStartTime, outputNode,
   existingTrackGain = null,
+  flexOffsetSeconds = 0,
 ) {
   try {
     const audioBuffer = audioBufferCache.get(audioUrl);
@@ -1137,12 +1491,18 @@ function scheduleTrackWithSchedule(
     const trackGain = existingTrackGain || (() => {
       const g = audioContext.createGain();
       g.gain.value = gain;
-      g.connect(masterGainNode);
+      g.connect(outputNode);
       return g;
     })();
 
+    // Flex-time shifts the whole schedule's anchor on the timeline. The
+    // schedule's internal dst times stay in clip-local coordinates; only
+    // the wall-clock placement moves. UI position (trackStartTime) is
+    // untouched — this is a playback-only shift, same as Logic.
+    const effectiveStart = trackStartTime + (flexOffsetSeconds || 0);
+
     // Clip-local playhead (0 == track start on the timeline).
-    const clipPlayhead = currentPlayheadTime - trackStartTime;
+    const clipPlayhead = currentPlayheadTime - effectiveStart;
     const live = resumeFromPlayhead(schedule, Math.max(0, clipPlayhead));
 
     const sources = [];
@@ -1157,7 +1517,7 @@ function scheduleTrackWithSchedule(
       if (dstOffsetIntoSeg > 0) {
         when = schedulingStartTime;
       } else {
-        when = schedulingStartTime + (trackStartTime + seg.dstStart - currentPlayheadTime);
+        when = schedulingStartTime + (effectiveStart + seg.dstStart - currentPlayheadTime);
       }
       if (when < schedulingStartTime - 1e-3) continue;
 
@@ -1233,4 +1593,155 @@ function scheduleTrackWithSchedule(
     console.error('❌ Error scheduling track with schedule:', audioUrl, error);
     return { sources: [], gainNode: null };
   }
+}
+
+/**
+ * Per-clip scheduler — Logic's real model.
+ *
+ * Each Clip has:
+ *   auflGid, subIndex, startPosition, duration,
+ *   sourceDuration, sourceOffsetSamples, sourceOffsetSeconds,
+ *   url,                     // bit-exact variant wav (always present)
+ *   rootAuflGid?, rootUrl?,  // only on flex variants
+ *   stretchRatio?,           // feed to source.playbackRate
+ *   flexDeltaSeconds?,       // per-clip Logic flex onset shift
+ *
+ * Two playback modes:
+ *   (a) Variant:   rate=1, buffer=url,     offset=sourceOffsetSeconds.
+ *       Bit-exact to Logic; used when rootUrl is absent or rootUrl's
+ *       buffer didn't decode.
+ *   (b) Root+stretch: rate=stretchRatio, buffer=rootUrl, offset=
+ *       sourceOffsetSeconds. Logic's actual internal model — saves
+ *       download bandwidth (6 roots vs 15 rendered variants) and lets
+ *       stretch-ratio changes be runtime-only.
+ *
+ * Buffer-time math for source.start(when, offset, durationBuf):
+ *   - `offset` is in buffer-seconds (rate=1 content indexing).
+ *   - `durationBuf` is in buffer-seconds (how much buffer to consume).
+ *   - With playbackRate r, durationBuf=D*r gives wall-clock D seconds.
+ *
+ * Mid-clip resume: if playhead is already inside a clip, we skip
+ * `timeIntoClip` wall-clock seconds, which means `timeIntoClip * r`
+ * buffer-seconds of content are already "behind" us in the source.
+ *
+ * All clips on the track share one `trackGain` (track-local mute/solo
+ * + fader). The track gain connects to `outputNode` (the bus gain),
+ * so bus fader/mute/solo apply.
+ */
+function scheduleTrackClips(
+  audioContext,
+  clips,
+  trackLocalGain,
+  currentPlayheadTime,
+  schedulingStartTime,
+  outputNode,
+  existingTrackGain = null,
+  sessionSampleRate = null,
+) {
+  const result = { sources: [], gainNode: existingTrackGain };
+  if (!Array.isArray(clips) || clips.length === 0) return result;
+
+  const trackGain = existingTrackGain || (() => {
+    const g = audioContext.createGain();
+    g.gain.value = trackLocalGain;
+    g.connect(outputNode);
+    return g;
+  })();
+  result.gainNode = trackGain;
+
+  let rootCount = 0;
+  let variantCount = 0;
+  let sliceCount = 0;
+  let fadedCount = 0;
+  const lookup = (url) => audioBufferCache.get(url) || null;
+  const opts = sessionSampleRate ? { sampleRate: sessionSampleRate } : undefined;
+
+  for (const clip of clips) {
+    const plan = computeClipPlayback(clip, currentPlayheadTime, schedulingStartTime, lookup, opts);
+    if (!plan || plan.sources.length === 0) {
+      const primary = clip?.rootUrl || clip?.url;
+      if (primary && !audioBufferCache.has(primary)) {
+        console.warn(`[clip] buffer not cached: ${primary.slice(0, 60)}…`);
+      }
+      continue;
+    }
+
+    // Per-clip gain wraps every source so fade-in/out applies uniformly
+    // across all slices of a sliced clip. clipGain → trackGain → outputNode.
+    const needsFade = plan.fadeInSec > 0 || plan.fadeOutSec > 0;
+    const clipGain = needsFade ? audioContext.createGain() : null;
+    if (clipGain) {
+      clipGain.connect(trackGain);
+      const clipStartCtx = schedulingStartTime + (plan.clipStart - currentPlayheadTime);
+      const clipEndCtx   = schedulingStartTime + (plan.clipEnd   - currentPlayheadTime);
+      // Linear ramps until we map Logic's curve enum precisely (gap #7 in
+      // playback-model). Curves <=50ms are imperceptibly different.
+      if (plan.fadeInSec > 0) {
+        const fadeStart = Math.max(audioContext.currentTime, clipStartCtx);
+        const fadeEnd   = clipStartCtx + plan.fadeInSec;
+        clipGain.gain.setValueAtTime(0, fadeStart);
+        clipGain.gain.linearRampToValueAtTime(1, fadeEnd);
+      } else {
+        clipGain.gain.value = 1;
+      }
+      if (plan.fadeOutSec > 0) {
+        const fadeStart = clipEndCtx - plan.fadeOutSec;
+        clipGain.gain.setValueAtTime(1, fadeStart);
+        clipGain.gain.linearRampToValueAtTime(0, clipEndCtx);
+      }
+      fadedCount++;
+    }
+    const target = clipGain || trackGain;
+
+    // Flex-pitch hook. When a clip carries metadata indicating Logic's
+    // per-hop flex-pitch is active, the audible result is a phase-vocoded
+    // pitch shift the browser must reproduce — polypitchService is the
+    // intended render path. The data we need to drive it (per-hop detune
+    // values bound to specific clips) isn't fully threaded yet:
+    //  - session.flexPitchNotes lacks a gid/auflGid linkage to bind notes
+    //    to clips (gap noted in playback-model §10 item 6).
+    //  - polypitchService.renderWithNewPitches expects basic-pitch-style
+    //    notes with original pitches; mapping flexPitchNotes onto those
+    //    requires either basic-pitch on the clip's source first, or new
+    //    backend fields carrying original+edited pitch pairs per hop.
+    // Until that lands, log an explicit warning so an audibly-shifted clip
+    // playing un-shifted is obvious in the console rather than silent.
+    if (clip.flexPitch && (clip.flexPitch.editedFrameCount > 0 || clip.flexPitch.frameCount > 0)) {
+      const fp = clip.flexPitch;
+      console.warn(
+        `[flexPitch] ${clip.regionName || clip.auflGid || '?'} has ${fp.editedFrameCount}/${fp.frameCount} edited frames `
+        + `(hopFactor=${fp.hopFactor}); per-hop detune not yet rendered — playing unshifted`,
+      );
+    }
+
+    for (const spec of plan.sources) {
+      const buf = lookup(spec.playUrl);
+      if (!buf) continue; // lookup raced with eviction between plan + apply
+      const src = audioContext.createBufferSource();
+      src.buffer = buf;
+      if (spec.playbackRate !== 1) src.playbackRate.value = spec.playbackRate;
+      src.connect(target);
+      try {
+        src.start(spec.when, spec.bufOffset, spec.bufDur);
+      } catch (err) {
+        console.warn(`[clip] start failed: ${err?.message || err}`);
+        continue;
+      }
+      result.sources.push(src);
+      if (spec.isSlice) sliceCount++;
+      else if (spec.useRoot) rootCount++;
+      else variantCount++;
+    }
+  }
+
+  const totalSources = rootCount + variantCount + sliceCount;
+  if (totalSources > 0) {
+    const parts = [];
+    if (variantCount) parts.push(`${variantCount} variant`);
+    if (rootCount)    parts.push(`${rootCount} root+stretch`);
+    if (sliceCount)   parts.push(`${sliceCount} slice`);
+    if (fadedCount)   parts.push(`${fadedCount} faded`);
+    console.log(`  🎬 clips: ${parts.join(', ')} (of ${clips.length} clip(s))`);
+  }
+  return result;
 }

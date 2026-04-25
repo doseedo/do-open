@@ -99,6 +99,7 @@ const SAFE_METADATA_FIELDS = new Set([
   'inputFiles',                  // small reference URLs
   'detectedBpm', 'detectedMeter', 'detectedMeterDenominator', 'detectedGrouping',
   'tempoMap', 'barStarts',       // per-bar number arrays — small
+  'flexTime',                    // Logic-style flex-time region shift (slicing algorithm)
 ]);
 
 function _pickSafeMetadata(metadata) {

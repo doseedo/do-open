@@ -1,11 +1,15 @@
 import React, { useEffect, useRef } from 'react';
 import { fetchAudioWithCache } from '../services/audioCacheService';
+import { LRUBufferCache } from '../utils/lruBufferCache';
 
 // Global in-memory cache for decoded audio buffers (faster than re-decoding).
 // EXPORTED so other services (e.g. latent-based waveform previews) can
-// pre-populate it before a track's real audio is ready.
-export const audioBufferCache = new Map();
-const MAX_CACHE_SIZE = 50;
+// pre-populate it before a track's real audio is ready. Byte-capped LRU to
+// avoid OOM on long sessions — see `src/utils/lruBufferCache.js`.
+export const audioBufferCache = new LRUBufferCache({
+  maxBytes: 256 * 1024 * 1024,
+  name: 'waveformBufferCache',
+});
 
 // ── Bar geometry constants (shared across all tracks) ─────────────────
 const BAR_WIDTH = 2;
@@ -385,10 +389,6 @@ export function useWaveform(
           audioBuffer = await ctx.decodeAudioData(ab);
           if (cancelled) return;
           audioBufferCache.set(audioUrl, audioBuffer);
-          if (audioBufferCache.size > MAX_CACHE_SIZE) {
-            const firstKey = audioBufferCache.keys().next().value;
-            audioBufferCache.delete(firstKey);
-          }
         }
         if (cancelled) return;
         audioBufferRef.current = audioBuffer;
@@ -452,7 +452,9 @@ export function clearWaveformCache() {
 export function getWaveformCacheStats() {
   return {
     size: audioBufferCache.size,
-    maxSize: MAX_CACHE_SIZE,
+    bytes: audioBufferCache.bytes,
+    maxBytes: audioBufferCache.maxBytes,
+    pressure: audioBufferCache.pressure,
     urls: Array.from(audioBufferCache.keys()),
   };
 }

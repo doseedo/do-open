@@ -2583,6 +2583,39 @@ const TrackInfoSidebar = React.memo(() => {
                 </div>
               )}
 
+              {/* Automation toggle — opens the single shared automation
+                  window scoped to this track's volume lane. Toggling on a
+                  different track re-binds the window. */}
+              <div className={styles.section}>
+                <GlassButtonWrapper
+                  className={styles.downloadBtn}
+                  onClick={() => {
+                    if (!selectedTrack) return;
+                    const open = state.automationWindow?.isVisible
+                              && state.automationWindow?.trackId === selectedTrack.id;
+                    if (open) {
+                      dispatch({ type: 'CLOSE_AUTOMATION_WINDOW' });
+                    } else {
+                      dispatch({
+                        type: 'OPEN_AUTOMATION_WINDOW',
+                        payload: {
+                          trackId: selectedTrack.id,
+                          busId: selectedBus?.id || selectedTrack._busId || null,
+                          paramType: 'volume',
+                        },
+                      });
+                    }
+                  }}
+                  style={{ width: '100%' }}
+                  title="Edit volume automation for this track"
+                >
+                  <i className="fa-solid fa-wave-square"></i>{' '}
+                  {state.automationWindow?.isVisible
+                   && state.automationWindow?.trackId === selectedTrack?.id
+                    ? 'Close Automation' : 'Edit Automation'}
+                </GlassButtonWrapper>
+              </div>
+
               {/* Download Buttons */}
               <div className={styles.section}>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
