@@ -19,7 +19,29 @@ import r5Builders from './builders/r5.js';
 import { R8_BUILDERS, ensureR8WorkletsLoaded } from './builders/r8.js';
 import r9Builders from './builders/r9.js';
 import ModRouter from './ModRouter.js';
+import VoiceManager from './VoiceManager.js';
+import MidiInput from './MidiInput.js';
 import { NODE_CATEGORIES } from '../components/Plugins/PluginCreator/dspNodeDefinitions.js';
+
+// ── Source-typed node detection (instrument mode) ──────────────────────────
+// Expanded for R6 to include the Synthesis-category nodes (wavetable,
+// fm_operator, sample_player) so VoiceManager picks them up too.
+const SOURCE_TYPES = new Set([
+  'oscillator', 'osc', 'saw', 'square', 'sine', 'triangle',
+  'sub_oscillator', 'sub_osc',
+  'noise', 'noise_gen', 'white_noise', 'pink_noise',
+  'wavetable', 'fm_operator', 'sample_player',
+]);
+
+// Per-voice node types: anything that should run inside the per-voice graph
+// rather than once post-mix. Reverbs/delays/comps belong to global FX.
+const PER_VOICE_TYPES = new Set([
+  ...SOURCE_TYPES,
+  'adsr', 'envelope', 'envelope_adsr', 'amp_env', 'filter_env',
+  'lowpass', 'highpass', 'bandpass', 'notch', 'allpass',
+  'shelf_low', 'shelf_high', 'parametric_eq', 'ladder',
+  'gain', 'vca', 'mixer', 'osc_mixer', 'unison',
+]);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -937,6 +959,14 @@ export default class WebAudioDSPEngine {
     this.masterGain.connect(this.analyser);
     this.analyser.connect(ctx.destination);
 
+    // R6: instrument mode → VoiceManager-backed graph (overrides both
+    // dspGraph and dspChain paths). The V2 builder consumes the same graph
+    // shape but extracts a per-voice template from it.
+    if (this._useVoiceManagerPath) {
+      this._buildInstrumentGraphV2();
+      return;
+    }
+
     // If a raw dspGraph with parallel routing exists, use it
     if (this.config?.dspGraph?.nodes?.length > 0 && this.config?.dspGraph?.edges?.length > 0) {
       this._buildGraphFromNodes();
@@ -951,7 +981,8 @@ export default class WebAudioDSPEngine {
       return;
     }
 
-    // Instrument mode: separate sources/envelopes from effects
+    // Legacy instrument fallback (config.voice.enabled === false): keeps the
+    // R6 escape hatch alive when the new path is explicitly disabled.
     if (this.isInstrument) {
       this._buildInstrumentGraph(chain);
       return;
@@ -1207,10 +1238,269 @@ export default class WebAudioDSPEngine {
     }
   }
 
+  // ── R6: VoiceManager-backed instrument path ──────────────────────────────
+
+  /**
+   * Split the engine's DSP description into a per-voice template (sources,
+   * envelopes, filters, gains, mixers) and a list of global FX nodes
+   * (reverb/delay/comp/etc.) that should run once post-mix.
+   *
+   * Operates on either dspGraph (preferred — preserves edges) or dspChain
+   * (legacy — synthesizes a linear edge list).
+   *
+   * @returns {{
+   *   voiceTemplate: { nodes: Array, edges: Array },
+   *   globalFx: Array,
+   *   midiCcNodes: Array,
+   * }}
+   */
+  _extractVoiceTemplate() {
+    const graph = this.config?.dspGraph;
+    let inputNodes;
+    let inputEdges;
+
+    if (graph?.nodes?.length) {
+      inputNodes = graph.nodes;
+      inputEdges = graph.edges || [];
+    } else {
+      // Synthesize a linear edge list from dspChain
+      const chain = this.config?.dspChain || [];
+      inputNodes = chain.map((n, i) => ({ ...n, id: n.id || `node${i}` }));
+      inputEdges = [];
+      for (let i = 1; i < inputNodes.length; i++) {
+        inputEdges.push({ source: inputNodes[i - 1].id, target: inputNodes[i].id });
+      }
+    }
+
+    const voiceNodes = [];
+    const globalFx = [];
+    const midiCcNodes = [];
+    const voiceIds = new Set();
+
+    // First pass: bucket nodes by per-voice vs. global vs. mod/midi-cc.
+    for (const node of inputNodes) {
+      if (!node || !node.type) continue;
+      if (node.type === 'midi_cc') {
+        midiCcNodes.push(node);
+        continue;
+      }
+      // Mod-only nodes (lfo/macro/mod_envelope) live in the global graph —
+      // they're driven by ModRouter and address per-voice template params via
+      // paramTargets registered through VoiceManager.setParam.
+      if (node.type === 'lfo' || node.type === 'macro' || node.type === 'mod_envelope') {
+        globalFx.push(node);
+        continue;
+      }
+      if (node.type === 'input' || node.type === 'output') {
+        voiceNodes.push(node);
+        voiceIds.add(node.id);
+        continue;
+      }
+      if (PER_VOICE_TYPES.has(node.type)) {
+        voiceNodes.push(node);
+        voiceIds.add(node.id);
+      } else {
+        globalFx.push(node);
+      }
+    }
+
+    // Synthesize the voice template's edges: keep only edges where both ends
+    // are per-voice. Edges crossing the boundary terminate at the implicit
+    // 'output' node of the voice template.
+    const voiceEdges = [];
+    let hasOutputNode = voiceNodes.some(n => n.type === 'output' || n.id === 'output');
+    if (!hasOutputNode) {
+      voiceNodes.push({ id: 'output', type: 'output' });
+    }
+
+    for (const edge of inputEdges) {
+      const srcInVoice = voiceIds.has(edge.source);
+      const tgtInVoice = voiceIds.has(edge.target);
+      if (srcInVoice && tgtInVoice) {
+        voiceEdges.push(edge);
+      } else if (srcInVoice && !tgtInVoice) {
+        // Per-voice → global: re-route to voice template's output node so the
+        // VoiceManager.output gain catches it.
+        voiceEdges.push({ source: edge.source, target: 'output' });
+      }
+    }
+
+    // Fallback: if no edges were derived but we have multiple per-voice
+    // nodes, build a linear chain in declaration order so simple plugins
+    // still work. This happens when dspChain → dspGraph synthesis was empty.
+    if (voiceEdges.length === 0 && voiceNodes.length > 1) {
+      const synth = voiceNodes.filter(n => n.type !== 'output');
+      for (let i = 1; i < synth.length; i++) {
+        voiceEdges.push({ source: synth[i - 1].id, target: synth[i].id });
+      }
+      if (synth.length > 0) {
+        voiceEdges.push({ source: synth[synth.length - 1].id, target: 'output' });
+      }
+    }
+
+    return {
+      voiceTemplate: { nodes: voiceNodes, edges: voiceEdges },
+      globalFx,
+      midiCcNodes,
+    };
+  }
+
+  /**
+   * R6 instrument graph: VoiceManager handles per-voice synthesis, the
+   * engine's NODE_BUILDERS handle the global FX chain downstream of
+   * voiceManager.output.
+   */
+  _buildInstrumentGraphV2() {
+    const ctx = this.ctx;
+    const { voiceTemplate, globalFx, midiCcNodes } = this._extractVoiceTemplate();
+
+    // Voice config: defaults match polyphonic synth conventions.
+    const voiceCfg = this.config?.voice || {};
+    const polyphony = voiceCfg.polyphony ?? 8;
+    const mode = voiceCfg.mode || 'poly';
+    const stealing = voiceCfg.stealing || 'oldest';
+    const glide_ms = voiceCfg.glide_ms ?? 0;
+
+    // Construct the voice manager (will lazily build voices on noteOn).
+    this.voiceManager = new VoiceManager(ctx, voiceTemplate, this.paramDefs, {
+      polyphony, mode, stealing, glide_ms,
+    });
+
+    // Seed the voice manager's paramValues with our currently-scaled values.
+    // engine.paramValues stores normalized [0..1]; VoiceManager wants scaled.
+    for (const [paramId, norm] of Object.entries(this.paramValues)) {
+      const def = this.paramDefs[paramId];
+      const scaled = def ? scaleParam(norm, def) : norm;
+      try { this.voiceManager.setParam(paramId, scaled); } catch (_) { /* ignore */ }
+    }
+
+    // Build global FX chain downstream of voiceManager.output.
+    const fxNodes = [];
+    const fxNodesById = {};
+    for (const node of globalFx) {
+      // Skip mod-only nodes (lfo/macro/mod_envelope) — ModRouter wires them
+      // and they have io {in:0, out:0}.
+      if (node.type === 'lfo' || node.type === 'macro' || node.type === 'mod_envelope') {
+        // Synthesize a passthrough so ModRouter's resolveTargets can find a
+        // node by id later (it only needs the id, no audio routing).
+        const passthrough = ctx.createGain();
+        fxNodesById[node.id] = { input: passthrough, output: passthrough, paramTargets: {} };
+        continue;
+      }
+      const builder = NODE_BUILDERS[node.type];
+      if (!builder) {
+        const g = ctx.createGain();
+        const built = { input: g, output: g, paramTargets: {} };
+        fxNodes.push(built);
+        if (node.id) fxNodesById[node.id] = built;
+        continue;
+      }
+      const built = builder(ctx, node, this.paramDefs);
+      fxNodes.push(built);
+      if (node.id) fxNodesById[node.id] = built;
+      if (built.oscillators) this.oscillators.push(...built.oscillators);
+      if (built.compressorNode) {
+        if (!this._compressorNodes) this._compressorNodes = [];
+        this._compressorNodes.push(built.compressorNode);
+      }
+      for (const [paramId, target] of Object.entries(built.paramTargets || {})) {
+        this.paramTargets[paramId] = target;
+      }
+    }
+
+    // Wire the FX chain in series after voiceManager.output.
+    let prev = this.voiceManager.output;
+    for (const fx of fxNodes) {
+      try { prev.connect(fx.input); } catch (_) { /* ignore */ }
+      prev = fx.output;
+    }
+    try { prev.connect(this.masterGain); } catch (_) { /* ignore */ }
+
+    this.nodes = fxNodes;
+    this._builtNodesById = fxNodesById;
+    // Effects-only mic input still needs a target — point to the FX chain head
+    // so external audio flows through global FX (note: no voice routing).
+    this._chainInput = fxNodes[0]?.input || this.masterGain;
+
+    // Build a fresh MidiInput.
+    if (this.midiInput) {
+      try { this.midiInput.destroy(); } catch (_) {}
+    }
+    this.midiInput = new MidiInput(this.voiceManager);
+
+    // Auto-bind midi_cc graph nodes → CC routing.
+    for (const node of midiCcNodes) {
+      const params = node.params || {};
+      const cc = params.cc_number;
+      const target = params.target;
+      if (cc == null || !target) continue;
+      try {
+        this.midiInput.bindCC(cc, {
+          paramId: target,
+          min: params.min_val,
+          max: params.max_val,
+        });
+      } catch (_) { /* ignore */ }
+    }
+
+    // R7 ModRouter: rebuild on the merged node map (FX chain + mod nodes).
+    // Voices live below, but ModRouter only addresses live AudioParams it
+    // resolved to engine.paramTargets, which VoiceManager.setParam dispatches
+    // to all voices.
+    if (this._modRouter) { this._modRouter.dispose(); this._modRouter = null; }
+    const modSourceGraph = this.config?.dspGraph;
+    if (modSourceGraph?.nodes?.some(n => n.type === 'lfo' || n.type === 'macro' || n.type === 'mod_envelope' || n.type === 'midi_cc')) {
+      try {
+        // ModRouter resolves @paramId → engine.paramTargets entries. To make
+        // mod targets reach the per-voice graph, register a customSetter for
+        // every shared paramId that forwards into voiceManager.setParam.
+        for (const paramId of Object.keys(this.paramDefs)) {
+          if (!this.paramTargets[paramId]) {
+            const def = this.paramDefs[paramId];
+            this.paramTargets[paramId] = {
+              paramDef: def,
+              customSetter: (scaled) => {
+                try { this.voiceManager?.setParam(paramId, scaled); } catch (_) {}
+              },
+            };
+          }
+        }
+        this._modRouter = new ModRouter(
+          this.ctx,
+          modSourceGraph,
+          this._builtNodesById,
+          this.paramDefs,
+          { nodeSchema: this._buildNodeSchemaMap(), bpm: this.bpm || 120 },
+        );
+        this._modRouter.resolveTargets();
+      } catch (e) {
+        console.warn('[WebAudioDSPEngine] ModRouter init failed (V2):', e);
+      }
+    }
+
+    // Hook per-voice mod-envelope triggers: cached id list consumed by the
+    // engine's noteOn/noteOff wrappers (we don't modify VoiceManager itself —
+    // engine is already the entry point for note events, so we fire the
+    // ModRouter trigger right next to the voiceManager.noteOn call).
+    this._modEnvNodeIds = (this.config?.dspGraph?.nodes || [])
+      .filter(n => n.type === 'mod_envelope')
+      .map(n => n.id);
+  }
+
   _teardownGraph() {
     if (this._modRouter) {
       try { this._modRouter.dispose(); } catch (e) { /* ignore */ }
       this._modRouter = null;
+    }
+    // R6: tear down VoiceManager + MidiInput first so any callbacks they
+    // hold don't fire into a half-disposed graph.
+    if (this.midiInput) {
+      try { this.midiInput.destroy(); } catch (e) { /* ignore */ }
+      this.midiInput = null;
+    }
+    if (this.voiceManager) {
+      try { this.voiceManager.destroy(); } catch (e) { /* ignore */ }
+      this.voiceManager = null;
     }
     this.oscillators.forEach(o => { try { o.stop(); } catch (e) {} });
     this.oscillators = [];
@@ -1222,7 +1512,8 @@ export default class WebAudioDSPEngine {
       try { this.sourceNode.stop(); } catch (e) {}
       this.sourceNode = null;
     }
-    // Clean up instrument voices
+    // Clean up legacy instrument voices (only present when V2 path is
+    // disabled via config.voice.enabled === false).
     if (this._activeVoices) {
       for (const v of Object.values(this._activeVoices)) {
         v.voices.forEach(o => { try { o.stop(); } catch (e) {} });
@@ -1334,6 +1625,14 @@ export default class WebAudioDSPEngine {
     if (this.masterGain) {
       this._applyParam(paramId, normalizedValue);
     }
+    // R6: forward to VoiceManager so live voices update too. The voice
+    // manager wants the SCALED value (not normalized), matching the
+    // convention used by per-voice node builders.
+    if (this.voiceManager) {
+      const def = this.paramDefs[paramId];
+      const scaled = def ? scaleParam(normalizedValue, def) : normalizedValue;
+      try { this.voiceManager.setParam(paramId, scaled); } catch (_) { /* ignore */ }
+    }
   }
 
   setMasterVolume(value) {
@@ -1419,13 +1718,41 @@ export default class WebAudioDSPEngine {
   // ── Instrument mode (synth) ───────────────────────────────────────────
 
   get isInstrument() {
-    return this.config?.pluginType === 'instrument' ||
-      (this.config?.dspChain || []).some(n => NODE_BUILDERS[n.type] === buildOscillator || NODE_BUILDERS[n.type] === buildSubOscillator || NODE_BUILDERS[n.type] === buildNoiseGen);
+    if (this.config?.pluginType === 'instrument') return true;
+    // Scan dspGraph nodes (R6 path) and dspChain (legacy) for any source-typed node.
+    const graphNodes = this.config?.dspGraph?.nodes || [];
+    if (graphNodes.some(n => SOURCE_TYPES.has(n.type))) return true;
+    const chainNodes = this.config?.dspChain || [];
+    if (chainNodes.some(n => SOURCE_TYPES.has(n.type))) return true;
+    return false;
+  }
+
+  /** Returns true when the new VoiceManager-backed instrument path is active. */
+  get _useVoiceManagerPath() {
+    if (this.config?.voice?.enabled === false) return false;
+    return this.isInstrument;
   }
 
   noteOn(midiNote = 60, velocity = 0.8) {
     this._ensureContext();
     if (!this.masterGain) this._buildGraph();
+
+    // R6: VoiceManager-backed path. KEY = MIDI note number, no voiceId
+    // returned — callers must call noteOff(midiNote).
+    if (this.voiceManager) {
+      try { this.voiceManager.noteOn(midiNote, velocity); } catch (_) { /* ignore */ }
+      // Fire mod-envelope gates after delegating note-on, since the engine
+      // owns the ModRouter and the voice manager only knows about its own
+      // per-voice envelopes (not graph-level mod_envelope nodes).
+      if (this._modRouter && this._modEnvNodeIds?.length) {
+        for (const id of this._modEnvNodeIds) {
+          try { this._modRouter.triggerModEnvelope(id, true); } catch (_) {}
+        }
+      }
+      this.playing = true;
+      return midiNote;
+    }
+
     const ctx = this.ctx;
     const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
     const t = ctx.currentTime;
@@ -1503,9 +1830,27 @@ export default class WebAudioDSPEngine {
     return voiceId;
   }
 
-  noteOff(voiceId) {
-    if (!this._activeVoices?.[voiceId]) return;
-    const { voices, voiceGain, env } = this._activeVoices[voiceId];
+  /**
+   * R6 API: noteOff key is now the MIDI note number (was an opaque voiceId
+   * in the legacy path). The legacy fallback still accepts the voiceId form
+   * for back-compat when config.voice.enabled === false.
+   */
+  noteOff(noteOrVoiceId) {
+    // R6: VoiceManager path — key by MIDI note number.
+    if (this.voiceManager) {
+      try { this.voiceManager.noteOff(noteOrVoiceId); } catch (_) { /* ignore */ }
+      // Release graph-level mod_envelope nodes alongside the voice's local
+      // ADSR. Mirrors the noteOn gate-on call site.
+      if (this._modRouter && this._modEnvNodeIds?.length) {
+        for (const id of this._modEnvNodeIds) {
+          try { this._modRouter.triggerModEnvelope(id, false); } catch (_) {}
+        }
+      }
+      return;
+    }
+
+    if (!this._activeVoices?.[noteOrVoiceId]) return;
+    const { voices, voiceGain, env } = this._activeVoices[noteOrVoiceId];
     const ctx = this.ctx;
     const t = ctx.currentTime;
     const release = Math.max(0.01, env?.release || 0.3);
@@ -1525,7 +1870,26 @@ export default class WebAudioDSPEngine {
       try { voiceGain.disconnect(); } catch (e) {}
     }, (release + 0.1) * 1000);
 
-    delete this._activeVoices[voiceId];
+    delete this._activeVoices[noteOrVoiceId];
+  }
+
+  /** R6: forward sustain pedal state to the VoiceManager. */
+  setSustain(on) {
+    if (this.voiceManager) {
+      try { this.voiceManager.setSustain(!!on); } catch (_) { /* ignore */ }
+    }
+  }
+
+  /** R6: opt into Web MIDI hardware input. */
+  async attachMidi() {
+    if (!this.midiInput) return false;
+    try { return await this.midiInput.attachWebMidi(); } catch (_) { return false; }
+  }
+
+  /** R6: bind a MIDI CC number to a paramId (or { paramId, min, max }). */
+  bindCC(cc, target) {
+    if (!this.midiInput) return;
+    try { this.midiInput.bindCC(cc, target); } catch (_) { /* ignore */ }
   }
 
   // Keyboard mapping: computer keys → MIDI notes

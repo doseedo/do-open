@@ -7,6 +7,17 @@ import { getStretchedBuffer } from '../services/wsolaStretch';
 import { LRUBufferCache } from '../utils/lruBufferCache';
 import { computeClipPlayback } from '../utils/clipScheduling';
 import { scheduleAutomation, clearAutomation } from '../services/automationPlayback';
+import PluginAdapter from '../lib/PluginAdapter';
+
+// R11 splice — feature flag for live web-DSP plugin chains. When unset/empty
+// (the default), the entire PluginAdapter path is bypassed and behavior is
+// byte-identical to the bounce-cache pipeline. Set NEXT_PUBLIC_LIVE_PLUGINS=1
+// to opt in. Comparison is strict against '1' (Vercel ships some envs as the
+// literal string 'true'/'false', so we lock to '1' for unambiguous gating).
+const LIVE_PLUGINS_ENABLED =
+  typeof process !== 'undefined' &&
+  process.env &&
+  process.env.NEXT_PUBLIC_LIVE_PLUGINS === '1';
 
 // Global audio buffer cache — byte-capped LRU to keep a long session's worth
 // of synced projects from OOM-ing the tab. At 48kHz stereo float32, the cap
@@ -78,6 +89,13 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
   const seekRef = useRef(null); // Latest seek() fn — called by the cycle-loop wrap in updatePlayhead
   const cycleLoopGuardRef = useRef(0); // debounce loop wraparound to avoid double-fires
 
+  // R11 PluginAdapter splice — lazy singleton bound to the AudioContext.
+  // `pluginAdapterRef` holds the adapter; `trackChainsRef` tracks live
+  // chains keyed by trackId so dispose runs on stop/seek/unmount. Both
+  // remain dormant when the feature flag is off.
+  const pluginAdapterRef = useRef(null);
+  const trackChainsRef = useRef(new Map()); // Map<trackId, {input, output, dispose, slots}>
+
   // Lazily create the bus GainNode for a given busId and return it. Called
   // at schedule time and from the real-time gain-update effect. If busId is
   // falsy, falls back to masterGain so tracks that bypass the bus model
@@ -94,6 +112,34 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     }
     return node;
   };
+
+  // R11 splice — try to build a live web-DSP plugin chain for this track.
+  // Returns null when:
+  //   - feature flag NEXT_PUBLIC_LIVE_PLUGINS !== '1' (default-disabled path)
+  //   - adapter hasn't initialized (no AudioContext yet)
+  //   - track has no logicPlugins metadata
+  //   - any plugin on the track lacks a registered mapping (chain.fallback)
+  // When the return is null, the caller MUST take the unchanged bounce-cache
+  // path. When non-null, the returned chain has shape {input, output,
+  // dispose, slots} and the caller is responsible for splicing it into the
+  // graph and registering dispose for cleanup.
+  const maybeBuildPluginChain = useCallback(async (track) => {
+    if (!LIVE_PLUGINS_ENABLED) return null;
+    const adapter = pluginAdapterRef.current;
+    if (!adapter) return null;
+    const logicPlugins = track?.logicPlugins;
+    if (!Array.isArray(logicPlugins) || logicPlugins.length === 0) return null;
+    try {
+      const chain = await adapter.buildTrackChain(track);
+      if (!chain || chain.fallback) return null;
+      return chain;
+    } catch (err) {
+      // Any error → bounce-cache fallback. Never let a plugin-mapping bug
+      // silence playback for a track.
+      console.warn(`[R11] buildTrackChain failed for ${track?.id || track?.name || '?'}; using bounce path:`, err?.message || err);
+      return null;
+    }
+  }, []);
 
   // Initialize audio context, Tuna FX, and MIDI player
   useEffect(() => {
@@ -126,9 +172,41 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     // opts.destination per playNote call — see the MIDI notes loop below.
     midiPlayer.attachToContext(audioContextRef.current, masterGainNodeRef.current);
 
+    // R11 PluginAdapter — lazy singleton bound to this AudioContext.
+    // Constructed unconditionally (cheap) but only USED when the feature
+    // flag is on. `load()` is fire-and-forget: kicks off the index.json
+    // fetch so a later maybeBuildPluginChain() call can resolve fast.
+    // When the flag is off, nothing ever calls into the adapter.
+    if (LIVE_PLUGINS_ENABLED) {
+      try {
+        pluginAdapterRef.current = new PluginAdapter(audioContextRef.current);
+        // Fire-and-forget: failures here just mean every chain attempt
+        // falls back to the bounce-cache path (the safe default).
+        Promise.resolve(pluginAdapterRef.current.load()).catch((err) => {
+          console.warn('[R11] PluginAdapter load failed; falling back to bounce path:', err?.message || err);
+        });
+      } catch (err) {
+        console.warn('[R11] PluginAdapter init failed; falling back to bounce path:', err?.message || err);
+        pluginAdapterRef.current = null;
+      }
+    }
+
     return () => {
       tunaFX.destroy();
       midiPlayer.stopAll();
+      // R11 — dispose any live plugin chains and drop adapter caches so the
+      // next AudioContext gets a fresh singleton (engines hold ctx-bound
+      // AudioNodes; reusing across contexts would dangle them).
+      try {
+        for (const chain of trackChainsRef.current.values()) {
+          try { chain.dispose && chain.dispose(); } catch (_) {}
+        }
+        trackChainsRef.current.clear();
+      } catch (_) {}
+      if (pluginAdapterRef.current) {
+        try { pluginAdapterRef.current.clearCache && pluginAdapterRef.current.clearCache(); } catch (_) {}
+        pluginAdapterRef.current = null;
+      }
       if (audioContextRef.current) {
         audioContextRef.current.close();
         audioContextRef.current = null;
@@ -459,6 +537,16 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       sourceNodesRef.current = [];
       gainNodesRef.current.clear(); // Clear old gain nodes
 
+      // R11 — dispose any live plugin chains from the previous play() pass.
+      // Each chain owns engines holding context-bound AudioNodes; if we
+      // skip this, every play/seek leaks a chain into the graph.
+      if (LIVE_PLUGINS_ENABLED && trackChainsRef.current.size > 0) {
+        for (const chain of trackChainsRef.current.values()) {
+          try { chain.dispose && chain.dispose(); } catch (_) {}
+        }
+        trackChainsRef.current.clear();
+      }
+
       // Get all tracks from ref (not prop) to avoid recreating this callback
       const currentTracks = tracksRef.current;
       const voTracks = (currentTracks.vo || []).filter(isRenderablePlaybackTrack);
@@ -573,11 +661,19 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         // bus handles its own gain/mute/solo independently.
         const busGainNode = ensureBusGain(track._busId);
 
+        // R11 splice — pre-resolved live plugin chain for this track (or
+        // null if the feature flag is off / no mappings / fallback). When
+        // present, the chain is wired between the per-track sink (trackGain
+        // or trackPan) and busGainNode below.
+        const pluginChain = prebuiltChains.get(track.id) || null;
+
         // ── Per-track sink: gain + (optional) pan + automation ──────────
         // Topology when pan exists/automated:
         //   sources → trackGain → trackPan → busGain → master
         // Otherwise:
         //   sources → trackGain → busGain → master
+        // With R11 plugin chain spliced in:
+        //   ... → (trackGain | trackPan) → chain.input → ... → chain.output → busGain
         // Sub-schedulers receive `trackGain` as existingTrackGain so the
         // sink is created exactly once per play() per track. Volume and
         // pan automation lanes are scheduled here against the live
@@ -592,14 +688,28 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         const trackGain = audioContext.createGain();
         trackGain.gain.value = trackLocalGain;
 
+        // The "sink" — last per-track node before either busGainNode or the
+        // plugin chain. Pan node sits between trackGain and the sink path
+        // when present; otherwise trackGain itself is the sink.
         let trackPan = null;
+        let busFeed; // node whose output should reach busGainNode (directly or via chain)
         if (wantPanNode && typeof audioContext.createStereoPanner === 'function') {
           trackPan = audioContext.createStereoPanner();
           trackPan.pan.value = Math.max(-1, Math.min(1, staticPan));
           trackGain.connect(trackPan);
-          trackPan.connect(busGainNode);
+          busFeed = trackPan;
         } else {
-          trackGain.connect(busGainNode);
+          busFeed = trackGain;
+        }
+        if (pluginChain) {
+          // Splice the live plugin chain between the per-track sink and
+          // the bus. `pluginChain.input/output` are GainNodes the adapter
+          // owns; dispose() on the chain disconnects them and tears the
+          // engines down.
+          busFeed.connect(pluginChain.input);
+          pluginChain.output.connect(busGainNode);
+        } else {
+          busFeed.connect(busGainNode);
         }
         gainNodesRef.current.set(track.id, trackGain);
 
@@ -1008,6 +1118,47 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         node.gain.value = g;
       }
 
+      // R11 splice — pre-resolve PluginAdapter chains in parallel before
+      // the schedule loop. Building each chain is async (mapping fetch +
+      // engine instantiation), so resolving sequentially inside the loop
+      // would serialize play(). Resolved chains are stashed in
+      // `prebuiltChains` keyed by track.id; scheduleOrDefer reads from the
+      // map without awaiting. Chains for tracks that lack mappings (or
+      // when the feature flag is off) resolve to null and the bounce-cache
+      // path takes over for that track. Sessionguard: if play() got
+      // cancelled while we were resolving, dispose anything we built and
+      // bail before scheduling.
+      const prebuiltChains = new Map();
+      if (LIVE_PLUGINS_ENABLED) {
+        const chainCandidates = tracksToSchedule.filter(
+          (t) => Array.isArray(t?.logicPlugins) && t.logicPlugins.length > 0,
+        );
+        if (chainCandidates.length > 0) {
+          const built = await Promise.all(
+            chainCandidates.map(async (t) => {
+              const chain = await maybeBuildPluginChain(t);
+              return [t.id, chain];
+            }),
+          );
+          if (!isSessionActive()) {
+            // Session cancelled during resolution — dispose and bail.
+            for (const [, chain] of built) {
+              if (chain) { try { chain.dispose && chain.dispose(); } catch (_) {} }
+            }
+            return;
+          }
+          for (const [trackId, chain] of built) {
+            if (chain) {
+              prebuiltChains.set(trackId, chain);
+              trackChainsRef.current.set(trackId, chain);
+            }
+          }
+          if (prebuiltChains.size > 0) {
+            console.log(`🎛 [R11] live plugin chains active for ${prebuiltChains.size}/${chainCandidates.length} candidate track(s)`);
+          }
+        }
+      }
+
       for (const track of tracksToSchedule) {
         const busMuted = track._busMuted || false;
         const busSolo  = track._busSolo  || false;
@@ -1031,6 +1182,13 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         const busGainNode = ensureBusGain(track._busId);
 
         if (shouldPlay) {
+          // R11 — pre-resolved live plugin chain (or null when feature flag
+          // is off / no mappings / fallback). Passed into helper paths that
+          // build their own per-source gain (drum hits, F0). For
+          // scheduleOrDefer-routed tracks the chain is wired at the
+          // shared trackGain layer (see scheduleOrDefer).
+          const trackPluginChain = prebuiltChains.get(track.id) || null;
+
           // Check if this is a drum track with multiple hits
           if (track.isDrumTrack && track.drumHits && track.drumHits.length > 0) {
             console.log(`  🥁 Scheduling drum track with ${track.drumHits.length} hits`);
@@ -1053,6 +1211,8 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
                   currentPlayheadTime,
                   schedulingStartTime,
                   busGainNode, // per-bus gain, feeds into master
+                  0,           // flexOffsetSeconds (default)
+                  trackPluginChain, // R11 splice
                 );
 
                 if (source && gainNode) {
@@ -1092,6 +1252,8 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
                 currentPlayheadTime,
                 schedulingStartTime,
                 busGainNode,
+                0,                  // flexOffsetSeconds (default)
+                trackPluginChain,   // R11 splice
               );
 
               if (source && gainNode) {
@@ -1322,6 +1484,15 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
           // Ignore
         }
       });
+      // R11 — dispose any live plugin chains. The audio-context useEffect's
+      // cleanup also covers this (chains hold ctx-bound nodes), but
+      // belt-and-suspenders here avoids relying on cleanup ordering.
+      if (trackChainsRef.current.size > 0) {
+        for (const chain of trackChainsRef.current.values()) {
+          try { chain.dispose && chain.dispose(); } catch (_) {}
+        }
+        trackChainsRef.current.clear();
+      }
     };
   }, []);
 
@@ -1365,6 +1536,7 @@ function scheduleTrack(
   schedulingStartTime,
   outputNode,
   flexOffsetSeconds = 0,
+  pluginChain = null,
 ) {
   try {
     // Get cached audio buffer (should already be loaded)
@@ -1383,7 +1555,15 @@ function scheduleTrack(
     source.connect(gainNode);
     // Signal chain: source → trackGain → outputNode (bus gain) → master → destination
     // (FX chain on outputNode is a future hook; per-bus inserts go here.)
-    gainNode.connect(outputNode);
+    // R11 splice: when a live plugin chain is supplied, splice between
+    // trackGain and outputNode. Default (pluginChain=null) is byte-identical
+    // to today's bounce-cache path.
+    if (pluginChain) {
+      gainNode.connect(pluginChain.input);
+      pluginChain.output.connect(outputNode);
+    } else {
+      gainNode.connect(outputNode);
+    }
 
     // Calculate when to start playback in AudioContext time
     // If playhead is before track start, schedule for future
@@ -1474,6 +1654,7 @@ function scheduleTrackWithSchedule(
   currentPlayheadTime, schedulingStartTime, outputNode,
   existingTrackGain = null,
   flexOffsetSeconds = 0,
+  pluginChain = null,
 ) {
   try {
     const audioBuffer = audioBufferCache.get(audioUrl);
@@ -1488,10 +1669,19 @@ function scheduleTrackWithSchedule(
     // Reuse the caller's track gain if provided (substem fan-out path —
     // every substem sums into one per-track gain so solo/mute on the
     // parent still works). Otherwise create a fresh one.
+    // R11 splice: when a fresh trackGain is created and a live plugin chain
+    // is supplied, route the trackGain through the chain before reaching
+    // outputNode. When existingTrackGain is provided, the caller
+    // (scheduleOrDefer) already wired the chain at the trackGain layer.
     const trackGain = existingTrackGain || (() => {
       const g = audioContext.createGain();
       g.gain.value = gain;
-      g.connect(outputNode);
+      if (pluginChain) {
+        g.connect(pluginChain.input);
+        pluginChain.output.connect(outputNode);
+      } else {
+        g.connect(outputNode);
+      }
       return g;
     })();
 
@@ -1637,14 +1827,24 @@ function scheduleTrackClips(
   outputNode,
   existingTrackGain = null,
   sessionSampleRate = null,
+  pluginChain = null,
 ) {
   const result = { sources: [], gainNode: existingTrackGain };
   if (!Array.isArray(clips) || clips.length === 0) return result;
 
+  // R11 splice: when a fresh trackGain is created and a live plugin chain
+  // is supplied, route the trackGain through the chain before reaching
+  // outputNode. When existingTrackGain is provided, the caller
+  // (scheduleOrDefer) already wired the chain at the trackGain layer.
   const trackGain = existingTrackGain || (() => {
     const g = audioContext.createGain();
     g.gain.value = trackLocalGain;
-    g.connect(outputNode);
+    if (pluginChain) {
+      g.connect(pluginChain.input);
+      pluginChain.output.connect(outputNode);
+    } else {
+      g.connect(outputNode);
+    }
     return g;
   })();
   result.gainNode = trackGain;

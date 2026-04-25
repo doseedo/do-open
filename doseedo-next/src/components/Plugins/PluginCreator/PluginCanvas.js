@@ -64,21 +64,24 @@ const PluginCanvas = ({ config, components, selectedIds, onSelect, onDeselect, o
       const tag = e.target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       const note = kbMap[e.key.toLowerCase()];
-      if (note == null || voiceMapRef.current[e.key]) return;
+      // R6: noteOn no longer returns a voiceId — key tracking is by the
+      // MIDI note number directly. We still index voiceMapRef by keyboard
+      // key so a held QWERTY key only triggers once.
+      if (note == null || voiceMapRef.current[e.key] != null) return;
       engine._ensureContext();
       if (!engine.masterGain) engine._buildGraph();
-      const vid = engine.noteOn(note, 0.8);
-      voiceMapRef.current[e.key] = vid;
+      engine.noteOn(note, 0.8);
+      voiceMapRef.current[e.key] = note;
       setActiveNotes(prev => new Set([...prev, note]));
     };
 
     const onKeyUp = (e) => {
-      const note = kbMap[e.key.toLowerCase()];
-      const vid = voiceMapRef.current[e.key];
-      if (vid) {
-        engine.noteOff(vid);
+      const note = voiceMapRef.current[e.key];
+      if (note != null) {
+        // R6: noteOff is keyed on the MIDI note number, not a voiceId.
+        engine.noteOff(note);
         delete voiceMapRef.current[e.key];
-        if (note != null) setActiveNotes(prev => { const s = new Set(prev); s.delete(note); return s; });
+        setActiveNotes(prev => { const s = new Set(prev); s.delete(note); return s; });
       }
     };
 
@@ -87,7 +90,7 @@ const PluginCanvas = ({ config, components, selectedIds, onSelect, onDeselect, o
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
-      for (const vid of Object.values(voiceMapRef.current)) engine.noteOff(vid);
+      for (const note of Object.values(voiceMapRef.current)) engine.noteOff(note);
       voiceMapRef.current = {};
     };
   }, [isInstrument, engine]);
@@ -96,15 +99,17 @@ const PluginCanvas = ({ config, components, selectedIds, onSelect, onDeselect, o
     if (!engine) return;
     engine._ensureContext();
     if (!engine.masterGain) engine._buildGraph();
-    const vid = engine.noteOn(note, 0.8);
-    voiceMapRef.current['m' + note] = vid;
+    // R6: ignore the voiceId return; noteOff takes the MIDI note number.
+    engine.noteOn(note, 0.8);
+    voiceMapRef.current['m' + note] = note;
     setActiveNotes(prev => new Set([...prev, note]));
   }, [engine]);
 
   const handleNoteOff = useCallback((note) => {
-    const vid = voiceMapRef.current['m' + note];
-    if (vid && engine) {
-      engine.noteOff(vid);
+    const tracked = voiceMapRef.current['m' + note];
+    if (tracked != null && engine) {
+      // R6: noteOff is keyed on the MIDI note number.
+      engine.noteOff(tracked);
       delete voiceMapRef.current['m' + note];
     }
     setActiveNotes(prev => { const s = new Set(prev); s.delete(note); return s; });
