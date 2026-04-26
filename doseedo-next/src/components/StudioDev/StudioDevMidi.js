@@ -714,10 +714,11 @@ export default function StudioDevMidi() {
         const deltaPx = e.deltaMode === 1 ? e.deltaY * 16
                        : e.deltaMode === 2 ? e.deltaY * 400
                        : e.deltaY;
-        // Sensitivity 0.004: mouse wheel notch (100 px) → step 0.40,
-        // factor 1.40 — snappy like most DAWs. Trackpad pinch ticks
-        // (~10 px) → step 0.04, factor 1.04 — still smooth.
-        const step = Math.max(-0.4, Math.min(0.4, -deltaPx * 0.004));
+        // Sensitivity 0.008: mouse wheel notch (100 px) → step 0.60
+        // (clamped), factor 1.60 — punchy. Trackpad pinch ticks
+        // (~10 px) → step 0.08, factor 1.08 — still smooth, but a
+        // single deliberate gesture moves the zoom meaningfully.
+        const step = Math.max(-0.6, Math.min(0.6, -deltaPx * 0.008));
         const factor = 1 + step;
         const newPxPerSec = Math.max(20, Math.min(800, pxPerSec * factor));
         // If the clamped factor rounded to a no-op, bail early so we
