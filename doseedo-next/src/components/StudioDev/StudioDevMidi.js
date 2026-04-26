@@ -168,6 +168,11 @@ export default function StudioDevMidi() {
   // Duration of the most-recently edited note, used as the default when
   // the user clicks an empty cell to add a new note. Starts at a half-beat.
   const lastNoteDurRef = useRef(null);
+  // Live cursor position in canvas-pixel coords. Updated by the canvas
+  // mousemove handler and consumed by the arrow-key zoom-to-cursor
+  // logic so keyboard zoom anchors to the same point that ctrl-scroll
+  // does. Null when the cursor isn't over the grid region.
+  const cursorPxRef = useRef({ x: null, y: null });
 
   const busIdForSelected = useMemo(() => {
     if (!selectedTrack) return null;
@@ -649,8 +654,10 @@ export default function StudioDevMidi() {
       const t = Math.max(0, timeAtX(mx));
       const row = Math.floor((my - RULER_H + scrollY) / rowH);
       setHoverCell({ row, time: t });
+      cursorPxRef.current = { x: mx, y: my };
     } else {
       setHoverCell(null);
+      cursorPxRef.current = { x: null, y: null };
     }
     // Swap mouse cursor based on the active tool. Block keeps the
     // edge/grab/crosshair affordances; arrow forces a pointer (no draw
@@ -811,9 +818,10 @@ export default function StudioDevMidi() {
   // and no notes are selected (so arrow keys don't fight any future
   // note-nudge shortcut, and don't hijack page scroll when the user
   // isn't looking at the editor). Up/Down adjust the Y zoom (rowZoom),
-  // Left/Right adjust the X zoom (pxPerSec). Step factor 1.15 per
-  // press — same feel as a single mouse-wheel notch at the new zoom
-  // sensitivity.
+  // Left/Right adjust the X zoom (pxPerSec). Anchored at the current
+  // cursor position the same way ctrl-wheel does — point under the
+  // cursor stays put as the grid grows/shrinks. When the cursor is
+  // outside the grid, the canvas centre is used as the anchor.
   useEffect(() => {
     if (!hovering || isScore) return;
     if (selected.size > 0) return;
@@ -823,23 +831,59 @@ export default function StudioDevMidi() {
       // lyric input, etc.) so editing remains undisturbed.
       const tag = (e.target?.tagName || '').toUpperCase();
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setRowZoom((v) => Math.min(8, v * STEP));
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setRowZoom((v) => Math.max(0.25, v / STEP));
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        setPxPerSec((v) => Math.min(800, v * STEP));
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        setPxPerSec((v) => Math.max(20, v / STEP));
+      const isLR = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+      const isUD = e.key === 'ArrowUp'   || e.key === 'ArrowDown';
+      if (!isLR && !isUD) return;
+      e.preventDefault();
+
+      // Pick the anchor point in canvas-pixel space. Prefer the live
+      // cursor (set in onMouseMoveCanvas), fall back to the visible
+      // grid centre so the user still gets a sensible zoom even when
+      // they tap a key without moving the mouse first.
+      const cur = cursorPxRef.current;
+      const haveCursor = Number.isFinite(cur.x) && Number.isFinite(cur.y);
+      const mx = haveCursor ? cur.x : KEYS_W + Math.max(0, (size.w - KEYS_W) / 2);
+      const my = haveCursor ? cur.y : RULER_H + Math.max(0, (size.h - RULER_H) / 2);
+
+      // Logical anchor under the cursor BEFORE the zoom change — same
+      // formulas the wheel handler uses.
+      const t = (mx - KEYS_W) / pxPerSec + scrollX;
+      const rowIdxF = (my - RULER_H + scrollY) / rowH;
+
+      if (isLR) {
+        const newPxPerSec = e.key === 'ArrowRight'
+          ? Math.min(800, pxPerSec * STEP)
+          : Math.max(20, pxPerSec / STEP);
+        if (Math.abs(newPxPerSec - pxPerSec) < 0.01) return;
+        // Recompute subdivision/rowH the same way the render body does.
+        let newSub = 1;
+        while (newSub < 8 && (beatSec / newSub) * newPxPerSec > SUBDIVIDE_AT_PX * 2) newSub *= 2;
+        const newCellSec = beatSec / newSub;
+        const newRowH = Math.max(12, Math.round(newCellSec * newPxPerSec * rowZoom));
+        const nextScrollX = Math.max(0, t - (mx - KEYS_W) / newPxPerSec);
+        const contentH = (maxPitch - minPitch + 1) * newRowH;
+        const maxScrollY = Math.max(0, contentH - (size.h - RULER_H));
+        const nextScrollY = Math.max(0, Math.min(maxScrollY, rowIdxF * newRowH - (my - RULER_H)));
+        setPxPerSec(newPxPerSec);
+        setScrollX(nextScrollX);
+        setScrollY(nextScrollY);
+      } else {
+        const newRowZoom = e.key === 'ArrowUp'
+          ? Math.min(8, rowZoom * STEP)
+          : Math.max(0.25, rowZoom / STEP);
+        if (Math.abs(newRowZoom - rowZoom) < 1e-4) return;
+        const newRowH = Math.max(12, Math.round(cellSec * pxPerSec * newRowZoom));
+        const contentH = (maxPitch - minPitch + 1) * newRowH;
+        const maxScrollY = Math.max(0, contentH - (size.h - RULER_H));
+        const nextScrollY = Math.max(0, Math.min(maxScrollY, rowIdxF * newRowH - (my - RULER_H)));
+        setRowZoom(newRowZoom);
+        setScrollY(nextScrollY);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [hovering, isScore, selected.size]);
+  }, [hovering, isScore, selected.size, pxPerSec, rowH, rowZoom, scrollX, scrollY,
+      beatSec, cellSec, maxPitch, minPitch, size.w, size.h]);
 
   // ---- DRAW ----
   useEffect(() => {
@@ -1183,7 +1227,11 @@ export default function StudioDevMidi() {
         ref={wrapRef}
         className="sd-midi-canvas-wrap"
         onMouseEnter={() => setHovering(true)}
-        onMouseLeave={() => { setHoverCell(null); setHovering(false); }}
+        onMouseLeave={() => {
+          setHoverCell(null);
+          setHovering(false);
+          cursorPxRef.current = { x: null, y: null };
+        }}
       >
         {isScore && (
           <ScoreViewPane
