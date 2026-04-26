@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
  * Server-side proxy to the Modal vision endpoint
  * (arlo--doseedo-chatbot-qwenchatbot-vision.modal.run).
  *
- * Mirrors app/api/chat/route.ts: keeps VLLM_API_KEY out of the browser
+ * Mirrors app/api/chat/route.ts: keeps VLLM_GATE_TOKEN out of the browser
  * bundle. Accepts the same body shape the Modal FastAPI expects —
  *   POST /api/vision { image_base64, prompt, task?, object? }
  * — forwards verbatim. GET is a passthrough health probe.
@@ -26,10 +26,10 @@ const VISION_ORIGIN =
 export const maxDuration = 300; // Moondream query is ~1-3s warm, plus cold start budget
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.VLLM_API_KEY;
+  const apiKey = process.env.VLLM_GATE_TOKEN || process.env.VLLM_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: 'VLLM_API_KEY not configured on server' },
+      { error: 'VLLM_GATE_TOKEN not configured on server' },
       { status: 500 },
     );
   }

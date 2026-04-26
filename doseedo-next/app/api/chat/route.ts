@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
  * Server-side proxy to the Modal vLLM chatbot
  * (arlo--doseedo-chatbot-qwenchatbot-serve.modal.run).
  *
- * Keeps VLLM_API_KEY out of the browser bundle. Accepts an OpenAI-style
+ * Keeps the gate token out of the browser bundle. Accepts an OpenAI-style
  * chat completion request body and forwards it verbatim, including the
  * `stream: true` case — we pipe the Modal SSE response straight to the
  * client so tokens arrive with the same latency as a direct call.
@@ -19,10 +19,12 @@ const CHATBOT_ORIGIN =
   'https://arlo--doseedo-chatbot-qwenchatbot-serve.modal.run';
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.VLLM_API_KEY;
+  // VLLM_GATE_TOKEN is the canonical name (matches the Fly auth-service
+  // secret). VLLM_API_KEY is kept as a fallback for older deployments.
+  const apiKey = process.env.VLLM_GATE_TOKEN || process.env.VLLM_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: 'VLLM_API_KEY not configured on server' },
+      { error: 'VLLM_GATE_TOKEN not configured on server' },
       { status: 500 },
     );
   }
