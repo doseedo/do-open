@@ -594,3 +594,181 @@
   color: rgba(102, 126, 234, 0.8);
   font-size: 14px;
 }
+
+/* ------------------------------------------------------------------
+ * Workbench cream theme overrides.
+ * Active when <body> has the workbench-theme class (applied on
+ * /projects). The legacy purple gradients above are flipped to flat
+ * ink/accent fills using var(--wb-*) tokens.
+ * ------------------------------------------------------------------ */
+:global(body.workbench-theme) .modalOverlay {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+:global(body.workbench-theme) .modalContent {
+  background: var(--wb-bg);
+  border: var(--wb-border-strong);
+  border-radius: var(--wb-radius-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .modalHeader {
+  border-bottom: 1px solid var(--wb-rule);
+}
+
+:global(body.workbench-theme) .modalHeader h2 {
+  font-family: var(--wb-font-sans);
+  color: var(--wb-ink);
+  font-weight: 600;
+}
+
+:global(body.workbench-theme) .closeButton {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .closeButton:hover {
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .formGroup label {
+  font-family: var(--wb-font-mono);
+  color: var(--wb-ink);
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+:global(body.workbench-theme) .formGroup input[type="text"],
+:global(body.workbench-theme) .formGroup textarea,
+:global(body.workbench-theme) .formGroup select {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .formGroup input[type="text"]:focus,
+:global(body.workbench-theme) .formGroup textarea:focus,
+:global(body.workbench-theme) .formGroup select:focus {
+  border-color: var(--wb-ink);
+  background: #fff;
+}
+
+:global(body.workbench-theme) .checkboxLabel {
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .fileInputLabel {
+  background: var(--wb-surface);
+  border: 2px dashed var(--wb-rule);
+  border-radius: var(--wb-radius);
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .fileInputLabel:hover {
+  background: var(--wb-surface-2);
+  border-color: var(--wb-ink-soft);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .fileInputLabel i {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .fileList {
+  background: var(--wb-surface);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .fileItem {
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .fileItem i {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .fileSize {
+  color: var(--wb-ink-mute);
+}
+
+:global(body.workbench-theme) .progressBar {
+  background: var(--wb-surface);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .progressFill {
+  background: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .progressText {
+  color: var(--wb-bg);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .cancelButton,
+:global(body.workbench-theme) .submitButton {
+  border-radius: var(--wb-radius);
+  font-family: var(--wb-font-mono);
+  text-transform: uppercase;
+  letter-spacing: var(--wb-tracking-caps);
+  font-size: 11px;
+  padding: 10px 22px;
+}
+
+:global(body.workbench-theme) .cancelButton {
+  background: transparent;
+  border: var(--wb-border-strong);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .cancelButton:hover {
+  background: var(--wb-surface-2);
+  color: var(--wb-ink);
+}
+
+:global(body.workbench-theme) .submitButton {
+  background: var(--wb-ink);
+  border: 1px solid var(--wb-ink);
+  color: var(--wb-bg);
+}
+
+:global(body.workbench-theme) .submitButton:hover {
+  background: #000;
+  border-color: #000;
+  transform: none;
+  box-shadow: none;
+}
+
+:global(body.workbench-theme) .sessionInfoBox {
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius);
+}
+
+:global(body.workbench-theme) .sessionInfoItem {
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+}
+
+:global(body.workbench-theme) .sessionInfoItem i {
+  color: var(--wb-ink-soft);
+}
+
+:global(body.workbench-theme) .infoText {
+  background: var(--wb-surface);
+  border-left: 3px solid var(--wb-ink-soft);
+  border-radius: var(--wb-radius);
+  color: var(--wb-ink-soft);
+  font-family: var(--wb-font-sans);
+}
+
+:global(body.workbench-theme) .infoText i {
+  color: var(--wb-ink-soft);
+}
