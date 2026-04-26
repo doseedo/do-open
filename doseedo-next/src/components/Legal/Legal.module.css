@@ -50,6 +50,18 @@
   margin: 0 0 16px 0;
 }
 
+.subsectionTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 24px 0 10px 0;
+  letter-spacing: 0.1px;
+}
+
+.subsectionTitle:first-child {
+  margin-top: 0;
+}
+
 .sectionText {
   font-size: 15px;
   line-height: 1.8;
@@ -329,6 +341,12 @@
 }
 
 :global(body.workbench-theme) .sectionTitle {
+  font-family: var(--wb-font-sans);
+  color: var(--wb-ink);
+  font-weight: 600;
+}
+
+:global(body.workbench-theme) .subsectionTitle {
   font-family: var(--wb-font-sans);
   color: var(--wb-ink);
   font-weight: 600;
