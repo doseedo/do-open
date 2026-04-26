@@ -855,16 +855,27 @@ export default function StudioDevMidi() {
           ? Math.min(800, pxPerSec * STEP)
           : Math.max(20, pxPerSec / STEP);
         if (Math.abs(newPxPerSec - pxPerSec) < 0.01) return;
-        // Recompute subdivision/rowH the same way the render body does.
+        // Recompute the X subdivision at the new pxPerSec.
         let newSub = 1;
         while (newSub < 8 && (beatSec / newSub) * newPxPerSec > SUBDIVIDE_AT_PX * 2) newSub *= 2;
         const newCellSec = beatSec / newSub;
-        const newRowH = Math.max(12, Math.round(newCellSec * newPxPerSec * rowZoom));
+        // Back-solve rowZoom so rowH stays exactly where it was — L/R
+        // is X-only zoom. Without this, rowH = cellSec*pxPerSec*rowZoom
+        // grew with pxPerSec inside a subdivision band, dragging the Y
+        // axis along for the ride.
+        const targetRowH = rowH;
+        const newRowZoom = Math.max(0.05, Math.min(32,
+          targetRowH / Math.max(1, newCellSec * newPxPerSec)));
+        const newRowH = Math.max(12, Math.round(newCellSec * newPxPerSec * newRowZoom));
         const nextScrollX = Math.max(0, t - (mx - KEYS_W) / newPxPerSec);
         const contentH = (maxPitch - minPitch + 1) * newRowH;
         const maxScrollY = Math.max(0, contentH - (size.h - RULER_H));
+        // Y anchor stays at the cursor; with rowH unchanged this is a no-op
+        // when the cursor was over the grid, but keeps things clean if the
+        // round() above shifted rowH by a pixel.
         const nextScrollY = Math.max(0, Math.min(maxScrollY, rowIdxF * newRowH - (my - RULER_H)));
         setPxPerSec(newPxPerSec);
+        setRowZoom(newRowZoom);
         setScrollX(nextScrollX);
         setScrollY(nextScrollY);
       } else {
