@@ -1643,6 +1643,11 @@
   background: var(--midi-bg);
   border-bottom-color: var(--midi-accent);
 }
+.sd-midi-tab.sd-midi-tab--active > i,
+.sd-midi-tab.sd-midi-tab--active > svg {
+  color: inherit;
+  fill: currentColor;
+}
 
 /* Cursor-tool palette: arrow / block / pen. Sits next to the view tabs.
  * Square 24px buttons styled like a hardware tool selector — selected
@@ -1667,14 +1672,28 @@
   cursor: pointer;
   padding: 0;
 }
-.sd-midi-tool:hover {
-  color: var(--midi-ink);
-  background: var(--midi-surf2);
+.sd-midi-tool > i,
+.sd-midi-tool > svg {
+  color: inherit;
+  fill: currentColor;
 }
-.sd-midi-tool--active {
-  color: var(--midi-bg);
-  background: var(--midi-ink);
-  border-color: var(--midi-ink);
+.sd-midi-tool:hover {
+  color: var(--wb-ink);
+  background: var(--wb-surface-2);
+}
+/* Active state — invert. Uses global --wb-* tokens (no scope
+ * dependency on .sd-midi) and pins the inner FA icon's color/fill so
+ * the SVG-with-JS replacement can't drop back to default ink. */
+.sd-midi-tool.sd-midi-tool--active {
+  color: var(--wb-bg);
+  background: var(--wb-ink);
+  border-color: var(--wb-ink);
+}
+.sd-midi-tool.sd-midi-tool--active > i,
+.sd-midi-tool.sd-midi-tool--active > svg,
+.sd-midi-tool.sd-midi-tool--active svg * {
+  color: var(--wb-bg);
+  fill: var(--wb-bg);
 }
 .sd-midi-btn {
   background: transparent; color: var(--midi-ink);
