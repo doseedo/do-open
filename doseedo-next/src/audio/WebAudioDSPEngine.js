@@ -21,7 +21,7 @@ import r9Builders from './builders/r9.js';
 import ModRouter from './ModRouter.js';
 import VoiceManager from './VoiceManager.js';
 import MidiInput from './MidiInput.js';
-import { NODE_CATEGORIES } from '../components/Plugins/PluginCreator/dspNodeDefinitions.js';
+import { NODE_CATEGORIES } from './dspNodeDefinitions.js';
 
 // ── Source-typed node detection (instrument mode) ──────────────────────────
 // Expanded for R6 to include the Synthesis-category nodes (wavetable,

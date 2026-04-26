@@ -10,15 +10,10 @@ import * as sessionService from './services/sessionService';
 import Navbar from './components/Navbar/Navbar';
 import LeftSidebar from './components/Sidebar/LeftSidebar/LeftSidebar';
 import TrackInfoSidebar from './components/Sidebar/RightSidebar/TrackInfoSidebar';
-import GenerationPanelOptimized from './components/GenerationPanel/GenerationPanelOptimized';
-import MIDIBrowser from './components/MIDIBrowser/MIDIBrowser';
 import ChatWindow from './components/ChatWindow/ChatWindow';
 import VideoUploadOptimized from './components/VideoUpload/VideoUploadOptimized';
-import ModeSelector from './components/ModeSelector/ModeSelector';
 import MIDIChart from './components/MIDIChart/MIDIChart';
 import AudioWaveform from './components/AudioWaveform/AudioWaveform';
-import ImageViewer from './components/ImageViewer/ImageViewer';
-import FXView from './components/FXView/FXView';
 import DAWOptimized from './components/DAW/DAWOptimized';
 import ResizeBar from './components/ResizeBar/ResizeBar';
 import VerticalResizeBar from './components/ResizeBar/VerticalResizeBar';
@@ -39,12 +34,9 @@ import Terms from './components/Legal/Terms';
 import Help from './components/Legal/Help';
 import Feedback from './components/Legal/Feedback';
 import Plans from './components/Legal/Plans';
-import ChordWindow from './components/ChordWindow/ChordWindow';
-import DO1 from './components/DO1/DO1';
 import Models from './components/Models/Models';
 import CreationView from './components/CreationView/CreationView';
 import StudioDev from './components/StudioDev/StudioDev';
-// ThemeEditor removed
 
 const PROTECTED_PASSWORD = process.env.NEXT_PUBLIC_PROTECTED_PASSWORD || '***REDACTED***';
 
@@ -188,9 +180,10 @@ function AppContent() {
       p.startsWith('/plugins') ||
       p === '/models' ||
       p.startsWith('/creation/');
-    // Keep the legacy hifi-purple class in lockstep — /studio still uses
-    // it for the password-gate skin override.
-    const isHifiPurple = p === '/studio';
+    // Keep the legacy hifi-purple class in lockstep — /studio (and the
+    // /plugins/create gate that piggybacks on it) still uses it for the
+    // password-gate skin override.
+    const isHifiPurple = p === '/studio' || p.startsWith('/plugins/create');
     if (typeof document !== 'undefined') {
       document.body.classList.toggle('workbench-theme', isWorkbench);
       document.body.classList.toggle('theme-hifi-purple', isHifiPurple);
@@ -283,7 +276,6 @@ function AppContent() {
                       location.pathname.startsWith('/plugins') ? 'plugins' :
                       location.pathname === '/models' ? 'models' :
                       location.pathname === '/studio' ? 'daw' :
-                      location.pathname === '/DO1' ? 'do1' :
                       location.pathname === '/' ? 'home' : 'home';
 
   // Redirect root based on auth status - retry multiple times to handle cookie timing.
@@ -543,6 +535,15 @@ function AppContent() {
         </PasswordGate>
       );
     }
+    // /plugins/create routes through the same studio gate — the legacy
+    // PluginCreator page is retired.
+    if (location.pathname.startsWith('/plugins/create')) {
+      return (
+        <PasswordGate routeName="Studio">
+          <StudioDev />
+        </PasswordGate>
+      );
+    }
     if (currentView === 'home') {
       return (
         <Dashboard
@@ -598,7 +599,6 @@ function AppContent() {
       const profileUsername = location.pathname.split('/')[2];
       return <PublicProfile username={profileUsername} />;
     }
-    if (currentView === 'do1') return <DO1 />;
     if (currentView === 'dashboard') {
       return (
         <div id="main-content">

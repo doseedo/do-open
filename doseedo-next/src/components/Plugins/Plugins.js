@@ -5,7 +5,6 @@ import { listMyProjects, deleteProject, loadProject, generateCode } from '../../
 import { listCreations, getCreation, toggleLike, toggleFavorite, recordDownload, forkCreation, getMyFavorites } from '../../services/communityAPI';
 import WebAudioDSPEngine from '../../audio/WebAudioDSPEngine';
 import styles from './Plugins.module.css';
-import PluginCreator from './PluginCreator/PluginCreator';
 
 // Client-side enrichment for known plugins (icons, colors, features, filter flags)
 const pluginMeta = {
@@ -398,13 +397,8 @@ const Plugins = () => {
 
   const pathParts = location.pathname.split('/').filter(Boolean);
   const isDownloadPage = pathParts[1] === 'download' && pathParts[2];
-  const isCreatePage = pathParts[1] === 'create';
   const downloadToken = isDownloadPage ? pathParts[2] : null;
-  const pluginSlug = !isDownloadPage && !isCreatePage && pathParts.length > 1 ? pathParts[1] : null;
-
-  if (isCreatePage) {
-    return <PluginCreator />;
-  }
+  const pluginSlug = !isDownloadPage && pathParts.length > 1 ? pathParts[1] : null;
 
   if (isDownloadPage) {
     return <DownloadPage token={downloadToken} />;
