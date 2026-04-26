@@ -138,9 +138,19 @@ export default function StudioDevMidi() {
   const canvasRef  = useRef(null);
   const wrapRef    = useRef(null);
   const [size,    setSize]    = useState({ w: 800, h: 400 });
-  const [pxPerSec,setPxPerSec]= useState(96);    // unified zoom — Y derives from X so cells stay square
+  const [pxPerSec,setPxPerSec]= useState(96);    // X zoom (px per second). Cell width.
+  // Independent Y zoom multiplier on top of the square-cell rowH. 1.0
+  // keeps cells square (the original look); arrow-key Up/Down lets the
+  // user squeeze rows without changing the X grid. Clamped at the
+  // rowH = max(12, ...) line so vertical can't collapse to nothing.
+  const [rowZoom, setRowZoom] = useState(1);
   const [scrollX, setScrollX] = useState(0);
   const [scrollY, setScrollY] = useState(0);
+  // Hover flag for the arrow-key zoom shortcuts. Set on mouseenter /
+  // unset on mouseleave on the canvas wrap. The keyboard listener
+  // is window-level (canvas isn't focusable) and gates on this flag
+  // so arrow keys outside the MIDI window still scroll the page.
+  const [hovering, setHovering] = useState(false);
   // Axis settings — placeholder UI for future custom quantization.
   // Defaults mirror the built-in behavior: Y = 2^(1/12) (semitone
   // spacing), X = 60/BPM (one beat per unit). Expressions are stored
@@ -369,9 +379,12 @@ export default function StudioDevMidi() {
   const cellSec = beatSec / subdivision;
   const snapTime = (t) => Math.round(t / cellSec) * cellSec;
 
-  // Row height derives from the cell width so every cell is a perfect
-  // square. Unified zoom: Ctrl-scroll adjusts pxPerSec; rowH follows.
-  const rowH = Math.max(12, Math.round(cellSec * pxPerSec));
+  // Row height derives from the cell width (square cells) and is then
+  // scaled by rowZoom — the user's independent Y multiplier. Default
+  // rowZoom = 1 keeps the original square-cell behavior; arrow-key
+  // Up/Down adjusts rowZoom so the keyboard rail can stretch/squeeze
+  // without touching the X grid.
+  const rowH = Math.max(12, Math.round(cellSec * pxPerSec * rowZoom));
 
   // ---- Coords ----
   const cfg = { pxPerSec, rowH, maxPitch, minPitch, scrollX, scrollY };
@@ -729,7 +742,7 @@ export default function StudioDevMidi() {
         let newSub = 1;
         while (newSub < 8 && (beatSec / newSub) * newPxPerSec > SUBDIVIDE_AT_PX * 2) newSub *= 2;
         const newCellSec = beatSec / newSub;
-        const newRowH = Math.max(12, Math.round(newCellSec * newPxPerSec));
+        const newRowH = Math.max(12, Math.round(newCellSec * newPxPerSec * rowZoom));
 
         // Logical anchor under the cursor BEFORE zoom.
         const t = (mx - KEYS_W) / pxPerSec + scrollX;
@@ -776,7 +789,7 @@ export default function StudioDevMidi() {
     // initial mount attaches nothing and silent-bails. (Symptom: scroll
     // zoom only worked after clicking the toolbar zoom buttons, which
     // changed pxPerSec and re-ran this effect.)
-  }, [pxPerSec, rowH, maxPitch, minPitch, size.h, scrollX, scrollY, beatSec, isScore, selectedTrack?.id]);
+  }, [pxPerSec, rowH, maxPitch, minPitch, size.h, scrollX, scrollY, beatSec, rowZoom, isScore, selectedTrack?.id]);
 
   // Delete / escape key
   useEffect(() => {
@@ -793,6 +806,40 @@ export default function StudioDevMidi() {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [notes, selected, commit]);
+
+  // Arrow-key zoom — only fires while the mouse is over the MIDI wrap
+  // and no notes are selected (so arrow keys don't fight any future
+  // note-nudge shortcut, and don't hijack page scroll when the user
+  // isn't looking at the editor). Up/Down adjust the Y zoom (rowZoom),
+  // Left/Right adjust the X zoom (pxPerSec). Step factor 1.15 per
+  // press — same feel as a single mouse-wheel notch at the new zoom
+  // sensitivity.
+  useEffect(() => {
+    if (!hovering || isScore) return;
+    if (selected.size > 0) return;
+    const STEP = 1.15;
+    const onKey = (e) => {
+      // Ignore when the user is typing into a field (axis input,
+      // lyric input, etc.) so editing remains undisturbed.
+      const tag = (e.target?.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setRowZoom((v) => Math.min(8, v * STEP));
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setRowZoom((v) => Math.max(0.25, v / STEP));
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setPxPerSec((v) => Math.min(800, v * STEP));
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setPxPerSec((v) => Math.max(20, v / STEP));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hovering, isScore, selected.size]);
 
   // ---- DRAW ----
   useEffect(() => {
@@ -1111,7 +1158,7 @@ export default function StudioDevMidi() {
           }}>Humanize</button>
         </div>
         <div className="sd-midi-group">
-          <button className="sd-midi-btn" onClick={() => { setScrollX(0); setScrollY(0); }}>Reset view</button>
+          <button className="sd-midi-btn" onClick={() => { setScrollX(0); setScrollY(0); setRowZoom(1); setPxPerSec(96); }}>Reset view</button>
           {f0Contour.length > 0 && !isScore && (
             <button
               className="sd-midi-btn sd-midi-danger"
@@ -1135,7 +1182,8 @@ export default function StudioDevMidi() {
       <div
         ref={wrapRef}
         className="sd-midi-canvas-wrap"
-        onMouseLeave={() => setHoverCell(null)}
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => { setHoverCell(null); setHovering(false); }}
       >
         {isScore && (
           <ScoreViewPane
