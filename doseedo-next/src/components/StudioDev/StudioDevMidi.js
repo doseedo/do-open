@@ -19,6 +19,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import midiPlayer from '../../utils/midiPlayer';
+import ScoreView from '../MIDIChart/ScoreView';
 
 // Safe expression evaluator for the axis settings. Allows arithmetic +
 // `BPM` / `SR` variables, converts `^` to `**`, returns NaN on parse
@@ -197,8 +198,57 @@ export default function StudioDevMidi() {
              || selectedTrack?.metadata?.instrument
              || selectedTrack?.name || '').toLowerCase();
   const trackColor = colorFor(type);
-  const isDrum = type.includes('drum') || type.includes('kick')
+  const trackIsDrum = type.includes('drum') || type.includes('kick')
                || type.includes('snare') || type.includes('hat') || type.includes('perc');
+  const trackIsVocal = type.includes('vocal') || type.includes('vox') || type.includes('lead')
+               || type.includes('lyric');
+
+  // ---- View mode tabs (4-up): piano | drum | lyrics | score ----
+  // Mirrors the legacy MIDIChart's chart-mode + roll-mode + vox toggles
+  // collapsed into a single mutually-exclusive switch:
+  //   piano  → standard 88-key piano roll
+  //   drum   → GM percussion lanes (35..59) with drum labels
+  //   lyrics → piano roll with per-note lyric overlay (writes n.lyric)
+  //   score  → VexFlow sheet music (read-only render of the same notes)
+  // Initial pick auto-derives from track type when the selected track
+  // changes, then stays sticky so manual tab clicks aren't reverted on
+  // re-render.
+  const [viewMode, setViewMode] = useState('piano');
+  const lastTrackIdRef = useRef(null);
+  useEffect(() => {
+    if (!selectedTrack) { lastTrackIdRef.current = null; return; }
+    if (lastTrackIdRef.current === selectedTrack.id) return;
+    lastTrackIdRef.current = selectedTrack.id;
+    if (trackIsDrum) setViewMode('drum');
+    else if (trackIsVocal) setViewMode('lyrics');
+    else setViewMode('piano');
+  }, [selectedTrack, trackIsDrum, trackIsVocal]);
+
+  // Drum-roll lane constraints follow the explicit tab choice now —
+  // drum tracks no longer force the GM-percussion grid unless the user
+  // is on the drum tab. This lets users pull up a piano roll on a drum
+  // track when they want to write tonal hits.
+  const isDrum = viewMode === 'drum';
+  const isLyrics = viewMode === 'lyrics';
+  const isScore = viewMode === 'score';
+
+  // ---- Cursor tools ----
+  // arrow → select-only (no new-note placement, no F0 drawing)
+  // block → default piano-roll behavior (place notes, drag, resize)
+  // pen   → F0 pitch-contour draw (continuous pitch, persisted to
+  //         midiData.f0Contour). When pen is engaged, mouse drags trace
+  //         a polyline that gets committed on release; the existing
+  //         contour stays visible on the canvas at all times.
+  const [tool, setTool] = useState('block');
+  const [f0Draft, setF0Draft] = useState(null);  // array while drawing, null otherwise
+
+  const f0Contour = useMemo(() => {
+    const md = selectedTrack?.midiData || selectedTrack?.metadata?.midiData;
+    const raw = md?.f0Contour;
+    return Array.isArray(raw)
+      ? raw.filter((p) => Number.isFinite(p?.time) && Number.isFinite(p?.note))
+      : [];
+  }, [selectedTrack]);
 
   // Pitch viewport — HARD-LOCKED to the full keyboard range (or the GM
   // drum range for drum tracks). Previously we tried to "fit" the view
@@ -232,7 +282,7 @@ export default function StudioDevMidi() {
     ro.observe(c);
     measure();
     return () => ro.disconnect();
-  }, []);
+  }, [isScore]);
 
   // ---- Writeback ----
   const commit = useCallback((nextNotes) => {
@@ -248,6 +298,23 @@ export default function StudioDevMidi() {
       },
     });
   }, [dispatch, selectedTrack, busIdForSelected, state.bpm]);
+
+  // F0 contour writeback. Reuses UPDATE_TRACK_MIDI_DATA so the contour
+  // travels with the rest of the MIDI payload (one persistence path,
+  // one reducer). Notes are preserved verbatim — only f0Contour
+  // changes. Pass [] to clear.
+  const commitF0 = useCallback((nextContour) => {
+    if (!selectedTrack || !busIdForSelected) return;
+    const md = selectedTrack?.midiData || selectedTrack?.metadata?.midiData || {};
+    dispatch({
+      type: 'UPDATE_TRACK_MIDI_DATA',
+      payload: {
+        trackId: selectedTrack.id,
+        busId: busIdForSelected,
+        midiData: { ...md, notes: md.notes || [], f0Contour: nextContour },
+      },
+    });
+  }, [dispatch, selectedTrack, busIdForSelected]);
 
   // ---- Grid timing ----
   // Must come BEFORE cfg/coord helpers below — cfg reads rowH, which
@@ -317,7 +384,54 @@ export default function StudioDevMidi() {
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     if (mx < KEYS_W || my < RULER_H) return;
     e.preventDefault();
+
+    // Pen tool — start an F0 contour. Continuous pitch (not snapped to
+    // semitones) is read off the y-coord using the same maxPitch/rowH
+    // axis the notes use, so the polyline lands exactly where the cursor
+    // is. The draft is committed to midiData.f0Contour on mouseup.
+    if (tool === 'pen') {
+      const t = Math.max(0, timeAtX(mx));
+      const pitchF = maxPitch - (my - RULER_H + scrollY) / rowH;
+      const seed = [{ time: t, note: pitchF }];
+      setF0Draft(seed);
+      setDrag({
+        mode: 'f0',
+        startClientX: e.clientX, startClientY: e.clientY,
+        moved: true, // pen always counts as a draw, even single click
+      });
+      return;
+    }
+
     const hit = hitTestNote(notes, mx, my, cfg);
+
+    // Arrow tool — select-only. Hit a note → select it; click empty →
+    // clear the selection. No new notes get placed, no resize/move
+    // is started. Selection still routes through the same Set + drag
+    // contract so Shift-add and per-note auditioning stay consistent.
+    if (tool === 'arrow') {
+      if (hit) {
+        let nextSel;
+        if (e.shiftKey) {
+          nextSel = new Set(selected);
+          if (nextSel.has(hit.idx)) nextSel.delete(hit.idx); else nextSel.add(hit.idx);
+        } else {
+          nextSel = new Set([hit.idx]);
+        }
+        setSelected(nextSel);
+        midiPlayer.resume().then(() => {
+          if (isDrum) midiPlayer.playDrum(hit.note.note, 0.7);
+          else midiPlayer.playNote(hit.note.note, 0.7, Math.min(0.6, hit.note.duration || 0.3), 0, {
+            span: hit.note.pitchSpan || 1,
+            bend: hit.note.bend || 0,
+            curve: hit.note.curve || 0,
+          });
+        }).catch(() => {});
+      } else {
+        setSelected(new Set());
+      }
+      return;
+    }
+
     if (hit) {
       let nextSel;
       if (e.shiftKey) {
@@ -397,6 +511,27 @@ export default function StudioDevMidi() {
     // click' complaint).
     const DRAG_THRESHOLD_PX = 3;
     const onMove = (e) => {
+      // Pen tool — append continuous-pitch points to the f0 draft.
+      // Throttled by the same heuristic the legacy MIDIChart used:
+      // skip points that are too close to the previous one in either
+      // axis (<5 ms / <0.1 semitones) so the polyline stays light.
+      if (drag.mode === 'f0') {
+        const c = canvasRef.current; if (!c) return;
+        const r = c.getBoundingClientRect();
+        const mx = e.clientX - r.left, my = e.clientY - r.top;
+        if (mx < KEYS_W || my < RULER_H) return;
+        const t = Math.max(0, (mx - KEYS_W) / pxPerSec + scrollX);
+        const pitchF = maxPitch - (my - RULER_H + scrollY) / rowH;
+        setF0Draft((prev) => {
+          if (!prev) return [{ time: t, note: pitchF }];
+          const last = prev[prev.length - 1];
+          if (last && Math.abs(last.time - t) < 0.005 && Math.abs(last.note - pitchF) < 0.1) {
+            return prev;
+          }
+          return [...prev, { time: t, note: pitchF }];
+        });
+        return;
+      }
       const dxPx = e.clientX - drag.startClientX;
       const dyPx = e.clientY - drag.startClientY;
       if (!drag.moved && Math.abs(dxPx) < DRAG_THRESHOLD_PX && Math.abs(dyPx) < DRAG_THRESHOLD_PX) return;
@@ -451,9 +586,20 @@ export default function StudioDevMidi() {
       commit(nxt);
     };
     const onUp = () => {
+      // Pen tool — finalize the F0 draft into the persisted contour.
+      // Empty / 1-point drafts are dropped so accidental clicks don't
+      // overwrite an existing contour with a stub.
+      if (drag.mode === 'f0') {
+        setF0Draft((draft) => {
+          if (draft && draft.length > 1) commitF0(draft);
+          return null;
+        });
+        setDrag(null);
+        return;
+      }
       // On release, remember the last-edited note's duration so the
       // next empty-cell click creates a note the same size.
-      if (drag.moved && drag.indices.length) {
+      if (drag.moved && drag.indices && drag.indices.length) {
         const last = drag.indices[drag.indices.length - 1];
         // Read from current notes; after commit the track state carries
         // the new duration. Fall back to origNotes if index shifted.
@@ -468,7 +614,7 @@ export default function StudioDevMidi() {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [drag, pxPerSec, rowH, minPitch, maxPitch, commit, notes]);
+  }, [drag, pxPerSec, rowH, minPitch, maxPitch, scrollX, scrollY, commit, commitF0, notes]);
 
   const onMouseMoveCanvas = (e) => {
     // Lightweight — cursor read-out + cell highlight + resize cursor.
@@ -488,17 +634,25 @@ export default function StudioDevMidi() {
     } else {
       setHoverCell(null);
     }
-    // Swap mouse cursor to ew-resize when hovering an edge so users see
-    // the grab affordance before clicking. Falls back to crosshair on
-    // empty cells and default 'grab' on note bodies.
+    // Swap mouse cursor based on the active tool. Block keeps the
+    // edge/grab/crosshair affordances; arrow forces a pointer (no draw
+    // intent); pen forces a crosshair so users feel the F0-draw mode.
     if (!drag) {
       const c = canvasRef.current;
-      const hit = hitTestNote(notes, mx, my, cfg);
-      c.style.cursor = hit
-        ? (hit.edge === 'left' || hit.edge === 'right' ? 'ew-resize'
-          : hit.edge === 'top' || hit.edge === 'bottom' ? 'ns-resize'
-          : 'grab')
-        : (mx < KEYS_W || my < RULER_H ? 'default' : 'crosshair');
+      const overGutter = mx < KEYS_W || my < RULER_H;
+      if (tool === 'pen') {
+        c.style.cursor = overGutter ? 'default' : 'crosshair';
+      } else if (tool === 'arrow') {
+        const hit = hitTestNote(notes, mx, my, cfg);
+        c.style.cursor = overGutter ? 'default' : (hit ? 'pointer' : 'default');
+      } else {
+        const hit = hitTestNote(notes, mx, my, cfg);
+        c.style.cursor = hit
+          ? (hit.edge === 'left' || hit.edge === 'right' ? 'ew-resize'
+            : hit.edge === 'top' || hit.edge === 'bottom' ? 'ns-resize'
+            : 'grab')
+          : (overGutter ? 'default' : 'crosshair');
+      }
     }
   };
 
@@ -524,6 +678,10 @@ export default function StudioDevMidi() {
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
+    // Score view scrolls natively (it's an SVG inside a scrollable div);
+    // suppressing wheel here would steal that scroll. Skip the listener
+    // entirely and let the browser handle the score pane.
+    if (isScore) return;
     const onWheelNative = (e) => {
       if (e.ctrlKey || e.metaKey) {
         // Zoom-to-cursor: the point under the cursor stays anchored
@@ -606,7 +764,7 @@ export default function StudioDevMidi() {
     };
     el.addEventListener('wheel', onWheelNative, { passive: false });
     return () => el.removeEventListener('wheel', onWheelNative);
-  }, [pxPerSec, rowH, maxPitch, minPitch, size.h, scrollX, scrollY, beatSec]);
+  }, [pxPerSec, rowH, maxPitch, minPitch, size.h, scrollX, scrollY, beatSec, isScore]);
 
   // Delete / escape key
   useEffect(() => {
@@ -790,13 +948,50 @@ export default function StudioDevMidi() {
       }
     }
 
+    // F0 contour — draw the polyline + control dots OVER the notes so
+    // the pitch trajectory stays readable. Draws f0Draft while the
+    // user is mid-pen-stroke, otherwise the persisted contour. Pitch
+    // is continuous so the y math uses fractional rows directly.
+    const contourToDraw = f0Draft || f0Contour;
+    if (contourToDraw && contourToDraw.length) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(KEYS_W, RULER_H, W - KEYS_W, H - RULER_H);
+      ctx.clip();
+      ctx.strokeStyle = C.accentDeep;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      contourToDraw.forEach((pt, i) => {
+        const cx = KEYS_W + (pt.time - scrollX) * pxPerSec;
+        const cy = RULER_H + (maxPitch - pt.note) * rowH - scrollY;
+        if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+      });
+      ctx.stroke();
+      // Dots only shown for persisted contour (not the live draft) so
+      // dragging stays visually quiet.
+      if (!f0Draft) {
+        ctx.fillStyle = C.accentDeep;
+        for (let i = 0; i < contourToDraw.length; i += Math.max(1, Math.floor(contourToDraw.length / 200))) {
+          const pt = contourToDraw[i];
+          const cx = KEYS_W + (pt.time - scrollX) * pxPerSec;
+          const cy = RULER_H + (maxPitch - pt.note) * rowH - scrollY;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
     // Playhead
     const px = KEYS_W + ((state.playheadPosition || 0) - scrollX) * pxPerSec;
     if (px >= KEYS_W && px < W) {
       ctx.fillStyle = C.accent;
       ctx.fillRect(px, 0, 1, H);
     }
-  }, [size, notes, selected, trackColor, isDrum, pxPerSec, rowH, scrollX, scrollY, maxPitch, minPitch, state.bpm, state.playheadPosition, hoverCell, drag]);
+  }, [size, notes, selected, trackColor, isDrum, pxPerSec, rowH, scrollX, scrollY, maxPitch, minPitch, state.bpm, state.playheadPosition, hoverCell, drag, f0Contour, f0Draft]);
 
   // Empty state — uses the workbench .wb-canvas / .wb-empty block verbatim
   // so the font stack (Inter 28/600 title, Inter 13 body, mono status pill)
@@ -827,9 +1022,52 @@ export default function StudioDevMidi() {
           <span className="sd-midi-color" style={{ background: trackColor }} />
           <span className="sd-midi-name">{selectedTrack.name || selectedTrack.id}</span>
           <span className="sd-midi-meta">
-            {notes.length} notes · {selected.size ? `${selected.size} selected · ` : ''}{isDrum ? 'drum roll' : 'piano roll'}
+            {notes.length} notes{selected.size ? ` · ${selected.size} selected` : ''}
           </span>
         </div>
+        <div className="sd-midi-tabs" role="tablist" aria-label="MIDI view mode">
+          {[
+            { id: 'piano',  label: 'Piano',  icon: 'fa-keyboard' },
+            { id: 'drum',   label: 'Drum',   icon: 'fa-drum' },
+            { id: 'lyrics', label: 'Lyrics', icon: 'fa-microphone' },
+            { id: 'score',  label: 'Score',  icon: 'fa-music' },
+          ].map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={viewMode === t.id}
+              className={`sd-midi-tab ${viewMode === t.id ? 'sd-midi-tab--active' : ''}`}
+              onClick={() => setViewMode(t.id)}
+              title={`${t.label} view`}
+            >
+              <i className={`fa-solid ${t.icon}`} />
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </div>
+        {/* Cursor tools — arrow / block / pen. Hidden in score mode
+         * (read-only sheet music). Pen draws an F0 pitch contour over
+         * the piano roll; arrow disables note placement so users can
+         * marquee/select without accidentally creating notes. */}
+        {!isScore && (
+          <div className="sd-midi-tools" role="toolbar" aria-label="Cursor tool">
+            {[
+              { id: 'arrow', icon: 'fa-arrow-pointer', label: 'Arrow', hint: 'Select only' },
+              { id: 'block', icon: 'fa-square',        label: 'Block', hint: 'Place + edit notes' },
+              { id: 'pen',   icon: 'fa-pen',           label: 'Pen',   hint: 'Draw F0 pitch contour' },
+            ].map((t) => (
+              <button
+                key={t.id}
+                className={`sd-midi-tool ${tool === t.id ? 'sd-midi-tool--active' : ''}`}
+                onClick={() => setTool(t.id)}
+                title={`${t.label} — ${t.hint}`}
+                aria-pressed={tool === t.id}
+              >
+                <i className={`fa-solid ${t.icon}`} />
+              </button>
+            ))}
+          </div>
+        )}
         <div className="sd-midi-spacer" />
         <div className="sd-midi-group">
           <span className="sd-midi-kv-k">Zoom</span>
@@ -862,6 +1100,13 @@ export default function StudioDevMidi() {
         </div>
         <div className="sd-midi-group">
           <button className="sd-midi-btn" onClick={() => { setScrollX(0); setScrollY(0); }}>Reset view</button>
+          {f0Contour.length > 0 && !isScore && (
+            <button
+              className="sd-midi-btn sd-midi-danger"
+              onClick={() => { if (window.confirm('Clear F0 contour?')) commitF0([]); }}
+              title={`Clear F0 contour (${f0Contour.length} pts)`}
+            >Clear F0</button>
+          )}
           <button className="sd-midi-btn sd-midi-danger" onClick={() => {
             if (!selected.size) { if (window.confirm('Clear all notes?')) commit([]); return; }
             const nxt = notes.filter((_, i) => !selected.has(i));
@@ -872,12 +1117,21 @@ export default function StudioDevMidi() {
 
       {/* Canvas area — wheel is attached natively via useEffect above
        * with { passive: false } so ctrl-scroll zoom can preventDefault
-       * the page's own scroll. */}
+       * the page's own scroll. In score mode the canvas + overlays are
+       * replaced by a VexFlow render of the same notes; the wrap stays
+       * so wheel/zoom state survives switching tabs. */}
       <div
         ref={wrapRef}
         className="sd-midi-canvas-wrap"
         onMouseLeave={() => setHoverCell(null)}
       >
+        {isScore && (
+          <ScoreViewPane
+            notes={notes}
+            bpm={state.bpm || 120}
+          />
+        )}
+        {!isScore && (
         <canvas
           ref={canvasRef}
           onMouseDown={onMouseDown}
@@ -885,6 +1139,7 @@ export default function StudioDevMidi() {
           onDoubleClick={onDoubleClick}
           className="sd-midi-canvas"
         />
+        )}
         {/* Per-note bend + curve sliders — appear when the selected
          * note spans multiple rows. Vertical slider (right of note):
          * bend amount 0..1. Horizontal slider (under note): curve
@@ -893,7 +1148,7 @@ export default function StudioDevMidi() {
          *   pitchOffset(t) = bend * (span-1)/2 * (2 * (t/dur)^p - 1)
          *                    where p = 4^curve
          */}
-        {(() => {
+        {!isScore && (() => {
           let idx = -1;
           for (const i of selected) {
             const n = notes[i];
@@ -939,10 +1194,49 @@ export default function StudioDevMidi() {
             </>
           );
         })()}
+        {/* Lyrics overlay — when in `lyrics` mode, every selected note
+         * gets a small text input anchored to its on-canvas rect. Typing
+         * commits to `n.lyric` on blur (also drawn back into the note
+         * body by the canvas paint loop, so the input + canvas always
+         * agree). Only shown for the piano/drum/lyrics tabs (canvas-
+         * coord based — no canvas, no overlay). */}
+        {isLyrics && !isScore && [...selected].slice(0, 16).map((idx) => {
+          const n = notes[idx];
+          if (!n) return null;
+          const span = Math.max(1, n.pitchSpan || 1);
+          const topPitch = n.note + span - 1;
+          const x = KEYS_W + (n.time - scrollX) * pxPerSec;
+          const y = RULER_H + (maxPitch - topPitch) * rowH - scrollY;
+          const w = Math.max(40, n.duration * pxPerSec);
+          const h = span * rowH - 2;
+          if (x + w < KEYS_W || x > size.w || y + h < RULER_H || y > size.h) return null;
+          return (
+            <input
+              key={`lyric-${idx}`}
+              className="sd-midi-lyric-input"
+              style={{ left: x + 2, top: y + 1, width: w - 4, height: h - 2 }}
+              defaultValue={n.lyric || ''}
+              placeholder="lyric"
+              onMouseDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onBlur={(e) => {
+                const v = e.target.value;
+                if ((n.lyric || '') === v) return;
+                const nxt = notes.map((m, i) => i === idx ? { ...m, lyric: v || undefined } : m);
+                commit(nxt);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.target.blur();
+                if (e.key === 'Escape') { e.target.value = n.lyric || ''; e.target.blur(); }
+              }}
+            />
+          );
+        })}
         {/* Axis-settings gear — top-left of the canvas. Opens a panel
          * where the user edits X / Y axis expressions. Expression
          * evaluation is a follow-up; for now the fields just store
          * strings and the panel is purely UI. */}
+        {!isScore && (
         <button
           className="sd-midi-axis-btn"
           onClick={() => setAxisOpen((v) => !v)}
@@ -950,7 +1244,8 @@ export default function StudioDevMidi() {
         >
           <i className="fa-solid fa-sliders" />
         </button>
-        {axisOpen && (
+        )}
+        {!isScore && axisOpen && (
           <div className="sd-midi-axis-panel" onClick={(e) => e.stopPropagation()}>
             <div className="sd-midi-axis-head">
               <span className="sd-midi-kv-k">Axis settings</span>
@@ -1001,6 +1296,40 @@ export default function StudioDevMidi() {
         <span className="sd-midi-kv-k">Bars</span>
         <span className="sd-midi-kv-v">{totalSec.toFixed(1)}s · {(state.bpm || 120).toFixed(0)} bpm</span>
       </div>
+    </div>
+  );
+}
+
+// ScoreViewPane — measures the wrap and renders the shared ScoreView at
+// the right size. ScoreView wants beats; our notes carry seconds, so we
+// convert with the active bpm. Drum tracks would render as percussion
+// hits on the b/4 ledger line — fine for now; a follow-up could swap to
+// a one-line drum staff when the user picks a drum track.
+function ScoreViewPane({ notes, bpm }) {
+  const wrapRef = useRef(null);
+  const [size, setSize] = useState({ w: 900, h: 480 });
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => setSize({
+      w: Math.max(320, el.clientWidth - 24),
+      h: Math.max(240, el.clientHeight - 24),
+    });
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, []);
+  const beatsPerSec = (bpm || 120) / 60;
+  const scoreNotes = useMemo(() => (notes || []).map((n) => ({
+    note: n.note,
+    time: n.time * beatsPerSec,
+    duration: Math.max(0.0625, n.duration * beatsPerSec),
+    velocity: n.velocity,
+  })), [notes, beatsPerSec]);
+  return (
+    <div ref={wrapRef} className="sd-midi-score-wrap">
+      <ScoreView notes={scoreNotes} tempo={bpm} width={size.w} height={size.h} />
     </div>
   );
 }

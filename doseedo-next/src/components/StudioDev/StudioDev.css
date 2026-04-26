@@ -1614,6 +1614,68 @@
 }
 .sd-midi-spacer { flex: 1; }
 .sd-midi-group { display: flex; align-items: center; gap: 4px; }
+
+/* View-mode tabs (piano | drum | lyrics | score) sit between the track
+ * title and the toolbar groups. Active tab gets the warm accent
+ * underline used elsewhere in the workbench tab strip. */
+.sd-midi-tabs {
+  display: flex; align-items: stretch;
+  height: 100%;
+  margin-left: 4px;
+  border-left: 1px solid var(--midi-rule);
+}
+.sd-midi-tab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 12px; height: 100%;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--midi-rule);
+  border-bottom: 2px solid transparent;
+  color: var(--midi-ink-soft);
+  font-family: var(--wb-font-mono);
+  font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase;
+  cursor: pointer;
+}
+.sd-midi-tab > i { font-size: 11px; opacity: 0.85; }
+.sd-midi-tab:hover { color: var(--midi-ink); background: var(--midi-bg); }
+.sd-midi-tab--active {
+  color: var(--midi-ink);
+  background: var(--midi-bg);
+  border-bottom-color: var(--midi-accent);
+}
+
+/* Cursor-tool palette: arrow / block / pen. Sits next to the view tabs.
+ * Square 24px buttons styled like a hardware tool selector — selected
+ * tool inverts (ink fill, paper glyph) so the active mode reads at a
+ * glance. */
+.sd-midi-tools {
+  display: flex; align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--midi-rule);
+  height: 100%;
+}
+.sd-midi-tool {
+  display: grid; place-items: center;
+  width: 24px; height: 24px;
+  background: transparent;
+  border: 1px solid var(--midi-rule-strong);
+  border-radius: 0;
+  color: var(--midi-ink-soft);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+.sd-midi-tool:hover {
+  color: var(--midi-ink);
+  background: var(--midi-surf2);
+}
+.sd-midi-tool--active {
+  color: var(--midi-bg);
+  background: var(--midi-ink);
+  border-color: var(--midi-ink);
+}
 .sd-midi-btn {
   background: transparent; color: var(--midi-ink);
   border: 1px solid var(--midi-rule-strong);
@@ -1809,6 +1871,45 @@ input[type=range].sd-midi-note-bend::-moz-range-thumb {
   display: flex; align-items: center; gap: 10px; padding: 0 12px;
   background: var(--midi-surf);
   border-top: 1px solid var(--midi-rule);
+}
+
+/* Per-note lyric input — anchored over the canvas at the note's rect
+ * when the piano roll is in `lyrics` mode. Beat the legacy
+ * input[type=text] rule in original-style5.css with explicit overrides. */
+input[type=text].sd-midi-lyric-input {
+  position: absolute;
+  margin: 0;
+  padding: 1px 4px;
+  background: rgba(232, 230, 225, 0.92);
+  border: 1px solid var(--midi-ink);
+  border-radius: 2px;
+  color: var(--midi-ink);
+  font-family: var(--wb-font-sans);
+  font-size: 10px;
+  line-height: 1;
+  z-index: 6;
+  outline: none;
+  pointer-events: auto;
+}
+input[type=text].sd-midi-lyric-input::placeholder {
+  color: var(--midi-ink-mute);
+  font-style: italic;
+}
+
+/* Score (sheet music) view — fills the canvas wrap with a centered
+ * VexFlow render. Background matches the piano roll paper so toggling
+ * tabs feels continuous. */
+.sd-midi-score-wrap {
+  position: absolute; inset: 0;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 12px;
+  background: var(--midi-bg);
+  overflow: auto;
+}
+.sd-midi-score-wrap > div {
+  background: var(--midi-bg) !important;
+  color: var(--midi-ink) !important;
+  border: 1px solid var(--midi-rule) !important;
 }
 
 /* ---------- Waveform view ---------- */
