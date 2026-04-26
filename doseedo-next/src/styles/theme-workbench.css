@@ -223,8 +223,16 @@ body.workbench-theme {
   font-family: var(--wb-font-mono);
 }
 
-:where(body.workbench-theme) button:hover {
-  color: var(--wb-ink);
+/* Hover lives inside :where() too so its specificity stays at (0,0,0).
+ * Without the wrap, `button:hover` weighs (0,1,1) and beats every
+ * class-module .btnPrimary (0,1,0) — which set `color: var(--wb-bg)`
+ * (cream) on a `background: var(--wb-ink)` (near-black) button. The
+ * old hover rule then slammed `color: var(--wb-ink)` (black) on top
+ * the moment the user mouseovered, producing black-on-black text on
+ * every primary button across /models, /dashboard, /projects, etc.
+ * Color line dropped too — the base button rule already sets it, and
+ * holding the override here was the whole problem. */
+:where(body.workbench-theme button:hover) {
   background-color: var(--wb-surface-2);
 }
 
