@@ -282,7 +282,12 @@ export default function StudioDevMidi() {
     ro.observe(c);
     measure();
     return () => ro.disconnect();
-  }, [isScore]);
+    // selectedTrack?.id is included so the observer re-attaches the
+    // first time a track gets picked. The component returns an empty-
+    // state <div> with no canvas when no track is selected, so the
+    // initial mount sees canvasRef.current === null and bails — and
+    // without this dep nothing would trigger a second attach.
+  }, [isScore, selectedTrack?.id]);
 
   // ---- Writeback ----
   const commit = useCallback((nextNotes) => {
@@ -764,7 +769,13 @@ export default function StudioDevMidi() {
     };
     el.addEventListener('wheel', onWheelNative, { passive: false });
     return () => el.removeEventListener('wheel', onWheelNative);
-  }, [pxPerSec, rowH, maxPitch, minPitch, size.h, scrollX, scrollY, beatSec, isScore]);
+    // selectedTrack?.id pulls this effect back into life when the
+    // user picks the first track — until then the empty-state branch
+    // returns a different DOM tree with no wrapRef target, so the
+    // initial mount attaches nothing and silent-bails. (Symptom: scroll
+    // zoom only worked after clicking the toolbar zoom buttons, which
+    // changed pxPerSec and re-ran this effect.)
+  }, [pxPerSec, rowH, maxPitch, minPitch, size.h, scrollX, scrollY, beatSec, isScore, selectedTrack?.id]);
 
   // Delete / escape key
   useEffect(() => {
