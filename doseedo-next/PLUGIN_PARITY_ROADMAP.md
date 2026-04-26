@@ -135,34 +135,38 @@ harness: **3–5 weeks of focused calibration** (1 engineer).
 
 ### Tier 2 — needs new DSP nodes
 
-Each row is a small R-round (worklet + builder + integration doc + ≥1
-mapping). Estimated 1–3 weeks per row.
+DSP-round status: **R13 — 19 plugins shipped 2026-04-25** (one parallel-agent
+run, see `INTEGRATION_R13.md`). Every Tier-2 row except Mastering Assistant
+now has a builder + worklet + topology config + integration doc + tests
+landed. Status flipped 🔴→🟡 — DSP exists, calibration not started.
 
-| Plugin | Status | New nodes needed |
-|---|---|---|
-| ChromaVerb (full algorithm set) | 🔴 | `fdn_smooth`, `fdn_strange`, `fdn_dense` — variants beyond R9's 4 algos |
-| Space Designer | 🔴 | `convolution_sd` — IR truncation, decay envelope, EQ, length scaling on top of R1 convolution |
-| Pitch Correction | 🔴 | `pitch_correct` — formant-preserving PSOLA + scale-snap quantizer |
-| Vocoder | 🔴 | `vocoder` — analysis filter bank + carrier osc + N-band envelope routing |
-| Vintage EQ Collection | 🔴 | passive LCR models for 1073, API (R4 has Pultec already) |
-| Pedalboard | 🔴 | 24 stomp models — most fit R2/R3/R4 once each is calibrated as a sub-node |
-| Amp Designer | 🔴 | composite: R2 preamp + R3 transformer + R3 power supply + cab IR loader |
-| Bass Amp Designer | 🔴 | composite, similar to Amp Designer |
-| Vintage Amp Modeling | 🔴 | composite, similar |
-| Match EQ | 🔴 | `match_eq` — long-FFT spectrum matching + smoothing + render mode |
-| Spectral Gate | 🔴 | `spectral_gate` — per-band threshold (R5 spectral foundation) |
-| Enveloper | 🔴 | `enveloper` — transient shaper (attack/sustain) |
-| Adaptive Limiter | 🔴 | `adaptive_limiter` — multi-stage limiting with adaptive release |
-| Multipressor | 🔴 | `multipressor` — 4-band parallel compressor (use R8 sidechain × 4) |
-| DeEsser 2 | 🔴 | `deesser` — dynamic peaking EQ |
-| Modulation Delay | 🔴 | tape-style chorus/flanger combo |
-| Ringshifter | 🔴 | `ring_shift` — ring mod + freq shift |
-| Phase Distortion | 🔴 | `phase_distortion` — Casio-style PD osc |
-| ESS (Enhanced Stereo Spread) | 🔴 | larger M/S manipulation |
-| Mastering Assistant | ⚫️ | ML-driven; ship as offline-only |
+| Plugin | Status | New nodes needed | INTEGRATION doc |
+|---|---|---|---|
+| ChromaVerb (full algorithm set) | 🟡 | `fdn_smooth`, `fdn_strange`, `fdn_dense` — variants beyond R9's 4 algos | `INTEGRATION_R13_CHROMAVERB.md` |
+| Space Designer | 🟡 | `convolution_sd` — IR truncation, decay envelope, EQ, length scaling on top of R1 convolution | `INTEGRATION_R13_SPACE_DESIGNER.md` |
+| Pitch Correction | 🟡 | `pitch_correct` — formant-preserving PSOLA + scale-snap quantizer | `INTEGRATION_R13_PITCH_CORRECTION.md` |
+| Vocoder | 🟡 | `vocoder` — analysis filter bank + carrier osc + N-band envelope routing | `INTEGRATION_R13_VOCODER.md` |
+| Vintage EQ Collection | 🟡 | passive LCR models for 1073, API (R4 has Pultec already) | `INTEGRATION_R13_VINTAGE_EQ.md` |
+| Pedalboard | 🟡 | 24 stomp models — most fit R2/R3/R4 once each is calibrated as a sub-node | `INTEGRATION_R13_PEDALBOARD.md` |
+| Amp Designer | 🟡 | composite: R2 preamp + R3 transformer + R3 power supply + cab IR loader | `INTEGRATION_R13_AMP_DESIGNER.md` |
+| Bass Amp Designer | 🟡 | composite, similar to Amp Designer | `INTEGRATION_R13_BASS_AMP_DESIGNER.md` |
+| Vintage Amp Modeling | 🟡 | composite, similar | `INTEGRATION_R13_VINTAGE_AMP_MODELING.md` |
+| Match EQ | 🟡 | `match_eq` — long-FFT spectrum matching + smoothing + render mode | `INTEGRATION_R13_MATCH_EQ.md` |
+| Spectral Gate | 🟡 | `spectral_gate` — per-band threshold (R5 spectral foundation) | `INTEGRATION_R13_SPECTRAL_GATE.md` |
+| Enveloper | 🟡 | `enveloper` — transient shaper (attack/sustain) | `INTEGRATION_R13_ENVELOPER.md` |
+| Adaptive Limiter | 🟡 | `adaptive_limiter` — multi-stage limiting with adaptive release | `INTEGRATION_R13_ADAPTIVE_LIMITER.md` |
+| Multipressor | 🟡 | `multipressor` — 4-band parallel compressor (LR4 crossovers) | `INTEGRATION_R13_MULTIPRESSOR.md` |
+| DeEsser 2 | 🟡 | `deesser` — dynamic peaking EQ | `INTEGRATION_R13_DEESSER.md` |
+| Modulation Delay | 🟡 | `modulation_delay` — tape-style chorus/flanger combo | `INTEGRATION_R13_MODULATION_DELAY.md` |
+| Ringshifter | 🟡 | `ring_shift` — ring mod + Hilbert frequency shift | `INTEGRATION_R13_RINGSHIFTER.md` |
+| Phase Distortion | 🟡 | `phase_distortion` — Casio-style PD curves as effect | `INTEGRATION_R13_PHASE_DISTORTION.md` |
+| ESS (Enhanced Stereo Spread) | 🟡 | `ess_stereo_spread` — multiband M/S manipulation | `INTEGRATION_R13_ESS.md` |
+| Mastering Assistant | ⚫️ | ML-driven; ship as offline-only | — |
 
-**Tier 2 total:** ~20 plugins / DSP rounds. Realistic completion:
-**5–6 months** (1 DSP engineer, full-time).
+**Tier 2 status:** **19 / 20 DSP rounds landed** in one R13 burst (2026-04-25).
+Mastering Assistant remains out of scope per the original plan. Calibration
+(R10 harness against Logic) is the next step per row — null-diff fits + R12
+golden tests close the loop to 🟢 shipped.
 
 ### Tier 3 — instruments (months each)
 
@@ -197,6 +201,33 @@ own dedicated project).
 ## Infrastructure that must scale alongside
 
 These are blockers / leverage multipliers — invest before plugin #20.
+
+### 0. doo_hook IPC stability (✅ 2026-04-25)
+
+The Logic-side IPC was upgraded the same day to make calibration runs
+practical without manual intervention:
+
+- **Self-healing socket.** `doo_hook.dylib`'s serverThread now uses
+  `select(timeout=1s)` instead of a blocking `accept()`, plus a
+  `stat()` check on `/tmp/doo_live.sock` each loop. If the path
+  vanishes (Python re-injection rm'd it, system /tmp cleanup,
+  external admin), the dylib re-binds via `_bindAndListen()` within
+  ~0.5s. **No more "kill Logic + reopen project" cycles.** Stress-
+  tested 5x rm-then-recover, all healed in ≤0.5s.
+- **Multi-threaded server.** Each connection is dispatched to the
+  global concurrent queue, so a long-running command (a 30s bounce,
+  a `revert_document`) doesn't block ping/status checks from other
+  callers. Verified by firing 5 concurrent `ping`s during a bounce —
+  all responded in 1-27 ms.
+- **`safe_malloc_size` helper.** Sonoma's caulk allocator's
+  `malloc_size` segfaults on non-heap pointers. Wrapped via
+  bound + alignment + `malloc_zone_from_ptr` checks. Applied to
+  every place we walk a C++ blob from Logic for ObjC isa-matching
+  (the original crash that derailed half a session).
+
+These changes also removed the python-side blanket
+`unlink(/tmp/doo_live.sock)` before `inject_hook` — that unlink was
+actively breaking still-alive hooks during reconnect attempts.
 
 ### 1. Auto-driver calibration harness (✅ landed 2026-04-25)
 

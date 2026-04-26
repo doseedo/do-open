@@ -18,6 +18,25 @@ import r4Builders from './builders/r4.js';
 import r5Builders from './builders/r5.js';
 import { R8_BUILDERS, ensureR8WorkletsLoaded } from './builders/r8.js';
 import r9Builders from './builders/r9.js';
+import r13ChromaverbBuilders from './builders/r13_chromaverb.js';
+import r13SpaceDesignerBuilders from './builders/r13_space_designer.js';
+import r13PitchCorrectBuilders from './builders/r13_pitch_correct.js';
+import r13VocoderBuilders from './builders/r13_vocoder.js';
+import r13EnveloperBuilders from './builders/r13_enveloper.js';
+import r13AmpDesignerBuilders from './builders/r13_amp_designer.js';
+import r13VintageEQBuilders from './builders/r13_vintage_eq.js';
+import r13PedalboardBuilders from './builders/r13_pedalboard.js';
+import r13SpectralGateBuilders from './builders/r13_spectral_gate.js';
+import r13MatchEQBuilders from './builders/r13_match_eq.js';
+import r13BassAmpBuilders from './builders/r13_bass_amp_designer.js';
+import r13VintageAmpBuilders from './builders/r13_vintage_amp_modeling.js';
+import r13ModulationDelayBuilders from './builders/r13_modulation_delay.js';
+import r13AdaptiveLimiterBuilders from './builders/r13_adaptive_limiter.js';
+import r13RingshifterBuilders from './builders/r13_ringshifter.js';
+import r13DeesserBuilders from './builders/r13_deesser.js';
+import r13PhaseDistortionBuilders from './builders/r13_phase_distortion.js';
+import r13MultipressorBuilders from './builders/r13_multipressor.js';
+import r13EssBuilders from './builders/r13_ess.js';
 import ModRouter from './ModRouter.js';
 import VoiceManager from './VoiceManager.js';
 import MidiInput from './MidiInput.js';
@@ -865,6 +884,26 @@ const NODE_BUILDERS = {
   ...r5Builders,    // pitch_shift_pv (phase-vocoder), spectral_filter, spectral_freeze
   ...R8_BUILDERS,   // sidechain, compressor_sc, gate_sc
   ...r9Builders,    // algo_reverb (FDN, 4 algos)
+  // R13 (Tier 2) — extended DSP nodes for complex Logic plugins
+  ...r13ChromaverbBuilders,    // fdn_smooth, fdn_strange, fdn_dense (ChromaVerb extended algos)
+  ...r13SpaceDesignerBuilders, // convolution_sd (Space Designer)
+  ...r13PitchCorrectBuilders,  // pitch_correct (PSOLA + scale-snap)
+  ...r13VocoderBuilders,       // vocoder (analysis filter bank + carrier osc + N-band envelope)
+  ...r13EnveloperBuilders,     // enveloper (transient shaper, parallel fast/slow envelope followers)
+  ...r13AmpDesignerBuilders,   // amp_designer (R2 preamp + R3 transformer + R3 PSU sag + cab IR composite)
+  ...r13VintageEQBuilders,     // vintage_1073, vintage_api (passive LCR EQ models)
+  ...r13PedalboardBuilders,    // pedalboard (24 stomp models composed of R1/R2/R3/R5/R9 sub-stages)
+  ...r13SpectralGateBuilders,  // spectral_gate (FFT-domain noise gate, R5 spectral foundation)
+  ...r13MatchEQBuilders,       // match_eq (long-FFT spectrum matcher with analyze/apply modes)
+  ...r13BassAmpBuilders,       // bass_amp_designer (composite, tube/SS blend + DI)
+  ...r13VintageAmpBuilders,    // vintage_amp_modeling (composite, era-correct tube amps)
+  ...r13ModulationDelayBuilders, // modulation_delay (tape-style chorus/flanger combo)
+  ...r13AdaptiveLimiterBuilders, // adaptive_limiter (multi-stage limiting + adaptive release)
+  ...r13RingshifterBuilders,   // ring_shift (ring mod + Hilbert frequency shifter)
+  ...r13DeesserBuilders,       // deesser (sibilance-frequency dynamic peaking EQ)
+  ...r13PhaseDistortionBuilders, // phase_distortion (Casio-style PD curves as effect)
+  ...r13MultipressorBuilders,  // multipressor (4-band parallel compressor with LR4 crossovers)
+  ...r13EssBuilders,           // ess_stereo_spread (multiband M/S widener with mono-below-N-Hz)
 };
 
 // ── Main Engine Class ──────────────────────────────────────────────────────
