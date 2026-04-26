@@ -57,6 +57,9 @@ export function useSessionSync(dispatch) {
         } else {
           const payload = sessionSyncAPI.adaptDesktopStateToContext(res.state);
           if (payload) {
+            // Attach the session UUID so the reducer can store it for the
+            // edits producer to read (sessionEditsAPI routes by sessionId).
+            payload.activeSessionId = sid;
             dispatch({ type: 'LOAD_SESSION', payload });
             console.log(
               `✅ Hydrated session ${sid} — ${payload.buses?.length || 0} buses, ` +

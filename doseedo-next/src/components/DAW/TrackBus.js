@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useThemeColor } from '../../hooks/useThemeColor';
+import { enqueueVolumeEdit } from '../../services/sessionEditsAPI';
 
 /**
  * TrackBus Component - Represents a track bus control panel (VO, Music, or SFX)
@@ -146,14 +147,21 @@ function TrackBus({ bus, icon }) {
                   value={track.gain || 1}
                   onChange={(e) => {
                     e.stopPropagation();
+                    const newGain = parseFloat(e.target.value);
                     dispatch({
                       type: 'UPDATE_TRACK',
                       payload: {
                         busId: bus.id,
                         trackId: track.id,
-                        updates: { gain: parseFloat(e.target.value) }
+                        updates: { gain: newGain }
                       }
                     });
+                    // Mirror the edit to the desktop's edit-log so doo_hook
+                    // moves the matching Logic mixer fader. Logic strips are
+                    // 1-based (track 0 = Stereo Out), so channel = idx + 1.
+                    if (state.activeSessionId && typeof track.logicTrackIndex === 'number') {
+                      enqueueVolumeEdit(state.activeSessionId, track.logicTrackIndex + 1, newGain);
+                    }
                   }}
                   style={{
                     width: '60px',

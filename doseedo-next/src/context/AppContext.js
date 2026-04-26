@@ -17,6 +17,10 @@ const initialState = {
   // Project state
   projectName: 'Untitled Session',
   isAuthenticated: true,
+  // Auth-service session UUID for the project currently loaded in /studio.
+  // Populated by useSessionSync.dispatch(LOAD_SESSION, {id}). Used by the
+  // sessionEditsAPI producer to route web edits to the right session log.
+  activeSessionId: null,
 
   // Audio state
   audioTracks: [],
@@ -1527,7 +1531,10 @@ function appReducer(state, action) {
 
       return {
         ...state,
-        ...migratedPayload
+        ...migratedPayload,
+        // Carry the session UUID forward so the web→desktop edits producer
+        // (sessionEditsAPI) knows which session log to write to.
+        activeSessionId: action.payload?.activeSessionId ?? state.activeSessionId,
       };
 
     case 'RESET_SESSION':
