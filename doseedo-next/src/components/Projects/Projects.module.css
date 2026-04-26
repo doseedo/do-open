@@ -214,16 +214,19 @@
   align-items: center;
   justify-content: center;
   transition: all 0.12s ease;
-  opacity: 0;
   flex-shrink: 0;
+  padding: 0;
 }
-.sessionRow:hover .postBtn { opacity: 1; }
+.sessionRow:hover .postBtn {
+  border-color: var(--wb-ink-soft);
+  color: var(--wb-ink);
+}
 .postBtn:hover {
   background: var(--wb-ink);
   border-color: var(--wb-ink);
   color: var(--wb-bg);
 }
-.postBtn i { font-size: 11px; }
+.postBtn svg { display: block; }
 
 .sessionMenu {
   display: flex;

@@ -141,8 +141,11 @@ const ProjectCard = ({ projectName, index, onLoad, onDelete, onRename }) => {
           className={styles.postBtn}
           onClick={handlePostClick}
           title="Post Session"
+          aria-label="Post session"
         >
-          <i className="fa-solid fa-cloud-arrow-up"></i>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+            <path d="M12 21V9M7 13l5-5 5 5M4 3h16" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
       </div>
 
