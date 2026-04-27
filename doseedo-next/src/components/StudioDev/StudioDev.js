@@ -708,6 +708,11 @@ export default function StudioDev() {
           audioFile: file, audioUrl: URL.createObjectURL(file),
           duration: 0, startPosition: 0, gain: 1.0, isMuted: false, isSolo: false,
           fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
+          // Every track is PR-ready by default — empty midiData seeded so
+          // the piano roll opens on this track without the user having
+          // to "convert" it. BasicPitch tier 1 will fill notes here when
+          // it returns.
+          midiData: { notes: [], duration: 0, tempo: state.bpm || 120 },
           metadata: { type: 'uploaded', originalFilename: file.name },
         },
       },
@@ -2473,6 +2478,8 @@ export default function StudioDev() {
                               duration: 0, startPosition: state.playheadPosition || 0,
                               gain: 1, isMuted: false, isSolo: false, pan: 0,
                               fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
+                              // PR-ready by default; BasicPitch fills notes when analyze finishes.
+                              midiData: { notes: [], duration: 0, tempo: state.bpm || 120 },
                               metadata: { type: 'recording' },
                             } } });
                             dispatch({ type: 'SELECT_TRACK', payload: { trackId, busId } });
