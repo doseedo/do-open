@@ -404,6 +404,7 @@ export default function StudioDev() {
   const [rightTab, setRightTab] = useState('session');
   const [sessionBusExpanded, setSessionBusExpanded] = useState({}); // busId → boolean
   const [historyFilterMe, setHistoryFilterMe] = useState(false);    // History tab: only show my commits
+  const [openAttestCommit, setOpenAttestCommit] = useState(null);   // commit id whose AttestationsPanel is expanded
 
   // Server-side commit DAG (alembic 009 / commit_minter). When the active
   // session has been synced, this is the source of truth for the History
@@ -1196,85 +1197,21 @@ export default function StudioDev() {
       }));
       dispatch({ type: 'ADD_TRACKS_BULK', payload: { busId, tracks: stemTracks } });
 
-      // ── Per-stem BasicPitch (in-browser, WebGPU WASM, serialized by
-      // the transcribeAudio mutex) — the final-quality pitched MIDI pass.
-      // Runs on each stem's demucs-separated WAV independently so the
-      // transcription reflects only that stem's content (no master-mix
-      // cross-contamination). Overwrites the latentPitch placeholder
-      // that the WebGPU latent-extraction IIFE below fills in.
+      // ── Per-stem BasicPitch — REMOVED 2026-04-27.
       //
-      // We start this RIGHT AFTER stem WAVs are in state so it runs in
-      // parallel with the sem4Decoder + latentPitch pass — usually
-      // basic-pitch wins on the first 1–2 stems before latentPitch
-      // dispatches, giving the piano roll accurate notes from the start.
-      // Drums are skipped: basic-pitch detects pitched onsets, not drum
-      // hits — drums stay on latentDrumTranscribe.
-      (async () => {
-        const { transcribeAudio } = await import('../../services/basicPitchOnnx');
-        const tempo = stateRef.current.bpm || 120;
-        const bpMidiByStem = {};
-        for (const [stemName, audioUrl] of Object.entries(sep.stems)) {
-          if (stemName === 'drums') continue;
-          try {
-            const resp = await fetch(audioUrl);
-            if (!resp.ok) {
-              logPipeline('basicPitch', `${stemName}: fetch ${resp.status}`, 'warn');
-              continue;
-            }
-            const ab = await resp.arrayBuffer();
-            const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-            // Decode into mono at the native sample rate. transcribeAudio
-            // resamples to 22050 internally, so we just need mono PCM.
-            const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const decoded = await tmpCtx.decodeAudioData(ab.slice(0));
-            try { tmpCtx.close(); } catch (_) {}
-            const mono = decoded.numberOfChannels === 1
-              ? decoded.getChannelData(0).slice()
-              : (() => {
-                  const l = decoded.getChannelData(0);
-                  const r = decoded.getChannelData(1);
-                  const m = new Float32Array(l.length);
-                  for (let i = 0; i < l.length; i++) m[i] = 0.5 * (l[i] + r[i]);
-                  return m;
-                })();
-            const t0 = performance.now();
-            logPipeline('basicPitch', `${stemName}: transcribing…`);
-            const { notes, duration } = await transcribeAudio(mono, decoded.sampleRate);
-            const dt = (performance.now() - t0).toFixed(0);
-            if (!notes || notes.length === 0) {
-              logPipeline('basicPitch', `${stemName}: no notes (${dt}ms)`, 'warn');
-              continue;
-            }
-            logPipeline('basicPitch', `${stemName}: ${notes.length} notes (${dt}ms)`, 'ok');
-            dispatch({
-              type: 'UPDATE_TRACK',
-              payload: {
-                busId, trackId: `stem-${trackId}-${stemName}`,
-                updates: { metadata: { midiData: { notes, duration, tempo } } },
-              },
-            });
-            bpMidiByStem[stemName] = notes;
-          } catch (err) {
-            logPipeline('basicPitch', `${stemName}: ${err?.message || 'failed'}`, 'warn');
-          }
-        }
-        // Re-detect chords from all per-stem BasicPitch transcriptions.
-        if (Object.keys(bpMidiByStem).length > 0) {
-          try {
-            const { rerunChordDetection } = await import('../../services/detectChordsFromMIDI');
-            const s = stateRef.current;
-            const chordsNum = rerunChordDetection(bpMidiByStem, {
-              beatMap: s.beatMap, bpm: s.bpm || tempo,
-            });
-            if (Object.keys(chordsNum).length > 0) {
-              dispatch({ type: 'SET_CHORDS', payload: chordsNum });
-              logPipeline('chords', `${Object.keys(chordsNum).length} chords from per-stem basic-pitch`, 'ok');
-            }
-          } catch (err) {
-            logPipeline('chords', `per-stem chord rerun failed: ${err?.message || 'error'}`, 'warn');
-          }
-        }
-      })();
+      // This in-browser WebGPU pass duplicated the work of the backend
+      // BasicPitch tier (swapInBasicPitch onMidiReady at L1091): both
+      // overwrote the latentPitch placeholder for every pitched stem,
+      // and the backend write — which arrives last — wiped the
+      // in-browser result every time. The smaller in-browser ONNX model
+      // also reliably produced fewer notes (33 backend → 4 in-browser
+      // for bass, etc.) so the final state was a strict regression of
+      // the canonical Tier 3 transcription before the backend rewrote
+      // it again. Net: 3 transcription writes per stem (latent → web
+      // → backend) when the spec is 2 (latent → backend).
+      //
+      // Reinstate this only as a FALLBACK when backend BasicPitch is
+      // disabled or fails — gate on a flag, don't run by default.
 
       // Promote the parent uploaded-mix track to the bus MASTER: it
       // keeps all its audio + analysis metadata (lyrics, latents, MIDI)
@@ -3594,6 +3531,30 @@ export default function StudioDev() {
                             }
                             return pills.length ? <div className="sd-commit-rights">{pills}</div> : null;
                           })()}
+                          {(() => {
+                            // Attestation level pill — server commits only.
+                            const lvl = commit._server?.attestation_level;
+                            if (!lvl) return null;
+                            const total = commit._server?.attestation_total || 0;
+                            const confirmed = commit._server?.attestation_confirmed || 0;
+                            const disputed = commit._server?.attestation_disputed || 0;
+                            const cls = lvl === 2 ? 'attest-l2' : (disputed > 0 ? 'attest-disputed' : 'attest-l1');
+                            const tip = lvl === 2
+                              ? `Level 2 — all ${total} contributors confirmed (eligible for on-chain anchor)`
+                              : disputed > 0
+                                ? `Level 1 — ${disputed} dispute${disputed === 1 ? '' : 's'} blocking`
+                                : total > 0
+                                  ? `Level 1 — ${total - confirmed - disputed} pending`
+                                  : 'Level 1 — no contributors named yet';
+                            return (
+                              <div className="sd-commit-rights">
+                                <span className={`sd-commit-ref ${cls}`} title={tip}>
+                                  {lvl === 2 ? 'L2 ✓' : 'L1'}
+                                  {total > 0 && ` · ${confirmed}/${total}`}
+                                </span>
+                              </div>
+                            );
+                          })()}
                           {(isHead || branches.length > 0 || isOriginal) && (
                             <div className="sd-commit-refs">
                               {isHead && <span className="sd-commit-ref head">HEAD</span>}
@@ -3647,7 +3608,24 @@ export default function StudioDev() {
                             >
                               <i className="fa-solid fa-code-branch" style={{ fontSize: 10 }} /> Branch
                             </button>
+                            {useServer && (
+                              <button
+                                className="sd-btn ghost"
+                                onClick={() => setOpenAttestCommit((cur) => cur === commit.id ? null : commit.id)}
+                                title="Manage attestations (Level 2 gate)"
+                              >
+                                <i className="fa-solid fa-user-check" style={{ fontSize: 10 }} /> Attest
+                              </button>
+                            )}
                           </div>
+                          {useServer && openAttestCommit === commit.id && (
+                            <AttestationsPanel
+                              sessionId={state.activeSessionId}
+                              commit={commit._server}
+                              currentUsername={clerk?.user?.username || null}
+                              onChanged={() => serverHistory.refresh()}
+                            />
+                          )}
                         </div>
                       </div>
                     );
