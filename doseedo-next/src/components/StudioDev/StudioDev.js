@@ -3094,18 +3094,41 @@ export default function StudioDev() {
                            }}
                            onClick={(e) => {
                              e.stopPropagation();
-                             // Single click selects the bus only — opens
-                             // bus info in the right sidebar (versions,
-                             // bus-target generate). Double-click still
-                             // opens the composite MIDI view via
-                             // openBusMaster, which dispatches a
-                             // composite SELECT_TRACK.
-                             if (bus._real?.id) {
-                               dispatch({ type: 'SELECT_BUS', payload: { busId: bus._real.id } });
+                             // Single click on the bus master opens the
+                             // master piano roll directly. Empty bus →
+                             // create + select a fresh MIDI track in
+                             // this bus. Non-empty → openBusMaster
+                             // builds the multi-coloured composite and
+                             // dispatches SELECT_TRACK with busId so
+                             // the bus-info sidebar stays visible
+                             // alongside.
+                             const real = bus._real;
+                             if (!real) return;
+                             const visibleTracks = (real.tracks || [])
+                               .filter((t) => !t.metadata?.isBusMaster);
+                             if (visibleTracks.length === 0) {
+                               const trackId = `t-${Date.now()}`;
+                               dispatch({
+                                 type: 'ADD_TRACK',
+                                 payload: {
+                                   busId: real.id,
+                                   track: {
+                                     id: trackId, name: 'New track',
+                                     duration: 4, startPosition: 0,
+                                     gain: 1.0, isMuted: false, isSolo: false,
+                                     fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
+                                     metadata: { type: 'midi', instrument: 'other', icon: 'synth' },
+                                     midiData: { notes: [], duration: 4, tempo: state.bpm || 120 },
+                                   },
+                                 },
+                               });
+                               dispatch({ type: 'SELECT_TRACK', payload: { trackId, busId: real.id } });
+                             } else {
+                               openBusMaster(real);
                              }
+                             setActiveMode('midi');
                            }}
-                           onDoubleClick={(e) => { e.stopPropagation(); openBusMaster(bus._real); }}
-                           title="Click: select bus (info in right sidebar). Double-click: open composite MIDI view.">
+                           title="Open master piano roll for this bus.">
                         <div className="sd-clip-label" style={{ color: bus.color }}>
                           {bus.name} · {bus.tracks.length} track{bus.tracks.length === 1 ? '' : 's'}
                         </div>
