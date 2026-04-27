@@ -2838,9 +2838,6 @@ export default function StudioDev() {
                         }}>+</button>
               </div>
               <div className="sd-spacer" />
-              <button className="sd-btn ghost" onClick={addEmptyTrack}>
-                <Icon k="plus" size={12} /> Add track
-              </button>
             </div>
 
             {/* Single shared automation window. Toggled via TrackInfoSidebar's
@@ -2876,7 +2873,16 @@ export default function StudioDev() {
               onDrop={onTimelineDrop}
             >
               <div className="sd-tracks-col">
-                <div className="sd-tracks-header">Buses · Tracks</div>
+                <div className="sd-tracks-header">
+                  <span>Buses · Tracks</span>
+                  <button
+                    className="sd-tracks-header-add"
+                    onClick={addEmptyTrack}
+                    title="Add a new MIDI track"
+                  >
+                    <Icon k="plus" size={10} /> Add track
+                  </button>
+                </div>
                 {timelineBuses.map((bus) => (
                   <React.Fragment key={bus.id}>
                     {/* ---- Bus header row ---- */}

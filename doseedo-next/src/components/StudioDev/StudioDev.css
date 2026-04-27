@@ -1001,11 +1001,31 @@
 .sd-tracks-header {
   position: sticky; top: 0; z-index: 3;
   height: 22px; border-bottom: 1px solid var(--wb-rule);
-  display: flex; align-items: center; padding: 0 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 0 6px 0 10px;
   background: var(--wb-surface);
   font-family: var(--wb-font-mono);
   font-size: 9px; letter-spacing: 0.8px; text-transform: uppercase;
   color: var(--wb-ink-mute);
+}
+/* Add-track button sized to fit the header strip's 22px height. Ghost
+ * style matches .sd-btn ghost (was the button's prior look in the
+ * transport bar) but compressed to clear the header line. */
+.sd-tracks-header-add {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 18px; padding: 0 8px;
+  background: transparent;
+  border: 1px solid var(--wb-rule-strong);
+  border-radius: var(--wb-radius-sm, 2px);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: 9px; letter-spacing: 0.6px; text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.sd-tracks-header-add:hover {
+  background: var(--wb-bg);
+  border-color: var(--wb-ink);
 }
 /* Track + bus rows share a fixed 28 px "gutter" on the left so the color
    swatches line up whether or not there's a caret in front. The bus row
