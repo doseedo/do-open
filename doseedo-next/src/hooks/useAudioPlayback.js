@@ -457,14 +457,17 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     });
     const uniqueUrls = [...new Set(audioUrls.filter(Boolean))];
 
-    // Log which URLs the effect is about to fetch. Only print when
-    // there's actually something to fetch — this effect re-runs on
-    // every state.buses change (every MIDI commit) and was filling the
-    // console with "iterating N url(s)" lines for fully-cached URLs.
+    // Bail entirely when nothing new — the effect re-runs on every
+    // state.buses change (each MIDI commit during the Tier 1/2/3
+    // transcription cascade), but the URL set rarely changes. Without
+    // this gate, fetchAudioWithCache fired a fresh IndexedDB lookup +
+    // network race per midi commit on every stem URL — and polypitch's
+    // own loadAudioBuffer (which now shares fetchAudioWithCache via
+    // the in-flight dedupe) was queueing behind that storm and hung
+    // at "loading audio…" for 20+ seconds per stem.
     const uncachedUrls = uniqueUrls.filter((u) => !audioBufferCache.has(u));
-    if (uncachedUrls.length) {
-      console.log(`[prewarm] iterating ${uncachedUrls.length} uncached url(s):`, uncachedUrls.map((u) => u.slice(0, 80)));
-    }
+    if (uncachedUrls.length === 0) return;
+    console.log(`[prewarm] iterating ${uncachedUrls.length} uncached url(s):`, uncachedUrls.map((u) => u.slice(0, 80)));
     uniqueUrls.forEach(async (url) => {
       if (!audioBufferCache.has(url)) {
         const tStart = performance.now();

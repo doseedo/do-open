@@ -99,11 +99,18 @@ export function notesFromMidiData(midiData) {
 
 /**
  * Fetch audioUrl, decode through the browser's AudioContext, and return the
- * planar-stereo `AudioBuffer` shape polypitch expects.
+ * planar-stereo `AudioBuffer` shape polypitch expects. Uses
+ * fetchAudioWithCache so we share the IndexedDB cache + in-flight dedupe
+ * with the playback prewarm — without this, polypitch's raw fetch was
+ * queueing behind the prewarm's repeated re-fetches of the same stem
+ * URLs (4-stem chord edits silently hung at "loading audio…" because
+ * the browser's per-origin connection limit pushed the polypitch fetch
+ * to the back of the queue).
  */
 async function loadAudioBuffer(audioUrl) {
-  const res = await fetch(audioUrl);
-  const ab = await res.arrayBuffer();
+  const { fetchAudioWithCache } = await import('./audioCacheService');
+  const { blob } = await fetchAudioWithCache(audioUrl);
+  const ab = await blob.arrayBuffer();
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
   let decoded;
   try {
