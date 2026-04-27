@@ -1120,8 +1120,34 @@ export default function StudioDevMidi() {
 
   // Empty state — uses the workbench .wb-canvas / .wb-empty block verbatim
   // so the font stack (Inter 28/600 title, Inter 13 body, mono status pill)
-  // and layout match the rest of the theme exactly.
+  // and layout match the rest of the theme exactly. Includes a "New
+  // MIDI track" button that creates a fresh INSTRUMENT bus + empty
+  // type:'midi' track and selects it — same payload shape StudioDev's
+  // addInstrumentTrack uses, replicated here so the empty MIDI window
+  // can self-unlock without the user reaching for the left sidebar.
   if (!selectedTrack) {
+    const createNewMidiTrack = () => {
+      const busId = `bus-${Date.now()}`;
+      const trackId = `t-${Date.now()}`;
+      dispatch({
+        type: 'CREATE_BUS',
+        payload: { id: busId, type: 'INSTRUMENT', name: 'New track', expanded: false },
+      });
+      dispatch({
+        type: 'ADD_TRACK',
+        payload: {
+          busId,
+          track: {
+            id: trackId, name: 'New track', duration: 4, startPosition: 0,
+            gain: 1.0, isMuted: false, isSolo: false,
+            fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
+            metadata: { type: 'midi', instrument: 'other', icon: 'synth' },
+            midiData: { notes: [], duration: 4, tempo: state.bpm || 120 },
+          },
+        },
+      });
+      dispatch({ type: 'SELECT_TRACK', payload: { trackId, busId } });
+    };
     return (
       <div className="wb-canvas">
         <div className="wb-canvas__grid" aria-hidden="true" />
@@ -1134,6 +1160,15 @@ export default function StudioDevMidi() {
           <p className="wb-empty__body">
             Select a track in the timeline or pick an instrument in the sidebar to start writing notes.
           </p>
+          <div className="wb-empty__actions">
+            <button
+              type="button"
+              className="wb-btn wb-btn--primary"
+              onClick={createNewMidiTrack}
+            >
+              <i className="fa-solid fa-plus" /> New MIDI track
+            </button>
+          </div>
         </div>
       </div>
     );
