@@ -473,7 +473,11 @@ export default function StudioDev() {
   const [stemSepRunning, setStemSepRunning] = useState(false);
   const [timelineZoom, setTimelineZoom] = useState(1);  // 1 = 32s window, 2 = 16s, 0.5 = 64s
   const [dragClip, setDragClip] = useState(null);        // {trackId, busId, origStart, startPx}
-  const [laneRowZoom, setLaneRowZoom] = useState(1);      // Y-axis zoom multiplier for lane row heights
+  // Lane row Y zoom multiplier × 38px base. Default 1.5625 = 1.25 × 1.25
+  // (two zoom-in steps at the toolbar's 1.25 factor) so timeline rows
+  // open noticeably taller without the user reaching for the Y zoom
+  // button.
+  const [laneRowZoom, setLaneRowZoom] = useState(1.5625);
 
   /* ---------- Real tracks from AppContext (flattened out of buses) ---------- */
   const tracks = useMemo(() => {

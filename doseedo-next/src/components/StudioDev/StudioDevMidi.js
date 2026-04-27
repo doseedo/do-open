@@ -139,11 +139,12 @@ export default function StudioDevMidi() {
   const wrapRef    = useRef(null);
   const [size,    setSize]    = useState({ w: 800, h: 400 });
   const [pxPerSec,setPxPerSec]= useState(96);    // X zoom (px per second). Cell width.
-  // Independent Y zoom multiplier on top of the square-cell rowH. 1.0
-  // keeps cells square (the original look); arrow-key Up/Down lets the
-  // user squeeze rows without changing the X grid. Clamped at the
-  // rowH = max(12, ...) line so vertical can't collapse to nothing.
-  const [rowZoom, setRowZoom] = useState(1);
+  // Independent Y zoom multiplier on top of cellSec*pxPerSec. Default
+  // 0.3 keeps roughly an octave (~12 rows) in view at the typical
+  // canvas height — without this the 2-beat-cell default would push
+  // the square-cell math to ~96 px rows and only ~4 pitches would be
+  // visible on first paint. Arrow-key Up/Down still adjusts in place.
+  const [rowZoom, setRowZoom] = useState(0.3);
   const [scrollX, setScrollX] = useState(0);
   const [scrollY, setScrollY] = useState(0);
   // Hover flag for the arrow-key zoom shortcuts. Set on mouseenter /
@@ -1259,7 +1260,7 @@ export default function StudioDevMidi() {
           }}>Humanize</button>
         </div>
         <div className="sd-midi-group">
-          <button className="sd-midi-btn" onClick={() => { setScrollX(0); setScrollY(0); setRowZoom(1); setPxPerSec(96); }}>Reset view</button>
+          <button className="sd-midi-btn" onClick={() => { setScrollX(0); setScrollY(0); setRowZoom(0.3); setPxPerSec(96); }}>Reset view</button>
           {f0Contour.length > 0 && !isScore && (
             <button
               className="sd-midi-btn sd-midi-danger"
