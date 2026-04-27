@@ -156,7 +156,12 @@ export default function StudioDevMidi() {
   // spacing), X = 60/BPM (one beat per unit). Expressions are stored
   // as strings now; we'll wire them to actual grid math in a follow-up.
   const [axisOpen, setAxisOpen] = useState(false);
-  const [xAxisExpr, setXAxisExpr] = useState('60/BPM');
+  // Default cell base is two beats wide (120/BPM). Cell size derives
+  // from this expression × pxPerSec — a 2-beat default zooms the X grid
+  // to roughly 2× the prior 1-beat-cell layout. The musical beat / bar
+  // lines below re-derive from BPM directly so changing the cell base
+  // doesn't move the bar markers off the actual downbeats.
+  const [xAxisExpr, setXAxisExpr] = useState('120/BPM');
   const [yAxisExpr, setYAxisExpr] = useState('2^(1/12)');
   const [selected,setSelected]= useState(new Set());
   const [drag, setDrag] = useState(null);        // {mode:'move'|'resize-right'|'resize-left'|'marquee'|'new', ...}
@@ -944,27 +949,32 @@ export default function StudioDevMidi() {
     }
 
     // Time-grid — three tiers:
-    //   bar   → strong rule
-    //   beat  → medium rule
-    //   cell  → very faint (only when subdivision > 1, i.e. zoomed in)
-    // cellSec/subdivision were computed above; reuse here so grid +
-    // snap + hover all share one definition.
-    const barSec = beatSec * 4;
+    //   bar   → strong rule (musical bar boundary)
+    //   beat  → medium rule (musical beat — independent of cell base)
+    //   cell  → very faint (cellSec, derived from xAxisExpr+subdivision)
+    // The musical beat/bar math reads BPM directly so changing the cell
+    // base via xAxisExpr (default 120/BPM = 2 beats/cell) doesn't shift
+    // bar markers off the actual downbeats.
+    const musicalBeatSec = 60 / bpmVal;
+    const beatsPerBar = state.beatsPerBar || 4;
+    const barSec = musicalBeatSec * beatsPerBar;
     const startSec = scrollX;
     const endSec = scrollX + (W - KEYS_W) / pxPerSec;
 
-    // Subdivision lines first (so beat/bar lines draw on top).
-    // Visibility tiered below the beat-rule strength so they read as
-    // helpers. rgba alpha chosen so lines are clearly visible on the
-    // cream lane bg even at 0 brightness boost.
-    if (subdivision > 1) {
-      ctx.fillStyle = 'rgba(21, 24, 28, 0.12)';
-      const firstCell = Math.floor(startSec / cellSec);
-      for (let i = firstCell; i * cellSec < endSec; i++) {
-        if (i % subdivision === 0) continue;  // skip beats (drawn below)
-        const x = KEYS_W + (i * cellSec - scrollX) * pxPerSec;
-        ctx.fillRect(x, RULER_H, 1, H - RULER_H);
-      }
+    // Cell lines (faintest) — drawn first so beat/bar lines paint on top.
+    // Drawn whenever cellSec ≠ musicalBeatSec OR when subdivision > 1
+    // (zoomed in so subdivided cells exist). At default 2-beat cells the
+    // cell lines coincide with every-other-beat markers; we still draw
+    // them so the user sees the active grid the snap is using.
+    ctx.fillStyle = 'rgba(21, 24, 28, 0.12)';
+    const firstCell = Math.floor(startSec / cellSec);
+    for (let i = firstCell; i * cellSec < endSec; i++) {
+      const tCell = i * cellSec;
+      // skip cells coincident with a musical beat — beat lines below
+      // will draw a stronger rule there.
+      if (Math.abs(tCell / musicalBeatSec - Math.round(tCell / musicalBeatSec)) < 1e-6) continue;
+      const x = KEYS_W + (tCell - scrollX) * pxPerSec;
+      ctx.fillRect(x, RULER_H, 1, H - RULER_H);
     }
 
     // Bar lines (strongest)
@@ -973,11 +983,12 @@ export default function StudioDevMidi() {
       ctx.fillStyle = C.ruleStrong;
       ctx.fillRect(x, RULER_H, 1, H - RULER_H);
     }
-    // Beat lines
+    // Beat lines — every musical beat, skipping ones that coincide with
+    // a bar (already drawn stronger above).
     ctx.fillStyle = C.rule;
-    for (let i = Math.floor(startSec / beatSec); i * beatSec < endSec; i++) {
-      if ((i * beatSec) % barSec < 1e-6) continue;
-      const x = KEYS_W + (i * beatSec - scrollX) * pxPerSec;
+    for (let i = Math.floor(startSec / musicalBeatSec); i * musicalBeatSec < endSec; i++) {
+      if ((i * musicalBeatSec) % barSec < 1e-6) continue;
+      const x = KEYS_W + (i * musicalBeatSec - scrollX) * pxPerSec;
       ctx.fillRect(x, RULER_H, 1, H - RULER_H);
     }
 
@@ -1105,7 +1116,7 @@ export default function StudioDevMidi() {
       ctx.fillStyle = C.accent;
       ctx.fillRect(px, 0, 1, H);
     }
-  }, [size, notes, selected, trackColor, isDrum, pxPerSec, rowH, scrollX, scrollY, maxPitch, minPitch, state.bpm, state.playheadPosition, hoverCell, drag, f0Contour, f0Draft]);
+  }, [size, notes, selected, trackColor, isDrum, pxPerSec, rowH, scrollX, scrollY, maxPitch, minPitch, state.bpm, state.beatsPerBar, beatSec, cellSec, state.playheadPosition, hoverCell, drag, f0Contour, f0Draft]);
 
   // Empty state — uses the workbench .wb-canvas / .wb-empty block verbatim
   // so the font stack (Inter 28/600 title, Inter 13 body, mono status pill)
@@ -1378,7 +1389,7 @@ export default function StudioDevMidi() {
                 className="sd-midi-axis-input"
                 value={xAxisExpr}
                 onChange={(e) => setXAxisExpr(e.target.value)}
-                placeholder="60/BPM"
+                placeholder="120/BPM"
               />
               <span className="sd-midi-axis-hint">units / cell</span>
             </div>
@@ -1396,7 +1407,7 @@ export default function StudioDevMidi() {
             <div className="sd-midi-axis-row">
               <button
                 className="sd-midi-btn"
-                onClick={() => { setXAxisExpr('60/BPM'); setYAxisExpr('2^(1/12)'); }}
+                onClick={() => { setXAxisExpr('120/BPM'); setYAxisExpr('2^(1/12)'); }}
               >
                 Reset defaults
               </button>
