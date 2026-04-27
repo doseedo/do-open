@@ -478,6 +478,24 @@
   background: var(--wb-surface-2);
 }
 
+/* Selected-row text overrides — placed after the subgroup rules so they
+ * win the source-order tiebreak. Without this, .sd-inst-row-sub
+ * .sd-inst-row-name (0,3,1) was setting color:var(--wb-ink) on the
+ * inner name span of a selected subgroup row, producing black text on
+ * the black .on background. Same fix for -meta and -num so the row
+ * stays readable end-to-end. */
+.sd-sidebar .sd-inst-row.on .sd-inst-row-name,
+.sd-sidebar .sd-inst-row-sub.on .sd-inst-row-name {
+  color: var(--wb-bg);
+}
+.sd-sidebar .sd-inst-row.on .sd-inst-row-num,
+.sd-sidebar .sd-inst-row.on .sd-inst-row-meta,
+.sd-sidebar .sd-inst-row-sub.on .sd-inst-row-num,
+.sd-sidebar .sd-inst-row-sub.on .sd-inst-row-meta {
+  color: var(--wb-bg);
+  opacity: 0.7;
+}
+
 /* ---------- Grid-view tile (alternate layout, also workbench-ified) ---------- */
 .sd-sidebar .sd-inst.sd-inst-group {
   padding: 12px 8px;
