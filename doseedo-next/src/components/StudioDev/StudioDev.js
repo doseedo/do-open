@@ -1826,6 +1826,55 @@ export default function StudioDev() {
     });
   }, [selectedTrack, selectedBusId, dispatch]);
 
+  // Cycle a single track inside a bus through its version history.
+  // Reuses the same UPDATE_TRACK_PROPS payload shape as cycleVersion so
+  // the reducer + per-track audio swap behave identically. Used by the
+  // bus-info Versions section in the right sidebar.
+  const cycleTrackVersion = useCallback((track, dir) => {
+    if (!track) return;
+    const versions = track.metadata?.versions || [];
+    if (!versions.length) return;
+    const curIdx = track.metadata?.currentVersionIndex ?? 0;
+    const nextIdx = (curIdx + dir + versions.length) % versions.length;
+    const v = versions[nextIdx] || {};
+    dispatch({
+      type: 'UPDATE_TRACK_PROPS',
+      payload: {
+        trackId: track.id,
+        audioUrl: v.audioUrl || track.audioUrl,
+        duration: v.duration ?? track.duration,
+        midiData: v.midiData || track.midiData,
+        metadata: { ...(track.metadata || {}), currentVersionIndex: nextIdx },
+      },
+    });
+  }, [dispatch]);
+
+  // Walk every versioned track in a bus back one step. Single button at
+  // the bottom of the bus-info Versions section so the user can roll an
+  // entire bus back after a generation pass without flipping tracks one
+  // at a time. Tracks with no versions or already at v1 are no-ops.
+  const revertBus = useCallback((bus) => {
+    if (!bus) return;
+    const tracks = (bus.tracks || []).filter((t) => !t.metadata?.isBusMaster);
+    for (const t of tracks) {
+      const versions = t.metadata?.versions || [];
+      const curIdx = t.metadata?.currentVersionIndex ?? 0;
+      if (versions.length < 2 || curIdx === 0) continue;
+      const nextIdx = curIdx - 1;
+      const v = versions[nextIdx] || {};
+      dispatch({
+        type: 'UPDATE_TRACK_PROPS',
+        payload: {
+          trackId: t.id,
+          audioUrl: v.audioUrl || t.audioUrl,
+          duration: v.duration ?? t.duration,
+          midiData: v.midiData || t.midiData,
+          metadata: { ...(t.metadata || {}), currentVersionIndex: nextIdx },
+        },
+      });
+    }
+  }, [dispatch]);
+
   const submitFeedback = useCallback(async (rating) => {
     if (!selectedTrack) return;
     try {
@@ -2987,8 +3036,20 @@ export default function StudioDev() {
                              background: `${bus.color}22`,
                              border: `1px solid ${bus.color}66`,
                            }}
-                           onClick={(e) => { e.stopPropagation(); openBusMaster(bus._real); }}
-                           title={`Open ${bus.tracks.length === 1 ? 'track' : 'composite'} MIDI view`}>
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             // Single click selects the bus only — opens
+                             // bus info in the right sidebar (versions,
+                             // bus-target generate). Double-click still
+                             // opens the composite MIDI view via
+                             // openBusMaster, which dispatches a
+                             // composite SELECT_TRACK.
+                             if (bus._real?.id) {
+                               dispatch({ type: 'SELECT_BUS', payload: { busId: bus._real.id } });
+                             }
+                           }}
+                           onDoubleClick={(e) => { e.stopPropagation(); openBusMaster(bus._real); }}
+                           title="Click: select bus (info in right sidebar). Double-click: open composite MIDI view.">
                         <div className="sd-clip-label" style={{ color: bus.color }}>
                           {bus.name} · {bus.tracks.length} track{bus.tracks.length === 1 ? '' : 's'}
                         </div>
@@ -3284,7 +3345,51 @@ export default function StudioDev() {
                   </div>
                 </div>
 
+                {/* Versions — one row per child track that has a
+                 * generation history, plus a single "Revert bus" button
+                 * that walks every track back one step. Mirrors the
+                 * track-info Versions block; reuses cycleTrackVersion +
+                 * revertBus which dispatch UPDATE_TRACK_PROPS. */}
+                {(() => {
+                  const versionedTracks = (b.tracks || [])
+                    .filter((t) => !t.metadata?.isBusMaster && (t.metadata?.versions?.length || 0) > 1);
+                  if (versionedTracks.length === 0) return null;
+                  return (
+                    <>
+                      <div className="sd-label">Versions</div>
+                      <div className="sd-ctrl-block">
+                        {versionedTracks.map((t) => {
+                          const total = t.metadata.versions.length;
+                          const cur = (t.metadata.currentVersionIndex ?? 0) + 1;
+                          return (
+                            <div className="sd-ctrl-row" key={t.id}>
+                              <span className="sd-ctrl-k" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name || t.id}</span>
+                              <button className="sd-btn ghost" style={{ padding: '2px 8px' }}
+                                      onClick={() => cycleTrackVersion(t, -1)}>◀</button>
+                              <span className="sd-ctrl-v" style={{ minWidth: 38, textAlign: 'center' }}>
+                                {cur} / {total}
+                              </span>
+                              <button className="sd-btn ghost" style={{ padding: '2px 8px' }}
+                                      onClick={() => cycleTrackVersion(t, +1)}>▶</button>
+                            </div>
+                          );
+                        })}
+                        <div className="sd-ctrl-row">
+                          <button className="sd-btn ghost" style={{ flex: 1 }}
+                                  onClick={() => revertBus(b)}
+                                  title="Walk every versioned track back one step">
+                            <i className="fa-solid fa-rotate-left" style={{ fontSize: 10 }} /> Revert bus (one step)
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+
                 <div className="sd-right-actions">
+                  <button className="sd-btn ghost" onClick={() => setSidebarPanel('generate')}>
+                    <i className="fa-solid fa-wand-magic-sparkles" style={{ fontSize: 10 }} /> Generate for bus…
+                  </button>
                   <button className="sd-btn ghost" onClick={() => clearBus(b.id)}>
                     <i className="fa-solid fa-eraser" style={{ fontSize: 10 }} /> Clear tracks
                   </button>

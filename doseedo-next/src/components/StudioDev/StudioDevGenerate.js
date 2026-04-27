@@ -48,36 +48,54 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
   //   audio  — last resort: raw audio, server re-encodes + runs LatentPitch.
   //   none   — text-only generation.
   const selectedTrack = state.selectedTrack;
-  const inputInfo = useMemo(() => {
-    if (!selectedTrack) return { kind: 'none' };
-    const md = selectedTrack.midiData || selectedTrack.metadata?.midiData;
-    if (md?.notes?.length) {
-      return { kind: 'midi', name: selectedTrack.name || selectedTrack.id };
-    }
-    const latentId = selectedTrack.metadata?.latentId;
-    if (latentId) {
-      return { kind: 'latent', name: selectedTrack.name || selectedTrack.id, latentId };
-    }
-    if (selectedTrack.audioFile instanceof File || selectedTrack.audioUrl) {
-      return { kind: 'audio', name: selectedTrack.name || selectedTrack.id };
-    }
+  const selectedBus = state.selectedBus;
+
+  // Pure helper: derive {kind, latentId} for any track. Same priority as
+  // the original inputInfo (midi → latent → audio → none). Used both for
+  // the single-track header readout and per-track in the bus loop so
+  // bus generation respects each track's actual conditioning content.
+  const describeTrackInput = (track) => {
+    if (!track) return { kind: 'none' };
+    const md = track.midiData || track.metadata?.midiData;
+    if (md?.notes?.length) return { kind: 'midi' };
+    const latentId = track.metadata?.latentId;
+    if (latentId) return { kind: 'latent', latentId };
+    if (track.audioFile instanceof File || track.audioUrl) return { kind: 'audio' };
     return { kind: 'none' };
+  };
+
+  const inputInfo = useMemo(() => {
+    const info = describeTrackInput(selectedTrack);
+    if (selectedTrack && info.kind !== 'none') {
+      info.name = selectedTrack.name || selectedTrack.id;
+    }
+    return info;
   }, [selectedTrack]);
 
-  const buildInputFile = async () => {
-    if (inputInfo.kind === 'midi') {
+  // Bus-target preview: when a bus is selected without a per-track focus,
+  // count the eligible tracks so the panel header can read e.g.
+  // "MIDI bus · 4 tracks" before the user clicks Generate.
+  const busTargetInfo = useMemo(() => {
+    if (selectedTrack || !selectedBus) return null;
+    const tracks = (selectedBus.tracks || []).filter((t) => !t.metadata?.isBusMaster);
+    const eligible = tracks.filter((t) => describeTrackInput(t).kind !== 'none');
+    return { name: selectedBus.name || selectedBus.type || 'Bus', total: tracks.length, eligible: eligible.length };
+  }, [selectedBus, selectedTrack]);
+
+  const buildInputFileFor = async (track, info) => {
+    if (info.kind === 'midi') {
       // Emit a real .mid binary so the server's
       // `Path(midi_path).suffix in ('.mid','.midi')` gate accepts it.
       // A .json file here silently drops through to text-only generation.
-      const md = selectedTrack.midiData || selectedTrack.metadata?.midiData;
+      const md = track.midiData || track.metadata?.midiData;
       const notes = md?.notes || [];
       const tempo = md?.tempo || state.bpm || 120;
       const { Midi } = await import('@tonejs/midi');
       const midi = new Midi();
       midi.header.setTempo(tempo);
-      const track = midi.addTrack();
+      const trk = midi.addTrack();
       for (const n of notes) {
-        track.addNote({
+        trk.addNote({
           midi: Math.round(n.note),
           time: Math.max(0, n.time || 0),
           duration: Math.max(0.01, n.duration || 0.25),
@@ -86,17 +104,98 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
       }
       return new File([midi.toArray()], 'input.mid', { type: 'audio/midi' });
     }
-    if (inputInfo.kind === 'latent') {
+    if (info.kind === 'latent') {
       // latent_id rides as a form param, no file body.
       return null;
     }
-    if (inputInfo.kind === 'audio') {
-      if (selectedTrack.audioFile instanceof File) return selectedTrack.audioFile;
-      const r = await fetch(selectedTrack.audioUrl);
+    if (info.kind === 'audio') {
+      if (track.audioFile instanceof File) return track.audioFile;
+      const r = await fetch(track.audioUrl);
       const b = await r.blob();
-      return new File([b], (selectedTrack.name || 'input') + '.wav', { type: b.type || 'audio/wav' });
+      return new File([b], (track.name || 'input') + '.wav', { type: b.type || 'audio/wav' });
     }
     return null;
+  };
+
+  // Per-track generation pass — one stemphonic round-trip + the existing
+  // UPDATE_TRACK dispatch shape (preserves prior audioUrl as a version
+  // so revert works). Lifted out of run() so the bus-target loop below
+  // can call it once per child track without reimplementing the
+  // version-merge logic.
+  const generateForTrack = async ({ track, busId, baseParams, label }) => {
+    const info = describeTrackInput(track);
+    const params = {
+      ...baseParams,
+      duration: track?.duration || baseParams.duration || 16,
+    };
+    const inputFile = await buildInputFileFor(track, info);
+    const midiFile = info.kind === 'midi' ? inputFile : null;
+    const refAudio = info.kind === 'audio' ? inputFile : null;
+    if (info.kind === 'latent') params.latent_id = info.latentId;
+
+    const start = await generateStemphonic(params, midiFile, refAudio);
+    if (!start.task_id) throw new Error('No task_id returned');
+    setStatus(`${label} · task ${start.task_id.slice(0, 8)}…`);
+
+    const result = await pollStemphonicUntilComplete(start.task_id, (p) => {
+      setStatus(`${label} · ${p.status || '…'}${p.attempts ? ` · ${p.attempts}s` : ''}`);
+    });
+
+    const filePaths = result?.file_paths || [];
+    if (!filePaths.length) return false;
+    const firstUrl = filePaths[0];
+    const now = Date.now();
+    const newCandidateVersions = filePaths.map((url, i) => ({
+      audioUrl: url,
+      timestamp: now,
+      type: 'generated',
+      name: filePaths.length > 1 ? `Gen · ${label} · c${i + 1}` : `Gen · ${label}`,
+      params,
+    }));
+
+    const existingVersions = track.metadata?.versions || [];
+    const prevAudioUrl = track.audioUrl;
+    const prevVersionAlreadyLogged = existingVersions.some((v) => v.audioUrl === prevAudioUrl);
+    const preservedPrev = prevAudioUrl && !prevVersionAlreadyLogged
+      ? [{
+          audioUrl: prevAudioUrl,
+          timestamp: track.metadata?.timestamp || (now - 1),
+          type: track.metadata?.type || 'previous',
+          name: existingVersions.length
+            ? `Previous (v${existingVersions.length + 1})`
+            : 'Previous',
+          params: track.metadata?.params || null,
+          midiData: track.metadata?.midiData || track.midiData || null,
+        }]
+      : [];
+
+    const newVersions = [...existingVersions, ...preservedPrev, ...newCandidateVersions];
+    const firstNewIndex = existingVersions.length + preservedPrev.length;
+
+    dispatch({
+      type: 'UPDATE_TRACK',
+      payload: {
+        busId,
+        trackId: track.id,
+        updates: {
+          audioUrl: firstUrl,
+          duration: result.duration || track.duration || params.duration,
+          metadata: {
+            ...(track.metadata || {}),
+            type: 'generated',
+            source: 'stemphonic',
+            instrument: baseParams.instrument,
+            timbre_preset: baseParams.timbre_preset,
+            prompt: baseParams.prompt,
+            params,
+            timestamp: now,
+            versions: newVersions,
+            currentVersionIndex: firstNewIndex,
+          },
+        },
+      },
+    });
+    return true;
   };
 
   const run = async () => {
@@ -112,7 +211,7 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
       const grp = selectedInstrument.group || '';
       const isDrum = grp === 'drums';
       const isVox  = grp === 'vocals';
-      const params = {
+      const baseParams = {
         // No user-facing text prompt — server derives the caption from
         // `instrument` via TRAINING_CAPTIONS. We still send the subgroup as
         // `prompt` for the no-match fallback path.
@@ -126,27 +225,77 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
         audio_cover_strength: advParams.audio_cover_strength,
         drum_mode: isDrum ? 'true' : 'false',
         vox_mode: isVox ? 'true' : 'false',
+        duration: 16,
       };
-      // Duration: follow the conditioning track's length when present;
-      // fall back to 16s. Stemphonic caps internally anyway.
-      params.duration = selectedTrack?.duration || 16;
 
-      const inputFile = await buildInputFile();
-      const midiFile = inputInfo.kind === 'midi' ? inputFile : null;
-      const refAudio = inputInfo.kind === 'audio' ? inputFile : null;
-      if (inputInfo.kind === 'latent') {
-        params.latent_id = inputInfo.latentId;
+      // Bus-target path: iterate eligible child tracks and run one pass
+      // per track. Each call writes a new version onto its own track via
+      // generateForTrack, so per-track + bus-wide revert in the right
+      // sidebar work without any extra plumbing.
+      if (!selectedTrack && selectedBus) {
+        const childTracks = (selectedBus.tracks || []).filter((t) => !t.metadata?.isBusMaster);
+        const eligible = childTracks.filter((t) => describeTrackInput(t).kind !== 'none');
+        if (eligible.length === 0) {
+          setError('No tracks with audio or MIDI to generate from in this bus.');
+          return;
+        }
+        let okCount = 0;
+        for (let i = 0; i < eligible.length; i++) {
+          const t = eligible[i];
+          const label = `${selectedInstrument.label} · ${t.name || t.id} (${i + 1}/${eligible.length})`;
+          try {
+            const ok = await generateForTrack({
+              track: t,
+              busId: selectedBus.id,
+              baseParams,
+              label,
+            });
+            if (ok) okCount++;
+          } catch (perr) {
+            // Surface but keep going — partial success beats aborting the
+            // whole bus run on one bad track.
+            console.warn('[bus-gen] track failed:', t.id, perr);
+            setError(`${t.name || t.id}: ${perr?.message || perr}`);
+          }
+        }
+        setStatus(`done · ${okCount}/${eligible.length} tracks`);
+        // Re-select the bus so the right sidebar's Versions section
+        // picks up the new currentVersionIndex on each track.
+        dispatch({ type: 'SELECT_BUS', payload: { busId: selectedBus.id } });
+        if (okCount > 0) onClose?.();
+        return;
       }
 
-      const start = await generateStemphonic(params, midiFile, refAudio);
+      // Single-track path (the original flow). Wraps generateForTrack so
+      // both branches share the same version-merge + dispatch shape.
+      const ownerBus = selectedTrack
+        ? state.buses.find((b) => b.tracks?.some((t) => t.id === selectedTrack.id))
+        : null;
+      if (ownerBus && selectedTrack) {
+        const ok = await generateForTrack({
+          track: selectedTrack,
+          busId: ownerBus.id,
+          baseParams,
+          label: selectedInstrument.label,
+        });
+        if (ok) {
+          setStatus('done');
+          dispatch({ type: 'SELECT_TRACK', payload: { trackId: selectedTrack.id, busId: ownerBus.id } });
+          onClose?.();
+        }
+        return;
+      }
+
+      // Fallback (no selected track AND no selected bus — text-only): run
+      // a single pass and create a fresh bus + track from the result.
+      const params = { ...baseParams, duration: 16 };
+      const start = await generateStemphonic(params, null, null);
       if (!start.task_id) throw new Error('No task_id returned');
       setStatus(`task ${start.task_id.slice(0, 8)}… running`);
-
       const result = await pollStemphonicUntilComplete(start.task_id, (p) => {
         setStatus(`${p.status || '…'}${p.attempts ? ` · ${p.attempts}s` : ''}`);
       });
       setStatus('done');
-
       const filePaths = result?.file_paths || [];
       if (filePaths.length) {
         const firstUrl = filePaths[0];
@@ -158,95 +307,35 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
           name: filePaths.length > 1 ? `Gen · ${selectedInstrument.label} · c${i + 1}` : `Gen · ${selectedInstrument.label}`,
           params,
         }));
-
-        // Prefer updating the conditioning track in place so the user sees
-        // the generation on the track they picked, not a brand new bus.
-        // Find the owning bus for selectedTrack (SELECT_TRACK doesn't stash
-        // busId on the track object, so we scan).
-        const ownerBus = selectedTrack
-          ? state.buses.find((b) => b.tracks?.some((t) => t.id === selectedTrack.id))
-          : null;
-
-        if (ownerBus && selectedTrack) {
-          // Preserve the track's current audio as a version before the new
-          // candidates, so the Track Info sidebar can switch back to it.
-          const existingVersions = selectedTrack.metadata?.versions || [];
-          const prevAudioUrl = selectedTrack.audioUrl;
-          const prevVersionAlreadyLogged = existingVersions.some((v) => v.audioUrl === prevAudioUrl);
-          const preservedPrev = prevAudioUrl && !prevVersionAlreadyLogged
-            ? [{
-                audioUrl: prevAudioUrl,
-                timestamp: selectedTrack.metadata?.timestamp || (now - 1),
-                type: selectedTrack.metadata?.type || 'previous',
-                name: selectedTrack.metadata?.versions?.length
-                  ? `Previous (v${existingVersions.length + 1})`
-                  : 'Previous',
-                params: selectedTrack.metadata?.params || null,
-                midiData: selectedTrack.metadata?.midiData || selectedTrack.midiData || null,
-              }]
-            : [];
-
-          const newVersions = [...existingVersions, ...preservedPrev, ...newCandidateVersions];
-          const firstNewIndex = existingVersions.length + preservedPrev.length;
-
-          dispatch({
-            type: 'UPDATE_TRACK',
-            payload: {
-              busId: ownerBus.id,
-              trackId: selectedTrack.id,
-              updates: {
-                audioUrl: firstUrl,
-                duration: result.duration || selectedTrack.duration || params.duration,
-                metadata: {
-                  type: 'generated',
-                  source: 'stemphonic',
-                  instrument: sub,
-                  timbre_preset: params.timbre_preset,
-                  prompt: params.prompt,
-                  params,
-                  timestamp: now,
-                  versions: newVersions,
-                  currentVersionIndex: firstNewIndex,
-                },
+        const busId = `bus-gen-${now}`;
+        const trackId = `t-gen-${now}`;
+        dispatch({
+          type: 'CREATE_BUS',
+          payload: { id: busId, type: 'INSTRUMENT', name: `Gen · ${selectedInstrument.label}`, expanded: true },
+        });
+        dispatch({
+          type: 'ADD_TRACK',
+          payload: {
+            busId,
+            track: {
+              id: trackId,
+              name: `Gen · ${selectedInstrument.label}`,
+              audioUrl: firstUrl,
+              duration: result.duration || params.duration,
+              startPosition: 0,
+              gain: 1, isMuted: false, isSolo: false,
+              fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
+              metadata: {
+                type: 'generated', source: 'stemphonic',
+                instrument: baseParams.instrument, timbre_preset: params.timbre_preset,
+                prompt: params.prompt, params, timestamp: now,
+                versions: newCandidateVersions,
+                currentVersionIndex: 0,
               },
             },
-          });
-          // Re-select the track so the Track Info sidebar picks up the
-          // refreshed metadata + new version history.
-          dispatch({ type: 'SELECT_TRACK', payload: { trackId: selectedTrack.id, busId: ownerBus.id } });
-        } else {
-          // Fallback (no selected track — text-only generation): create a
-          // new bus + track as before.
-          const busId = `bus-gen-${now}`;
-          const trackId = `t-gen-${now}`;
-          dispatch({
-            type: 'CREATE_BUS',
-            payload: { id: busId, type: 'INSTRUMENT', name: `Gen · ${selectedInstrument.label}`, expanded: true },
-          });
-          dispatch({
-            type: 'ADD_TRACK',
-            payload: {
-              busId,
-              track: {
-                id: trackId,
-                name: `Gen · ${selectedInstrument.label}`,
-                audioUrl: firstUrl,
-                duration: result.duration || params.duration,
-                startPosition: 0,
-                gain: 1, isMuted: false, isSolo: false,
-                fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
-                metadata: {
-                  type: 'generated', source: 'stemphonic',
-                  instrument: sub, timbre_preset: params.timbre_preset,
-                  prompt: params.prompt, params, timestamp: now,
-                  versions: newCandidateVersions,
-                  currentVersionIndex: 0,
-                },
-              },
-            },
-          });
-          dispatch({ type: 'SELECT_TRACK', payload: { trackId, busId } });
-        }
+          },
+        });
+        dispatch({ type: 'SELECT_TRACK', payload: { trackId, busId } });
         onClose?.();
       }
     } catch (e) {
@@ -281,6 +370,18 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
           <div className="sd-gen-input-info">
             <span>Conditioning {inputInfo.kind === 'midi' ? 'MIDI' : 'audio'}</span>
             <strong>{inputInfo.name}</strong>
+          </div>
+        )}
+        {/* Bus target indicator — only when a bus is selected without a
+         * focused track. Tells the user generation will fan out to every
+         * eligible child track in the bus (one pass each, replacing
+         * audio + appending to per-track versions). */}
+        {busTargetInfo && (
+          <div className="sd-gen-input-info">
+            <span>Bus target</span>
+            <strong>
+              {busTargetInfo.name} · {busTargetInfo.eligible}/{busTargetInfo.total} track{busTargetInfo.total === 1 ? '' : 's'}
+            </strong>
           </div>
         )}
 
