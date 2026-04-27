@@ -50,6 +50,7 @@ import StudioDevVideo from './StudioDevVideo';
 import StudioDevChords from './StudioDevChords';
 import { applyChordChange as polypitchApplyChordChange } from '../../services/polypitchChordSync';
 import { renderTrackFlexPitch } from '../../services/flexPitchRender';
+import { parseMIDIFile } from '../../utils/midiParser';
 import StudioDevGenerate from './StudioDevGenerate';
 import StudioDevChat from './StudioDevChat';
 import AutomationWindow from '../AutomationWindow/AutomationWindow';
@@ -1256,15 +1257,109 @@ export default function StudioDev() {
     if (e.currentTarget.contains(e.relatedTarget)) return;
     setIsDraggingFile(false);
   }, []);
+  // Ingest a MIDI file dropped on the /studio timeline. Multitrack .mid
+  // files (Type 1, multiple MTrk chunks with notes) become a NEW BUS where
+  // each MIDI track is a separate `type: 'midi'` track in the bus. Single
+  // track .mid files become a one-track bus. Bus name = filename minus
+  // extension. Tempo from the file's first tempo event flows onto each
+  // track's midiData so the editor lines up cells the way the file
+  // intended. Drop position becomes startPosition so notes land where the
+  // user dropped.
+  const ingestMidiFile = useCallback(async (file, dropTime = 0) => {
+    if (!file) return;
+    logPipeline('upload', `${file.name} (${(file.size / 1024).toFixed(0)} KB)`);
+    let parsed;
+    try {
+      parsed = await parseMIDIFile(file);
+    } catch (err) {
+      logPipeline('upload', `MIDI parse failed: ${err?.message || err}`, 'err');
+      alert(`Failed to load MIDI file: ${err?.message || err}`);
+      return;
+    }
+    const tracksWithNotes = (parsed.tracks || []).filter((t) => (t?.notes || []).length > 0);
+    if (tracksWithNotes.length === 0) {
+      logPipeline('upload', 'MIDI file has no notes', 'warn');
+      alert('MIDI file has no notes.');
+      return;
+    }
+    const baseName = file.name.replace(/\.(mid|midi)$/i, '');
+    const fileTempo = parsed.tempo || 120;
+    const busId = `bus-${Date.now()}`;
+    dispatch({
+      type: 'CREATE_BUS',
+      payload: {
+        id: busId,
+        // MIDI bus type — matches the legacy Timeline convention and
+        // lands the per-track payload in tracksForPlayback.midi (vs the
+        // music fallback). Playback would still work either way thanks
+        // to isMidiTypeTrack(), but MIDI is the semantic match.
+        type: 'MIDI',
+        name: baseName,
+        // Auto-expand multitrack imports so the user immediately sees the
+        // per-track breakdown they just dragged in.
+        expanded: tracksWithNotes.length > 1,
+      },
+    });
+    tracksWithNotes.forEach((midiTrack, index) => {
+      const trackId = `t-${Date.now()}-${index}`;
+      const trackName = midiTrack.name
+        || midiTrack.instrument
+        || (tracksWithNotes.length > 1 ? `${baseName} ${index + 1}` : baseName);
+      dispatch({
+        type: 'ADD_TRACK',
+        payload: {
+          busId,
+          track: {
+            id: trackId,
+            name: trackName,
+            type: 'midi',
+            duration: parsed.duration || 0,
+            startPosition: dropTime,
+            gain: 1.0,
+            isMuted: false,
+            isSolo: false,
+            fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
+            metadata: {
+              type: 'midi',
+              instrument: midiTrack.instrument || null,
+              originalFilename: file.name,
+              isMultitrackSource: tracksWithNotes.length > 1,
+              sourceTrackIndex: index,
+            },
+            midiData: {
+              notes: midiTrack.notes,
+              duration: parsed.duration || 0,
+              tempo: midiTrack.tempo || fileTempo,
+            },
+          },
+        },
+      });
+      // Auto-select the first track so the piano roll opens on it.
+      if (index === 0) {
+        dispatch({ type: 'SELECT_TRACK', payload: { trackId, busId } });
+      }
+    });
+    setActiveMode('midi');
+    logPipeline('upload', `${tracksWithNotes.length} MIDI track${tracksWithNotes.length === 1 ? '' : 's'} → bus "${baseName}"`, 'ok');
+  }, [dispatch]);
+
   const onTimelineDrop = useCallback((e) => {
     if (!e.dataTransfer?.files?.length) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDraggingFile(false);
     const file = e.dataTransfer.files[0];
-    if (!file.type.startsWith('audio/') && !/\.(mid|midi|wav|mp3|ogg|flac|aac|m4a)$/i.test(file.name)) return;
+    const isMidi = /\.(mid|midi)$/i.test(file.name)
+      || file.type === 'audio/midi'
+      || file.type === 'audio/x-midi'
+      || file.type === 'audio/mid';
+    if (isMidi) {
+      ingestMidiFile(file, 0);
+      return;
+    }
+    if (!file.type.startsWith('audio/') && !/\.(wav|mp3|ogg|flac|aac|m4a)$/i.test(file.name)) return;
     ingestFile(file);
-  }, [ingestFile]);
+  }, [ingestFile, ingestMidiFile]);
 
   const addInstrumentTrack = useCallback((inst) => {
     const busId = `bus-${Date.now()}`;
