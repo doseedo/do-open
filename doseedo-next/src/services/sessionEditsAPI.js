@@ -56,6 +56,45 @@ function _uuid() {
   });
 }
 
+// ── Outbound op-id memory (echo suppression for the SSE consumer) ────────────
+//
+// Every time we POST an edit we stash its client_op_id here. The
+// useEditStream hook checks this set before applying an inbound event
+// — anything we just produced is dropped, so the slider doesn't snap
+// when the round-trip event lands a moment after the local update.
+//
+// Bounded growth: oldest ids age out after _OUTBOUND_TTL_MS so the set
+// stays small even on a long editing session.
+
+const _outboundIds = new Map(); // client_op_id → expires_at_ms
+const _OUTBOUND_TTL_MS = 5000;
+
+function _recordOutboundOpId(id) {
+  if (!id) return;
+  const expires = Date.now() + _OUTBOUND_TTL_MS;
+  _outboundIds.set(id, expires);
+  // Cheap GC every ~1k inserts.
+  if (_outboundIds.size > 1024) {
+    const now = Date.now();
+    for (const [k, exp] of _outboundIds) {
+      if (exp < now) _outboundIds.delete(k);
+    }
+  }
+}
+
+export function recordOutboundOpId(id) { _recordOutboundOpId(id); }
+
+export function isOutboundOpId(id) {
+  if (!id) return false;
+  const exp = _outboundIds.get(id);
+  if (exp === undefined) return false;
+  if (exp < Date.now()) {
+    _outboundIds.delete(id);
+    return false;
+  }
+  return true;
+}
+
 // ── Per-session queue ────────────────────────────────────────────────────────
 
 const _queues = new Map(); // sessionId → { pending: [], flushTimer, firstEnqueuedAt }
@@ -123,18 +162,22 @@ export function enqueueEdit(sessionId, op, args, { dedupKey = null } = {}) {
   if (dedupKey) {
     const idx = q.pending.findIndex((e) => e.dedupKey === dedupKey);
     if (idx >= 0) {
-      q.pending[idx] = { op, args, client_op_id: _uuid(), dedupKey };
+      const id = _uuid();
+      q.pending[idx] = { op, args, client_op_id: id, dedupKey };
+      _recordOutboundOpId(id);
       _scheduleFlush(sessionId);
       return;
     }
   }
-  q.pending.push({ op, args, client_op_id: _uuid(), dedupKey });
+  const id = _uuid();
+  q.pending.push({ op, args, client_op_id: id, dedupKey });
+  _recordOutboundOpId(id);
   _scheduleFlush(sessionId);
 }
 
-/** Convenience for the volume slider. `channel` is the 1-based Logic mixer
- *  strip index; `value` is 0..1 (matches both the `<input type="range">`
- *  scale and what doo_hook.set_volume expects). */
+/** Volume edit by 1-based Logic mixer channel. Positional — breaks if the
+ *  track's index changes between emit and apply (concurrent insert/reorder).
+ *  Prefer `enqueueVolumeEditV2` whenever the track has a stable UUID. */
 export function enqueueVolumeEdit(sessionId, channel, value) {
   if (typeof channel !== 'number' || channel < 1) return;
   enqueueEdit(
@@ -142,6 +185,23 @@ export function enqueueVolumeEdit(sessionId, channel, value) {
     'set_volume',
     { channel, value: Math.max(0, Math.min(1, value)) },
     { dedupKey: `set_volume:${channel}` }
+  );
+}
+
+/** Volume edit by stable 16-byte Logic track UUID (`get_track_uuids()` /
+ *  `track.uuid` in the synced session JSON). The desktop dispatcher
+ *  resolves the UUID to its current MCSession channel via the
+ *  per-session map written by logic_sync._write_track_uuid_map.
+ *
+ *  This is the right call to use for any edit that should survive a
+ *  concurrent track insert/reorder on the other client. */
+export function enqueueVolumeEditV2(sessionId, trackUuid, value) {
+  if (typeof trackUuid !== 'string' || trackUuid.length === 0) return;
+  enqueueEdit(
+    sessionId,
+    'set_volume_v2',
+    { track_uuid: trackUuid, value: Math.max(0, Math.min(1, value)) },
+    { dedupKey: `set_volume_v2:${trackUuid}` }
   );
 }
 

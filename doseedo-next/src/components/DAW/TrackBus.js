@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useThemeColor } from '../../hooks/useThemeColor';
-import { enqueueVolumeEdit } from '../../services/sessionEditsAPI';
+import { enqueueVolumeEdit, enqueueVolumeEditV2 } from '../../services/sessionEditsAPI';
 
 /**
  * TrackBus Component - Represents a track bus control panel (VO, Music, or SFX)
@@ -157,10 +157,19 @@ function TrackBus({ bus, icon }) {
                       }
                     });
                     // Mirror the edit to the desktop's edit-log so doo_hook
-                    // moves the matching Logic mixer fader. Logic strips are
-                    // 1-based (track 0 = Stereo Out), so channel = idx + 1.
-                    if (state.activeSessionId && typeof track.logicTrackIndex === 'number') {
-                      enqueueVolumeEdit(state.activeSessionId, track.logicTrackIndex + 1, newGain);
+                    // moves the matching Logic mixer fader. Prefer the v2
+                    // op (stable Logic track UUID) so concurrent inserts /
+                    // reorders on either side don't make the edit land on
+                    // the wrong channel. Falls back to v1 (positional
+                    // channel index) only when the track was added on the
+                    // web before any sync — those tracks don't have a
+                    // Logic UUID yet because they don't exist in Logic.
+                    if (state.activeSessionId) {
+                      if (track.uuid) {
+                        enqueueVolumeEditV2(state.activeSessionId, track.uuid, newGain);
+                      } else if (typeof track.logicTrackIndex === 'number') {
+                        enqueueVolumeEdit(state.activeSessionId, track.logicTrackIndex + 1, newGain);
+                      }
                     }
                   }}
                   style={{

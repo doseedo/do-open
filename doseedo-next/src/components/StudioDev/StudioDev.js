@@ -59,6 +59,8 @@ import OutOfCreditsModal from './OutOfCreditsModal';
 import StudioDevFileMenu from './StudioDevFileMenu';
 import { useAgentWebSocket } from '../ChatWindow/useAgentWebSocket';
 import { useLiveParamDeltas } from '../../hooks/useLiveParamDeltas';
+import { useSessionCommits } from '../../hooks/useSessionCommits';
+import { useEditStream } from '../../hooks/useEditStream';
 
 import './StudioDev.css';
 
@@ -402,6 +404,18 @@ export default function StudioDev() {
   const [rightTab, setRightTab] = useState('session');
   const [sessionBusExpanded, setSessionBusExpanded] = useState({}); // busId → boolean
   const [historyFilterMe, setHistoryFilterMe] = useState(false);    // History tab: only show my commits
+
+  // Server-side commit DAG (alembic 009 / commit_minter). When the active
+  // session has been synced, this is the source of truth for the History
+  // tab; the localStorage `sessionHistory` falls back to caching when the
+  // server is unreachable or the session hasn't been synced yet.
+  const serverHistory = useSessionCommits(state.activeSessionId || null);
+
+  // Subscribe to the live edit stream — receives the desktop's fader
+  // moves (and any other web client's edits) sub-second. Echoes of our
+  // own writes are dropped via the outbound-op-id registry in
+  // sessionEditsAPI; reconnects are automatic.
+  useEditStream(state.activeSessionId || null);
 
   // Cream-wash loading overlay shown on /studio entry until ONNX models
   // (latentEncoder / polypitch / etc.) report ready. Cleared on the first
@@ -3408,13 +3422,48 @@ export default function StudioDev() {
 
           {!selectedTrack && !state.selectedBus && rightTab === 'history' && (() => {
             const history = state.sessionHistory || {};
-            const commits = listCommitsDesc(history);
+            const localCommits = listCommitsDesc(history);
             const currentUserId = clerk?.user?.id || null;
+
+            // Prefer server commits when the session is synced AND we got a
+            // successful response. Anything else falls back to local-only.
+            const useServer = !!state.activeSessionId
+              && serverHistory.status !== 'error'
+              && (serverHistory.commits?.length || 0) > 0;
+
+            // Normalize server commits into the row shape the existing UI
+            // already speaks: {id, parentIds, author:{userId,username,avatarUrl},
+            // timestamp, label, actionType}. Author enrichment (username/avatar
+            // from a user_id) is a follow-up; for now we render origin + id.
+            const serverRows = (serverHistory.commits || []).map((c) => ({
+              id: c.id,
+              parentIds: c.parent_ids || [],
+              author: {
+                userId: c.author_user_id != null ? String(c.author_user_id) : null,
+                username: c.author_origin
+                  ? (c.author_origin === 'desktop' ? 'Desktop sync' : c.author_origin)
+                  : (c.author_user_id != null ? `User ${c.author_user_id}` : 'Unknown'),
+                avatarUrl: null,
+              },
+              timestamp: c.created_at ? new Date(c.created_at).getTime() : Date.now(),
+              label: c.label || c.action_type || 'commit',
+              actionType: c.action_type || null,
+              _server: c,
+              _isOriginal: c.id === serverHistory.original,
+              _isProtected: !!c.protected,
+            }));
+
+            const commits = useServer ? serverRows : localCommits;
             const shown = historyFilterMe && currentUserId
               ? commits.filter((c) => c.author?.userId === currentUserId)
               : commits;
-            const headId = history.refs?.[history.currentBranch];
-            const previewingCommit = state.previewCommitId ? history.commits?.[state.previewCommitId] : null;
+
+            const headId = useServer
+              ? (serverHistory.head?.commit_id || null)
+              : history.refs?.[history.currentBranch];
+            const previewingCommit = !useServer && state.previewCommitId
+              ? history.commits?.[state.previewCommitId]
+              : null;
             const formatWhen = (ts) => {
               const d = new Date(ts);
               const diff = Date.now() - ts;
@@ -3441,9 +3490,27 @@ export default function StudioDev() {
                   <div>
                     <div className="sd-side-title">History</div>
                     <div className="sd-side-sub">
-                      on <span className="sd-history-branch">{history.currentBranch || 'main'}</span>
-                      {Object.keys(history.refs || {}).length > 1 && (
-                        <span> · {Object.keys(history.refs).length} branches</span>
+                      {useServer ? (
+                        <>
+                          on <span className="sd-history-branch">main</span>
+                          {(serverHistory.refs?.length || 0) > 1 && (
+                            <span> · {serverHistory.refs.length} refs</span>
+                          )}
+                          <span className="sd-history-source" title="Source: server commit DAG"> · synced</span>
+                        </>
+                      ) : (
+                        <>
+                          on <span className="sd-history-branch">{history.currentBranch || 'main'}</span>
+                          {Object.keys(history.refs || {}).length > 1 && (
+                            <span> · {Object.keys(history.refs).length} branches</span>
+                          )}
+                          {state.activeSessionId && serverHistory.status === 'loading' && (
+                            <span className="sd-history-source"> · loading…</span>
+                          )}
+                          {state.activeSessionId && serverHistory.status === 'error' && (
+                            <span className="sd-history-source" title={serverHistory.error || ''}> · offline</span>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -3455,17 +3522,22 @@ export default function StudioDev() {
 
                 {commits.length === 0 && (
                   <div className="sd-right-hint">
-                    No commits yet. Add a track, generate audio, or edit MIDI — commits will show up here as you work.
+                    {state.activeSessionId
+                      ? 'No commits yet. Sync from the desktop app to write commit 0 (your original session bytes).'
+                      : 'No commits yet. Add a track, generate audio, or edit MIDI — commits will show up here as you work.'}
                   </div>
                 )}
 
                 <div className="sd-history-list">
                   {shown.map((commit) => {
                     const isHead = commit.id === headId;
-                    const isPreview = commit.id === state.previewCommitId;
-                    const branches = refsAtCommit(history, commit.id);
+                    const isPreview = !useServer && commit.id === state.previewCommitId;
+                    const branches = useServer
+                      ? (serverHistory.refs || []).filter((r) => r.commit_id === commit.id).map((r) => r.name)
+                      : refsAtCommit(history, commit.id);
                     const avatar = commit.author?.avatarUrl;
                     const name = commit.author?.username || 'Anonymous';
+                    const isOriginal = !!commit._isOriginal;
                     return (
                       <div key={commit.id} className={`sd-commit ${isPreview ? 'preview' : ''} ${isHead ? 'head' : ''}`}>
                         <div className="sd-commit-bullet" title={isHead ? 'HEAD' : ''}>
@@ -3482,18 +3554,56 @@ export default function StudioDev() {
                             <span className="sd-commit-time">{formatWhen(commit.timestamp)}</span>
                           </div>
                           <div className="sd-commit-label">{commit.label}</div>
-                          {(isHead || branches.length > 0) && (
+                          {(() => {
+                            const rights = commit._server?.rights || null;
+                            if (!rights) return null;
+                            const pills = [];
+                            if (rights.model?.name) {
+                              pills.push(
+                                <span key="model" className="sd-commit-ref" title={`AI-assisted: ${rights.model.name}${rights.model.version ? ' v' + rights.model.version : ''}`}>
+                                  🤖 {rights.model.name}
+                                </span>
+                              );
+                            }
+                            if (rights.license) {
+                              pills.push(
+                                <span key="license" className="sd-commit-ref" title={`License: ${rights.license}`}>
+                                  {rights.license}
+                                </span>
+                              );
+                            }
+                            const srcCount = rights.sources?.length || 0;
+                            if (srcCount > 0) {
+                              const titles = rights.sources.map((s) => s.attribution).join('\n');
+                              pills.push(
+                                <span key="sources" className="sd-commit-ref" title={`Third-party sources:\n${titles}`}>
+                                  {srcCount} source{srcCount === 1 ? '' : 's'}
+                                </span>
+                              );
+                            }
+                            return pills.length ? <div className="sd-commit-rights">{pills}</div> : null;
+                          })()}
+                          {(isHead || branches.length > 0 || isOriginal) && (
                             <div className="sd-commit-refs">
                               {isHead && <span className="sd-commit-ref head">HEAD</span>}
+                              {isOriginal && (
+                                <span className="sd-commit-ref" title="Pristine bytes — never garbage-collected">
+                                  ORIGINAL
+                                </span>
+                              )}
                               {branches.map((b) => {
-                                const isCurrent = b === history.currentBranch;
+                                const isCurrent = !useServer && b === history.currentBranch;
                                 return (
                                   <button
                                     key={b}
                                     className={`sd-commit-ref sd-commit-ref-btn ${isCurrent ? 'current' : ''}`}
-                                    onClick={() => !isCurrent && historyCheckoutBranch(b)}
-                                    disabled={isCurrent}
-                                    title={isCurrent ? 'Current branch' : `Switch to ${b}`}
+                                    onClick={() => !useServer && !isCurrent && historyCheckoutBranch(b)}
+                                    disabled={useServer || isCurrent}
+                                    title={
+                                      useServer
+                                        ? `Server ref: ${b}`
+                                        : isCurrent ? 'Current branch' : `Switch to ${b}`
+                                    }
                                   >
                                     {b}
                                   </button>
@@ -3502,13 +3612,28 @@ export default function StudioDev() {
                             </div>
                           )}
                           <div className="sd-commit-actions">
-                            <button className="sd-btn ghost" onClick={() => historyPreviewCommit(commit)} disabled={isHead && !isPreview}>
+                            <button
+                              className="sd-btn ghost"
+                              onClick={() => !useServer && historyPreviewCommit(commit)}
+                              disabled={useServer || (isHead && !isPreview)}
+                              title={useServer ? 'Server-side preview ships in a later release' : 'Load this snapshot read-only'}
+                            >
                               <i className="fa-solid fa-eye" style={{ fontSize: 10 }} /> View
                             </button>
-                            <button className="sd-btn ghost" onClick={() => historyRevertToCommit(commit)} disabled={isHead}>
+                            <button
+                              className="sd-btn ghost"
+                              onClick={() => !useServer && historyRevertToCommit(commit)}
+                              disabled={useServer || isHead}
+                              title={useServer ? 'Server-side revert ships in a later release' : 'Revert to this commit'}
+                            >
                               <i className="fa-solid fa-rotate-left" style={{ fontSize: 10 }} /> Revert
                             </button>
-                            <button className="sd-btn ghost" onClick={() => historyBranchFromCommit(commit)}>
+                            <button
+                              className="sd-btn ghost"
+                              onClick={() => !useServer && historyBranchFromCommit(commit)}
+                              disabled={useServer}
+                              title={useServer ? 'Server-side branching ships in a later release' : 'Branch from this commit'}
+                            >
                               <i className="fa-solid fa-code-branch" style={{ fontSize: 10 }} /> Branch
                             </button>
                           </div>
