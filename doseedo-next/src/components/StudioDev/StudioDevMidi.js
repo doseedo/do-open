@@ -139,12 +139,12 @@ export default function StudioDevMidi() {
   const wrapRef    = useRef(null);
   const [size,    setSize]    = useState({ w: 800, h: 400 });
   const [pxPerSec,setPxPerSec]= useState(96);    // X zoom (px per second). Cell width.
-  // Independent Y zoom multiplier on top of cellSec*pxPerSec. Default
-  // 0.3 keeps roughly an octave (~12 rows) in view at the typical
-  // canvas height — without this the 2-beat-cell default would push
-  // the square-cell math to ~96 px rows and only ~4 pitches would be
-  // visible on first paint. Arrow-key Up/Down still adjusts in place.
-  const [rowZoom, setRowZoom] = useState(0.3);
+  // Independent Y zoom multiplier on top of cellSec*pxPerSec. Tuned so
+  // the canvas opens with roughly an octave in view: at the default
+  // 1/8-note cell (cellSec≈0.25 s, pxPerSec=96) this gives
+  // 0.25*96*1.25 ≈ 30 px rows, ~13 pitches in a 400 px canvas. Arrow-
+  // key Up/Down still adjusts in place.
+  const [rowZoom, setRowZoom] = useState(1.25);
   const [scrollX, setScrollX] = useState(0);
   const [scrollY, setScrollY] = useState(0);
   // Hover flag for the arrow-key zoom shortcuts. Set on mouseenter /
@@ -157,12 +157,13 @@ export default function StudioDevMidi() {
   // spacing), X = 60/BPM (one beat per unit). Expressions are stored
   // as strings now; we'll wire them to actual grid math in a follow-up.
   const [axisOpen, setAxisOpen] = useState(false);
-  // Default cell base is two beats wide (120/BPM). Cell size derives
-  // from this expression × pxPerSec — a 2-beat default zooms the X grid
-  // to roughly 2× the prior 1-beat-cell layout. The musical beat / bar
-  // lines below re-derive from BPM directly so changing the cell base
-  // doesn't move the bar markers off the actual downbeats.
-  const [xAxisExpr, setXAxisExpr] = useState('120/BPM');
+  // Default cell base = one eighth note (30/BPM seconds), so the X grid
+  // shows 2 cells per beat. New-note default snaps to one cell wide
+  // (defDur logic in onMouseDown), giving the user 1/8-note placement
+  // out of the box. Musical beat / bar lines below derive from BPM
+  // directly so changing the cell base doesn't move the bar markers
+  // off the actual downbeats.
+  const [xAxisExpr, setXAxisExpr] = useState('30/BPM');
   const [yAxisExpr, setYAxisExpr] = useState('2^(1/12)');
   const [selected,setSelected]= useState(new Set());
   const [drag, setDrag] = useState(null);        // {mode:'move'|'resize-right'|'resize-left'|'marquee'|'new', ...}
@@ -506,7 +507,15 @@ export default function StudioDevMidi() {
       // gesture if they want a different length.
       const t = Math.max(0, timeAtX(mx));
       const p = pitchAtY(my);
-      const defDur = lastNoteDurRef.current ?? cellSec;
+      // Default new-note duration = one cell at the active zoom. The
+      // last-placed duration sticks ONLY when it was longer than a
+      // cell — so a fresh load always lands on 1/8 note (the default
+      // cell base) and after a 4-cell drag every subsequent click
+      // produces a 4-cell note, but a tiny note from a deeply zoomed-in
+      // session never bleeds back to a coarser zoom.
+      const defDur = lastNoteDurRef.current && lastNoteDurRef.current > cellSec
+        ? lastNoteDurRef.current
+        : cellSec;
       const newNote = {
         note: p,
         time: +snapTime(t).toFixed(4),
@@ -1394,7 +1403,7 @@ export default function StudioDevMidi() {
           }}>Humanize</button>
         </div>
         <div className="sd-midi-group">
-          <button className="sd-midi-btn" onClick={() => { setScrollX(0); setScrollY(0); setRowZoom(0.3); setPxPerSec(96); }}>Reset view</button>
+          <button className="sd-midi-btn" onClick={() => { setScrollX(0); setScrollY(0); setRowZoom(1.25); setPxPerSec(96); }}>Reset view</button>
           {f0Contour.length > 0 && !isScore && (
             <button
               className="sd-midi-btn sd-midi-danger"
@@ -1559,7 +1568,7 @@ export default function StudioDevMidi() {
                 className="sd-midi-axis-input"
                 value={xAxisExpr}
                 onChange={(e) => setXAxisExpr(e.target.value)}
-                placeholder="120/BPM"
+                placeholder="30/BPM"
               />
               <span className="sd-midi-axis-hint">units / cell</span>
             </div>
@@ -1577,7 +1586,7 @@ export default function StudioDevMidi() {
             <div className="sd-midi-axis-row">
               <button
                 className="sd-midi-btn"
-                onClick={() => { setXAxisExpr('120/BPM'); setYAxisExpr('2^(1/12)'); }}
+                onClick={() => { setXAxisExpr('30/BPM'); setYAxisExpr('2^(1/12)'); }}
               >
                 Reset defaults
               </button>
