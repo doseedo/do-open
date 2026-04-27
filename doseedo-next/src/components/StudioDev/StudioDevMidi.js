@@ -605,6 +605,12 @@ export default function StudioDevMidi() {
           const baseSpan = orig.pitchSpan || 1;
           const newSpan = Math.max(1, Math.min(maxPitch - orig.note + 1, baseSpan + dp));
           nxt[i].pitchSpan = newSpan;
+          // Stretching past 1 cell defaults the trajectory to a full
+          // diagonal (bend=1, linear curve) so users see a visible
+          // pitch ramp the moment the note becomes multi-row. Skip
+          // when the user already set a non-zero bend explicitly.
+          if (newSpan > 1 && !(orig.bend > 0)) nxt[i].bend = 1;
+          if (newSpan > 1 && nxt[i].curve === undefined) nxt[i].curve = 0;
         }
       } else if (drag.mode === 'stretch-down') {
         // Drag the bottom edge down → grow pitchSpan downward. base.note
@@ -619,6 +625,8 @@ export default function StudioDevMidi() {
           const newSpan = Math.max(1, Math.min(origTop - minPitch + 1, baseSpan + grow));
           nxt[i].pitchSpan = newSpan;
           nxt[i].note = origTop - newSpan + 1;
+          if (newSpan > 1 && !(orig.bend > 0)) nxt[i].bend = 1;
+          if (newSpan > 1 && nxt[i].curve === undefined) nxt[i].curve = 0;
         }
       }
       commit(nxt);
@@ -1075,6 +1083,48 @@ export default function StudioDevMidi() {
       ctx.strokeStyle = selected.has(i) ? C.ink : col;
       ctx.lineWidth = selected.has(i) ? 1.4 : 1;
       ctx.stroke();
+
+      // Pitch-trajectory line — only for multi-row notes (span > 1).
+      // Mirrors the midiPlayer.playNote bend/curve formula:
+      //   pitchOffset(t) = bend * (span-1)/2 * (2*(t/dur)^p - 1)
+      //   where p = 4^curve, p=1 linear, >1 exp, <1 log.
+      // Default bend=1 (set by stretch-up/stretch-down) gives a full
+      // diagonal across the note rect. Drawn ON the note in ink so it
+      // reads against the coloured fill. Sampled coarsely (32 steps) —
+      // any more and overlap with the rect border swamps the curve.
+      if (span > 1) {
+        const bendV = Math.max(0, Math.min(1, n.bend ?? 0));
+        const curveV = Math.max(-1, Math.min(1, n.curve ?? 0));
+        if (bendV > 0) {
+          const STEPS = 32;
+          const pExp = Math.pow(4, curveV);
+          const halfSpan = (span - 1) / 2;
+          // Centre y of the note rect.
+          const cy = y + 1 + h / 2;
+          const dyMax = bendV * halfSpan * rowH;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x, y, w, h + 2);
+          ctx.clip();
+          ctx.strokeStyle = C.ink;
+          ctx.lineWidth = 1.5;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.globalAlpha = 0.55;
+          ctx.beginPath();
+          for (let s = 0; s <= STEPS; s++) {
+            const tt = s / STEPS;
+            const f = 2 * Math.pow(tt, pExp) - 1;     // [-1, +1]
+            const dy = -f * dyMax;                     // -1 = bottom of bend → +y; +1 = top → -y
+            const px = x + tt * w;
+            const py = cy + dy;
+            if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
       // Lyric
       if (n.lyric && w > 24) {
         ctx.fillStyle = C.bg;
