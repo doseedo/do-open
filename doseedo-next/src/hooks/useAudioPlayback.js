@@ -36,6 +36,16 @@ function isRenderablePlaybackTrack(track) {
   return !track?.metadata?.isBusMaster;
 }
 
+// MIDI-type detection. Tracks added through the StudioDev "add instrument"
+// flow stamp `metadata.type = 'midi'` but leave the top-level `type` field
+// undefined. Older paths (DAW BusRow, MIDI browser, useAudioRecorder, etc.)
+// stamp `type: 'midi'` at the top level. Either form should be treated as
+// a MIDI track for scheduling — without this helper, the studio piano-roll
+// tracks fall through every MIDI branch and produce silence on playback.
+function isMidiTypeTrack(track) {
+  return track?.type === 'midi' || track?.metadata?.type === 'midi';
+}
+
 function normalizeStemForMaskPlayback(track) {
   const raw = (
     track?.metadata?.stemType ||
@@ -289,7 +299,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     const audioTracks = (tracks.audio || []).filter(isRenderablePlaybackTrack);
 
     // Include MIDI bus audio tracks (not MIDI type tracks)
-    const midiAudioTracks = midiTracks.filter(t => t.type !== 'midi' && t.audioUrl);
+    const midiAudioTracks = midiTracks.filter(t => !isMidiTypeTrack(t) && t.audioUrl);
 
     const allTracks = [...voTracks, ...musicTracks, ...sfxTracks, ...midiAudioTracks, ...audioTracks];
 
@@ -604,8 +614,8 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
 
       // Include MIDI bus tracks - include MIDI tracks with audioUrl OR f0Audio
       const midiAudioTracks = midiTracks.filter(t =>
-        (t.type !== 'midi' && t.audioUrl) || // Audio tracks in MIDI bus
-        (t.type === 'midi' && (t.audioUrl || t.f0Audio || t.midiData)) // MIDI tracks with playable content
+        (!isMidiTypeTrack(t) && t.audioUrl) || // Audio tracks in MIDI bus
+        (isMidiTypeTrack(t) && (t.audioUrl || t.f0Audio || t.midiData)) // MIDI tracks with playable content
       );
 
       const allTracks = [...voTracks, ...musicTracks, ...sfxTracks, ...drumTracks, ...midiAudioTracks, ...audioTracks];
@@ -638,7 +648,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       // Resume MIDI player audio context — fire and forget. If it misses
       // the first few ms of notes, the notes are still scheduled against
       // AudioContext time so they catch up.
-      const hasMidiTracks = allTracks.some(t => t.type === 'midi' && t.midiData);
+      const hasMidiTracks = allTracks.some(t => isMidiTypeTrack(t) && t.midiData);
       if (hasMidiTracks) {
         midiPlayer.resume().then(() => console.log('🎹 MIDI player audio context resumed'))
           .catch((e) => console.warn('MIDI resume failed:', e));
@@ -650,7 +660,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       const urlsToWarm = [];
       for (const t of allTracks) {
         if (t.audioUrl && !audioBufferCache.has(t.audioUrl)) urlsToWarm.push(t.audioUrl);
-        if (t.type === 'midi' && t.f0Audio && !audioBufferCache.has(t.f0Audio)) urlsToWarm.push(t.f0Audio);
+        if (isMidiTypeTrack(t) && t.f0Audio && !audioBufferCache.has(t.f0Audio)) urlsToWarm.push(t.f0Audio);
       }
       if (urlsToWarm.length) {
         console.log(`📦 Warming ${urlsToWarm.length} uncached buffer(s) in background`);
@@ -1285,7 +1295,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
             } else {
               console.log(`  ⏭ Skipping track (playhead already past): ${track.name || track.audioUrl}`);
             }
-          } else if (track.type === 'midi') {
+          } else if (isMidiTypeTrack(track)) {
             // MIDI track - check if it has F0 audio or MIDI notes
             const trackStartTime = track.startPosition || 0;
             const trackDuration = track.duration || 10;
