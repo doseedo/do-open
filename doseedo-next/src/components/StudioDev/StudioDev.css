@@ -2070,12 +2070,36 @@ input[type=text].sd-midi-lyric-input::placeholder {
 }
 
 /* ---------- Chord row ---------- */
+/* No more separate header band — page nav lives on the row itself
+ * (.sd-chords-page L/R), so the chord cells abut the resize handle
+ * directly. position:relative anchors the absolute page buttons. */
 .sd-chords {
   flex-shrink: 0; border-top: 1px solid var(--hifi-rule); background: var(--hifi-surface);
-  padding: 8px 14px; display: flex; flex-direction: column; gap: 8px;
+  padding: 4px 28px; display: flex; flex-direction: column; gap: 0;
+  position: relative;
 }
-.sd-chords-head { display: flex; align-items: center; gap: 10px; }
 .sd-chords-grid { display: grid; grid-template-columns: repeat(32, minmax(0, 1fr)); gap: 2px; }
+/* Page nav buttons — flank the chord row left/right. Width matches
+ * the padding so cells run flush; arrow icon centred. */
+.sd-chords-page {
+  position: absolute; top: 4px; bottom: 4px; width: 22px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: 1px solid var(--hifi-rule);
+  color: var(--hifi-ink-soft);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0;
+  z-index: 2;
+}
+.sd-chords-page:hover:not(:disabled) {
+  background: var(--hifi-surface-2);
+  color: var(--hifi-ink);
+  border-color: var(--hifi-ink);
+}
+.sd-chords-page:disabled { opacity: 0.25; cursor: default; }
+.sd-chords-page-prev { left: 3px; }
+.sd-chords-page-next { right: 3px; }
 .sd-chord-cell {
   position: relative; height: 40px; padding: 4px; cursor: pointer;
   background: var(--hifi-surface-2); border: 1px solid var(--hifi-rule); border-radius: 3px;

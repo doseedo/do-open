@@ -201,24 +201,28 @@ export default function StudioDevChords() {
 
   return (
     <div className="sd-chords">
-      <div className="sd-chords-head">
-        <span className="sd-midi-kv-k">Chords</span>
-        <span className="sd-midi-meta">
-          {state.beatsPerBar || 4}/{state.meterDenominator || 4} · bars {pageStartBar + 1}–{pageStartBar + BARS_VISIBLE}
-        </span>
-        <button
-          className="sd-midi-btn"
-          disabled={!canPrev}
-          onClick={() => setPageStartBar(Math.max(0, pageStartBar - BARS_VISIBLE))}
-        >‹ Prev</button>
-        <button
-          className="sd-midi-btn"
-          disabled={!canNext}
-          onClick={() => setPageStartBar(pageStartBar + BARS_VISIBLE)}
-        >Next ›</button>
-        <div className="sd-midi-spacer" />
-        <button className="sd-midi-btn" onClick={() => { dispatch({ type: 'CLEAR_CHORDS' }); setPageStartBar(0); }}>Clear</button>
-      </div>
+      {/* Page nav lives ON the chord row — left + right edge icons —
+       * so the entire header bar (title / meter readout / Clear) can
+       * disappear and the vertical resize handle sits flush against
+       * the chord cells, saving a row of vertical space. */}
+      <button
+        className="sd-chords-page sd-chords-page-prev"
+        disabled={!canPrev}
+        onClick={() => setPageStartBar(Math.max(0, pageStartBar - BARS_VISIBLE))}
+        title={`Previous ${BARS_VISIBLE} bars`}
+        aria-label="Previous bars"
+      >
+        <i className="fa-solid fa-chevron-left" />
+      </button>
+      <button
+        className="sd-chords-page sd-chords-page-next"
+        disabled={!canNext}
+        onClick={() => setPageStartBar(pageStartBar + BARS_VISIBLE)}
+        title={`Next ${BARS_VISIBLE} bars`}
+        aria-label="Next bars"
+      >
+        <i className="fa-solid fa-chevron-right" />
+      </button>
       <div className="sd-chords-grid" style={gridTemplate ? { gridTemplateColumns: gridTemplate } : undefined}>
         {showPickup && (
           <div
