@@ -207,7 +207,11 @@ export default function StudioDevMidi() {
         //   bend  ∈ [0, 1] — how far from the span midpoint the pitch
         //                     travels. 0 = static midpoint.
         //   curve ∈ [-1, 1] — shape: -1 log, 0 linear, +1 exp.
-        bend: Number.isFinite(n.bend) ? Math.max(-1, Math.min(1, n.bend)) : 0,
+        // Leave bend undefined when the field is missing so the stretch
+        // handler's transition check (`orig.bend === undefined`) can
+        // seed +1 the first time a note becomes multi-row. A pre-set
+        // value of 0 survives — the user explicitly chose flat.
+        ...(Number.isFinite(n.bend) ? { bend: Math.max(-1, Math.min(1, n.bend)) } : {}),
         curve: Number.isFinite(n.curve) ? Math.max(-1, Math.min(1, n.curve)) : 0,
         // Per-note override color (bus composite view tags each note with
         // its source track's palette color). Falls through to trackColor
@@ -1096,37 +1100,38 @@ export default function StudioDevMidi() {
         // bend is now signed [-1, +1]; default 1 (full up-right diagonal)
         // when the field is missing so legacy notes that never went
         // through the new stretch handler still render with a visible
-        // line. Skip only when bend === 0 (flat).
+        // line. Always draw — bend=0 collapses to a flat horizontal
+        // centerline (the formula gives dy=0 at every step), but the
+        // line still needs to be visible so the user can see the
+        // current trajectory shape at any setting.
         const bendV = Math.max(-1, Math.min(1, typeof n.bend === 'number' ? n.bend : 1));
         const curveV = Math.max(-1, Math.min(1, n.curve ?? 0));
-        if (bendV !== 0) {
-          const STEPS = 32;
-          const pExp = Math.pow(4, curveV);
-          const halfSpan = (span - 1) / 2;
-          // Centre y of the note rect.
-          const cy = y + 1 + h / 2;
-          const dyMax = bendV * halfSpan * rowH;
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(x, y, w, h + 2);
-          ctx.clip();
-          ctx.strokeStyle = C.ink;
-          ctx.lineWidth = 1.5;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          ctx.globalAlpha = 0.55;
-          ctx.beginPath();
-          for (let s = 0; s <= STEPS; s++) {
-            const tt = s / STEPS;
-            const f = 2 * Math.pow(tt, pExp) - 1;     // [-1, +1]
-            const dy = -f * dyMax;                     // -1 = bottom of bend → +y; +1 = top → -y
-            const px = x + tt * w;
-            const py = cy + dy;
-            if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-          }
-          ctx.stroke();
-          ctx.restore();
+        const STEPS = 32;
+        const pExp = Math.pow(4, curveV);
+        const halfSpan = (span - 1) / 2;
+        // Centre y of the note rect.
+        const cy = y + 1 + h / 2;
+        const dyMax = bendV * halfSpan * rowH;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, w, h + 2);
+        ctx.clip();
+        ctx.strokeStyle = C.ink;
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.globalAlpha = 0.55;
+        ctx.beginPath();
+        for (let s = 0; s <= STEPS; s++) {
+          const tt = s / STEPS;
+          const f = 2 * Math.pow(tt, pExp) - 1;     // [-1, +1]
+          const dy = -f * dyMax;                     // -1 = bottom of bend → +y; +1 = top → -y
+          const px = x + tt * w;
+          const py = cy + dy;
+          if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
         }
+        ctx.stroke();
+        ctx.restore();
       }
 
       // Lyric
