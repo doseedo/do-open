@@ -47,27 +47,67 @@ export function useSessionSync(dispatch) {
     hydratedSessionIdRef.current = sid;
     let cancelled = false;
 
+    // Tier A — localStorage hydration. Autosave (AppContext.js:1920) writes
+    // the live project state to `session-{sid}` every 3s, so on hard refresh
+    // we usually have a usable snapshot already. Dispatch it synchronously
+    // before the server fetch so the studio paints instantly and never sits
+    // blank during the network round-trip. The server load below still runs
+    // as a freshness check and replaces this payload only when it's newer
+    // (or the only source).
+    let cached = null;
+    try { cached = sessionService.loadSession(sid); } catch { /* ignore */ }
+    const cachedHasBuses =
+      cached?.state && Array.isArray(cached.state.buses) && cached.state.buses.length > 0;
+    if (cachedHasBuses) {
+      dispatch({
+        type: 'LOAD_SESSION',
+        payload: { ...cached.state, activeSessionId: sid },
+      });
+      console.log(
+        `✅ Hydrated session ${sid} from localStorage — ` +
+        `${cached.state.buses.length} buses (server refresh pending)`
+      );
+      // Keep the active-project pointer + last-synced key in sync with
+      // the cache hit so a follow-up tab close before the server returns
+      // doesn't lose the binding the next refresh needs.
+      sessionService.setActiveProject(sid);
+      sessionService.setLastSyncedSessionId(sid);
+    }
+
     (async () => {
       try {
         const res = await sessionSyncAPI.fetchSessionState(sid, { shareToken });
         if (cancelled) return;
 
-        if (!res || res.state == null) {
-          console.warn(`[session-sync] session ${sid} has no state yet — opening blank`);
-        } else {
-          const payload = sessionSyncAPI.adaptDesktopStateToContext(res.state);
-          if (payload) {
-            // Attach the session UUID so the reducer can store it for the
-            // edits producer to read (sessionEditsAPI routes by sessionId).
-            payload.activeSessionId = sid;
-            dispatch({ type: 'LOAD_SESSION', payload });
-            console.log(
-              `✅ Hydrated session ${sid} — ${payload.buses?.length || 0} buses, ` +
-              `version ${res.version ?? 'unset'}`
-            );
-          } else {
-            console.warn(`[session-sync] session ${sid} state had no buses — opening blank`);
-          }
+        const serverPayload = res?.state
+          ? sessionSyncAPI.adaptDesktopStateToContext(res.state)
+          : null;
+        const serverHasBuses =
+          !!serverPayload && Array.isArray(serverPayload.buses) && serverPayload.buses.length > 0;
+
+        // Replace with server data when:
+        //  - we have nothing on screen yet (no cache hit), OR
+        //  - the server snapshot is strictly newer than the cached one.
+        // Otherwise keep the local cache — protects offline edits whose
+        // autosave landed locally before the cloud-save tier flushed.
+        const serverUpdated = res?.updated_at ? Date.parse(res.updated_at) : NaN;
+        const cachedAt = Number(cached?.timestamp) || 0;
+        const serverIsNewer = Number.isFinite(serverUpdated) && serverUpdated > cachedAt;
+        const shouldReplace = serverHasBuses && (!cachedHasBuses || serverIsNewer);
+
+        if (shouldReplace) {
+          // Attach the session UUID so the reducer can store it for the
+          // edits producer to read (sessionEditsAPI routes by sessionId).
+          serverPayload.activeSessionId = sid;
+          dispatch({ type: 'LOAD_SESSION', payload: serverPayload });
+          console.log(
+            `✅ Hydrated session ${sid} from server — ${serverPayload.buses.length} buses, ` +
+            `version ${res.version ?? 'unset'}`
+          );
+        } else if (!cachedHasBuses && !serverHasBuses) {
+          console.warn(`[session-sync] session ${sid} has no state on server or in cache — opening blank`);
+        } else if (cachedHasBuses && !shouldReplace) {
+          console.log(`[session-sync] keeping localStorage cache for ${sid} (server empty or older)`);
         }
 
         hydratedSessionRef.current = { id: sid, version: res?.version ?? null };
@@ -80,6 +120,19 @@ export function useSessionSync(dispatch) {
         navigate('/studio', { replace: true });
       } catch (err) {
         if (cancelled) return;
+        // Soft failure when the cache already painted: keep what's on
+        // screen, drop the alert, let the 30s poll retry meta freshness.
+        if (cachedHasBuses) {
+          console.warn(
+            `[session-sync] server fetch failed for ${sid} — keeping localStorage cache: ` +
+            (err?.message || err)
+          );
+          hydratedSessionRef.current = { id: sid, version: null };
+          // Strip the ?session= query param if it's still on the URL so
+          // the effect doesn't re-fire on every subsequent navigation.
+          if (location.search) navigate('/studio', { replace: true });
+          return;
+        }
         console.error(`[session-sync] failed to load session ${sid}:`, err);
         if (err?.status === 401 || err?.status === 403) {
           alert('Sign in to open this session.');
