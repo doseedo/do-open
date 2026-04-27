@@ -1195,6 +1195,21 @@
   pointer-events: none;
   padding: 24px;
 }
+/* Two side-by-side cards: drop-to-upload + create-empty-track. Cap the
+ * combined width so the two cards stay visually balanced even on a
+ * very wide timeline. Stacks vertically on narrower viewports. */
+.sd-empty-upload.sd-empty-upload-split {
+  gap: 12px;
+}
+.sd-empty-upload.sd-empty-upload-split .sd-empty-upload-inner {
+  flex: 1 1 0;
+  max-width: 320px;
+}
+@media (max-width: 720px) {
+  .sd-empty-upload.sd-empty-upload-split {
+    flex-direction: column;
+  }
+}
 /* Compact drop target. The whole card is a button so clicking it opens
  * the file picker — drag-drop on the timeline still works anywhere. */
 .sd-empty-upload-inner {

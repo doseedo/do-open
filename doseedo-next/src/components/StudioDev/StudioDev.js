@@ -3035,10 +3035,18 @@ export default function StudioDev() {
                   ))}
                 </div>
                 {timelineBuses.length === 0 && (
-                  <div className="sd-empty-upload">
+                  <div className="sd-empty-upload sd-empty-upload-split">
                     <button type="button" className="sd-empty-upload-inner" onClick={triggerUpload}>
                       <div className="sd-empty-upload-title">Drop an audio file here</div>
                       <div className="sd-empty-upload-body">WAV · MP3 · MIDI · FLAC · M4A</div>
+                    </button>
+                    <button
+                      type="button"
+                      className="sd-empty-upload-inner"
+                      onClick={() => { setActiveMode('midi'); addEmptyTrack(); }}
+                    >
+                      <div className="sd-empty-upload-title">Create a new track</div>
+                      <div className="sd-empty-upload-body">Empty MIDI · piano roll opens</div>
                     </button>
                   </div>
                 )}
