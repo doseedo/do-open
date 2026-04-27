@@ -183,7 +183,7 @@ const initialState = {
     chords: {}
   },
   zoomLevel: 1.3,  // Default zoom level (130%)
-  trackHeight: 72,  // Default track height in pixels (vertical zoom) - two zoom-in steps from the old 48
+  trackHeight: 104,  // Default track height in pixels (vertical zoom) — two further zoom-in steps from 72 at the toolbar's 1.2 factor
   zoomMode: 'x',  // Default zoom mode: 'x' for horizontal, 'y' for vertical
   totalDuration: 60,  // Default timeline duration in seconds (30 bars at 120 BPM, +6 bars outro)
   timelineWidth: 950,  // Actual timeline container width in pixels
