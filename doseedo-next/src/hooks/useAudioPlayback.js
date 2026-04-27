@@ -457,12 +457,13 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     });
     const uniqueUrls = [...new Set(audioUrls.filter(Boolean))];
 
-    // Log which URLs the effect is about to fetch. If substems or stem
-    // WAVs never make it into audioBufferCache at play time, this tells
-    // us whether the effect even tried (missing URLs = upstream metadata
-    // not landed) vs the fetch hangs (URLs listed but no "decoded" log).
-    if (uniqueUrls.length) {
-      console.log(`[prewarm] iterating ${uniqueUrls.length} url(s):`, uniqueUrls.map((u) => u.slice(0, 80)));
+    // Log which URLs the effect is about to fetch. Only print when
+    // there's actually something to fetch — this effect re-runs on
+    // every state.buses change (every MIDI commit) and was filling the
+    // console with "iterating N url(s)" lines for fully-cached URLs.
+    const uncachedUrls = uniqueUrls.filter((u) => !audioBufferCache.has(u));
+    if (uncachedUrls.length) {
+      console.log(`[prewarm] iterating ${uncachedUrls.length} uncached url(s):`, uncachedUrls.map((u) => u.slice(0, 80)));
     }
     uniqueUrls.forEach(async (url) => {
       if (!audioBufferCache.has(url)) {

@@ -50,6 +50,7 @@ import StudioDevVideo from './StudioDevVideo';
 import StudioDevChords from './StudioDevChords';
 import { applyChordChange as polypitchApplyChordChange } from '../../services/polypitchChordSync';
 import { renderTrackFlexPitch } from '../../services/flexPitchRender';
+import { notesFromMidiData, renderWithNewPitches } from '../../services/polypitchService';
 import { parseMIDIFile } from '../../utils/midiParser';
 import StudioDevGenerate from './StudioDevGenerate';
 import StudioDevChat from './StudioDevChat';
@@ -573,6 +574,116 @@ export default function StudioDev() {
       }
     }
   }, [state.flexPitchNotes, state.buses, dispatch]);
+
+  // Stem MIDI-edit → polypitch resynth.
+  //
+  // Path A in the regression report — no listener existed for in-browser
+  // piano-roll edits to a stem's MIDI; only the desktop-sync flexPitch
+  // flow could trigger polypitch. This watcher fills the gap:
+  //   1. First time a pitched stem (non-drum, has parentTrackId) gets
+  //      midiData with notes, snapshot it as the "baseline" — this is
+  //      what's actually IN the audio (Tier 1/2/3 backend transcription).
+  //   2. Each subsequent commit from StudioDevMidi changes that midiData.
+  //      We diff baseline → current pitch-by-pitch (matched by index),
+  //      build a newPitches map keyed by the baseline note's polypitch
+  //      id, and call renderWithNewPitches to resynth the audio.
+  //   3. Swap audioUrl + mark polypitchRendered + reset the baseline to
+  //      the just-rendered state so the next edit's delta is correct.
+  // Per-stem in-flight flag prevents the audioUrl swap (which mutates
+  // state.buses → re-fires this effect) from re-triggering polypitch.
+  const stemMidiBaselineRef = useRef(new Map());     // trackId → midiData snapshot
+  const stemPolypitchInFlightRef = useRef(new Set()); // trackIds currently rendering
+  useEffect(() => {
+    const baselines = stemMidiBaselineRef.current;
+    const inFlight = stemPolypitchInFlightRef.current;
+    for (const bus of state.buses || []) {
+      for (const tr of bus.tracks || []) {
+        // Pitched-stem gate — same shape as the chord-sync filter
+        // below so the two stay in lockstep.
+        if (!tr.metadata?.parentTrackId) continue;
+        const isDrum = tr.metadata?.stemType === 'drums' || tr.metadata?.instrumentGroup === 'drums';
+        if (isDrum) continue;
+        if (!tr.audioUrl) continue;
+        const md = tr.metadata?.midiData;
+        if (!md || !Array.isArray(md.notes) || md.notes.length === 0) continue;
+
+        const prev = baselines.get(tr.id);
+        if (!prev) {
+          // First time we see midiData for this stem — capture as the
+          // baseline. The audio at this point matches the backend
+          // transcription, so this midi IS what's in the audio.
+          baselines.set(tr.id, md);
+          continue;
+        }
+        if (prev === md) continue;
+        if (inFlight.has(tr.id)) continue;
+
+        // Build pitch-delta map from baseline → current. Match by note
+        // index — preserves identity through pitch edits (which would
+        // otherwise re-key the polypitch id and fail to match).
+        const baselineNotes = notesFromMidiData(prev);
+        const newPitches = new Map();
+        const limit = Math.min(prev.notes.length, md.notes.length);
+        for (let i = 0; i < limit; i++) {
+          const baselineNote = baselineNotes[i];
+          const currentRaw = md.notes[i];
+          if (!baselineNote || !currentRaw) continue;
+          const newMidi = Math.round(currentRaw.note);
+          if (Number.isFinite(newMidi) && newMidi !== baselineNote.pitchMidi) {
+            newPitches.set(baselineNote.id, newMidi);
+          }
+        }
+        if (newPitches.size === 0) {
+          // No pitch changes (probably a velocity/duration tweak). Slide
+          // the baseline forward so we don't re-diff this same midi.
+          baselines.set(tr.id, md);
+          continue;
+        }
+
+        const trackId = tr.id;
+        const busId = bus.id;
+        const audioUrl = tr.audioUrl;
+        const trName = tr.name || trackId;
+        inFlight.add(trackId);
+        logPipeline('polypitch', `${trName}: stem MIDI edit — ${newPitches.size} pitch change${newPitches.size === 1 ? '' : 's'}, resynthing…`);
+        (async () => {
+          try {
+            const blob = await renderWithNewPitches({
+              audioUrl,
+              notes: baselineNotes,
+              newPitches,
+            });
+            if (!blob) {
+              logPipeline('polypitch', `${trName}: render returned no blob`, 'warn');
+              return;
+            }
+            const url = URL.createObjectURL(blob);
+            // Slide baseline forward — the new audio "is" current midi.
+            baselines.set(trackId, md);
+            dispatch({
+              type: 'UPDATE_TRACK',
+              payload: {
+                busId, trackId,
+                updates: {
+                  audioUrl: url,
+                  metadata: {
+                    ...(tr.metadata || {}),
+                    polypitchRendered: true,
+                    polypitchRenderedAt: Date.now(),
+                  },
+                },
+              },
+            });
+            logPipeline('polypitch', `${trName}: ✓ resynthed`, 'ok');
+          } catch (err) {
+            logPipeline('polypitch', `${trName}: render failed: ${err?.message || err}`, 'error');
+          } finally {
+            inFlight.delete(trackId);
+          }
+        })();
+      }
+    }
+  }, [state.buses, dispatch]);
 
   const { seek } = useAudioPlayback(
     tracksForPlayback,
@@ -1580,7 +1691,24 @@ export default function StudioDev() {
         pitchedStemTracks.push({ ...tr, busId: bus.id, midiData: tr.metadata.midiData });
       }
     }
-    if (pitchedStemTracks.length === 0) return;
+    if (pitchedStemTracks.length === 0) {
+      // Common silent failure: chord cell edited before stem MIDI
+      // transcription (Tier 1/2/3) finished. Surface it so the user
+      // sees why nothing audible changes.
+      const allStems = (state.buses || [])
+        .flatMap((b) => (b.tracks || []).filter((t) => t.metadata?.parentTrackId));
+      const reasons = allStems.map((t) => {
+        const isDrum = t.metadata?.stemType === 'drums' || t.metadata?.instrumentGroup === 'drums';
+        if (isDrum) return null;
+        if (!t.audioUrl) return `${t.name || t.id} (no audioUrl)`;
+        if (!t.metadata?.midiData?.notes?.length) return `${t.name || t.id} (no midi yet)`;
+        return null;
+      }).filter(Boolean);
+      logPipeline('polypitch',
+        `chord change but 0 pitched stems passed the filter${reasons.length ? ' — ' + reasons.join(', ') : ''}`,
+        'warn');
+      return;
+    }
 
     for (const k of changedKeys) {
       const beatIndex = parseInt(k, 10);
