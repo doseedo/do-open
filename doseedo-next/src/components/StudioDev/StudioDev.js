@@ -1662,17 +1662,17 @@ export default function StudioDev() {
   // play/pause felt unreliable. All mutable state used by the handler
   // (selectedTrack, selectedBusId, playheadPosition) now comes from a
   // ref that always points at the latest value.
-  const keyDepsRef = useRef({ selectedTrack, selectedBusId, playheadPosition: state.playheadPosition });
+  const keyDepsRef = useRef({ selectedTrack, selectedBusId, playheadPosition: state.playheadPosition, waveSelected: state.waveSelected });
   useEffect(() => {
-    keyDepsRef.current = { selectedTrack, selectedBusId, playheadPosition: state.playheadPosition };
-  }, [selectedTrack, selectedBusId, state.playheadPosition]);
+    keyDepsRef.current = { selectedTrack, selectedBusId, playheadPosition: state.playheadPosition, waveSelected: state.waveSelected };
+  }, [selectedTrack, selectedBusId, state.playheadPosition, state.waveSelected]);
 
   useEffect(() => {
     const onKey = (e) => {
       // Ignore when typing in an input / textarea / contenteditable.
       const t = e.target;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      const { selectedTrack: sel, selectedBusId: selBus, playheadPosition: pp } = keyDepsRef.current;
+      const { selectedTrack: sel, selectedBusId: selBus, playheadPosition: pp, waveSelected: wfArmed } = keyDepsRef.current;
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -1711,7 +1711,12 @@ export default function StudioDev() {
         const modeMap = { '1': 'video', '2': 'midi', '3': 'audio', '4': 'fx' };
         setActiveMode(modeMap[e.key]);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (sel && selBus && !e.repeat) {
+        // Only fire track-delete when the waveform is "deeply selected"
+        // (waveSelected=true). Drawing MIDI in the piano roll drops the
+        // arm so a stray Delete press while editing notes targets the
+        // note (handled in StudioDevMidi) instead of nuking the whole
+        // track. To re-arm: click the waveform clip / bus master.
+        if (sel && selBus && !e.repeat && wfArmed) {
           deleteTrack(sel.id, selBus);
         }
       }
@@ -3093,7 +3098,7 @@ export default function StudioDev() {
                     const trackEnvelopes = bus.tracks.flatMap((tr, ti) =>
                       tr.clips.map((c) => ({ start: c.s, end: c.e, seed: (bi * 7 + ti * 13) })));
                     busLaneChildren.push(
-                      <div key="master" className={`sd-clip sd-summary sd-master ${bus.expanded ? 'sd-expanded' : ''}`}
+                      <div key="master" className={`sd-clip sd-summary sd-master ${bus.expanded ? 'sd-expanded' : ''} ${state.waveSelected && state.selectedBus?.id === bus._real?.id ? 'sd-clip-armed' : ''}`}
                            style={{
                              left: `${masterLeft}%`, width: `${masterWidth}%`,
                              background: `${bus.color}22`,
@@ -3162,8 +3167,9 @@ export default function StudioDev() {
                           {tr.clips.map((c, j) => {
                             const left = (c.s / TIMELINE_SECONDS) * 100 * timelineZoom;
                             const width = Math.max(1, ((c.e - c.s) / TIMELINE_SECONDS) * 100 * timelineZoom);
+                            const isArmed = state.waveSelected && tr._real && selectedTrack?.id === tr._real.id;
                             return (
-                              <div key={j} className="sd-clip" style={{
+                              <div key={j} className={`sd-clip ${isArmed ? 'sd-clip-armed' : ''}`} style={{
                                 left: `${left}%`, width: `${width}%`,
                                 background: `${tr.color}22`, border: `1px solid ${tr.color}55`,
                                 cursor: tr._real ? 'grab' : 'default',

@@ -1306,6 +1306,17 @@
   user-select: none;
 }
 .sd-clip:active { cursor: grabbing; }
+
+/* Deep-select highlight — armed for Delete. Drawing notes in the
+ * piano roll drops this highlight (the track stays "active for edit"
+ * via the row's .selected class on the control container, but Delete
+ * won't fire until the user re-clicks the waveform). The outline is
+ * inset so it survives the box-sizing without enlarging the clip. */
+.sd-clip.sd-clip-armed {
+  outline: 2px solid var(--wb-accent);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 1px var(--wb-bg) inset;
+}
 .sd-clip-resize {
   position: absolute; top: 0; right: 0; bottom: 0;
   width: 5px; cursor: ew-resize;

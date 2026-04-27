@@ -830,6 +830,13 @@ export default function StudioDevMidi() {
     const h = (e) => {
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (!selected.size) return;
+        // stopImmediatePropagation prevents StudioDev's window-level
+        // track-delete handler from also firing this Delete press.
+        // Belt-and-braces — the parent already gates on
+        // state.waveSelected, but a Delete that lands on a selected
+        // note must not bubble out and risk wiping the track.
+        e.preventDefault();
+        e.stopImmediatePropagation();
         const nxt = notes.filter((_, i) => !selected.has(i));
         commit(nxt);
         setSelected(new Set());
@@ -837,8 +844,11 @@ export default function StudioDevMidi() {
         setSelected(new Set());
       }
     };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
+    // Capture phase so we run before bubble-phase listeners on window
+    // (incl. StudioDev's), giving stopImmediatePropagation a chance to
+    // block them.
+    window.addEventListener('keydown', h, true);
+    return () => window.removeEventListener('keydown', h, true);
   }, [notes, selected, commit]);
 
   // Arrow-key zoom — only fires while the mouse is over the MIDI wrap

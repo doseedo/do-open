@@ -107,6 +107,14 @@ const initialState = {
   selectedTrack: null,
   selectedTracks: [],  // For multi-select (marquee selection)
   selectedBus: null,  // For when a collapsed bus is clicked
+  // Two-level selection — selectedTrack/selectedBus stays "active for
+  // edit" (control-container highlight, MIDI window loaded, generation
+  // target) even while the user is drawing notes. waveSelected layers a
+  // *deeper* select on top: true means the waveform / bus master clip
+  // is highlighted AND Delete will remove the track. Drawing notes
+  // (UPDATE_TRACK_MIDI_DATA) drops it back to false so a stray Delete
+  // can't wipe the track mid-edit.
+  waveSelected: false,
   copiedTrack: null,  // Track copied with Cmd+C for paste operation
   bpm: 120,
   beatsPerBar: 4,
@@ -790,7 +798,9 @@ function appReducer(state, action) {
           }
         }
       }
-      return { ...state, selectedTrack, selectedTracks: [], selectedBus: selectedBusForTrack };
+      // Selecting a track via this action arms the deep-select state —
+      // waveform highlights, Delete will fire. Drawing MIDI clears it.
+      return { ...state, selectedTrack, selectedTracks: [], selectedBus: selectedBusForTrack, waveSelected: true };
 
     case 'SELECT_TRACKS':
       // Multi-select tracks (from marquee selection)
@@ -811,11 +821,18 @@ function appReducer(state, action) {
       };
 
     case 'CLEAR_SELECTION':
-      return { ...state, selectedTrack: null, selectedTracks: [], selectedBus: null };
+      return { ...state, selectedTrack: null, selectedTracks: [], selectedBus: null, waveSelected: false };
 
     case 'SELECT_BUS':
       const selectedBus = state.buses.find(bus => bus.id === action.payload.busId);
-      return { ...state, selectedBus, selectedTrack: null, selectedTracks: [] };
+      return { ...state, selectedBus, selectedTrack: null, selectedTracks: [], waveSelected: true };
+
+    case 'SET_WAVE_SELECTED':
+      // Toggle/set the deep-select flag without touching what's
+      // selected. Used when the user intentionally re-arms delete (e.g.
+      // clicks the waveform after editing notes) without re-firing
+      // SELECT_TRACK and reloading sidebars.
+      return { ...state, waveSelected: !!action.payload };
 
     case 'UPDATE_BPM':
       return { ...state, bpm: action.payload };
@@ -1054,7 +1071,12 @@ function appReducer(state, action) {
               midiData: action.payload.midiData,
               duration: action.payload.midiData.duration || stateBeforeMidiUpdate.selectedTrack.duration
             }
-          : stateBeforeMidiUpdate.selectedTrack
+          : stateBeforeMidiUpdate.selectedTrack,
+        // Drawing notes drops the deep-select arm — track stays "active
+        // for edit" (control container highlighted, MIDI loaded, gen
+        // target) but Delete won't wipe the underlying track. User can
+        // re-arm by clicking the waveform/bus master.
+        waveSelected: false
       };
 
     case 'UPDATE_TRACK_AUDIO':
