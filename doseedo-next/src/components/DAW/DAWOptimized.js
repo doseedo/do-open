@@ -486,6 +486,37 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
     dispatch({ type: 'UPDATE_ZOOM_LEVEL', payload: newZoom });
   }, [dispatch, state.zoomLevel]);
 
+  // Arrow-key zoom on the timeline. Mirrors the StudioDevMidi shortcut:
+  // Left/Right adjust horizontal zoom (state.zoomLevel), Up/Down adjust
+  // vertical zoom (state.trackHeight). Gated on a `hovering` flag set
+  // by mouseenter/leave on the scrollable wrapper so arrow keys outside
+  // the DAW still scroll the page or move text caret. Skipped when the
+  // user is typing into a field.
+  const [timelineHovering, setTimelineHovering] = useState(false);
+  useEffect(() => {
+    if (!timelineHovering) return;
+    const STEP = 1.15;
+    const onKey = (e) => {
+      const tag = (e.target?.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        dispatch({ type: 'UPDATE_ZOOM_LEVEL', payload: Math.min(5, state.zoomLevel * STEP) });
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        dispatch({ type: 'UPDATE_ZOOM_LEVEL', payload: Math.max(0.2, state.zoomLevel / STEP) });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        dispatch({ type: 'UPDATE_TRACK_HEIGHT', payload: Math.min(200, state.trackHeight * STEP) });
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        dispatch({ type: 'UPDATE_TRACK_HEIGHT', payload: Math.max(30, state.trackHeight / STEP) });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [timelineHovering, dispatch, state.zoomLevel, state.trackHeight]);
+
   // Automation control handlers
   const toggleAutomation = useCallback(() => {
     dispatch({ type: 'TOGGLE_AUTOMATION_WINDOW' });
@@ -2053,6 +2084,8 @@ const DAWOptimized = React.memo(({ maxTracksHeight = 600, busLabelWidth = 300, p
           height: `calc(100vh - 280px)` /* Fill viewport minus header/controls */
         }}
         onWheel={handleWheel}
+        onMouseEnter={() => setTimelineHovering(true)}
+        onMouseLeave={() => setTimelineHovering(false)}
       >
         {/* Timeline Row with ChordTrack/SceneMarkers - Hidden in plugin mode */}
         {!pluginMode && (
