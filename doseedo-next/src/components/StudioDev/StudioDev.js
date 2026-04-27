@@ -3546,12 +3546,31 @@ export default function StudioDev() {
                                 : total > 0
                                   ? `Level 1 — ${total - confirmed - disputed} pending`
                                   : 'Level 1 — no contributors named yet';
+                            // On-chain anchor pill — only when polygon_status='confirmed'.
+                            const srv = commit._server;
+                            const polyConfirmed = srv?.polygon_status === 'confirmed';
+                            const txUrl = polyConfirmed && srv.polygon_tx_hash
+                              ? (srv.polygon_network === 'mainnet'
+                                  ? `https://polygonscan.com/tx/${srv.polygon_tx_hash}`
+                                  : `https://amoy.polygonscan.com/tx/${srv.polygon_tx_hash}`)
+                              : null;
                             return (
                               <div className="sd-commit-rights">
                                 <span className={`sd-commit-ref ${cls}`} title={tip}>
                                   {lvl === 2 ? 'L2 ✓' : 'L1'}
                                   {total > 0 && ` · ${confirmed}/${total}`}
                                 </span>
+                                {polyConfirmed && txUrl && (
+                                  <a
+                                    href={txUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="sd-commit-ref attest-l2"
+                                    title={`Anchored on Polygon ${srv.polygon_network} at block ${srv.polygon_block_number}`}
+                                  >
+                                    🔗 Anchored on Polygon{srv.polygon_network === 'amoy' ? ' (testnet)' : ''}
+                                  </a>
+                                )}
                               </div>
                             );
                           })()}
