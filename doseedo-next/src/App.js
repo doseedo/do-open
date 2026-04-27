@@ -501,12 +501,16 @@ function AppContent() {
     setShowChatWindow(false); // Hide chat when showing MIDI browser
   };
 
-  // Show generation panel (wand icon)
+  // Show the instruments panel (wand icon). The wand used to swap the
+  // sidebar to the standalone Generate window, but Generate is now
+  // embedded at the bottom of the Instruments panel — so the wand
+  // returns to the default instruments view, where the user picks a
+  // preset and the embedded Generate form runs from the same window.
   const handleShowGenerationPanel = () => {
-    setShowMidiBrowser(false); // false = generation panel
+    setShowMidiBrowser(false);
     setShowChatWindow(false);
     setShowBookmarks(false);
-    fireStudioSidebar('generate');
+    fireStudioSidebar('instruments');
   };
 
   // Show MIDI browser (search icon)

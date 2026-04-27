@@ -3425,7 +3425,7 @@ export default function StudioDev() {
                 })()}
 
                 <div className="sd-right-actions">
-                  <button className="sd-btn ghost" onClick={() => setSidebarPanel('generate')}>
+                  <button className="sd-btn ghost" onClick={() => setSidebarPanel('instruments')}>
                     <i className="fa-solid fa-wand-magic-sparkles" style={{ fontSize: 10 }} /> Generate for bus…
                   </button>
                   <button className="sd-btn ghost" onClick={() => clearBus(b.id)}>
@@ -3541,7 +3541,7 @@ export default function StudioDev() {
               )}
 
               <div className="sd-right-actions">
-                <button className="sd-btn ghost" onClick={() => setSidebarPanel('generate')}>
+                <button className="sd-btn ghost" onClick={() => setSidebarPanel('instruments')}>
                   <i className="fa-solid fa-wand-magic-sparkles" style={{ fontSize: 10 }} /> Regenerate…
                 </button>
                 <button className="sd-btn ghost" onClick={duplicateSelected}>
@@ -3551,7 +3551,7 @@ export default function StudioDev() {
                   // Use the current state.inpaintSelection if set (from waveform),
                   // else mark this track ready to receive one in audio mode.
                   if (state.inpaintSelection?.trackId === selectedTrack.id) {
-                    setSidebarPanel('generate');
+                    setSidebarPanel('instruments');
                   } else {
                     dispatch({ type: 'SET_INPAINT_MODE', payload: { enabled: true, trackId: selectedTrack.id } });
                     setActiveMode('audio');
