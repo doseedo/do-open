@@ -630,6 +630,17 @@ export default function StudioDev() {
           continue;
         }
         if (prev === md) continue;
+        // Tier upgrades (latent_pitch → basicPitch, etc.) write through
+        // UPDATE_TRACK with a new midiData reference but no userEdited
+        // flag. Slide the baseline forward silently — the audio hasn't
+        // changed, so polypitch must NOT fire here. Without this gate,
+        // every backend transcription upgrade was being read as a user
+        // pitch edit (e.g. midi 70 → 41 deltas of ±29st), producing the
+        // garbled audio you heard right after upload.
+        if (!md.userEdited) {
+          baselines.set(tr.id, md);
+          continue;
+        }
         if (inFlight.has(tr.id)) continue;
 
         // Build pitch-delta map from baseline → current. Match by note

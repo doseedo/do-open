@@ -325,7 +325,12 @@ export default function StudioDevMidi() {
       payload: {
         trackId: selectedTrack.id,
         busId: busIdForSelected,
-        midiData: { ...md, notes: nextNotes, duration, tempo: md.tempo || (state.bpm || 120) },
+        // userEdited tags this midi as a piano-roll commit (vs a Tier 1/2/3
+        // transcription write that arrives via UPDATE_TRACK). The polypitch
+        // stem-MIDI watcher in StudioDev gates on this — without the flag
+        // it would read the tier cascade (latent_pitch → basicPitch
+        // upgrade) as a user pitch edit and fire bogus resynths.
+        midiData: { ...md, notes: nextNotes, duration, tempo: md.tempo || (state.bpm || 120), userEdited: true },
       },
     });
   }, [dispatch, selectedTrack, busIdForSelected, state.bpm]);
