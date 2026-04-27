@@ -207,7 +207,7 @@ export default function StudioDevMidi() {
         //   bend  ∈ [0, 1] — how far from the span midpoint the pitch
         //                     travels. 0 = static midpoint.
         //   curve ∈ [-1, 1] — shape: -1 log, 0 linear, +1 exp.
-        bend: Number.isFinite(n.bend) ? Math.max(0, Math.min(1, n.bend)) : 0,
+        bend: Number.isFinite(n.bend) ? Math.max(-1, Math.min(1, n.bend)) : 0,
         curve: Number.isFinite(n.curve) ? Math.max(-1, Math.min(1, n.curve)) : 0,
         // Per-note override color (bus composite view tags each note with
         // its source track's palette color). Falls through to trackColor
@@ -609,7 +609,7 @@ export default function StudioDevMidi() {
           // diagonal (bend=1, linear curve) so users see a visible
           // pitch ramp the moment the note becomes multi-row. Skip
           // when the user already set a non-zero bend explicitly.
-          if (newSpan > 1 && !(orig.bend > 0)) nxt[i].bend = 1;
+          if (newSpan > 1 && (orig.bend === undefined || orig.bend === null)) nxt[i].bend = 1;
           if (newSpan > 1 && nxt[i].curve === undefined) nxt[i].curve = 0;
         }
       } else if (drag.mode === 'stretch-down') {
@@ -625,7 +625,7 @@ export default function StudioDevMidi() {
           const newSpan = Math.max(1, Math.min(origTop - minPitch + 1, baseSpan + grow));
           nxt[i].pitchSpan = newSpan;
           nxt[i].note = origTop - newSpan + 1;
-          if (newSpan > 1 && !(orig.bend > 0)) nxt[i].bend = 1;
+          if (newSpan > 1 && (orig.bend === undefined || orig.bend === null)) nxt[i].bend = 1;
           if (newSpan > 1 && nxt[i].curve === undefined) nxt[i].curve = 0;
         }
       }
@@ -1093,9 +1093,13 @@ export default function StudioDevMidi() {
       // reads against the coloured fill. Sampled coarsely (32 steps) —
       // any more and overlap with the rect border swamps the curve.
       if (span > 1) {
-        const bendV = Math.max(0, Math.min(1, n.bend ?? 0));
+        // bend is now signed [-1, +1]; default 1 (full up-right diagonal)
+        // when the field is missing so legacy notes that never went
+        // through the new stretch handler still render with a visible
+        // line. Skip only when bend === 0 (flat).
+        const bendV = Math.max(-1, Math.min(1, typeof n.bend === 'number' ? n.bend : 1));
         const curveV = Math.max(-1, Math.min(1, n.curve ?? 0));
-        if (bendV > 0) {
+        if (bendV !== 0) {
           const STEPS = 32;
           const pExp = Math.pow(4, curveV);
           const halfSpan = (span - 1) / 2;
@@ -1523,7 +1527,13 @@ export default function StudioDevMidi() {
           const h = span * rowH - 2;
           // Skip when offscreen.
           if (x + w < KEYS_W - 40 || x > size.w + 40 || y + h < RULER_H - 40 || y > size.h + 40) return null;
-          const bend = n.bend || 0;
+          // Bend now signed: +1 = full diagonal up-right (default after a
+          // vertical stretch), 0 = flat, -1 = reversed diagonal
+          // (down-right). The trajectory formula already supports negative
+          // bend (it's a signed coefficient in pitchOffset = bend *
+          // (span-1)/2 * f), so flipping the slider range just exposes
+          // the half that was previously unreachable.
+          const bend = typeof n.bend === 'number' ? n.bend : 1;
           const curve = n.curve || 0;
           const updateNote = (patch) => {
             const nxt = notes.map((m, i) => i === idx ? { ...m, ...patch } : m);
@@ -1536,9 +1546,9 @@ export default function StudioDevMidi() {
                 className="sd-midi-note-bend"
                 orient="vertical"
                 style={{ left: x + w + 2, top: y, height: h }}
-                min={0} max={1} step={0.01}
+                min={-1} max={1} step={0.01}
                 value={bend}
-                title={`Bend ${(bend * 100).toFixed(0)}%`}
+                title={`Bend ${bend.toFixed(2)} (${bend === 0 ? 'flat' : bend > 0 ? 'up' : 'reversed'})`}
                 onChange={(e) => updateNote({ bend: parseFloat(e.target.value) })}
               />
               <input

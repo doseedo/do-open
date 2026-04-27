@@ -123,7 +123,10 @@ class MIDIPlayer {
       const ctx = this.audioContext;
       const when = time || ctx.currentTime;
       const span = Math.max(1, opts.span || 1);
-      const bend = Math.max(0, Math.min(1, opts.bend ?? 0));
+      // Bend is signed [-1, +1]. +1 = full ascending diagonal across the
+      // span, 0 = flat at centerRow, -1 = full descending diagonal
+      // (reversed). Coefficient feeds the same f(x) formula below.
+      const bend = Math.max(-1, Math.min(1, opts.bend ?? 0));
       const curve = Math.max(-1, Math.min(1, opts.curve ?? 0));
       const centerRow = midiNote + (span - 1) / 2;
 
@@ -134,7 +137,7 @@ class MIDIPlayer {
       // Pitch trajectory over [when, when+duration].
       // f(x) = 2 * x^p - 1, where p = 4^curve. p=1 linear, >1 exp,
       // <1 log. pitchOffset = bend * (span-1)/2 * f(x).
-      if (bend > 0 && span > 1) {
+      if (bend !== 0 && span > 1) {
         const STEPS = 48;
         const p = Math.pow(4, curve);
         const halfSpan = (span - 1) / 2;
