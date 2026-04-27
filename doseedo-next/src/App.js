@@ -197,6 +197,20 @@ function AppContent() {
   const [contentMode, setContentMode] = useState('video'); // 'video', 'midi', 'audio', 'image', or 'fx'
   const [showMidiBrowser, setShowMidiBrowser] = useState(false); // Toggle between generation panel and MIDI browser
   const [showChatWindow, setShowChatWindow] = useState(false); // Toggle for chat window
+  const [showBookmarks, setShowBookmarks] = useState(false);   // Toggle for saved/bookmarks panel
+  // The LeftSidebar tool rail (collapsed-state quick-toggles) lives at
+  // the App root, but the panel it should swap into is the /studio
+  // route's own sd-sidebar (sidebarPanel state inside StudioDev). We
+  // bridge that with a window CustomEvent — App handlers fire it; the
+  // StudioDev component listens and calls setSidebarPanel(detail).
+  // Avoids a deep prop-drill or shared context for what's essentially a
+  // four-button command channel.
+  const fireStudioSidebar = (panel) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.dispatchEvent(new CustomEvent('doseedo:studio-sidebar', { detail: panel }));
+    } catch (_) {}
+  };
   // panelWidth stores the BUS-LABEL COLUMN WIDTH (not the bar's absolute X).
   // The bar's visible X position is derived at render time as leftOffset +
   // panelWidth. This way, when the left sidebar collapses/expands, the bar
@@ -491,18 +505,37 @@ function AppContent() {
   const handleShowGenerationPanel = () => {
     setShowMidiBrowser(false); // false = generation panel
     setShowChatWindow(false);
+    setShowBookmarks(false);
+    fireStudioSidebar('generate');
   };
 
   // Show MIDI browser (search icon)
   const handleShowMidiBrowser = () => {
     setShowMidiBrowser(true); // true = MIDI browser
     setShowChatWindow(false);
+    setShowBookmarks(false);
+    fireStudioSidebar('browse');
   };
 
   // Toggle chat window
   const handleToggleChat = () => {
-    setShowChatWindow(prev => !prev);
+    setShowChatWindow(prev => {
+      const next = !prev;
+      // Fire the matching panel each transition so the studio sidebar
+      // closes back to instruments when chat is toggled off.
+      fireStudioSidebar(next ? 'chat' : 'instruments');
+      return next;
+    });
     setShowMidiBrowser(false); // Hide MIDI browser when showing chat
+    setShowBookmarks(false);
+  };
+
+  // Show bookmarks / saved panel
+  const handleShowBookmarks = () => {
+    setShowBookmarks(true);
+    setShowMidiBrowser(false);
+    setShowChatWindow(false);
+    fireStudioSidebar('saved');
   };
 
   // ---- Single LeftSidebar instance for the entire SPA ----
@@ -631,6 +664,8 @@ function AppContent() {
         showMidiBrowser={showMidiBrowser}
         onToggleChat={handleToggleChat}
         showChatWindow={showChatWindow}
+        onShowBookmarks={handleShowBookmarks}
+        showBookmarks={showBookmarks}
         {...viewFlags}
       />
       {renderRouteContent()}

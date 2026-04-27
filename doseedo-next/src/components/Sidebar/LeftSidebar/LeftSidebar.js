@@ -152,7 +152,7 @@ const LeftSidebar = React.memo(({
   onBackToDashboard, onGoToHome, onGoToSearch, onGoToUserInfo, onGoToTools,
   onGoToWhatsNew, onGoToResearch, onGoToDownloads, onGoToPlugins, onGoToModels,
   onToggleSearch: onToggleMidiBrowser, onShowGenerationPanel, onShowMidiBrowser,
-  showMidiBrowser, onToggleChat, showChatWindow,
+  showMidiBrowser, onToggleChat, showChatWindow, onShowBookmarks, showBookmarks,
   isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView,
   isWhatsNewView, isResearchView, isDownloadsView, isPluginsView, isModelsView,
 }) => {
@@ -309,9 +309,13 @@ const LeftSidebar = React.memo(({
         {/* Collapsed-state tool rail (DAW quick-toggles) */}
         {!expanded && (
           <div className={styles.toolbar}>
-            <button className={styles.toolbarBtn} title="Bookmarks">{Icon.bookmark}</button>
             <button
-              className={`${styles.toolbarBtn} ${!showMidiBrowser && !showChatWindow ? styles.toolbarBtnActive : ''}`}
+              className={`${styles.toolbarBtn} ${showBookmarks ? styles.toolbarBtnActive : ''}`}
+              onClick={onShowBookmarks}
+              title="Saved / Bookmarks"
+            >{Icon.bookmark}</button>
+            <button
+              className={`${styles.toolbarBtn} ${!showMidiBrowser && !showChatWindow && !showBookmarks ? styles.toolbarBtnActive : ''}`}
               onClick={onShowGenerationPanel}
               title="Generation Panel"
             >{Icon.wand}</button>

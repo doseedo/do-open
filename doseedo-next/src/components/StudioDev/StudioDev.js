@@ -358,8 +358,25 @@ export default function StudioDev() {
   // Palette layout: 'list' (workbench-style dense rows) | 'grid' (icon tiles).
   const [activeMode, setActiveMode] = useState('midi');
   // Which content is showing in the 300px left panel.
-  //   'instruments' (default) · 'chat' · 'browse' · 'generate'
+  //   'instruments' (default) · 'chat' · 'browse' · 'generate' · 'saved'
   const [sidebarPanel, setSidebarPanel] = useState('instruments');
+
+  // Bridge from the App-root LeftSidebar tool rail (collapsed-state
+  // quick-toggles) to this component's local sidebarPanel. App fires
+  // CustomEvent('doseedo:studio-sidebar', { detail: <panel> }) and we
+  // flip here. Keeps the rail working without prop-drilling sidebarPanel
+  // up to App.
+  useEffect(() => {
+    const onPanel = (e) => {
+      const next = e?.detail;
+      if (next === 'generate' || next === 'browse' || next === 'chat'
+          || next === 'saved' || next === 'instruments') {
+        setSidebarPanel(next);
+      }
+    };
+    window.addEventListener('doseedo:studio-sidebar', onPanel);
+    return () => window.removeEventListener('doseedo:studio-sidebar', onPanel);
+  }, []);
   const [showChords,  setShowChords]  = useState(true);
   // Loop region is local UI — the production reducer doesn't persist it yet.
   // { start, end } in seconds; null = no loop.
@@ -2670,6 +2687,27 @@ export default function StudioDev() {
 
           {sidebarPanel === 'generate' && (
             <StudioDevGenerate onClose={() => setSidebarPanel('instruments')} selectedInstrument={selectedInstrument} />
+          )}
+
+          {/* Saved / bookmarks panel — stub until the saved-sessions UI
+           * lands. Renders a small toolbar matching the other panels so
+           * the user can still close back to instruments. */}
+          {sidebarPanel === 'saved' && (
+            <div className="sd-gen">
+              <div className="sd-midi-toolbar">
+                <div className="sd-midi-title">
+                  <span className="sd-midi-meta">SAVED</span>
+                  <span className="sd-midi-name" style={{ marginLeft: 6 }}>Bookmarks</span>
+                </div>
+                <div className="sd-midi-spacer" />
+                <button className="sd-midi-btn" onClick={() => setSidebarPanel('instruments')}>Close</button>
+              </div>
+              <div className="sd-gen-body">
+                <div className="sd-side-sub" style={{ padding: 12 }}>
+                  Saved sessions and bookmarked presets will live here.
+                </div>
+              </div>
+            </div>
           )}
         </aside>
 
