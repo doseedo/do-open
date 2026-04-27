@@ -1127,7 +1127,75 @@ export default function StudioDevMidi() {
   // addInstrumentTrack uses, replicated here so the empty MIDI window
   // can self-unlock without the user reaching for the left sidebar.
   if (!selectedTrack) {
-    const createNewMidiTrack = () => {
+    const selBus = state.selectedBus;
+    const busVisibleTracks = selBus
+      ? (selBus.tracks || []).filter((t) => !t.metadata?.isBusMaster)
+      : [];
+
+    // Empty-bus path — adds a fresh type:'midi' track INTO the selected
+    // bus (vs creating a brand new bus). The piano roll then opens on
+    // that new track because SELECT_TRACK fires straight after.
+    const addTrackToBus = () => {
+      if (!selBus) return;
+      const trackId = `t-${Date.now()}`;
+      dispatch({
+        type: 'ADD_TRACK',
+        payload: {
+          busId: selBus.id,
+          track: {
+            id: trackId,
+            name: selBus.tracks?.length ? `Track ${(selBus.tracks?.length || 0) + 1}` : 'New track',
+            duration: 4, startPosition: 0,
+            gain: 1.0, isMuted: false, isSolo: false,
+            fx: { reverb: 0, fadeIn: 0, fadeOut: 0 },
+            metadata: { type: 'midi', instrument: 'other', icon: 'synth' },
+            midiData: { notes: [], duration: 4, tempo: state.bpm || 120 },
+          },
+        },
+      });
+      dispatch({ type: 'SELECT_TRACK', payload: { trackId, busId: selBus.id } });
+    };
+
+    // Composite-open path — synthesizes the master MIDI from every
+    // child track in the bus, tagging each note with the source track's
+    // palette colour so the StudioDevMidi canvas paints multitrack
+    // notes in different colours. The composite carries
+    // metadata.isComposite + sourceTrackIds so a future commit handler
+    // can route writes to a primary track in the bus.
+    const COMPOSITE_PALETTE = ['#c94f2c', '#7a5d3a', '#2f6b4e', '#4a3d6b', '#1d4c7a', '#a88adc', '#6aa8e8', '#e07556'];
+    const openBusMaster = () => {
+      if (!selBus || busVisibleTracks.length === 0) return;
+      if (busVisibleTracks.length === 1) {
+        dispatch({ type: 'SELECT_TRACK', payload: { trackId: busVisibleTracks[0].id, busId: selBus.id } });
+        return;
+      }
+      const mergedNotes = [];
+      let maxDur = 0;
+      busVisibleTracks.forEach((t, i) => {
+        const colorTag = COMPOSITE_PALETTE[i % COMPOSITE_PALETTE.length];
+        const md = t.midiData || t.metadata?.midiData;
+        const ns = md?.notes || [];
+        for (const n of ns) mergedNotes.push({ ...n, color: colorTag, __sourceTrackId: t.id });
+        maxDur = Math.max(maxDur, md?.duration || 0, t.duration || 0);
+      });
+      const compositeTrack = {
+        id: `__composite-${selBus.id}`,
+        name: `${selBus.name || selBus.type || 'Bus'} · ${busVisibleTracks.length} tracks`,
+        midiData: { notes: mergedNotes, duration: maxDur || 8, tempo: state.bpm || 120 },
+        metadata: {
+          type: 'composite',
+          isComposite: true,
+          sourceTrackIds: busVisibleTracks.map((t) => t.id),
+        },
+      };
+      dispatch({ type: 'SELECT_TRACK', payload: { compositeTrack, busId: selBus.id } });
+    };
+
+    // Fall-through — no bus + no track. Adds a fresh bus AND track,
+    // matching addInstrumentTrack's payload shape so the rest of the
+    // app (right sidebar, playback bus filter, etc.) treats it the
+    // same as any other studio-created MIDI track.
+    const createNewMidiTrackAndBus = () => {
       const busId = `bus-${Date.now()}`;
       const trackId = `t-${Date.now()}`;
       dispatch({
@@ -1149,6 +1217,72 @@ export default function StudioDevMidi() {
       });
       dispatch({ type: 'SELECT_TRACK', payload: { trackId, busId } });
     };
+
+    // Bus selected, but no tracks yet — tailored empty state.
+    if (selBus && busVisibleTracks.length === 0) {
+      return (
+        <div className="wb-canvas">
+          <div className="wb-canvas__grid" aria-hidden="true" />
+          <div className="wb-empty">
+            <div className="wb-empty__status">
+              <div className="wb-empty__dot" />
+              STATUS · BUS EMPTY
+            </div>
+            <h1 className="wb-empty__title">{selBus.name || selBus.type || 'Bus'}</h1>
+            <p className="wb-empty__body">
+              No tracks in this bus yet. Add a MIDI track and the master piano roll will open on it.
+            </p>
+            <div className="wb-empty__actions">
+              <button
+                type="button"
+                className="wb-btn wb-btn--primary"
+                onClick={addTrackToBus}
+              >
+                <i className="fa-solid fa-plus" /> Add MIDI track to {selBus.name || 'this bus'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Bus selected and it has tracks — offer the composite master view
+    // (multi-track notes painted in distinct colours via the existing
+    // canvas n.color path). One click and the canvas above takes over.
+    if (selBus && busVisibleTracks.length > 0) {
+      return (
+        <div className="wb-canvas">
+          <div className="wb-canvas__grid" aria-hidden="true" />
+          <div className="wb-empty">
+            <div className="wb-empty__status">
+              <div className="wb-empty__dot" />
+              STATUS · BUS · {busVisibleTracks.length} TRACK{busVisibleTracks.length === 1 ? '' : 'S'}
+            </div>
+            <h1 className="wb-empty__title">{selBus.name || selBus.type || 'Bus'}</h1>
+            <p className="wb-empty__body">
+              Open the master piano roll to see every track's notes overlaid in colour, or add a new track.
+            </p>
+            <div className="wb-empty__actions">
+              <button
+                type="button"
+                className="wb-btn wb-btn--primary"
+                onClick={openBusMaster}
+              >
+                <i className="fa-solid fa-music" /> Open master piano roll
+              </button>
+              <button
+                type="button"
+                className="wb-btn"
+                onClick={addTrackToBus}
+              >
+                <i className="fa-solid fa-plus" /> Add MIDI track
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="wb-canvas">
         <div className="wb-canvas__grid" aria-hidden="true" />
@@ -1165,7 +1299,7 @@ export default function StudioDevMidi() {
             <button
               type="button"
               className="wb-btn wb-btn--primary"
-              onClick={createNewMidiTrack}
+              onClick={createNewMidiTrackAndBus}
             >
               <i className="fa-solid fa-plus" /> New MIDI track
             </button>
