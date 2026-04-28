@@ -69,8 +69,8 @@ blue "=== Modal image dependency checks ==="
 
 # demucs.api — was THE bug on 2026-04-17. PyPI 4.0.1 doesn't have it.
 # We install from git+github. Verify the pinned SHA still has api.py.
-DEMUCS_SHA=$(grep -oE 'adefossez/demucs\.git@[a-f0-9]{40}' \
-  /Users/hydroadmin/Downloads/Do/modal_stemphonic.py | head -1 | cut -d@ -f2)
+DEMUCS_SHA=$(grep -oE 'adefossez/demucs(\.git)?@[a-f0-9]{40}' \
+  /Users/hydroadmin/Downloads/Do/modal/modal_stemphonic.py | head -1 | cut -d@ -f2)
 if [[ -n "$DEMUCS_SHA" ]]; then
   check_git_contains "adefossez/demucs" "$DEMUCS_SHA" "demucs/api.py"
 else
@@ -80,7 +80,7 @@ fi
 
 # Belt-and-suspenders: the PyPI 4.0.1 version continues to not have api.py.
 # If someone ever reverts the git+github install, this will scream.
-if grep -q '"demucs==4.0.1"' /Users/hydroadmin/Downloads/Do/modal_stemphonic.py 2>/dev/null; then
+if grep -q '"demucs==4.0.1"' /Users/hydroadmin/Downloads/Do/modal/modal_stemphonic.py 2>/dev/null; then
   red "modal_stemphonic.py still references demucs==4.0.1 from PyPI — this is known-broken"
   FAIL=1
 fi
