@@ -2550,30 +2550,6 @@ export default function StudioDev() {
           PROJECT: {(state.projectName || 'untitled').toLowerCase().replace(/\s+/g, '_')}.dsd · SR 48kHz · 24bit ·
           {' '}{autosaveStatus === 'saving' ? 'saving' : autosaveStatus === 'saved' ? 'saved' : autosaveStatus === 'failed' ? 'save failed' : 'idle'}
         </div>
-        {/* Other-user presence avatars (driven by useCollabPresence WS) +
-            current-user pfp + Share button. PresenceAvatars renders nothing
-            when no peers are connected, so the menubar stays compact when
-            you're solo. */}
-        <PresenceAvatars peers={collabPeers} connected={collabConnected} />
-        {clerk?.user && (
-          <img
-            className="wb-user-avatar"
-            src={clerk.user.imageUrl}
-            alt={clerk.user.fullName || 'You'}
-            title={clerk.user.fullName || clerk.user.primaryEmailAddress?.emailAddress || 'You'}
-          />
-        )}
-        <button
-          className="wb-menu__item"
-          onClick={() => {
-            if (!state.activeSessionId) {
-              alert('This session hasn\'t been synced to the server yet — sync it first to get a shareable link.');
-              return;
-            }
-            setShareOpen(true);
-          }}
-          title="Manage invite links and share this session"
-        >Share</button>
       </header>
 
       {/* ================== MAIN SPLIT ================== */}
@@ -3356,6 +3332,29 @@ export default function StudioDev() {
             )}
             <button className={`sd-right-tab ${rightTab === 'session' ? 'active' : ''}`} onClick={() => { setRightTab('session'); clearRightSelection(); }}>Session</button>
             <button className={`sd-right-tab ${rightTab === 'history' ? 'active' : ''}`} onClick={() => { setRightTab('history'); clearRightSelection(); }}>History</button>
+            {/* Right-aligned: presence avatars + your pfp + Share. Sits on
+                the same row as the tabs in the right-sidebar header. */}
+            <div className="sd-right-tabs-spacer" />
+            <PresenceAvatars peers={collabPeers} connected={collabConnected} />
+            {clerk?.user && (
+              <img
+                className="wb-user-avatar"
+                src={clerk.user.imageUrl}
+                alt={clerk.user.fullName || 'You'}
+                title={clerk.user.fullName || clerk.user.primaryEmailAddress?.emailAddress || 'You'}
+              />
+            )}
+            <button
+              className="sd-right-tab-share"
+              onClick={() => {
+                if (!state.activeSessionId) {
+                  alert('This session hasn\'t been synced to the server yet — sync it first to get a shareable link.');
+                  return;
+                }
+                setShareOpen(true);
+              }}
+              title="Manage invite links and share this session"
+            >Share</button>
           </div>
 
           {/* Tab body — SESSION view (bus list) or HISTORY view (placeholder).

@@ -1458,6 +1458,17 @@
   color: var(--hifi-ink);
   border-bottom-color: var(--hifi-accent);
 }
+/* Pushes the trailing presence/pfp/Share group to the right edge of the tab row. */
+.sd-right-tabs-spacer { flex: 1 1 auto; }
+.sd-right-tabs .wb-user-avatar { width: 20px; height: 20px; }
+.sd-right-tab-share {
+  background: transparent; border: 1px solid var(--hifi-rule);
+  color: var(--hifi-ink-soft); cursor: pointer;
+  padding: 3px 8px; font-size: 10px; border-radius: 3px;
+  font-family: var(--hifi-mono);
+  letter-spacing: .4px; text-transform: uppercase;
+}
+.sd-right-tab-share:hover { color: var(--hifi-ink); border-color: var(--hifi-ink-mute); }
 
 .sd-session-list { display: flex; flex-direction: column; gap: 6px; }
 .sd-session-bus { display: flex; flex-direction: column; gap: 2px; }
