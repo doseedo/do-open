@@ -236,6 +236,8 @@ export default function StudioDevChat({ onClose }) {
       abortRef.current = ctrl;
       await qwenChatStream({
         messages: qwenMessages,
+        sessionId,           // tells qwenChat to POST /api/usage/record after stream
+        clientOpId: asstOp,  // idempotent so retries don't double-count
         onToken: (_delta, full) => {
           finalText = full;
           setMessages((prev) => prev.map((m) => m.id === asstMsg.id ? { ...m, text: full } : m));

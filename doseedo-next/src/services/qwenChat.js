@@ -13,6 +13,53 @@
  */
 
 const CHAT_ENDPOINT = '/api/chat';
+const USAGE_RECORD_ENDPOINT = '/api/usage/record';
+
+/**
+ * Best-effort POST to /api/usage/record so the user's account UI can
+ * show "you used N tokens this month, ≈$X". Logs but never throws —
+ * a usage outage shouldn't break the chat itself.
+ *
+ * Cost is computed server-side from a pricing table keyed by `model`,
+ * so the client just sends raw token counts + an idempotency UUID.
+ */
+async function _recordUsage({ model, inputTokens, outputTokens, sessionId, clientOpId }) {
+  try {
+    const token = (typeof window !== 'undefined' && typeof window.__clerkGetToken === 'function')
+      ? await window.__clerkGetToken().catch(() => null)
+      : null;
+    await fetch(USAGE_RECORD_ENDPOINT, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        model,
+        input_tokens: Math.max(0, inputTokens || 0),
+        output_tokens: Math.max(0, outputTokens || 0),
+        session_id: sessionId || null,
+        origin: 'web',
+        client_op_id: clientOpId || null,
+      }),
+      keepalive: true,    // survives a page-unload race after long replies
+    });
+  } catch (err) {
+    console.warn('[usage] record failed:', err?.message || err);
+  }
+}
+
+/**
+ * Rough char-ratio token estimate when the proxy doesn't surface a
+ * vLLM `usage` field. ~4 bytes per token for English; a touch tighter
+ * for chat JSON. Conservative on the high side so we don't undercount
+ * the user.
+ */
+function _estimateTokens(text) {
+  if (!text) return 0;
+  return Math.ceil(text.length / 3.5);
+}
 const VISION_ENDPOINT = '/api/vision';
 const DEFAULT_MODEL = 'qwen3-14b';
 
@@ -109,6 +156,11 @@ export async function qwenChatStream({
   onThinking,
   timeoutMs = 300000,
   stop,
+  // Usage tracking (Phase E). When sessionId is provided, the function
+  // POSTs to /api/usage/record after the stream resolves so the user's
+  // account UI shows token + cost. clientOpId makes the POST idempotent.
+  sessionId,
+  clientOpId,
 } = {}) {
   const body = {
     model,
@@ -221,7 +273,21 @@ export async function qwenChatStream({
     clearTimeout(timer);
   }
 
-  return { text: answer.trim(), thinking: thinking.trim(), raw: fullRaw };
+  // Record usage. Estimates are conservative; if we later parse the
+  // vLLM `usage` block from the stream we can swap to exact counts.
+  const finalText = answer.trim();
+  if (sessionId) {
+    const inputText = (messages || []).map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n');
+    _recordUsage({
+      model,
+      inputTokens: _estimateTokens(inputText),
+      outputTokens: _estimateTokens(finalText) + _estimateTokens(thinking),
+      sessionId,
+      clientOpId,
+    });
+  }
+
+  return { text: finalText, thinking: thinking.trim(), raw: fullRaw };
 }
 
 /**
