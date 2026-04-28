@@ -115,7 +115,33 @@ export function applyOp(edit, dispatch, state) {
     return;
   }
 
+  if (op === 'load_plugin_preset') {
+    // Preset load is a file-local desktop op — the web has no preset
+    // file to read. We mark the slot as preset-pending so the rack UI
+    // can surface a "loading preset…" indicator; the next session
+    // sync delivers the new parameter values.
+    const trackUuid = args?.track_uuid;
+    const slot = args?.slot;
+    const presetPath = args?.preset_path;
+    if (typeof trackUuid !== 'string' || typeof slot !== 'number'
+        || typeof presetPath !== 'string') return;
+    _markPresetPending(state, dispatch, trackUuid, slot, presetPath);
+    return;
+  }
+
   // Unknown op — ignore. New ops land here as we add handlers.
+}
+
+function _markPresetPending(state, dispatch, trackUuid, slot, presetPath) {
+  const found = _findTrackAndPlugins(state, trackUuid);
+  if (!found) return;
+  const newPlugins = found.plugins.map((p, i) =>
+    i === slot ? { ...p, _presetPending: presetPath } : p
+  );
+  dispatch({
+    type: 'UPDATE_TRACK_LOGIC_PLUGINS',
+    payload: { trackUuid, logicPlugins: newPlugins },
+  });
 }
 
 // ── State lookup ───────────────────────────────────────────────────────

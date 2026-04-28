@@ -144,35 +144,54 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
       const prior = trackPluginSigsRef.current.get(tid) || '';
       if (cur === prior) continue;
 
-      // Diff prior vs cur. Easiest: compare lengths only — for the
-      // common collab cases (peer adds OR removes a plugin) this is
-      // enough. Reorder is rare and falls through to the next play()
-      // rebuild path. We append for added plugins and remove for
-      // removed ones; both ops update chain.slots in place.
-      const oldLen = prior ? prior.split('|').filter(Boolean).length : 0;
-      const newLen = (t.logicPlugins || []).length;
-      if (newLen > oldLen) {
-        // Append the tail entries.
-        for (let i = oldLen; i < newLen; i++) {
-          const lp = t.logicPlugins[i];
-          if (!lp) continue;
-          // appendSlot is async — fire-and-forget, audio splice
-          // happens when the new slot is ready.
-          Promise.resolve(chain.appendSlot(lp)).catch((err) => {
-            console.warn(
-              `[R11] appendSlot failed for ${tid}: ${err?.message || err}`,
-            );
-          });
-        }
-      } else if (newLen < oldLen) {
-        // Remove from the tail by default — for now we don't know
-        // which slot the peer dropped without diffing identities.
-        // Drop trailing slots until lengths match. Web-side state
-        // already knows the right shape; this just keeps the engine
-        // chain in sync.
-        for (let i = oldLen - 1; i >= newLen; i--) {
-          try { chain.removeSlot(i); } catch (_) { /* noop */ }
-        }
+      // Identity-aware diff: walk the prior and current signature
+      // tokens in lockstep, removing any slot that changed identity
+      // and appending replacements at the right positions. Handles
+      // (a) tail append, (b) tail remove, (c) middle remove + tail
+      // append (peer reorder), and (d) replace-in-place (peer
+      // dropped one plugin and added another at the same slot). The
+      // mutators chain.removeSlot / chain.appendSlot keep slot
+      // indices contiguous so the post-diff state matches `cur`.
+      //
+      // Reorder of unchanged slots (e.g. peer drag-reordered three
+      // plugins without changing identities) still falls through to
+      // the next play() rebuild — the audio path handles that case
+      // correctly enough that re-routing mid-playback isn't worth
+      // the complexity. Identity-changes — the common collab edits —
+      // are now handled live.
+      const priorTokens = prior ? prior.split('|').filter(Boolean) : [];
+      const curTokens = cur ? cur.split('|').filter(Boolean) : [];
+
+      // Build a map of identity-change positions. The signature is
+      // `pluginId:pluginName:index`; we strip the trailing `:index`
+      // before comparing so a slot moving stays "same identity".
+      const identityOf = (tok) => tok.split(':').slice(0, -1).join(':');
+      const priorIds = priorTokens.map(identityOf);
+      const curIds = curTokens.map(identityOf);
+
+      // Walk forward, finding the first divergent index.
+      let div = 0;
+      while (div < priorIds.length && div < curIds.length
+             && priorIds[div] === curIds[div]) div++;
+
+      // From `div` onward, drop everything that differs (tail
+      // remove or replace), then append the new tail. removeSlot
+      // shifts indices, so iterate from the end. Appendix runs
+      // sequentially after the tail is gone.
+      const removeFrom = div;
+      for (let i = priorIds.length - 1; i >= removeFrom; i--) {
+        try { chain.removeSlot(i); } catch (_) { /* noop */ }
+      }
+      for (let i = removeFrom; i < curIds.length; i++) {
+        const lp = t.logicPlugins[i];
+        if (!lp) continue;
+        // appendSlot is async — fire-and-forget, audio splice
+        // happens when the new slot is ready.
+        Promise.resolve(chain.appendSlot(lp)).catch((err) => {
+          console.warn(
+            `[R11] appendSlot failed for ${tid}: ${err?.message || err}`,
+          );
+        });
       }
       trackPluginSigsRef.current.set(tid, cur);
     }

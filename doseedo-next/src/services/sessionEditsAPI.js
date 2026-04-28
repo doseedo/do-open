@@ -280,6 +280,26 @@ export function enqueueSetPluginBypass(sessionId, trackUuid, slot, bypassed) {
   );
 }
 
+/**
+ * Load a plugin preset (.aupreset / .pst) into a slot. ``presetPath``
+ * is interpreted on the desktop — typically a path under the user's
+ * Logic preset library (e.g. `~/Music/Audio Music Apps/Plug-In
+ * Settings/Compressor/Vocal.pst`). The desktop dispatcher routes
+ * .aupreset through ``kAudioUnitProperty_ClassInfo`` and .pst through
+ * the GAMETSPP table; both are file-local — there's no upload step.
+ */
+export function enqueueLoadPluginPreset(sessionId, trackUuid, slot, presetPath) {
+  if (typeof trackUuid !== 'string' || trackUuid.length === 0) return;
+  if (typeof slot !== 'number' || slot < 0) return;
+  if (typeof presetPath !== 'string' || presetPath.length === 0) return;
+  enqueueEdit(
+    sessionId,
+    'load_plugin_preset',
+    { track_uuid: trackUuid, slot, preset_path: presetPath },
+    // No dedup — repeated preset loads are repeated loads.
+  );
+}
+
 /** Force-flush before navigation / unmount. */
 export async function flushSession(sessionId) {
   await _flush(sessionId);
