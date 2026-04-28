@@ -3754,13 +3754,19 @@ export default function StudioDev() {
                             >
                               <i className="fa-solid fa-code-branch" style={{ fontSize: 10 }} /> Branch
                             </button>
-                            <button
-                              className="sd-btn ghost"
-                              onClick={() => setOpenAttestCommit((cur) => cur === commit.id ? null : commit.id)}
-                              title={commit._server ? 'Manage attestations (Level 2 gate)' : 'Attest — sync to server first to enable'}
-                            >
-                              <i className="fa-solid fa-user-check" style={{ fontSize: 10 }} /> Attest
-                            </button>
+                            {/* Manual Attest button — only when auto-attest is off.
+                                With auto on, the row pill itself drives the flow
+                                (request + confirm fire automatically), and a
+                                second button just confuses the surface. */}
+                            {!historyAutoAttest && (
+                              <button
+                                className="sd-btn ghost"
+                                onClick={() => setOpenAttestCommit((cur) => cur === commit.id ? null : commit.id)}
+                                title={commit._server ? 'Manage attestations (Level 2 gate)' : 'Attest — sync to server first to enable'}
+                              >
+                                <i className="fa-solid fa-user-check" style={{ fontSize: 10 }} /> Attest
+                              </button>
+                            )}
                           </div>
                           {openAttestCommit === commit.id && (
                             <AttestationsPanel
