@@ -351,15 +351,20 @@ export function useAgentWebSocket(dawState, opts = {}) {
     }
     let ws;
     let alive = true;
-    // Exponential backoff so a missing /_chat/ws server doesn't spam the
-    // console with reconnect attempts every 3s. Reset to base delay on
-    // each successful onopen.
+    // Backoff with a hard give-up: when /_chat/ws is genuinely down (chat
+    // backend not running), endless reconnects flood the console with
+    // 50-line stacks per failure. Cap at MAX_FAIL consecutive failures
+    // with no successful open — after that, give up for this mount and
+    // let a manual refresh retry. Resets on any successful onopen.
     const baseDelayMs = 3000;
     const maxDelayMs = 60_000;
+    const MAX_FAIL = 3;
     let nextDelayMs = baseDelayMs;
+    let failCount = 0;
+    let givenUp = false;
 
     function connect() {
-      if (!alive) return;
+      if (!alive || givenUp) return;
       setWsState('connecting');
 
       const url = getWsUrl();
@@ -370,6 +375,7 @@ export function useAgentWebSocket(dawState, opts = {}) {
         if (!alive) return;
         setWsState('open');
         nextDelayMs = baseDelayMs;
+        failCount = 0;
         // Clear any reconnect timer
         if (reconnectRef.current) {
           clearTimeout(reconnectRef.current);
@@ -392,13 +398,21 @@ export function useAgentWebSocket(dawState, opts = {}) {
         if (!alive) return;
         setWsState('closed');
         wsRef.current = null;
+        failCount += 1;
+        if (failCount >= MAX_FAIL) {
+          givenUp = true;
+          console.warn(
+            `[chat-ws] giving up after ${failCount} failed connect attempts to ${getWsUrl()} — chat backend appears offline`,
+          );
+          return;
+        }
         // Schedule reconnect with capped exponential backoff (3s → 60s).
         reconnectRef.current = setTimeout(connect, nextDelayMs);
         nextDelayMs = Math.min(nextDelayMs * 2, maxDelayMs);
       };
 
       ws.onerror = () => {
-        // onclose will fire after onerror; backoff is bumped there.
+        // onclose will fire after onerror; failCount + backoff are bumped there.
       };
     }
 
