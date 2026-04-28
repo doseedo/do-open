@@ -33,6 +33,7 @@ export type RateLimitResult = {
 
 let _chatLimiter: Ratelimit | null = null;
 let _visionLimiter: Ratelimit | null = null;
+let _videoScoreLimiter: Ratelimit | null = null;
 
 function _getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -78,6 +79,29 @@ export async function checkChatRateLimit(userId: string): Promise<RateLimitResul
 
 export async function checkVisionRateLimit(userId: string): Promise<RateLimitResult> {
   const lim = _getVisionLimiter();
+  if (!lim) return { success: true, limit: 0, remaining: 0, reset: 0 };
+  return lim.limit(userId);
+}
+
+function _getVideoScoreLimiter(): Ratelimit | null {
+  if (_videoScoreLimiter) return _videoScoreLimiter;
+  const redis = _getRedis();
+  if (!redis) return null;
+  // Video scoring is the heaviest path: 50MB+ upload + scenedetect +
+  // multiple Moondream calls per scene. 5/min/user is generous for an
+  // interactive studio session and tight enough that an automated upload
+  // loop can't burn a Modal day's worth of CPU minutes in seconds.
+  _videoScoreLimiter = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(5, '1 m'),
+    analytics: true,
+    prefix: 'rl:video-score',
+  });
+  return _videoScoreLimiter;
+}
+
+export async function checkVideoScoreRateLimit(userId: string): Promise<RateLimitResult> {
+  const lim = _getVideoScoreLimiter();
   if (!lim) return { success: true, limit: 0, remaining: 0, reset: 0 };
   return lim.limit(userId);
 }

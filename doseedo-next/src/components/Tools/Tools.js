@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import VocalHarmonizerTool from './VocalHarmonizerTool';
 import VoiceToInstrumentTool from './VoiceToInstrumentTool';
 import LyricEditTool from './LyricEditTool';
 import StemSeparationTool from './StemSeparationTool';
-import VideoToMusicTool from './VideoToMusicTool';
+// Video-to-music lives in the studio drop zone (StudioDev/StudioDevVideo.js)
+// now — the standalone tool is retired. The tool registry entry below is
+// kept as a Studio launcher so the dashboard tile still works.
 import SampleRegeneratorTool from './SampleRegeneratorTool';
 import BeatGeneratorTool from './BeatGeneratorTool';
 
@@ -704,7 +707,9 @@ const TOOLS = [
     output: 'WAV + stems',
     time: '90s',
     icon: 'fa-video',
-    component: VideoToMusicTool,
+    // Routes to /studio when launched from the dashboard tile. The actual
+    // upload + scoring UI lives in StudioDev/StudioDevVideo.js.
+    route: '/studio',
   },
   {
     id: 'lyric-edit',
@@ -779,6 +784,7 @@ const TOOLS = [
 ];
 
 const Tools = () => {
+  const navigate = useNavigate();
   const [selectedTool, setSelectedTool] = useState(null);
   const [filter, setFilter] = useState('All');
   useWorkbenchFonts();
@@ -842,7 +848,12 @@ const Tools = () => {
           tools={TOOLS}
           filter={filter}
           setFilter={setFilter}
-          onToolClick={(tool) => setSelectedTool(tool)}
+          onToolClick={(tool) => {
+            // Tools with a `route` (e.g. video-to-music → /studio) navigate
+            // away rather than rendering an in-place tool shell.
+            if (tool.route) navigate(tool.route);
+            else setSelectedTool(tool);
+          }}
         />
         <Workflow />
         <Closing />

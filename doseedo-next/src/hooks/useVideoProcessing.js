@@ -1,195 +1,200 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import * as videoAPI from '../services/videoAPI';
 
 /**
- * Custom hook for managing video upload and processing
- * Handles: upload, scene detection, audio extraction, and state management
+ * Custom hook for managing video upload + scoring on the studio drop zone.
+ *
+ * Flow:
+ *   1. POST the file to /api/video-score (SSE; sessionStorage cache by
+ *      file fingerprint short-circuits re-uploads of the same clip).
+ *   2. Stream events into `processingStatus` so the UI can show
+ *      "Detecting scenes (3/12)…" as the worker progresses.
+ *   3. On completion: collapse short scenes, compute per-scene tempos,
+ *      dispatch SET_VIDEO_INFO + SET_SCENE_CHANGES + UPDATE_TOTAL_DURATION.
+ *   4. Decode the returned MIDI base64 into a Blob URL and add it to a
+ *      MIDI bus track (so the user immediately sees a generated score
+ *      laid under the picture).
+ *   5. Optionally extract audio client-side (MediaRecorder) and add to a
+ *      VO bus — replaces the GCV-era audio_url returned by the legacy
+ *      ScoreAI Celery worker.
  */
 export function useVideoProcessing() {
   const { state, dispatch } = useApp();
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState(null);
+  const [progress, setProgress] = useState(null); // { stage, i?, of?, count? }
   const [processingError, setProcessingError] = useState(null);
   const [videoInfo, setVideoInfo] = useState(null);
 
-  /**
-   * Process uploaded video file
-   * @param {File} videoFile - Video file to process
-   * @param {boolean} useWhisper - Whether to use Whisper for transcription
-   * @returns {Promise<void>}
-   */
-  const processVideo = useCallback(async (videoFile, useWhisper = false) => {
-    console.log('🎬 Starting video processing...');
+  // Latest progress payload, kept in a ref so we don't re-render the
+  // calling component on every event in addition to the state set.
+  const progressRef = useRef(null);
 
-    // Reset state
+  const processVideo = useCallback(async (videoFile, opts = {}) => {
+    if (!videoFile) return;
+
+    const { extractAudio = true, bpm, baseProgression, framesPerScene } = opts;
+
     setIsProcessing(true);
     setProcessingError(null);
     setProcessingStatus('uploading');
+    setProgress(null);
 
     try {
-      // 1. Upload video to backend
-      const uploadResult = await videoAPI.uploadVideo(videoFile, useWhisper);
-      const { video_id, task_id } = uploadResult;
+      const onProgress = (stage, payload) => {
+        progressRef.current = { stage, ...(payload || {}) };
+        setProgress(progressRef.current);
+        // Map stages to a coarse status string for cheap consumers.
+        if (stage === 'shots') setProcessingStatus('detecting_scenes');
+        else if (stage === 'scene') setProcessingStatus('analyzing_scenes');
+        else if (stage === 'midi') setProcessingStatus('writing_midi');
+        else if (stage === 'cache_hit') setProcessingStatus('cache_hit');
+      };
 
-      console.log(`✅ Video uploaded: ${video_id}`);
-      setVideoInfo({ video_id, videoFile });
+      const result = await videoAPI.uploadVideo(videoFile, {
+        bpm, baseProgression, framesPerScene, onProgress,
+      });
+      const { scene_data, scene_changes, duration, midi_base64 } = result;
+      const videoId = `vid-${Date.now()}`;
 
-      // Store video ID and file in state
+      setVideoInfo({ video_id: videoId, videoFile, scene_data, duration });
       dispatch({
         type: 'SET_VIDEO_INFO',
-        payload: { videoId: video_id, fileName: videoFile.name, videoFile: videoFile }
+        payload: { videoId, fileName: videoFile.name, videoFile },
       });
 
-      // 2. Poll for scene detection results
-      setProcessingStatus('detecting_scenes');
-
-      const result = await videoAPI.pollVideoUntilComplete(
-        task_id,
-        (progress) => {
-          setProcessingStatus(`processing (${progress.attempts} attempts)`);
-        }
-      );
-
-      console.log('✅ Scene detection complete!');
-
-      // 4. Process scene changes and audio
-      const { scene_changes, video_duration, audio_url } = result;
-
-      if (!scene_changes || scene_changes.length === 0) {
-        console.warn('⚠️ No scene changes detected');
+      if (!Array.isArray(scene_changes) || scene_changes.length === 0) {
         setProcessingStatus('completed_no_scenes');
-        return;
+        return result;
       }
 
-      // 5. Collapse short scenes (merge scenes closer than 3 seconds)
       const collapsed = videoAPI.collapseSceneChanges(scene_changes, 3);
-      console.log(`🎬 Scene changes: ${scene_changes.length} → ${collapsed.length} (after collapse)`);
-
-      // 6. Compute optimal tempos for each scene
       const tempos = videoAPI.computeBestTempos(collapsed);
-      console.log('🎵 Optimal tempos computed:', tempos);
 
-      // Log detailed breakdown
-      for (let i = 0; i < tempos.length; i++) {
-        const start = collapsed[i];
-        const end = collapsed[i + 1];
-        const duration = end - start;
-        console.log(`   Scene ${i + 1}: ${start.toFixed(2)}s - ${end.toFixed(2)}s (${duration.toFixed(2)}s) → ${tempos[i]} BPM`);
-      }
-
-      // 7. Store in app state
       dispatch({
         type: 'SET_SCENE_CHANGES',
         payload: {
           sceneChanges: collapsed,
           sceneTempos: tempos,
-          videoDuration: video_duration || collapsed[collapsed.length - 1]
-        }
+          videoDuration: duration || collapsed[collapsed.length - 1],
+        },
       });
 
-      // 8. Create VO bus track from backend audio (if available)
-      if (audio_url) {
-        console.log('🎵 Video audio URL from backend:', audio_url);
+      if (duration) {
+        dispatch({ type: 'UPDATE_TOTAL_DURATION', payload: duration });
+      } else if (collapsed.length > 0) {
+        dispatch({
+          type: 'UPDATE_TOTAL_DURATION',
+          payload: collapsed[collapsed.length - 1],
+        });
+      }
 
-        // Get or create VO bus
-        let voBusId = state.buses?.find(b => b.type === 'VO')?.id;
+      // Add the generated MIDI score to a MIDI bus track.
+      if (midi_base64) {
+        const midiBlob = videoAPI.decodeMidiBase64(midi_base64);
+        const midiUrl = URL.createObjectURL(midiBlob);
 
-        if (!voBusId) {
-          voBusId = `vo-${Date.now()}`;
+        let midiBusId = state.buses?.find(b => b.type === 'MIDI')?.id;
+        if (!midiBusId) {
+          midiBusId = `midi-${Date.now()}`;
           dispatch({
             type: 'CREATE_BUS',
-            payload: { id: voBusId, type: 'VO', name: 'VO 1' }
+            payload: { id: midiBusId, type: 'MIDI', name: 'MIDI 1' },
           });
-          console.log('🆕 Created VO bus:', voBusId);
         }
-
-        // Create track from video audio
-        const track = {
-          id: `video-audio-${Date.now()}`,
-          name: videoFile.name.replace(/\.[^/.]+$/, '') + ' (Audio)',
-          audioUrl: audio_url,
-          duration: video_duration || collapsed[collapsed.length - 1],
-          startPosition: 0,
-          gain: 1.0,
-          isMuted: false,
-          isSolo: false,
-          cropStart: 0,
-          cropEnd: 0,
-          fx: {
-            reverb: 0,
-            fadeIn: 0.2,
-            fadeOut: 1.0
-          },
-          // Mark as video audio for sidebar detection
-          metadata: {
-            type: 'video_audio',
-            videoFileName: videoFile.name
-          }
-        };
 
         dispatch({
           type: 'ADD_TRACK',
-          payload: { busId: voBusId, track }
+          payload: {
+            busId: midiBusId,
+            track: {
+              id: `video-score-${Date.now()}`,
+              name: `${videoFile.name.replace(/\.[^/.]+$/, '')} (Score)`,
+              midiUrl,
+              duration: duration || collapsed[collapsed.length - 1],
+              startPosition: 0,
+              gain: 1.0,
+              metadata: {
+                type: 'midi',
+                source: 'video_score',
+                sceneData: scene_data,
+              },
+            },
+          },
         });
-
-        console.log('✅ Added video audio track to VO bus');
-      } else {
-        console.warn('⚠️ No audio URL returned from backend');
       }
 
-      // 9. Update total duration based on video
-      if (video_duration) {
-        console.log(`⏱️  Updating total duration to ${video_duration}s`);
-        dispatch({
-          type: 'UPDATE_TOTAL_DURATION',
-          payload: video_duration
-        });
-      } else if (collapsed.length > 0) {
-        // Use last scene change time if no explicit duration
-        const lastSceneTime = collapsed[collapsed.length - 1];
-        console.log(`⏱️  Updating total duration to last scene time: ${lastSceneTime}s`);
-        dispatch({
-          type: 'UPDATE_TOTAL_DURATION',
-          payload: lastSceneTime
-        });
+      // Best-effort client-side audio extraction → VO bus.
+      if (extractAudio) {
+        try {
+          setProcessingStatus('extracting_audio');
+          const audioBlob = await videoAPI.extractAudioFromVideo(videoFile);
+          const audioUrl = URL.createObjectURL(audioBlob);
+
+          let voBusId = state.buses?.find(b => b.type === 'VO')?.id;
+          if (!voBusId) {
+            voBusId = `vo-${Date.now()}`;
+            dispatch({
+              type: 'CREATE_BUS',
+              payload: { id: voBusId, type: 'VO', name: 'VO 1' },
+            });
+          }
+          dispatch({
+            type: 'ADD_TRACK',
+            payload: {
+              busId: voBusId,
+              track: {
+                id: `video-audio-${Date.now()}`,
+                name: videoFile.name.replace(/\.[^/.]+$/, '') + ' (Audio)',
+                audioUrl,
+                duration: duration || collapsed[collapsed.length - 1],
+                startPosition: 0,
+                gain: 1.0,
+                isMuted: false,
+                isSolo: false,
+                cropStart: 0,
+                cropEnd: 0,
+                fx: { reverb: 0, fadeIn: 0.2, fadeOut: 1.0 },
+                metadata: { type: 'video_audio', videoFileName: videoFile.name },
+              },
+            },
+          });
+        } catch (audioErr) {
+          // eslint-disable-next-line no-console
+          console.warn('[useVideoProcessing] audio extract failed:', audioErr);
+        }
       }
 
       setProcessingStatus('completed');
-      console.log('✅ Video processing complete!');
-
+      return result;
     } catch (error) {
-      console.error('❌ Video processing error:', error);
+      // eslint-disable-next-line no-console
+      console.error('[useVideoProcessing] error:', error);
       setProcessingError(error.message || 'Video processing failed');
       setProcessingStatus('failed');
+      throw error;
     } finally {
       setIsProcessing(false);
     }
   }, [dispatch, state.buses]);
 
-  /**
-   * Clear video processing state
-   */
   const clearVideo = useCallback(() => {
     setIsProcessing(false);
     setProcessingStatus(null);
     setProcessingError(null);
+    setProgress(null);
     setVideoInfo(null);
-
-    dispatch({
-      type: 'CLEAR_VIDEO'
-    });
+    dispatch({ type: 'CLEAR_VIDEO' });
   }, [dispatch]);
 
   return {
-    // State
     isProcessing,
     processingStatus,
+    progress,
     processingError,
     videoInfo,
-
-    // Actions
     processVideo,
-    clearVideo
+    clearVideo,
   };
 }

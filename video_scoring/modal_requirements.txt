@@ -1,0 +1,15 @@
+# Same versions as video_scoring/requirements.txt, but headless OpenCV for
+# server containers (no GUI/X11 deps). Used by modal/modal_video_scoring.py
+# via image.pip_install_from_requirements().
+
+mido>=1.3.0
+numpy>=1.21.0
+opencv-python-headless>=4.5.0
+scenedetect[opencv]>=0.6.3
+requests>=2.28.0
+# Pin pydantic below 2.13 — 2.13.x has a regression in TypeAdapter
+# resolution for FastAPI's UploadFile annotation (`class-not-fully-defined`
+# at request time). 2.12.x is the last known-good line.
+pydantic>=2.7,<2.13
+fastapi>=0.115,<0.140
+python-multipart

@@ -11,7 +11,6 @@ import Navbar from './components/Navbar/Navbar';
 import LeftSidebar from './components/Sidebar/LeftSidebar/LeftSidebar';
 import TrackInfoSidebar from './components/Sidebar/RightSidebar/TrackInfoSidebar';
 import ChatWindow from './components/ChatWindow/ChatWindow';
-import VideoUploadOptimized from './components/VideoUpload/VideoUploadOptimized';
 import MIDIChart from './components/MIDIChart/MIDIChart';
 import AudioWaveform from './components/AudioWaveform/AudioWaveform';
 import DAWOptimized from './components/DAW/DAWOptimized';
