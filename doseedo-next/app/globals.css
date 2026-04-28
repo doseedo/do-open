@@ -20,17 +20,20 @@ html, body { margin: 0; padding: 0; }
    the first title in every subpage lines up.
    ---------------------------------------------------------------------- */
 
-/* `body` prefix raises specificity to (0,2,0) so the global rule beats
-   module-scoped `.Models_title__abc { font-size: 48px }` style declarations
-   regardless of stylesheet source order. */
+/* `body` prefix raises specificity to (0,2,0); !important on the typography
+   props is belt-and-braces — Next.js injects per-page CSS module stylesheets
+   AFTER globals.css for client-only chunks, and a few module rules use
+   descendant selectors (`.searchHeader h1`) that match the same specificity.
+   Forcing typography settles every tie in our favor regardless of source
+   order or selector shape. */
 body .pageTitle,
 body .page-title {
-  font-family: 'Lora', Georgia, serif;
-  font-weight: 600;            /* Semibold */
-  font-size: 36px;
-  line-height: 1.15;
-  letter-spacing: -0.4px;
-  margin: 0 0 24px 0;
-  padding-top: 0;
+  font-family: 'Lora', Georgia, serif !important;
+  font-weight: 600 !important;     /* Semibold */
+  font-size: 36px !important;
+  line-height: 1.15 !important;
+  letter-spacing: -0.4px !important;
+  margin: 0 0 24px 0 !important;
+  padding-top: 0 !important;
   color: inherit;
 }

@@ -1,14 +1,15 @@
 /* Search Component Styles */
 
 .searchContainer {
-  width: 80%;
+  width: calc(100% - 220px);
   max-width: 1200px;
-  margin: 0 auto;
+  margin: 0;
   margin-left: 220px;
   padding: 40px;
   color: white;
   min-height: 100vh;
   padding-top: 100px;
+  box-sizing: border-box;
 }
 
 .searchHeader {

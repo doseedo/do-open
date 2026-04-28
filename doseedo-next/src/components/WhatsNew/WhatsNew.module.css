@@ -3,7 +3,7 @@
 .whatsNewContainer {
   width: calc(100% - 220px);
   max-width: 1000px;
-  margin: 0 auto;
+  margin: 0;
   margin-left: 220px;
   padding: 40px;
   color: white;
