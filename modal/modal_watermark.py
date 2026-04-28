@@ -248,10 +248,21 @@ async def detect_endpoint(
         result, message = _STATE["detector"].detect_watermark(
             waveform.unsqueeze(0), sample_rate=sr,
         )
-        # `result` is a (B,) tensor of detection probability.
-        # `message` is (B, 16) bits (only meaningful if result is high).
-        prob = float(result.squeeze().item())
-        bits = message.squeeze(0).tolist() if message is not None else []
+        # `result` is the detection probability. Across audioseal
+        # versions it can be either a Python float, a 0-d tensor, or a
+        # (B,) tensor — normalise to a single float defensively.
+        if hasattr(result, "squeeze"):
+            sq = result.squeeze()
+            prob = float(sq.item() if hasattr(sq, "item") else sq)
+        else:
+            prob = float(result)
+        # `message` is (B, 16) bits when the detection succeeded.
+        bits = []
+        if message is not None and hasattr(message, "squeeze"):
+            try:
+                bits = message.squeeze(0).tolist()
+            except Exception:
+                bits = []
 
     found = prob >= 0.5
     seed = _bits_to_hex(bits) if found else None

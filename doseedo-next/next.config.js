@@ -72,7 +72,20 @@ const nextConfig = {
       { source: '/token',              destination: `${AUTH}/token` },
       { source: '/register',           destination: `${AUTH}/register` },
       { source: '/register/:path*',    destination: `${AUTH}/register/:path*` },
-      { source: '/verify',             destination: `${AUTH}/verify` },
+      // /verify is shared between two callers:
+      //   1. Email-verification deep links from the auth-service —
+      //      /verify?token=… — these MUST be rewritten through to Fly so
+      //      the auth-service handles the token exchange.
+      //   2. The public watermark verifier page (src/components/Legal/Verify.js,
+      //      routed via App.js when there's no `token` query param).
+      // The `has: query.token` guard makes the rewrite fire only when a
+      // token is present; bare /verify visits fall through to the Next.js
+      // route and render the page.
+      {
+        source: '/verify',
+        has: [{ type: 'query', key: 'token' }],
+        destination: `${AUTH}/verify`,
+      },
       { source: '/verify-google-id-token/:path*', destination: `${AUTH}/verify-google-id-token/:path*` },
       { source: '/logout',             destination: `${AUTH}/logout` },
       { source: '/settings/api-keys',        destination: `${AUTH}/settings/api-keys` },
