@@ -2861,7 +2861,6 @@ export default function StudioDev() {
           {sidebarPanel === 'chat' && (
             <StudioDevChat
               onClose={() => setSidebarPanel('instruments')}
-              chatWs={chatWs}
             />
           )}
 
