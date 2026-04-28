@@ -111,6 +111,74 @@ function toNormalized(value, paramDef) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// M-S routing wrapper
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build a Mid-Side-around-engine wrapper using ChannelSplitter / Merger.
+ *
+ * The wrap produces an `input` (stereo) and `output` (stereo) pair that
+ * encode L/R → M/S, route through the engine's chain, then decode back
+ * to L/R. The encode/decode matrix is the standard sum-and-difference
+ * with √2 normalization so a round-trip is unity gain.
+ *
+ * Returns `{input, output, dispose}` — dispose disconnects every node
+ * we created here without touching the engine itself.
+ */
+function _buildMidSideWrap(ctx, engineIn, engineOut) {
+  // Encoder: L/R → M/S. M = (L+R)/√2; S = (L-R)/√2.
+  const inputSplit = ctx.createChannelSplitter(2);
+  const negR = ctx.createGain(); negR.gain.value = -1;
+  const sumScale = 1 / Math.sqrt(2);
+  const midA = ctx.createGain(); midA.gain.value = sumScale;
+  const midB = ctx.createGain(); midB.gain.value = sumScale;
+  const sideA = ctx.createGain(); sideA.gain.value = sumScale;
+  const sideB = ctx.createGain(); sideB.gain.value = sumScale;
+  const msMerger = ctx.createChannelMerger(2);
+  const input = ctx.createGain();
+
+  input.connect(inputSplit);
+  inputSplit.connect(midA, 0); inputSplit.connect(midB, 1);
+  inputSplit.connect(sideA, 0); inputSplit.connect(negR, 1);
+  negR.connect(sideB);
+  midA.connect(msMerger, 0, 0); midB.connect(msMerger, 0, 0);
+  sideA.connect(msMerger, 0, 1); sideB.connect(msMerger, 0, 1);
+
+  msMerger.connect(engineIn);
+
+  // Decoder: M/S → L/R. L = (M+S)/√2; R = (M-S)/√2. Same matrix
+  // structure as the encoder; we simply swap which side gets negated.
+  const outSplit = ctx.createChannelSplitter(2);
+  const negS = ctx.createGain(); negS.gain.value = -1;
+  const lA = ctx.createGain(); lA.gain.value = sumScale;
+  const lB = ctx.createGain(); lB.gain.value = sumScale;
+  const rA = ctx.createGain(); rA.gain.value = sumScale;
+  const rB = ctx.createGain(); rB.gain.value = sumScale;
+  const lrMerger = ctx.createChannelMerger(2);
+  const output = ctx.createGain();
+
+  engineOut.connect(outSplit);
+  outSplit.connect(lA, 0); outSplit.connect(lB, 1);
+  outSplit.connect(rA, 0); outSplit.connect(negS, 1);
+  negS.connect(rB);
+  lA.connect(lrMerger, 0, 0); lB.connect(lrMerger, 0, 0);
+  rA.connect(lrMerger, 0, 1); rB.connect(lrMerger, 0, 1);
+  lrMerger.connect(output);
+
+  return {
+    input,
+    output,
+    dispose: () => {
+      const nodes = [inputSplit, negR, midA, midB, sideA, sideB, msMerger,
+                     outSplit, negS, lA, lB, rA, rB, lrMerger, input, output];
+      for (const n of nodes) {
+        try { n.disconnect(); } catch (e) { /* noop */ }
+      }
+    },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Mapping registry
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -315,6 +383,20 @@ export default class PluginAdapter {
     const id = String(logicPlugin.plugin_id);
     const dspConfig = mapping.web_topology;
 
+    // Sample-rate sanity check. Most Logic plugins behave fine across
+    // 44.1k/48k but oversampling-aware compressors and IR-based reverbs
+    // change behaviour with the host SR. We don't refuse to load — that
+    // would be a worse UX than slightly-off audio — but we surface the
+    // mismatch so the operator can act on it.
+    const expectedSR = mapping.expected_sample_rate;
+    if (expectedSR && this.ctx?.sampleRate && expectedSR !== this.ctx.sampleRate) {
+      console.warn(
+        `[PluginAdapter] sample-rate mismatch for ${mapping.plugin_name || id}: ` +
+        `mapping calibrated at ${expectedSR}Hz but AudioContext is ` +
+        `${this.ctx.sampleRate}Hz`
+      );
+    }
+
     // Build engine, inject our shared context, then build graph.
     const engine = new WebAudioDSPEngine(dspConfig);
     engine.ctx = this.ctx;
@@ -329,16 +411,43 @@ export default class PluginAdapter {
       if (engine.analyser) engine.analyser.disconnect();
     } catch (e) { /* noop */ }
 
-    let input  = engine._chainInput || engine.masterGain;
-    let output = engine.masterGain;
+    const engineIn  = engine._chainInput || engine.masterGain;
+    const engineOut = engine.masterGain;
 
-    if (!input || !output) {
+    let input;
+    let output;
+    let msNodes = null;
+    if (!engineIn || !engineOut) {
       // Engine produced nothing usable — return a passthrough so the
       // caller's track chain stays intact.
       const pass = this.ctx.createGain();
       input = pass;
       output = pass;
+    } else if ((dspConfig.routing?.mode || 'stereo') === 'ms') {
+      // Mid-Side wrap: encode L/R → M/S, run engine on the pair, decode
+      // M/S → L/R. Mid = (L+R)/√2, Side = (L-R)/√2; the inverse uses the
+      // same scaling so M-S then S-M is unity. We chain ChannelSplitter
+      // and ChannelMerger nodes around the engine: this is the cheapest
+      // M-S codec the WebAudio API offers and is sample-accurate.
+      msNodes = _buildMidSideWrap(this.ctx, engineIn, engineOut);
+      input = msNodes.input;
+      output = msNodes.output;
+    } else {
+      input = engineIn;
+      output = engineOut;
     }
+
+    // Bypass plumbing: lazy. Until the user toggles bypass, the chain
+    // is a single linear path (input → engine → output) — same topology
+    // as before, so existing graph walkers (offline-render harnesses,
+    // analyzers) see no surprise. On first setBypassed(true) we splice a
+    // parallel passthrough alongside the engine and crossfade between
+    // them. The cost of laziness is a 30ms one-shot click on the very
+    // first toggle of every plugin's lifetime — acceptable.
+    let bypassWired = false;
+    let passthrough = null;
+    let enginePathGain = null;
+    let bypassSumOut = null;
 
     // Build an index for parameter dispatch
     const webParamDefs = {};
@@ -370,6 +479,24 @@ export default class PluginAdapter {
       }
       if (!row) return false;
 
+      // Indexed (dropdown) params bypass the curve / normalization stack
+      // entirely — the value IS the discrete index into value_strings.
+      // The engine receives the int directly; nodes that understand
+      // indexed pins (compressor mode, EQ band type, distortion shape)
+      // dispatch on it; nodes that don't accept it gracefully ignore.
+      if (row.indexed) {
+        const intValue = Math.round(Number(value) || 0);
+        if (typeof engine.setIndexedParameter === 'function') {
+          engine.setIndexedParameter(row.web_param, intValue);
+        } else {
+          // Fallback: send raw int through the regular setter. Engines
+          // that haven't implemented setIndexedParameter still receive
+          // the index and can do whatever passthrough they support.
+          engine.setParameter(row.web_param, intValue);
+        }
+        return true;
+      }
+
       const webParamDef = webParamDefs[row.web_param];
       const webValue = applyCurve(row.curve, value, row.domain, row.range, row.breakpoints);
       const norm = toNormalized(webValue, webParamDef);
@@ -377,10 +504,64 @@ export default class PluginAdapter {
       return true;
     };
 
+    // Bypass control: lazy-splice the parallel passthrough on first use.
+    // ``slot.output`` reference may need updating once we splice — we
+    // capture the current `output` in a closure-mutable local so callers
+    // who already grabbed `slot.output` see the spliced node next time.
+    let bypassed = false;
+    let userOutput = output;
+    const _wireBypass = () => {
+      if (bypassWired) return;
+      const ctx = this.ctx;
+      passthrough = ctx.createGain(); passthrough.gain.value = 0;
+      enginePathGain = ctx.createGain(); enginePathGain.gain.value = 1;
+      bypassSumOut = ctx.createGain(); bypassSumOut.gain.value = 1;
+      try {
+        // Insert enginePathGain between the current `output` and a new
+        // summing gain. Keep the existing connections out of `output`
+        // intact — we don't disconnect what callers may already have
+        // wired downstream; we just route an additional sum node.
+        userOutput.connect(enginePathGain);
+        enginePathGain.connect(bypassSumOut);
+        input.connect(passthrough);
+        passthrough.connect(bypassSumOut);
+        // Patch the slot.output to point at the summing node. Callers
+        // that did slot.output.connect(...) before the first toggle keep
+        // their connection from the old node; new calls go through the
+        // sum.
+        slot.output = bypassSumOut;
+        bypassWired = true;
+      } catch (e) {
+        // Splice failed — leave bypass a no-op rather than mute audio.
+        bypassWired = false;
+      }
+    };
+    const setBypassed = (b) => {
+      const target = !!b;
+      if (target === bypassed) return;
+      bypassed = target;
+      if (!bypassWired) _wireBypass();
+      if (!bypassWired) return;
+      const t = (this.ctx?.currentTime || 0) + 0.001;
+      const fade = 0.030;
+      try {
+        enginePathGain.gain.setTargetAtTime(target ? 0 : 1, t, fade / 4);
+        passthrough.gain.setTargetAtTime(target ? 1 : 0, t, fade / 4);
+      } catch (e) {
+        enginePathGain.gain.value = target ? 0 : 1;
+        passthrough.gain.value = target ? 1 : 0;
+      }
+    };
+    const isBypassed = () => bypassed;
+
     const dispose = () => {
       try {
-        if (output && typeof output.disconnect === 'function') output.disconnect();
+        if (slot.output && typeof slot.output.disconnect === 'function') slot.output.disconnect();
       } catch (e) { /* noop */ }
+      try { if (passthrough) passthrough.disconnect(); } catch (e) { /* noop */ }
+      try { if (enginePathGain) enginePathGain.disconnect(); } catch (e) { /* noop */ }
+      try { if (bypassSumOut) bypassSumOut.disconnect(); } catch (e) { /* noop */ }
+      try { if (msNodes) msNodes.dispose(); } catch (e) { /* noop */ }
       try { engine._teardownGraph(); } catch (e) { /* noop */ }
     };
 
@@ -391,6 +572,13 @@ export default class PluginAdapter {
       input,
       output,
       setLogicParam,
+      setBypassed,
+      isBypassed,
+      // Convenience flags so the React layer can decide whether to render
+      // a bypass button / Mix knob / dropdown UI without a re-fetch.
+      bypassSupported: mapping.bypass_supported !== false,
+      hasWetParam: typeof mapping.wet_param_id === 'number',
+      routingMode: dspConfig.routing?.mode || 'stereo',
       getMapping: () => mapping,
       dispose,
     };
@@ -400,6 +588,15 @@ export default class PluginAdapter {
   _applyLogicParam(engine, mapping, webParamDefs, logicParam) {
     const row = resolveParamRow(mapping, logicParam);
     if (!row) return;
+    if (row.indexed) {
+      const intValue = Math.round(Number(logicParam.value) || 0);
+      if (typeof engine.setIndexedParameter === 'function') {
+        engine.setIndexedParameter(row.web_param, intValue);
+      } else {
+        engine.setParameter(row.web_param, intValue);
+      }
+      return;
+    }
     const webParamDef = webParamDefs[row.web_param];
     const webValue = applyCurve(row.curve, logicParam.value, row.domain, row.range, row.breakpoints);
     const norm = toNormalized(webValue, webParamDef);

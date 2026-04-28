@@ -544,6 +544,100 @@ await test('buildTrackChain wires plugins in series; falls back on miss', async 
   pt.dispose();
 });
 
+await test('indexed param bypasses curve + normalization (dropdown UX)', async () => {
+  // Mapping has one indexed Logic row → web_param "mode" + a regular
+  // Threshold row. The slot's setLogicParam should pass the integer
+  // index straight through for the indexed row and apply the curve for
+  // the threshold row. We verify by capturing setIndexedParameter and
+  // setParameter calls on the engine.
+  const indexedMapping = {
+    plugin_id: '999',
+    plugin_name: 'ToyDistortion',
+    web_topology: {
+      dspChain: [{ type: 'compressor', id: 'comp_core' }],
+      parameters: [
+        { id: 'threshold', label: 'Threshold', min: -60, max: 0, default: -20 },
+        { id: 'mode',      label: 'Mode',      min: 0,   max: 2, default: 0 },
+      ],
+      routing: { input: 'stereo', chain: [], output: 'stereo' },
+    },
+    param_map: [
+      { logic_id: 0, logic_name: 'Threshold', web_param: 'threshold',
+        curve: 'linear', domain: [-60, 0], range: [-60, 0] },
+      { logic_id: 1, logic_name: 'Mode', web_param: 'mode', indexed: true,
+        curve: 'linear', domain: [0, 2], range: [0, 2] },
+    ],
+    bypass_supported: true,
+    expected_sample_rate: sampleRate,
+  };
+
+  const ctx = new MockOfflineAudioContext(2, sampleRate, sampleRate);
+  const adapter = new PluginAdapter(ctx, {
+    mappingsRegistry: { 999: indexedMapping },
+    fetchImpl: null,
+  });
+  const slot = await adapter.instantiate({
+    plugin_id: '999',
+    plugin_name: 'ToyDistortion',
+    parameters: [
+      { id: 0, name: 'Threshold', value: -20 },
+      { id: 1, name: 'Mode',      value: 1 },
+    ],
+  });
+  // Capture engine dispatches.
+  const calls = [];
+  slot.engine.setIndexedParameter = (k, v) => calls.push(['idx', k, v]);
+  const origSet = slot.engine.setParameter.bind(slot.engine);
+  slot.engine.setParameter = (k, v) => { calls.push(['set', k, v]); origSet(k, v); };
+
+  slot.setLogicParam(1, 2);   // indexed → setIndexedParameter, raw int
+  slot.setLogicParam(0, -40); // continuous → setParameter, normalized
+
+  const idxCall = calls.find(c => c[0] === 'idx');
+  assert.ok(idxCall, 'indexed dispatch should have fired');
+  assert.equal(idxCall[1], 'mode');
+  assert.equal(idxCall[2], 2);  // integer passed through, not normalized
+
+  const setCall = calls.find(c => c[0] === 'set' && c[1] === 'threshold');
+  assert.ok(setCall, 'continuous dispatch should have fired');
+  // setParameter receives a normalized [0,1] value; -40 in [-60,0] → 0.333
+  assert.ok(setCall[2] >= 0 && setCall[2] <= 1,
+    `expected normalized in [0,1], got ${setCall[2]}`);
+
+  // Convenience flags surface for the React layer.
+  assert.equal(slot.bypassSupported, true);
+  assert.equal(slot.routingMode, 'stereo');
+
+  slot.dispose();
+});
+
+await test('setBypassed wires lazy passthrough; dispose cleans up', async () => {
+  const ctx = new MockOfflineAudioContext(2, sampleRate, sampleRate);
+  const adapter = new PluginAdapter(ctx, {
+    mappingsRegistry: { 154: compressorMapping },
+    fetchImpl: null,
+  });
+  const slot = await adapter.instantiate({
+    plugin_id: '154',
+    plugin_name: 'Compressor',
+    parameters: [{ id: 0, name: 'Threshold', value: -20 }],
+  });
+  // Pre-toggle: bypass is functions but no parallel splice yet.
+  assert.equal(typeof slot.setBypassed, 'function');
+  assert.equal(slot.isBypassed(), false);
+
+  // First toggle wires the lazy bypass infrastructure. The slot.output
+  // pointer may move from the engine's masterGain to the new sum gain;
+  // both are MockGainNodes so duck-typing holds.
+  slot.setBypassed(true);
+  assert.equal(slot.isBypassed(), true);
+  slot.setBypassed(false);
+  assert.equal(slot.isBypassed(), false);
+
+  // Dispose without errors regardless of bypass state.
+  slot.dispose();
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // Done
 // ─────────────────────────────────────────────────────────────────────────
