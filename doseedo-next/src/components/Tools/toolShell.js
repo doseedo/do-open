@@ -291,16 +291,7 @@ function Header({ tool, subtitle, description, meta }) {
         >
           § {tool?.sku || '—'} · {tool?.category || 'Tool'} · {tool?.version || 'v2.4.1'}
         </div>
-        <h1
-          style={{
-            fontFamily: C.head,
-            fontSize: 32,
-            fontWeight: 600,
-            letterSpacing: -0.6,
-            margin: 0,
-            lineHeight: 1.1,
-          }}
-        >
+        <h1 className="page-title">
           {tool?.name || 'Tool'}
           {subtitle && (
             <span style={{ color: C.inkMute, fontSize: 18, fontWeight: 500 }}> · {subtitle}</span>

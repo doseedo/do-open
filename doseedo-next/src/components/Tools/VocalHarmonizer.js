@@ -141,7 +141,7 @@ const VocalHarmonizer = ({ onBack }) => {
           <i className="fa-solid fa-arrow-left"></i>
           Back to Tools
         </button>
-        <h1 className={styles.title}>
+        <h1 className={`${styles.title} page-title`}>
           <i className="fa-solid fa-users"></i>
           Vocal Harmonizer
         </h1>

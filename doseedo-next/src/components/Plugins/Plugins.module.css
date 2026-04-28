@@ -1550,8 +1550,10 @@
 
 /* ---- Page wrapper + title ---- */
 :global(body.workbench-theme) .plugins {
-  padding: 36px 40px 80px;
-  padding-top: 36px;
+  /* Keep the base 100px top padding from `.plugins` above so the page
+     title aligns with the rest of the dashboard subpages — only the
+     left/right/bottom padding is theme-specific. */
+  padding: 100px 40px 80px;
   color: var(--wb-ink);
   font-family: var(--wb-font-sans);
 }
