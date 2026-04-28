@@ -9,6 +9,11 @@ import { computeClipPlayback } from '../utils/clipScheduling';
 import { scheduleAutomation, clearAutomation } from '../services/automationPlayback';
 import PluginAdapter from '../lib/PluginAdapter';
 import liveTrackChainRegistry from '../lib/liveTrackChainRegistry';
+import { useApp } from '../context/AppContext';
+import {
+  enqueueSetPluginParam,
+  enqueueSetPluginBypass,
+} from '../services/sessionEditsAPI';
 
 // R11 splice — feature flag for live web-DSP plugin chains. When unset/empty
 // (the default), the entire PluginAdapter path is bypassed and behavior is
@@ -106,6 +111,16 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
   // remain dormant when the feature flag is off.
   const pluginAdapterRef = useRef(null);
   const trackChainsRef = useRef(new Map()); // Map<trackId, {input, output, dispose, slots}>
+
+  // activeSessionId is read inside the adapter's editCallbacks so the
+  // closure stays stable across navigations. We pull it from AppContext
+  // and mirror into a ref the callback can dereference on every fire.
+  // This avoids re-creating the adapter every time the session changes.
+  const { state: appState } = useApp();
+  const activeSessionIdRef = useRef(appState?.activeSessionId || null);
+  useEffect(() => {
+    activeSessionIdRef.current = appState?.activeSessionId || null;
+  }, [appState?.activeSessionId]);
 
   // Lazily create the bus GainNode for a given busId and return it. Called
   // at schedule time and from the real-time gain-update effect. If busId is
@@ -233,7 +248,27 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     // When the flag is off, nothing ever calls into the adapter.
     if (LIVE_PLUGINS_ENABLED) {
       try {
-        pluginAdapterRef.current = new PluginAdapter(audioContextRef.current);
+        // Edit callbacks broadcast plugin param/bypass changes through
+        // the session edit-log so the desktop replays them into Logic
+        // (and peers see them too). activeSessionIdRef lets the
+        // callback read the latest session id without re-instantiating
+        // the adapter every time the user navigates between sessions.
+        const editCallbacks = {
+          onParamEdit: ({ trackUuid, slot, paramId, value }) => {
+            const sid = activeSessionIdRef.current;
+            if (!sid || !trackUuid) return;
+            enqueueSetPluginParam(sid, trackUuid, slot, paramId, value);
+          },
+          onBypassChange: ({ trackUuid, slot, bypassed }) => {
+            const sid = activeSessionIdRef.current;
+            if (!sid || !trackUuid) return;
+            enqueueSetPluginBypass(sid, trackUuid, slot, bypassed);
+          },
+        };
+        pluginAdapterRef.current = new PluginAdapter(
+          audioContextRef.current,
+          { editCallbacks },
+        );
         // Fire-and-forget: failures here just mean every chain attempt
         // falls back to the bounce-cache path (the safe default).
         Promise.resolve(pluginAdapterRef.current.load()).catch((err) => {

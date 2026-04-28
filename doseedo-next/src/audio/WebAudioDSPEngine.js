@@ -209,7 +209,38 @@ function buildFilter(ctx, node, paramDefs) {
     }
   }
 
-  return { input: filter, output: filter, paramTargets: targets };
+  // Indexed-param dispatch: "Band Type" / "Filter Type" / "Mode"
+  // dropdowns. AU value_strings ordering for Logic's Channel EQ:
+  // 0=Bypass, 1=Lowpass, 2=Highpass, 3=Lowshelf, 4=Highshelf,
+  // 5=Bandpass, 6=Notch, 7=Peaking. We map onto WebAudio biquad
+  // types. Out-of-range / Bypass collapses to allpass passthrough so
+  // the chain stays audible while the user explores enum values.
+  const indexedHandlers = {};
+  const FILTER_TYPE_TABLE = [
+    'allpass',   // 0 — bypass approximation; allpass leaves magnitude flat
+    'lowpass',
+    'highpass',
+    'lowshelf',
+    'highshelf',
+    'bandpass',
+    'notch',
+    'peaking',
+  ];
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val !== 'string' || !val.startsWith('@')) continue;
+    const paramId = val.slice(1);
+    if (key === 'filter_type' || key === 'band_type' || key === 'mode') {
+      indexedHandlers[paramId] = (idx) => {
+        const i = Math.max(0, Math.min(FILTER_TYPE_TABLE.length - 1, idx | 0));
+        try { filter.type = FILTER_TYPE_TABLE[i]; } catch (_) { /* noop */ }
+      };
+    }
+  }
+
+  return {
+    input: filter, output: filter, paramTargets: targets,
+    indexedHandlers: Object.keys(indexedHandlers).length ? indexedHandlers : undefined,
+  };
 }
 
 function buildLadder(ctx, node, paramDefs) {
@@ -560,7 +591,98 @@ function buildWaveshaper(ctx, node, paramDefs) {
     }
   }
 
-  return { input, output, paramTargets: targets };
+  // Indexed-param dispatch: distortion shape / character dropdown.
+  // Maps an enum index to a distortion-curve generator. Logic's
+  // Distortion II / Bitcrusher / Overdrive expose a "Type" or
+  // "Character" param with values like Soft/Hard/Tube/Fold/Crush —
+  // the names vary; we pick functions that are perceptually distinct
+  // so dropdown changes are audible. Out-of-range falls back to tanh.
+  const SHAPE_TABLE = [
+    // 0 — soft tanh (current default)
+    (k) => {
+      const n = 44100;
+      const c = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const x = (i * 2) / n - 1;
+        c[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
+      }
+      return c;
+    },
+    // 1 — hard clip
+    (k) => {
+      const n = 44100;
+      const c = new Float32Array(n);
+      const lim = 1 / Math.max(0.05, k);
+      for (let i = 0; i < n; i++) {
+        const x = (i * 2) / n - 1;
+        const drv = x * (1 + k);
+        c[i] = Math.max(-lim, Math.min(lim, drv));
+      }
+      return c;
+    },
+    // 2 — fold (waveshape inversion past unity)
+    (k) => {
+      const n = 44100;
+      const c = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const x = (i * 2) / n - 1;
+        c[i] = Math.sin((x * (1 + k)) * Math.PI * 0.5);
+      }
+      return c;
+    },
+    // 3 — bit-crush approximation (quantize)
+    (k) => {
+      const n = 44100;
+      const c = new Float32Array(n);
+      const steps = Math.max(2, Math.round(64 / (1 + k)));
+      for (let i = 0; i < n; i++) {
+        const x = (i * 2) / n - 1;
+        c[i] = Math.round(x * steps) / steps;
+      }
+      return c;
+    },
+  ];
+  let currentShape = 0;
+  let currentDrive = 5;
+  const rebuildCurve = () => {
+    const fn = SHAPE_TABLE[currentShape] || SHAPE_TABLE[0];
+    shaper.curve = fn(currentDrive);
+  };
+  // Track drive separately so shape changes pick up the latest drive
+  // value. Both the param's customSetter and the indexed handler call
+  // rebuildCurve so the chain stays internally consistent.
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val !== 'string' || !val.startsWith('@')) continue;
+    const paramId = val.slice(1);
+    if (key === 'drive' || key === 'amount' || key === 'gain') {
+      // Replace the original customSetter with one that respects shape.
+      targets[paramId] = {
+        paramDef: paramDefs[paramId],
+        customSetter: (value) => {
+          currentDrive = value * 50;
+          rebuildCurve();
+        },
+      };
+    }
+  }
+
+  const indexedHandlers = {};
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val !== 'string' || !val.startsWith('@')) continue;
+    const paramId = val.slice(1);
+    if (key === 'shape' || key === 'type' || key === 'character'
+        || key === 'mode' || key === 'distortion_type') {
+      indexedHandlers[paramId] = (idx) => {
+        currentShape = Math.max(0, Math.min(SHAPE_TABLE.length - 1, idx | 0));
+        rebuildCurve();
+      };
+    }
+  }
+
+  return {
+    input, output, paramTargets: targets,
+    indexedHandlers: Object.keys(indexedHandlers).length ? indexedHandlers : undefined,
+  };
 }
 
 function buildChorus(ctx, node, paramDefs) {
@@ -599,7 +721,27 @@ function buildChorus(ctx, node, paramDefs) {
     }
   }
 
-  return { input, output, paramTargets: targets, oscillators: [lfo] };
+  // Indexed-param dispatch: LFO waveform dropdown. Logic's modulation
+  // plugins commonly expose Waveform as Sine/Triangle/Square/Saw — the
+  // OscillatorNode.type accepts those four directly, so the handler is
+  // a one-liner. Out-of-range keeps the current waveform.
+  const WAVEFORM_TABLE = ['sine', 'triangle', 'square', 'sawtooth'];
+  const indexedHandlers = {};
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val !== 'string' || !val.startsWith('@')) continue;
+    const paramId = val.slice(1);
+    if (key === 'waveform' || key === 'wave' || key === 'shape' || key === 'lfo_shape') {
+      indexedHandlers[paramId] = (idx) => {
+        const i = Math.max(0, Math.min(WAVEFORM_TABLE.length - 1, idx | 0));
+        try { lfo.type = WAVEFORM_TABLE[i]; } catch (_) { /* noop */ }
+      };
+    }
+  }
+
+  return {
+    input, output, paramTargets: targets, oscillators: [lfo],
+    indexedHandlers: Object.keys(indexedHandlers).length ? indexedHandlers : undefined,
+  };
 }
 
 function buildPhaser(ctx, node, paramDefs) {

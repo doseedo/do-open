@@ -4,6 +4,7 @@ import * as generationAPI from '../../../services/generationAPI';
 import GlassButtonWrapper from '../../GlassButton/GlassButtonWrapper';
 import { logFeedback } from '../../../utils/feedbackLogger';
 import { compressAudioForUpload } from '../../../utils/audioCompress';
+import LogicPluginRack from '../../Plugins/LogicPluginRack';
 import styles from './TrackInfoSidebar.module.css';
 
 /**
@@ -2746,6 +2747,12 @@ const TrackInfoSidebar = React.memo(() => {
                     >
                       <i className="fa-solid fa-layer-group"></i> Render with FX
                     </GlassButtonWrapper>
+
+                    {/* Logic plugins synced from desktop — bypass + Mix
+                        controls drive PluginAdapter slots; the adapter's
+                        editCallbacks broadcast each toggle through the
+                        session edit-log so the desktop replays into Logic. */}
+                    <LogicPluginRack track={selectedTrack} />
 
                     {/* Plugin FX Controls */}
                     <button

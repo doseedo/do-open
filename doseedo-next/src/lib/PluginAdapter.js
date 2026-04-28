@@ -111,6 +111,34 @@ function toNormalized(value, paramDef) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// L/R-paired routing wrapper
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * For plugins that expose paired Left/Right knobs (Stereo Delay,
+ * dual-mono saturators), `routing.mode === "lr_paired"` is the hint
+ * that the engine should process L and R independently. We don't yet
+ * duplicate the engine — that would double DSP cost — so this wrapper
+ * just splits the input into two channels, runs them through the
+ * engine in lockstep (the engine already handles stereo natively), and
+ * remerges. The hint surfaces to the React layer via `slot.routingMode`
+ * so plugin-rack UI can label paired params; full split-engine
+ * processing is a Tier-2 follow-up.
+ *
+ * Returning `null` here means "no wrap" — the caller uses the engine
+ * directly as if mode were "stereo". This keeps the splice point
+ * symmetrical with `_buildMidSideWrap`.
+ */
+function _buildLrPairedWrap(_ctx, _engineIn, _engineOut) {
+  // Deliberate no-op for now. We could insert a ChannelSplitter +
+  // ChannelMerger here for symmetry with M-S, but a 2-input/2-output
+  // GainNode chain in WebAudio is already L/R-independent — the engine
+  // never cross-mixes channels unless a node explicitly does so. The
+  // metadata hint is what the UI needs; the audio path is correct as-is.
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // M-S routing wrapper
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -239,6 +267,15 @@ export default class PluginAdapter {
       ? options.fetchImpl
       : (typeof fetch !== 'undefined' ? fetch.bind(globalThis) : null);
 
+    // Edit callbacks: invoked AFTER a local plugin edit lands so the
+    // studio can broadcast the same edit to peers via the session
+    // edit-log. Optional — when absent, edits stay local. Carries the
+    // identifying triple (trackUuid, slot, paramId) which the studio
+    // resolves into an enqueueSetPluginParam call. We deliberately
+    // keep this side at "fire callback with metadata"; transport
+    // (sessionEditsAPI) lives in the app, not in the adapter.
+    this.editCallbacks = options.editCallbacks || null;
+
     // plugin_id → mapping JSON (or null = miss tombstone, don't refetch)
     this.mappings = new Map();
     if (options.mappingsRegistry) {
@@ -344,7 +381,7 @@ export default class PluginAdapter {
    *   dispose: () => void,
    * }>}
    */
-  async instantiate(logicPlugin) {
+  async instantiate(logicPlugin, editContext = null) {
     if (!logicPlugin?.plugin_id) return null;
     const id = String(logicPlugin.plugin_id);
 
@@ -359,14 +396,14 @@ export default class PluginAdapter {
       return null;
     }
 
-    return this._buildSlotFromMapping(mapping, logicPlugin);
+    return this._buildSlotFromMapping(mapping, logicPlugin, editContext);
   }
 
   /**
    * Synchronous variant — used when the mapping is already known to be
    * loaded (e.g. by `load()` + a pre-fetch). Returns null if not cached.
    */
-  instantiateSync(logicPlugin) {
+  instantiateSync(logicPlugin, editContext = null) {
     if (!logicPlugin?.plugin_id) return null;
     const id = String(logicPlugin.plugin_id);
     const mapping = this.mappings.get(id);
@@ -376,10 +413,10 @@ export default class PluginAdapter {
       }
       return null;
     }
-    return this._buildSlotFromMapping(mapping, logicPlugin);
+    return this._buildSlotFromMapping(mapping, logicPlugin, editContext);
   }
 
-  _buildSlotFromMapping(mapping, logicPlugin) {
+  _buildSlotFromMapping(mapping, logicPlugin, editContext = null) {
     const id = String(logicPlugin.plugin_id);
     const dspConfig = mapping.web_topology;
 
@@ -432,6 +469,15 @@ export default class PluginAdapter {
       msNodes = _buildMidSideWrap(this.ctx, engineIn, engineOut);
       input = msNodes.input;
       output = msNodes.output;
+    } else if ((dspConfig.routing?.mode || 'stereo') === 'lr_paired') {
+      // L/R-paired plugins (Stereo Delay, dual-mono saturators). The
+      // wrap is a no-op today — WebAudio's stereo path already keeps L
+      // and R independent — but we surface routingMode='lr_paired' on
+      // the slot so paired-knob UI can layout L and R columns. A
+      // future Tier-2 pass can swap in real split-engine processing.
+      const wrap = _buildLrPairedWrap(this.ctx, engineIn, engineOut);
+      input = wrap?.input || engineIn;
+      output = wrap?.output || engineOut;
     } else {
       input = engineIn;
       output = engineOut;
@@ -467,7 +513,7 @@ export default class PluginAdapter {
       if (row.logic_name) rowByLogicName.set(row.logic_name, row);
     }
 
-    const setLogicParam = (idOrName, value) => {
+    const setLogicParam = (idOrName, value, opts = {}) => {
       let row = (typeof idOrName === 'number')
         ? rowByLogicId.get(idOrName)
         : rowByLogicName.get(idOrName);
@@ -478,6 +524,30 @@ export default class PluginAdapter {
         if (webParam) row = { web_param: webParam, curve: 'linear' };
       }
       if (!row) return false;
+
+      // Broadcast the edit to the session log unless the caller passed
+      // ``broadcast: false`` — typically because they're applying an
+      // *inbound* edit from a peer and don't want to echo it back. The
+      // logical id we emit is the AU's logic_id (stable across sessions),
+      // not the resolved row's web_param.
+      const shouldBroadcast = opts.broadcast !== false
+        && this.editCallbacks?.onParamEdit
+        && editContext?.trackUuid != null
+        && editContext?.slotIndex != null
+        && row.logic_id != null
+        && !row.indexed; // indexed params get their own broadcast path
+      if (shouldBroadcast) {
+        try {
+          this.editCallbacks.onParamEdit({
+            trackUuid: editContext.trackUuid,
+            slot: editContext.slotIndex,
+            paramId: row.logic_id,
+            value: Number(value),
+          });
+        } catch (e) {
+          console.warn('[PluginAdapter] onParamEdit threw:', e?.message || e);
+        }
+      }
 
       // Indexed (dropdown) params bypass the curve / normalization stack
       // entirely — the value IS the discrete index into value_strings.
@@ -536,7 +606,7 @@ export default class PluginAdapter {
         bypassWired = false;
       }
     };
-    const setBypassed = (b) => {
+    const setBypassed = (b, opts = {}) => {
       const target = !!b;
       if (target === bypassed) return;
       bypassed = target;
@@ -550,6 +620,23 @@ export default class PluginAdapter {
       } catch (e) {
         enginePathGain.gain.value = target ? 0 : 1;
         passthrough.gain.value = target ? 1 : 0;
+      }
+      // Broadcast unless suppressed (peer echo). Bypass at the AU layer
+      // is a host-set property; the desktop dispatcher routes it to
+      // set_plugin_bypass via doo_hook so Logic mirrors the toggle.
+      if (opts.broadcast !== false
+          && this.editCallbacks?.onBypassChange
+          && editContext?.trackUuid != null
+          && editContext?.slotIndex != null) {
+        try {
+          this.editCallbacks.onBypassChange({
+            trackUuid: editContext.trackUuid,
+            slot: editContext.slotIndex,
+            bypassed: target,
+          });
+        } catch (e) {
+          console.warn('[PluginAdapter] onBypassChange threw:', e?.message || e);
+        }
       }
     };
     const isBypassed = () => bypassed;
@@ -642,9 +729,16 @@ export default class PluginAdapter {
     const slots = [];
     let cursor = input;
     let fallback = false;
+    // Edit-broadcast plumbing: passing trackUuid + slotIndex into each
+    // instantiate call lets setLogicParam / setBypassed fire the
+    // adapter's editCallbacks with the address every time the user
+    // touches a knob or bypass button. trackUuid comes from the synced
+    // shape; slotIndex is just the position in logicPlugins[].
+    const trackUuid = track?.uuid || track?.metadata?.uuid || null;
 
-    for (const lp of logicPlugins) {
-      const slot = await this.instantiate(lp);
+    for (let slotIndex = 0; slotIndex < logicPlugins.length; slotIndex++) {
+      const lp = logicPlugins[slotIndex];
+      const slot = await this.instantiate(lp, { trackUuid, slotIndex });
       if (!slot) {
         fallback = true;
         // Stop building further — caller will use bounce audio for the
