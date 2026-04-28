@@ -1,0 +1,37 @@
+name: e2e smoke
+
+# Hits the live (or preview) deployment after a push to main and asserts
+# the user-facing paths actually work. Modal cold-start budget is generous;
+# the job times out at 10 min total. Failures are non-blocking by default
+# (status check, not a deploy gate) — flip `continue-on-error: false` if
+# you want to gate a downstream step on it.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Target URL (defaults to https://doseedo.com)"
+        required: false
+        default: "https://doseedo.com"
+
+concurrency:
+  group: e2e-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run e2e smoke
+        env:
+          BASE: ${{ github.event.inputs.base || 'https://doseedo.com' }}
+        run: python3 scripts/e2e_smoke.py

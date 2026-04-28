@@ -56,8 +56,21 @@ check-deps: ## test Fast local check: do pinned pip packages actually contain th
 	@bash scripts/check-deps.sh
 
 .PHONY: modal-deploy
-modal-deploy: check-deps ## deploy Modal (10-15 min). Auto-runs check-deps first.
-	modal deploy modal_stemphonic.py
+modal-deploy: check-deps ## deploy Modal stemphonic app (10-15 min). Auto-runs check-deps first.
+	modal deploy modal/modal_stemphonic.py
+
+.PHONY: modal-deploy-chatbot
+modal-deploy-chatbot: ## deploy Modal chatbot app (vLLM + Moondream vision, single L4).
+	modal deploy modal/modal_chatbot.py
+
+.PHONY: modal-deploy-staging
+modal-deploy-staging: check-deps ## deploy Modal stemphonic STAGING app (separate URL, same image).
+	modal deploy modal/modal_stemphonic_staging.py
+
+.PHONY: modal-deploy-all
+modal-deploy-all: check-deps ## deploy Both Modal apps sequentially (stemphonic + chatbot).
+	$(MAKE) modal-deploy
+	$(MAKE) modal-deploy-chatbot
 
 .PHONY: fly-deploy
 fly-deploy: ## deploy Fly auth-service (2-4 min rolling restart).

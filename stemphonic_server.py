@@ -33,6 +33,17 @@ for _name in ("MutableSequence", "MutableMapping", "Mapping", "Sequence",
         setattr(_coll, _name, getattr(_cabc, _name))
 
 import numpy as np
+# ── Restore deprecated numpy aliases ──────────────────────────────────
+# beat_this (CPJKU/beat_this) and a few other legacy deps still reference
+# `np.float`, `np.int`, etc., which NumPy 1.20 removed and 1.24+ raises
+# AttributeError on. Without this shim the very first beat_this import
+# inside /api/analyze-rhythm and /separate-stems silently falls through
+# to the librosa fallback, degrading BPM/downbeat accuracy.
+for _alias, _real in (("float", float), ("int", int), ("bool", bool),
+                      ("complex", complex), ("object", object), ("str", str)):
+    if not hasattr(np, _alias):
+        setattr(np, _alias, _real)
+
 import torch
 import torch.nn.functional as F
 import soundfile as sf
@@ -292,6 +303,62 @@ current_ckpt_meta = None  # {label, has_midi, step}
 _base_decoder_state = None  # CPU snapshot of handler.model.decoder for clean swaps
 model_lock = threading.Lock()
 _timbre_ready = False  # flipped True by background _bg_timbre_init after precache completes
+
+
+# ---------------------------------------------------------------------------
+# Task janitor — the `tasks` dict is in-process state on a long-lived Modal
+# container; without cleanup it grows unbounded and OOMs the box. Sweep
+# completed/failed entries past TASK_TTL_SEC, and as a safety net cap the
+# total entry count by evicting the oldest.
+# ---------------------------------------------------------------------------
+TASK_TTL_SEC = int(os.environ.get("TASK_TTL_SEC", 3600))  # 1h default
+TASK_MAX_ENTRIES = int(os.environ.get("TASK_MAX_ENTRIES", 5000))
+TASK_JANITOR_INTERVAL_SEC = 300  # 5min
+_TERMINAL_STATUSES = {"completed", "failed"}
+
+
+def sweep_tasks_dict(task_dict, *, now, ttl_sec=TASK_TTL_SEC, max_entries=TASK_MAX_ENTRIES):
+    """Pure sweep: drop terminal tasks past TTL and cap dict size.
+
+    Returns (n_ttl_evicted, n_capped). Mutates task_dict in place. Pure
+    inputs (no globals) so it's unit-testable without loading the model.
+    """
+    expired = [
+        tid for tid, t in task_dict.items()
+        if t.get("status") in _TERMINAL_STATUSES
+        and now - t.get("created", 0) > ttl_sec
+    ]
+    for tid in expired:
+        task_dict.pop(tid, None)
+
+    capped = 0
+    if len(task_dict) > max_entries:
+        ordered = sorted(task_dict.items(), key=lambda kv: kv[1].get("created", 0))
+        capped = len(task_dict) - max_entries
+        for tid, _ in ordered[:capped]:
+            task_dict.pop(tid, None)
+    return len(expired), capped
+
+
+def _sweep_tasks():
+    """Wrapper that runs against the global `tasks` dict. Never raises."""
+    try:
+        n_ttl, n_cap = sweep_tasks_dict(tasks, now=time.time())
+        if n_ttl:
+            logger.info("task_janitor: evicted %d terminal tasks past TTL", n_ttl)
+        if n_cap:
+            logger.warning("task_janitor: hard-capped, dropped %d oldest entries", n_cap)
+    except Exception as e:
+        logger.warning("task_janitor: sweep failed: %s", e)
+
+
+def _task_janitor_loop():
+    while True:
+        time.sleep(TASK_JANITOR_INTERVAL_SEC)
+        _sweep_tasks()
+
+
+threading.Thread(target=_task_janitor_loop, daemon=True, name="task-janitor").start()
 
 
 # ---------------------------------------------------------------------------

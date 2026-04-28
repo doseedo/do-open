@@ -18,7 +18,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
 
-const AUTH_SERVICE = 'https://doseedo-api.fly.dev';
+const AUTH_SERVICE =
+  process.env.NEXT_PUBLIC_AUTH_ORIGIN || 'https://doseedo-api.fly.dev';
 
 export default function DesktopAuthPage() {
   const { isLoaded, isSignedIn, getToken } = useAuth();

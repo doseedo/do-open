@@ -1,0 +1,198 @@
+/* Settings — workbench theme, hub page at /settings.
+ *
+ * Layout mirrors Models.module.css: 220px sidebar on the left, 40px
+ * page padding, 88px top for the navbar. Cream surfaces, ink text,
+ * mono labels in small caps. Tokens come from theme-workbench.css.
+ */
+
+.settings {
+  width: calc(100% - 220px);
+  margin-left: 220px;
+  padding: 88px 40px 60px;
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: var(--wb-bg);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-sans);
+  font-size: var(--wb-text-md);
+}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+.head {
+  max-width: 720px;
+  margin: 0 0 32px;
+}
+
+.crumb {
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-xs);
+  letter-spacing: var(--wb-tracking-caps);
+  text-transform: uppercase;
+  color: var(--wb-ink-mute);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.crumb span[role="button"] {
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.crumb span[role="button"]:hover { color: var(--wb-ink); }
+.crumbSep { color: var(--wb-ink-faint); }
+
+.title {
+  font-family: var(--wb-font-sans);
+  font-size: var(--wb-text-3xl);
+  font-weight: 600;
+  letter-spacing: -0.6px;
+  margin: 0 0 6px;
+  color: var(--wb-ink);
+}
+
+.sub {
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-sm);
+  letter-spacing: var(--wb-tracking-label);
+  color: var(--wb-ink-mute);
+  margin: 0;
+}
+.sub b {
+  color: var(--wb-ink);
+  font-weight: 600;
+}
+
+/* ── Sections grid ──────────────────────────────────────────────── */
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  margin-bottom: 36px;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  background: var(--wb-surface);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius-lg);
+  padding: 18px 22px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.card:hover {
+  border-color: var(--wb-rule-strong);
+}
+
+.cardBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardLabel {
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-sm);
+  font-weight: 600;
+  letter-spacing: var(--wb-tracking-caps);
+  text-transform: uppercase;
+  color: var(--wb-ink);
+  margin-bottom: 4px;
+}
+
+.cardDesc {
+  font-family: var(--wb-font-sans);
+  font-size: var(--wb-text-md);
+  color: var(--wb-ink-soft);
+  line-height: 1.5;
+}
+
+.cardCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--wb-ink);
+  border: var(--wb-border);
+  border-radius: var(--wb-radius);
+  padding: 8px 14px;
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-sm);
+  font-weight: 600;
+  letter-spacing: var(--wb-tracking-label);
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.cardCta:hover {
+  background: var(--wb-ink);
+  color: var(--wb-bg);
+  border-color: var(--wb-ink);
+}
+
+.cardArrow {
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-md);
+  line-height: 1;
+}
+
+/* ── Danger zone ────────────────────────────────────────────────── */
+.danger {
+  max-width: 720px;
+  border-top: var(--wb-border);
+  padding-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dangerLabel {
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-xs);
+  letter-spacing: var(--wb-tracking-caps);
+  text-transform: uppercase;
+  color: var(--wb-ink-mute);
+}
+
+.signOutBtn {
+  background: transparent;
+  border: 1px solid var(--wb-accent-warm);
+  color: var(--wb-accent-warm);
+  border-radius: var(--wb-radius);
+  padding: 8px 16px;
+  font-family: var(--wb-font-mono);
+  font-size: var(--wb-text-sm);
+  font-weight: 600;
+  letter-spacing: var(--wb-tracking-label);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.signOutBtn:hover {
+  background: var(--wb-accent-warm);
+  color: var(--wb-bg);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .settings {
+    width: 100%;
+    margin-left: 0;
+    padding: 72px 20px 40px;
+  }
+  .card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .cardCta {
+    align-self: flex-start;
+  }
+  .danger {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

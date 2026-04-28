@@ -420,6 +420,23 @@ image = (
         "audio-separator==0.44.1",
         extra_options="--no-deps",
     )
+    # basic-pitch — restored 2026-04-27. Used in the /separate-stems Stage 2b
+    # streaming step to transcribe each pitched stem (bass/other/vocals/
+    # guitar/piano) into a per-stem .mid file under
+    # /separate-stems/midi/<task>/<stem>.mid. Without it, midi_urls comes
+    # back empty and the frontend has no per-stem MIDI to populate piano
+    # rolls.
+    #
+    # --no-deps because every declared runtime dep (librosa, mir-eval,
+    # numpy, pretty-midi, resampy, scikit-learn, scipy, typing-extensions)
+    # is already pinned in requirements.txt. coremltools is also declared
+    # but gated by `try: import coremltools` in basic_pitch/__init__.py so
+    # it's safe to skip — the ONNX backend (onnxruntime-gpu) is used
+    # instead on Modal Linux.
+    .pip_install(
+        "basic-pitch==0.4.0",
+        extra_options="--no-deps",
+    )
     # ACE-Step source — exclude the 14 GB checkpoints subdir (goes on volume)
     .add_local_dir(
         str(_ACE_STEP),

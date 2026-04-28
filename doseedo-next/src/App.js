@@ -22,6 +22,7 @@ import Projects from './components/Projects/Projects';
 import Home from './components/Home/Home';
 import Search from './components/Search/Search';
 import UserInfo from './components/UserInfo/UserInfo';
+import Settings from './components/Settings/Settings';
 import Tools from './components/Tools/Tools';
 import WhatsNew from './components/WhatsNew/WhatsNew';
 import Research from './components/Research/Research';
@@ -166,6 +167,7 @@ function AppContent() {
       p === '/projects' ||
       p === '/profile' ||
       p.startsWith('/profile/') ||
+      p === '/settings' ||
       p === '/search' ||
       p === '/tools' ||
       p === '/plans' ||
@@ -276,6 +278,7 @@ function AppContent() {
                       location.pathname === '/search' ? 'search' :
                       location.pathname.startsWith('/profile/') && location.pathname.split('/').length >= 3 ? 'publicProfile' :
                       location.pathname === '/profile' ? 'userinfo' :
+                      location.pathname === '/settings' ? 'settings' :
                       location.pathname === '/tools' ? 'tools' :
                       location.pathname === '/whats-new' ? 'whatsnew' :
                       location.pathname === '/about' ? 'about' :
@@ -599,6 +602,7 @@ function AppContent() {
     }
     if (currentView === 'search') return <Search />;
     if (currentView === 'userinfo') return <UserInfo onLogout={handleGoToHome} />;
+    if (currentView === 'settings') return <Settings />;
     if (currentView === 'tools') {
       return (
         <PasswordGate routeName="Tools">

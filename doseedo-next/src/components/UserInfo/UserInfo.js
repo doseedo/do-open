@@ -162,8 +162,27 @@ const UserInfo = ({ onLogout }) => {
   return (
     <div className={styles.userInfoContainer}>
       <div className={styles.userInfoHeader}>
-        <h1 className={styles.userInfoTitle}>Account Settings</h1>
-        <p className={styles.userInfoSubtitle}>Manage your profile and preferences</p>
+        <h1 className={styles.userInfoTitle}>Profile</h1>
+        <p className={styles.userInfoSubtitle}>Manage your public profile and library</p>
+        <button
+          type="button"
+          onClick={() => navigate('/settings')}
+          style={{
+            marginTop: 12,
+            background: 'transparent',
+            border: '1px solid var(--wb-rule, rgba(255,255,255,0.18))',
+            color: 'var(--wb-ink, inherit)',
+            borderRadius: 4,
+            padding: '6px 12px',
+            fontFamily: 'var(--wb-font-mono, monospace)',
+            fontSize: 11,
+            letterSpacing: 0.6,
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}
+        >
+          Open Settings →
+        </button>
       </div>
 
       <div className={styles.profileSection}>

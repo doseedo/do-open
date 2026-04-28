@@ -6,7 +6,6 @@
 // holds the VLLM_API_KEY). It is NOT a Next rewrite — no CHATBOT origin here.
 const AUTH     = process.env.NEXT_PUBLIC_AUTH_ORIGIN     || 'https://doseedo-api.fly.dev';
 const MODAL    = process.env.NEXT_PUBLIC_MODAL_ORIGIN    || 'https://arlo--doseedo-stemphonic-stemphonic-wsgi.modal.run';
-const BACKEND  = process.env.NEXT_PUBLIC_BACKEND_ORIGIN  || 'https://backend10-1028528394180.us-central1.run.app';
 const FRAMER   = process.env.NEXT_PUBLIC_FRAMER_ORIGIN   || 'https://heartwarming-friday-546447.framer.app';
 // R2 public bucket for large static assets (ML models) that can't ship in
 // the Next.js bundle. Overrideable via env var for staging/dev.

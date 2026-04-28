@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -11,6 +12,10 @@ import path from 'path';
  * localStorage.doseedoDebugLog = 'on'. In production the file sink
  * becomes a no-op — logs go to stdout (Vercel/Fly picks them up via
  * `vercel logs` / `fly logs`).
+ *
+ * POST is Clerk-gated: anonymous clients can't dump arbitrary lines into
+ * the platform log pipeline. GET stays open as a tiny health/summary
+ * endpoint.
  */
 
 const LOCAL_SINK = process.env.DOSEEDO_DEBUG_LOG_FILE || '/tmp/doseedo-studio-debug.jsonl';
@@ -28,6 +33,13 @@ async function rotateIfLarge(filePath: string) {
 }
 
 export async function POST(req: NextRequest) {
+  if (process.env.CLERK_SECRET_KEY) {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  }
+
   let body: any;
   try {
     body = await req.json();

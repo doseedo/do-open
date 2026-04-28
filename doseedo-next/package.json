@@ -16,6 +16,8 @@
     "@huggingface/inference": "^4.13.0",
     "@sentry/react": "^10.49.0",
     "@tonejs/midi": "^2.0.28",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.37.0",
     "@xyflow/react": "^12.0.0",
     "axios": "^1.6.0",
     "framer-motion": "^12.38.0",

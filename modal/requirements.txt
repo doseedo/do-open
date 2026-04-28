@@ -128,7 +128,9 @@ onnx==1.21.0
 onnx-ir==0.2.0
 onnx-weekly==1.22.0.dev20260330
 onnx2torch-py313==1.6.0
-onnxruntime==1.24.4
+# onnxruntime==1.24.4  # removed 2026-04-27 — when both CPU and GPU packages are
+# installed they share the `onnxruntime` import name and the CPU package wins,
+# leaving CUDAExecutionProvider unregistered. Keep only the GPU build.
 onnxruntime-gpu==1.24.4
 onnxscript==0.6.2
 openai-whisper==20250625
