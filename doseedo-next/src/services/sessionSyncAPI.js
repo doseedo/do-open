@@ -54,6 +54,17 @@ async function _get(path, { shareToken } = {}) {
   return res.json();
 }
 
+/**
+ * Fetch the auth-service's canonical view of the signed-in user. Used by
+ * useAutoAttest to learn the exact `username` the server expects when
+ * confirming attestations — Clerk's `user.username` lives in a different
+ * namespace and the confirm endpoint 403s on mismatch
+ * (commits.py:_load_attestation_for: `att.contributor_username != user.username`).
+ */
+export async function fetchMyProfile() {
+  return _get('/api/profiles/me');
+}
+
 export async function listMySessions({ limit = 50, offset = 0 } = {}) {
   const qs = new URLSearchParams({ limit, offset }).toString();
   return _get(`/api/sessions?${qs}`);

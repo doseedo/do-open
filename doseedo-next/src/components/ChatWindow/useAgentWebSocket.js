@@ -351,6 +351,12 @@ export function useAgentWebSocket(dawState, opts = {}) {
     }
     let ws;
     let alive = true;
+    // Exponential backoff so a missing /_chat/ws server doesn't spam the
+    // console with reconnect attempts every 3s. Reset to base delay on
+    // each successful onopen.
+    const baseDelayMs = 3000;
+    const maxDelayMs = 60_000;
+    let nextDelayMs = baseDelayMs;
 
     function connect() {
       if (!alive) return;
@@ -363,6 +369,7 @@ export function useAgentWebSocket(dawState, opts = {}) {
       ws.onopen = () => {
         if (!alive) return;
         setWsState('open');
+        nextDelayMs = baseDelayMs;
         // Clear any reconnect timer
         if (reconnectRef.current) {
           clearTimeout(reconnectRef.current);
@@ -385,12 +392,13 @@ export function useAgentWebSocket(dawState, opts = {}) {
         if (!alive) return;
         setWsState('closed');
         wsRef.current = null;
-        // Auto-reconnect after 3s
-        reconnectRef.current = setTimeout(connect, 3000);
+        // Schedule reconnect with capped exponential backoff (3s → 60s).
+        reconnectRef.current = setTimeout(connect, nextDelayMs);
+        nextDelayMs = Math.min(nextDelayMs * 2, maxDelayMs);
       };
 
       ws.onerror = () => {
-        // onclose will fire after onerror
+        // onclose will fire after onerror; backoff is bumped there.
       };
     }
 

@@ -26,6 +26,7 @@ import {
   requestAttestation,
   confirmAttestation,
 } from '../services/attestationsAPI';
+import { fetchMyProfile } from '../services/sessionSyncAPI';
 
 export function useAutoAttest({ sessionId, commits, currentUsername, enabled, refresh }) {
   const inflightRef = useRef(new Set());
@@ -33,13 +34,34 @@ export function useAutoAttest({ sessionId, commits, currentUsername, enabled, re
   const queueRef = useRef(Promise.resolve());
   const [tick, setTick] = useState(0);     // bumps to re-render `attesting` set
 
+  // Resolve the auth-service's canonical username once. Clerk's
+  // `user.username` lives in a different namespace; the confirm
+  // endpoint 403s on `att.contributor_username != user.username`.
+  // Cached in state so we don't re-fetch on every render.
+  const [serverUsername, setServerUsername] = useState(null);
+  const meFetchedRef = useRef(false);
+  useEffect(() => {
+    if (!enabled || !sessionId || meFetchedRef.current) return;
+    meFetchedRef.current = true;
+    fetchMyProfile()
+      .then((me) => { if (me?.username) setServerUsername(me.username); })
+      .catch((err) => {
+        meFetchedRef.current = false;
+        console.warn('[auto-attest] could not fetch /api/profiles/me:', err?.message || err);
+      });
+  }, [enabled, sessionId]);
+
+  // Prefer the server-resolved username; fall back to whatever the caller
+  // passed (still useful if /me is unavailable but the two happen to match).
+  const effectiveUsername = serverUsername || currentUsername || '';
+
   const isAttesting = useCallback((commitId) => {
     return inflightRef.current.has(commitId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick]);
 
   useEffect(() => {
-    if (!enabled || !sessionId || !currentUsername) return;
+    if (!enabled || !sessionId || !effectiveUsername) return;
     if (!Array.isArray(commits) || commits.length === 0) return;
 
     const targets = commits.filter((c) => {
@@ -59,7 +81,7 @@ export function useAutoAttest({ sessionId, commits, currentUsername, enabled, re
       let didAny = false;
       for (const c of targets) {
         try {
-          const att = await requestAttestation(sessionId, c.id, currentUsername, null);
+          const att = await requestAttestation(sessionId, c.id, effectiveUsername, null);
           if (att?.id) {
             await confirmAttestation(sessionId, att.id);
             didAny = true;
@@ -81,7 +103,7 @@ export function useAutoAttest({ sessionId, commits, currentUsername, enabled, re
         try { await refresh(); } catch { /* swallow */ }
       }
     });
-  }, [sessionId, currentUsername, enabled, commits, refresh]);
+  }, [sessionId, effectiveUsername, enabled, commits, refresh]);
 
   return { isAttesting };
 }
