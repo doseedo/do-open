@@ -62,7 +62,9 @@ import { useAgentWebSocket } from '../ChatWindow/useAgentWebSocket';
 import { useLiveParamDeltas } from '../../hooks/useLiveParamDeltas';
 import { useSessionCommits } from '../../hooks/useSessionCommits';
 import { useCommitSyncer } from '../../hooks/useCommitSyncer';
+import { useAutoAttest } from '../../hooks/useAutoAttest';
 import { useEditStream } from '../../hooks/useEditStream';
+import * as sessionSyncAPI from '../../services/sessionSyncAPI';
 import { useCollabPresence } from '../../hooks/useCollabPresence';
 import PresenceAvatars from './PresenceAvatars';
 import ShareModal from './ShareModal';
@@ -409,6 +411,7 @@ export default function StudioDev() {
   const [rightTab, setRightTab] = useState('session');
   const [sessionBusExpanded, setSessionBusExpanded] = useState({}); // busId → boolean
   const [historyFilterMe, setHistoryFilterMe] = useState(false);    // History tab: only show my commits
+  const [historyAutoAttest, setHistoryAutoAttest] = useState(true); // History tab: auto self-attest each new commit
   const [openAttestCommit, setOpenAttestCommit] = useState(null);   // commit id whose AttestationsPanel is expanded
   // (Share button — copy-flash state lives in ShareModal now.)
 
@@ -423,6 +426,52 @@ export default function StudioDev() {
   // row reaches a real server commit (otherwise every web commit shows
   // the "sync this commit to the server first" placeholder forever).
   useCommitSyncer(state.activeSessionId || null, state.sessionHistory, serverHistory);
+
+  // Web-only session bootstrap. If the user starts a brand-new project on
+  // the web (no ?session= param, no desktop sync), state.activeSessionId
+  // is null and the syncer above can't push commits anywhere. The moment
+  // a local commit lands, lazily POST /api/sessions to mint a server-side
+  // session row (idempotent-by-name on the auth-service) and dispatch the
+  // returned UUID. From then on commits + attestations route normally.
+  const bootstrappingRef = useRef(false);
+  useEffect(() => {
+    if (state.activeSessionId) return;
+    if (bootstrappingRef.current) return;
+    if (!clerk?.user) return;
+    const localCommitCount = Object.keys(state.sessionHistory?.commits || {}).length;
+    if (localCommitCount === 0) return;
+    const projectName = state.projectName || 'Untitled Session';
+    bootstrappingRef.current = true;
+    sessionSyncAPI.createSession({ name: projectName })
+      .then((row) => {
+        if (!row?.id) return;
+        dispatch({ type: 'SET_ACTIVE_SESSION_ID', payload: row.id });
+        sessionService.setActiveProject(row.id);
+        sessionService.setLastSyncedSessionId(row.id);
+        console.log(`✅ Bootstrapped server session ${row.id} for "${projectName}"`);
+      })
+      .catch((err) => {
+        bootstrappingRef.current = false;
+        console.warn('[session-bootstrap] failed:', err?.message || err);
+      });
+  }, [state.activeSessionId, state.sessionHistory, state.projectName, clerk?.user, dispatch]);
+
+  // Auto self-attest server commits (when the History-tab "Attest"
+  // checkbox is on). Pill states per row:
+  //   • grey "attesting" while the request+confirm is in flight, or while
+  //     polygon_status hasn't reached 'confirmed' yet
+  //   • green "attested ✓" once polygon_status === 'confirmed'
+  const autoAttestUsername = clerk?.user?.username
+    || clerk?.user?.primaryEmailAddress?.emailAddress
+    || clerk?.user?.fullName
+    || '';
+  const { isAttesting: autoAttestIsAttesting } = useAutoAttest({
+    sessionId: state.activeSessionId || null,
+    commits: serverHistory.commits || [],
+    currentUsername: autoAttestUsername,
+    enabled: historyAutoAttest,
+    refresh: serverHistory.refresh,
+  });
 
   // Subscribe to the live edit stream — receives the desktop's fader
   // moves (and any other web client's edits) sub-second. Echoes of our
@@ -3514,10 +3563,21 @@ export default function StudioDev() {
                       )}
                     </div>
                   </div>
-                  <label className="sd-history-toggle" title={currentUserId ? 'Filter to your commits' : 'Sign in to filter'}>
-                    <input type="checkbox" checked={historyFilterMe} disabled={!currentUserId} onChange={(e) => setHistoryFilterMe(e.target.checked)} />
-                    Mine
-                  </label>
+                  <div className="sd-history-toggles">
+                    <label className="sd-history-toggle" title={currentUserId ? 'Filter to your commits' : 'Sign in to filter'}>
+                      <input type="checkbox" checked={historyFilterMe} disabled={!currentUserId} onChange={(e) => setHistoryFilterMe(e.target.checked)} />
+                      Mine
+                    </label>
+                    <label className="sd-history-toggle" title="Automatically self-attest each new commit so it can publish on chain">
+                      <input
+                        type="checkbox"
+                        checked={historyAutoAttest}
+                        disabled={!autoAttestUsername}
+                        onChange={(e) => setHistoryAutoAttest(e.target.checked)}
+                      />
+                      Attest
+                    </label>
+                  </div>
                 </div>
 
                 {commits.length === 0 && (
@@ -3584,47 +3644,60 @@ export default function StudioDev() {
                             return pills.length ? <div className="sd-commit-rights">{pills}</div> : null;
                           })()}
                           {(() => {
-                            // Attestation level pill — server commits only.
-                            const lvl = commit._server?.attestation_level;
-                            if (!lvl) return null;
-                            const total = commit._server?.attestation_total || 0;
-                            const confirmed = commit._server?.attestation_confirmed || 0;
-                            const disputed = commit._server?.attestation_disputed || 0;
-                            const cls = lvl === 2 ? 'attest-l2' : (disputed > 0 ? 'attest-disputed' : 'attest-l1');
-                            const tip = lvl === 2
-                              ? `Level 2 — all ${total} contributors confirmed (eligible for on-chain anchor)`
-                              : disputed > 0
-                                ? `Level 1 — ${disputed} dispute${disputed === 1 ? '' : 's'} blocking`
-                                : total > 0
-                                  ? `Level 1 — ${total - confirmed - disputed} pending`
-                                  : 'Level 1 — no contributors named yet';
-                            // On-chain anchor pill — only when polygon_status='confirmed'.
+                            // Per-row attestation pill. Three states:
+                            //   • attested ✓ (green)  — polygon_status === 'confirmed'
+                            //   • attesting (grey)    — request/confirm in flight or
+                            //                            attested locally but not yet
+                            //                            anchored on chain
+                            //   • (none)              — server commit not yet attested
+                            //                            and auto-attest is off
                             const srv = commit._server;
-                            const polyConfirmed = srv?.polygon_status === 'confirmed';
+                            if (!srv) return null;
+                            const polyConfirmed = srv.polygon_status === 'confirmed';
+                            const total = srv.attestation_total || 0;
+                            const inFlight = autoAttestIsAttesting(commit.id);
                             const txUrl = polyConfirmed && srv.polygon_tx_hash
                               ? (srv.polygon_network === 'mainnet'
                                   ? `https://polygonscan.com/tx/${srv.polygon_tx_hash}`
                                   : `https://amoy.polygonscan.com/tx/${srv.polygon_tx_hash}`)
                               : null;
-                            return (
-                              <div className="sd-commit-rights">
-                                <span className={`sd-commit-ref ${cls}`} title={tip}>
-                                  {lvl === 2 ? 'L2 ✓' : 'L1'}
-                                  {total > 0 && ` · ${confirmed}/${total}`}
-                                </span>
-                                {polyConfirmed && txUrl && (
-                                  <a
-                                    href={txUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="sd-commit-ref attest-l2"
-                                    title={`Anchored on Polygon ${srv.polygon_network} at block ${srv.polygon_block_number}`}
-                                  >
-                                    🔗 Anchored on Polygon{srv.polygon_network === 'amoy' ? ' (testnet)' : ''}
-                                  </a>
-                                )}
-                              </div>
-                            );
+
+                            if (polyConfirmed) {
+                              return (
+                                <div className="sd-commit-rights">
+                                  <span
+                                    className="sd-commit-ref sd-attest-pill sd-attest-on-chain"
+                                    title={`Anchored on Polygon ${srv.polygon_network || ''} at block ${srv.polygon_block_number || '?'}`}
+                                  >✓ attested</span>
+                                  {txUrl && (
+                                    <a
+                                      href={txUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="sd-commit-ref sd-attest-link"
+                                      title="View on-chain transaction"
+                                    >🔗 polygon{srv.polygon_network === 'amoy' ? ' (testnet)' : ''}</a>
+                                  )}
+                                </div>
+                              );
+                            }
+                            if (inFlight || total > 0 || (historyAutoAttest && !!autoAttestUsername)) {
+                              return (
+                                <div className="sd-commit-rights">
+                                  <span
+                                    className="sd-commit-ref sd-attest-pill sd-attest-pending"
+                                    title={
+                                      inFlight
+                                        ? 'Submitting attestation…'
+                                        : total > 0
+                                          ? 'Attested — waiting for on-chain anchor'
+                                          : 'Auto-attestation queued'
+                                    }
+                                  >attesting…</span>
+                                </div>
+                              );
+                            }
+                            return null;
                           })()}
                           {(isHead || branches.length > 0 || isOriginal) && (
                             <div className="sd-commit-refs">

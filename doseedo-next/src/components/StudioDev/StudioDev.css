@@ -1528,6 +1528,32 @@
   cursor: pointer;
 }
 .sd-history-toggle input { accent-color: var(--hifi-accent); }
+.sd-history-toggles { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+
+/* Per-commit attestation pill states.
+   • attesting (grey): request in flight, OR attested locally but the
+     publisher hasn't anchored to Polygon yet
+   • attested (green): polygon_status === 'confirmed'                */
+.sd-attest-pill {
+  font-family: var(--hifi-mono);
+  letter-spacing: .4px;
+  text-transform: uppercase;
+}
+.sd-attest-pending {
+  background: rgba(255,255,255,0.04);
+  color: var(--hifi-ink-mute);
+  border-color: var(--hifi-rule);
+}
+.sd-attest-on-chain {
+  background: rgba(46,204,113,0.12);
+  color: #2ecc71;
+  border-color: rgba(46,204,113,0.45);
+}
+.sd-attest-link {
+  color: var(--hifi-ink-soft);
+  text-decoration: none;
+}
+.sd-attest-link:hover { color: var(--hifi-ink); }
 .sd-history-preview-banner {
   display: flex; justify-content: space-between; align-items: center; gap: 8px;
   padding: 8px 10px; border: 1px dashed var(--hifi-accent);

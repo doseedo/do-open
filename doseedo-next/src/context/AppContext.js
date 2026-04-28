@@ -315,6 +315,13 @@ function appReducer(state, action) {
     case 'SET_PROJECT_NAME':
       return { ...state, projectName: action.payload };
 
+    case 'SET_ACTIVE_SESSION_ID':
+      // Attach a server-side session UUID without touching anything else.
+      // Used by the web-only session bootstrap path so a brand-new project
+      // can mint server commits + attestations without going through
+      // LOAD_SESSION (which spreads a full payload over state).
+      return { ...state, activeSessionId: action.payload || null };
+
     case 'UPDATE_GENERATION_PARAMS':
       return {
         ...state,
