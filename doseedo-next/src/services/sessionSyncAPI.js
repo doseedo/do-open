@@ -67,6 +67,35 @@ export async function fetchSessionState(sessionId, opts = {}) {
   return _get(`/api/sessions/${sessionId}/state`, opts);
 }
 
+/**
+ * Create (or upsert by name) a server-side session row. Used by the
+ * web-only bootstrap path: when the user starts a brand-new project on
+ * the web (no `?session=` URL, no desktop sync), we lazily POST one of
+ * these on first commit so the commit/attestation endpoints have a
+ * session UUID to scope against. Server is idempotent-by-name per
+ * app/routers/sessions.py:create_session — repeated calls with the
+ * same name return the existing row, so it's safe to call without
+ * tracking creation state on the client.
+ */
+export async function createSession({ name, type = 'project', visibility = 'private' } = {}) {
+  if (!name) throw new Error('createSession requires a name');
+  const url = new URL(`${API_BASE}/api/sessions`, window.location.origin);
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: await _authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ name, type, visibility }),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try { detail = (await res.json()).detail || detail; } catch {}
+    const err = new Error(detail);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
 export async function deleteSession(sessionId) {
   const url = `${API_BASE}/api/sessions/${sessionId}`;
   const res = await fetch(url, {
