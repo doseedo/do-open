@@ -809,6 +809,12 @@ class Stemphonic:
                         # Shouldn't happen — auth-service always returns an int —
                         # but don't fail the request if it ever does.
                         g.gate_user_id = None
+                    # Stash tier alongside user_id so the watermark hook can
+                    # write it into the WatermarkAttestation row instead of
+                    # the placeholder "unknown". generation_gate's
+                    # ConsumeResponse always carries a `tier` string —
+                    # default to "unknown" defensively.
+                    g.gate_tier = str(gate_body.get("tier") or "unknown")
                     return
 
             except urllib.error.HTTPError as e:
@@ -1063,7 +1069,7 @@ class Stemphonic:
                 )
                 return None
 
-        def _persist_task_outputs(user_id, task_id, kind, output_dir):
+        def _persist_task_outputs(user_id, task_id, kind, output_dir, *, tier="unknown"):
             """Walk the on-disk output dir for a completed task, upload each
             file to R2, register each with auth-service, and return a list of
             {key, url, generation_id, filename} dicts. Caches per-task so we
@@ -1137,7 +1143,7 @@ class Stemphonic:
                                 _orig_bytes,
                                 generation_id=task_id,
                                 user_id=str(user_id) if user_id is not None else None,
-                                tier="unknown",  # TODO: plumb tier through gate response
+                                tier=tier or "unknown",
                                 model_version="stemphonic-2026.04",
                             )
                             # Overwrite the on-disk file so /api/generate-stemphonic/download
@@ -1253,6 +1259,7 @@ class Stemphonic:
             # -----------------------------------------------------------------
             if request.method == "POST" and path in _KIND_BY_CREATE_PATH:
                 user_id = getattr(g, "gate_user_id", None)
+                tier = getattr(g, "gate_tier", "unknown")
                 kind = _KIND_BY_CREATE_PATH[path]
                 if user_id is not None:
                     try:
@@ -1271,6 +1278,7 @@ class Stemphonic:
                         with _task_lock:
                             _task_owners[tid] = {
                                 "user_id": user_id,
+                                "tier": tier,
                                 "kind": kind,
                                 "created_at": _gt.time(),
                             }
@@ -1291,6 +1299,7 @@ class Stemphonic:
                             )
                             persisted = _persist_task_outputs(
                                 user_id, task_id, "separate-stems", output_dir,
+                                tier=tier,
                             )
                             if persisted:
                                 body["r2"] = persisted if len(persisted) > 1 else persisted[0]
@@ -1339,6 +1348,7 @@ class Stemphonic:
                             owner["user_id"], task_id,
                             owner.get("kind", default_kind),
                             output_dir,
+                            tier=owner.get("tier", "unknown"),
                         )
                     except Exception as e:
                         _r2_log.exception(
