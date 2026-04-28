@@ -1076,6 +1076,8 @@ const Docs = () => {
   return (
     <main
       style={{
+        // 220px clears the fixed LeftSidebar on dashboard routes.
+        marginLeft: 220,
         minWidth: 0,
         display: 'flex',
         flexDirection: 'column',

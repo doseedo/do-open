@@ -689,6 +689,9 @@ const Plans = () => {
   return (
     <main
       style={{
+        // 220px clears the fixed LeftSidebar on dashboard routes; without
+        // this the sidebar overlays the topbar + first content column.
+        marginLeft: 220,
         minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
@@ -701,7 +704,7 @@ const Plans = () => {
       }}
     >
       <Topbar billing={billing} setBilling={setBilling} />
-      <div style={{ flex: 1, overflow: 'auto', padding: '36px 40px 80px', maxWidth: 1200, width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '36px 40px 80px', maxWidth: 1200, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
         <Hero />
         <PlansGrid billing={billing} />
         <FreeStrip />

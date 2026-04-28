@@ -160,6 +160,7 @@ const LeftSidebar = React.memo(({
   showMidiBrowser, onToggleChat, showChatWindow, onShowBookmarks, showBookmarks,
   isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView,
   isWhatsNewView, isResearchView, isDownloadsView, isPluginsView, isModelsView,
+  isMoreView,
 }) => {
   const navigate = useNavigate();
   const { state, dispatch } = useApp();
@@ -179,10 +180,13 @@ const LeftSidebar = React.memo(({
     setUserInfo(getCurrentUser());
   }, []);
 
-  // Auto-expand on non-DAW views (desktop only).
+  // Auto-expand on non-DAW views (desktop only). The collapse toggle is
+  // hidden whenever this is true — i.e. only /studio and /plugins/create
+  // show the manual collapse button. `isMoreView` covers the More-menu
+  // legal/docs/plans/verify pages so they don't show the toggle either.
   const isSpecialView = isDashboardView || isHomeView || isSearchView || isUserInfoView
     || isToolsView || isWhatsNewView || isResearchView || isDownloadsView
-    || isPluginsView || isModelsView;
+    || isPluginsView || isModelsView || isMoreView;
 
   useEffect(() => {
     if (!isMobile && isSpecialView && !state.sidebar.isExpanded) {

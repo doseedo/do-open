@@ -40,7 +40,12 @@ import Models from './components/Models/Models';
 import CreationView from './components/CreationView/CreationView';
 import StudioDev from './components/StudioDev/StudioDev';
 
-const PROTECTED_PASSWORD = process.env.NEXT_PUBLIC_PROTECTED_PASSWORD || '***REDACTED***';
+// The password lives only in the server-side PROTECTED_PASSWORD env var
+// (validated by app/api/auth/gate/route.ts). This component never sees
+// the secret — it POSTs the user's input and trusts the response. The
+// successful response also sets an HttpOnly `dsd_gate` cookie so a
+// future middleware pass can enforce the gate at the edge; today the
+// sessionStorage flag is just the client-side view-state cache.
 
 function PasswordGate({ children, routeName }) {
   const [unlocked, setUnlocked] = useState(() => {
@@ -48,15 +53,31 @@ function PasswordGate({ children, routeName }) {
   });
   const [input, setInput] = useState('');
   const [error, setError] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (input === PROTECTED_PASSWORD) {
-      sessionStorage.setItem(`pw_${routeName}`, '1');
-      setUnlocked(true);
-    } else {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/auth/gate', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: input }),
+      });
+      if (res.ok) {
+        sessionStorage.setItem(`pw_${routeName}`, '1');
+        setUnlocked(true);
+      } else {
+        setError(true);
+        setTimeout(() => setError(false), 1500);
+      }
+    } catch (_err) {
       setError(true);
       setTimeout(() => setError(false), 1500);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -568,6 +589,15 @@ function AppContent() {
     isDownloadsView: currentView === 'downloads',
     isPluginsView:   currentView === 'plugins',
     isModelsView:    currentView === 'models',
+    // "More menu" pages — Plans, Verify, Docs, About, Privacy, Terms,
+    // Help, Feedback. Treated like other dashboard subpages so the
+    // LeftSidebar auto-expands and hides its collapse toggle. Only
+    // /studio and /plugins/create show the collapse button.
+    isMoreView:
+      currentView === 'plans'    || currentView === 'verify' ||
+      currentView === 'docs'     || currentView === 'about'  ||
+      currentView === 'privacy'  || currentView === 'terms'  ||
+      currentView === 'help'     || currentView === 'feedback',
   };
 
   // Route content selector — returns just the route's content, no chrome.
