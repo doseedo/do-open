@@ -394,7 +394,45 @@ function buildCompressor(ctx, node, paramDefs) {
     }
   }
 
-  return { input: comp, output: makeup, paramTargets: targets, compressorNode: comp };
+  // Indexed-param dispatch: a Logic Compressor exposes "Compressor
+  // Circuit" / "Soft Knee" / "Auto Gain" toggles as enum params. The
+  // mapping JSON sets `indexed: true` on those rows; PluginAdapter
+  // calls engine.setIndexedParameter(key, intValue), which routes
+  // through this handler. The indices are AU value_strings positions —
+  // not numeric values, so we re-map them here onto WebAudio properties.
+  //
+  // Reference handlers:
+  //   * "knee"   index 0 = hard (0 dB), 1 = soft (8 dB), 2 = wide (24 dB)
+  //   * "circuit" / "mode" no-op for now (WebAudio compressor doesn't
+  //     model FET/VCA/Opto curves; refinement layers add this).
+  const indexedHandlers = {};
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val !== 'string' || !val.startsWith('@')) continue;
+    const paramId = val.slice(1);
+    if (key === 'knee') {
+      indexedHandlers[paramId] = (idx) => {
+        // Map enum index to a knee width in dB. AU often exposes knee
+        // as a continuous param too; this handler covers the indexed
+        // case (mode-like dropdown) — continuous values flow through
+        // the regular paramTargets.
+        const widthDb = [0, 8, 24][Math.max(0, Math.min(2, idx | 0))];
+        comp.knee.value = widthDb;
+      };
+    } else if (key === 'circuit' || key === 'mode' || key === 'compressor_type') {
+      indexedHandlers[paramId] = (_idx) => {
+        // No-op until the WebAudio compressor models multiple circuits.
+        // We still register the handler so PluginAdapter doesn't fall
+        // through to the raw setParameter path (which would write a
+        // float into a non-existent target and warn).
+      };
+    }
+  }
+
+  return {
+    input: comp, output: makeup, paramTargets: targets,
+    compressorNode: comp,
+    indexedHandlers: Object.keys(indexedHandlers).length ? indexedHandlers : undefined,
+  };
 }
 
 function buildLimiter(ctx, node, paramDefs) {
@@ -1061,6 +1099,17 @@ export default class WebAudioDSPEngine {
       for (const [paramId, target] of Object.entries(built.paramTargets)) {
         this.paramTargets[paramId] = target;
       }
+      // Indexed-param handlers (enum / dropdown dispatch). Builders that
+      // care about discrete switches register a function per paramId
+      // here; setIndexedParameter looks them up and dispatches without
+      // running the value through normalize/curve/scale. Last builder
+      // wins per paramId, mirroring paramTargets aggregation.
+      if (built.indexedHandlers) {
+        if (!this._indexedHandlers) this._indexedHandlers = {};
+        for (const [paramId, fn] of Object.entries(built.indexedHandlers)) {
+          if (typeof fn === 'function') this._indexedHandlers[paramId] = fn;
+        }
+      }
     }
 
     // Connect nodes in series
@@ -1683,6 +1732,51 @@ export default class WebAudioDSPEngine {
       const def = this.paramDefs[paramId];
       const scaled = def ? scaleParam(normalizedValue, def) : normalizedValue;
       try { this.voiceManager.setParam(paramId, scaled); } catch (_) { /* ignore */ }
+    }
+  }
+
+  /**
+   * Set an indexed (enum / dropdown) parameter without going through the
+   * normalize → curve → scale stack. PluginAdapter calls this for any
+   * param whose mapping row carries `indexed: true` (Logic AU
+   * parameters with kAudioUnitParameterUnit_Indexed). The integer is the
+   * discrete index into the AU's value_strings table — selecting a
+   * compression mode, an EQ band type, a distortion shape, etc.
+   *
+   * Dispatch:
+   *   1. Per-builder handler — if a builder registered an
+   *      `indexedHandler` for this paramId, call it with the int. This
+   *      is what flips compressor.knee.value=knee/0 for mode toggles,
+   *      swaps an EQ biquad's filter type, etc.
+   *   2. Fallback — record the value in paramValues and call
+   *      setParameter with the int. Builders that don't care about
+   *      enums are no-ops; the value persists so subsequent reads see
+   *      the right state.
+   *
+   * Builders register an indexed handler by setting `indexedHandler`
+   * on the object they return alongside `paramTargets`. See the
+   * compressor builder's mode-switch as the reference example.
+   */
+  setIndexedParameter(paramId, intValue) {
+    const v = Math.round(Number(intValue) || 0);
+    this.paramValues[paramId] = v;
+    if (this._indexedHandlers && this._indexedHandlers[paramId]) {
+      try {
+        this._indexedHandlers[paramId](v);
+        return;
+      } catch (e) {
+        console.warn(`[WebAudioDSPEngine] indexed handler ${paramId} threw:`, e);
+      }
+    }
+    // Fallback path — write through to the regular setter so existing
+    // listeners (paramTargets writing into AudioParam.value) still see
+    // the change. AudioParam.value accepts ints fine; out-of-range is
+    // clamped at the AU layer rather than here.
+    if (this.masterGain) {
+      this._applyParam(paramId, v);
+    }
+    if (this.voiceManager) {
+      try { this.voiceManager.setParam(paramId, v); } catch (_) { /* ignore */ }
     }
   }
 
