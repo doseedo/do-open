@@ -81,6 +81,18 @@ const Privacy = () => (
         <p className={styles.sectionText} style={{ marginTop: 12 }}>
           <strong>Provenance.</strong> The Service tracks provenance of sessions and generations to support the Service's version control and rights-tracking features. This metadata travels with your content and is visible to you and (where applicable) your collaborators.
         </p>
+        <p className={styles.sectionText} style={{ marginTop: 12 }}>
+          <strong>Embedded watermark.</strong> Audio generated through the Service carries an inaudible watermark that encodes a 16-byte seed unique to that generation. The watermark is designed to survive normal post-production (re-encoding, EQ, time-stretch, and analog re-recording) and is imperceptible at typical listening conditions. Free-tier exports are always watermarked. Pro, Studio, and Power exports default to watermarked but can be exported clean on a per-generation basis. The watermark itself contains no personally identifying information — only a seed that we can resolve, off-system, back to the registry record described below.
+        </p>
+        <p className={styles.sectionText} style={{ marginTop: 12 }}>
+          <strong>On-chain attestation registry.</strong> At generation time, a hash of the watermark seed plus generation metadata (model version, timestamp, tier-at-gen-time, optional opt-in wallet) is recorded in our internal database and submitted to a public registry contract on the Polygon network as a single keccak256 hash plus a metadata URI that points back to the Doseedo verifier. The on-chain footprint contains no audio, no personal information, and no user identifier — only the hash that allows independent verification that a given seed was registered by Doseedo at a given time. The off-chain database row holds the rest of the metadata under the same controls as Your Content.
+        </p>
+        <p className={styles.sectionText} style={{ marginTop: 12 }}>
+          <strong>Verification uploads (<code>/verify</code>).</strong> When you upload an audio file to the public verifier at <code>doseedo.com/verify</code>, the file is transmitted over TLS to our watermark detection service, scanned for the presence of a Doseedo watermark, and then discarded. We do not retain the audio after the scan completes. We do log the scan result (found / not-found, the model's confidence value, the file's duration, and a timestamp) for abuse-prevention and operational metrics. Filenames, IP addresses, and other request metadata are subject to the same retention rules as ordinary Service traffic (Section 6).
+        </p>
+        <p className={styles.sectionText} style={{ marginTop: 12 }}>
+          <strong>Opting out of the watermark.</strong> Pro, Studio, and Power users may export specific generations without the watermark using the per-export toggle in the Service. The on-chain attestation is still created — it does not require the audio-side mark — but the exported audio will not carry the inaudible signal. Free-tier exports cannot be exported without the watermark.
+        </p>
       </div>
 
       <div className={styles.section}>

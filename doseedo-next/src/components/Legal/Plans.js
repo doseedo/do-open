@@ -75,7 +75,7 @@ function Topbar({ billing, setBilling }) {
         <strong style={{ color: C.inkSoft, fontWeight: 500 }}>Plans</strong>
       </span>
       <span style={{ color: C.inkFaint }}>·</span>
-      <span>2 tiers · free tier available</span>
+      <span>3 tiers · free tier available</span>
       <div style={{ flex: 1 }} />
       <div style={{ display: 'inline-flex', border: `1px solid ${C.rule}`, background: C.bg }}>
         {[
@@ -136,10 +136,10 @@ function Hero() {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.3fr) minmax(0,1fr)', gap: 60, alignItems: 'end' }}>
         <h1 style={{ fontFamily: C.head, fontSize: 'clamp(32px, 4.2vw, 48px)', fontWeight: 600, letterSpacing: -1.2, lineHeight: 1.08, margin: 0 }}>
-          Two plans for producers who want&nbsp;the <span style={{ color: C.accent }}>full studio.</span>
+          Three plans for producers who want&nbsp;the <span style={{ color: C.accent }}>full studio.</span>
         </h1>
         <div style={{ fontFamily: C.sans, fontSize: 13, color: C.inkSoft, lineHeight: 1.6, paddingBottom: 4, maxWidth: 420 }}>
-          Every tier includes the engine, stem separation, and commercial rights. Upgrade, downgrade, or cancel from the terminal at any time — prorated to the minute.
+          One credit covers a generation, a chat session, or an attestation. Sessions, devices, and commercial rights scale with the tier. Upgrade, downgrade, or cancel from the terminal at any time — prorated to the minute.
         </div>
       </div>
     </section>
@@ -306,19 +306,20 @@ function PlanCard({ plan, billing, featured }) {
 
 const PLANS = [
   {
-    sku: 'DSD-PRO-020',
+    sku: 'DSD-PRO-012',
     tier: 'I',
     rev: '2026.04',
     name: 'Pro',
     tagline: 'For songwriters and producers working on a song or three at a time. Everything you need to ship, nothing you don’t.',
-    price: 20,
+    price: 12,
     cta: 'Provision Pro',
     specs: [
-      { k: 'Sessions', v: 'Unlimited · every take kept', bold: true },
-      { k: 'Engine time', v: '40 hours / month' },
+      { k: 'Credits', v: '800 / month · 2× rollover', bold: true },
+      { k: 'Sessions', v: 'Unlimited · every take kept' },
+      { k: 'Storage', v: '5 GB · Opus 128k stems' },
       { k: 'Generation', v: 'Standard queue' },
       { k: 'Instruments', v: 'Curated instrument set' },
-      { k: 'Stem export', v: '48 kHz / 24-bit WAV · stems + mixdown' },
+      { k: 'Stem export', v: '48 kHz · 24-bit WAV · stems + mixdown' },
       { k: 'Stem split', v: '— not included', muted: true },
       { k: 'Score-to-pic', v: '— not included', muted: true },
       { k: 'Collab seats', v: '1 (you)' },
@@ -327,24 +328,48 @@ const PLANS = [
     ],
   },
   {
-    sku: 'DSD-MAX-100',
+    sku: 'DSD-STD-029',
     tier: 'II',
     rev: '2026.04',
-    name: 'Max',
-    tagline: 'For scorers, studios, and producers who live inside doseedo. Unlimited everything, priority compute, early instrument access.',
-    price: 100,
-    cta: 'Provision Max',
+    name: 'Studio',
+    tagline: 'For working producers and small studios. Stem split, score-to-picture, and priority compute on the floor when you need it.',
+    price: 29,
+    cta: 'Provision Studio',
     specs: [
-      { k: 'Sessions', v: 'Unlimited · every take kept', bold: true },
-      { k: 'Engine time', v: 'Unlimited', bold: true },
-      { k: 'Generation', v: 'Priority · 4× faster', bold: true },
+      { k: 'Credits', v: '3,000 / month · 2× rollover', bold: true },
+      { k: 'Sessions', v: 'Unlimited · every take kept' },
+      { k: 'Storage', v: '25 GB · Opus 128k stems' },
+      { k: 'Generation', v: 'Priority · 2× faster', bold: true },
       { k: 'Instruments', v: 'Full set + early access models' },
       { k: 'Stem export', v: '48 / 96 kHz · 24-bit · stems + mix + master' },
       { k: 'Stem split', v: 'Included · unlimited splits', bold: true },
       { k: 'Score-to-pic', v: 'Frame-accurate cues · video import', bold: true },
       { k: 'Collab seats', v: 'Up to 5 · shared sessions, comments' },
       { k: 'Devices', v: 'Unlimited' },
-      { k: 'Support', v: 'Dedicated channel · studio hours' },
+      { k: 'Support', v: 'Studio hours · 8h SLA' },
+    ],
+  },
+  {
+    sku: 'DSD-PWR-079',
+    tier: 'III',
+    rev: '2026.04',
+    name: 'Power',
+    tagline: 'For agencies, labels, and producers who live inside doseedo. Unlimited seats, API access, and per-credit overage so the studio never sleeps.',
+    price: 79,
+    cta: 'Provision Power',
+    specs: [
+      { k: 'Credits', v: '10,000 / month · 2× rollover', bold: true },
+      { k: 'Overage', v: '$0.011 / credit · usage-billed' },
+      { k: 'Sessions', v: 'Unlimited · every take kept' },
+      { k: 'Storage', v: '100 GB · Opus 128k stems' },
+      { k: 'Generation', v: 'Priority · 4× faster · queue jump', bold: true },
+      { k: 'API access', v: 'Programmatic gens + stem split', bold: true },
+      { k: 'Stem export', v: '96 kHz · 24-bit · stems + mix + master' },
+      { k: 'Stem split', v: 'Unlimited · batch via API', bold: true },
+      { k: 'Score-to-pic', v: 'Frame-accurate · video import' },
+      { k: 'Collab seats', v: 'Unlimited' },
+      { k: 'Devices', v: 'Unlimited' },
+      { k: 'Support', v: 'Dedicated channel · 4h SLA' },
     ],
   },
 ];
@@ -361,9 +386,10 @@ function PlansGrid({ billing }) {
           </span>
         }
       />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
         <PlanCard plan={PLANS[0]} billing={billing} featured={false} />
         <PlanCard plan={PLANS[1]} billing={billing} featured />
+        <PlanCard plan={PLANS[2]} billing={billing} featured={false} />
       </div>
     </section>
   );
@@ -391,7 +417,7 @@ function FreeStrip() {
             Free tier · no card required
           </div>
           <div style={{ fontFamily: C.sans, fontSize: 12, color: C.inkSoft, lineHeight: 1.5 }}>
-            2 hours engine time / month · curated instruments · personal use only · 1 device. Upgrade anytime — your sessions come with you.
+            100 credits / month · 200 MB storage · 30-day rolling retention · 1 device · watermarked exports. Upgrade anytime — your sessions come with you.
           </div>
         </div>
         <div style={{ fontFamily: C.mono, fontSize: 11, letterSpacing: 0.5, color: C.inkMute, textAlign: 'right' }}>
@@ -424,17 +450,22 @@ function FreeStrip() {
 }
 
 function Matrix() {
+  // [feature, Pro, Studio, Power]
   const rows = [
-    ['Engine time', '40 h / month', 'Unlimited'],
-    ['Generation speed', 'Standard', 'Priority · 4×'],
-    ['Instruments', 'Curated', 'Curated + early'],
-    ['Stem separation', '—', 'Unlimited'],
-    ['Score-to-picture', '—', 'Included'],
-    ['Sample rate', '48 kHz', '48 / 96 kHz'],
-    ['Collaborators', '1', 'Up to 5'],
-    ['Devices', '2', 'Unlimited'],
-    ['Commercial use', 'Yes', 'Yes'],
-    ['Support SLA', '48 h', '< 4 h · dedicated'],
+    ['Credits / month', '800', '3,000', '10,000'],
+    ['Rollover', '2× cap', '2× cap', '2× cap'],
+    ['Overage', '—', '—', '$0.011 / credit'],
+    ['Storage', '5 GB', '25 GB', '100 GB'],
+    ['Generation speed', 'Standard', 'Priority · 2×', 'Priority · 4× + jump'],
+    ['Instruments', 'Curated', 'Full + early', 'Full + early'],
+    ['Stem separation', '—', 'Unlimited', 'Unlimited + API'],
+    ['Score-to-picture', '—', 'Included', 'Included'],
+    ['Sample rate', '48 kHz', '48 / 96 kHz', '96 kHz'],
+    ['API access', '—', '—', 'Included'],
+    ['Collaborators', '1', 'Up to 5', 'Unlimited'],
+    ['Devices', '2', 'Unlimited', 'Unlimited'],
+    ['Commercial use', 'Yes', 'Yes', 'Yes'],
+    ['Support SLA', '48 h', '8 h · studio', '4 h · dedicated'],
   ];
   return (
     <section style={{ marginBottom: 40 }}>
@@ -443,7 +474,7 @@ function Matrix() {
         count="feature · tier · value"
         right={
           <span style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', color: C.inkMute }}>
-            ref. DSD-PRICE-01
+            ref. DSD-PRICE-02
           </span>
         }
       />
@@ -451,31 +482,33 @@ function Matrix() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '1.4fr 1fr 1fr',
+            gridTemplateColumns: '1.4fr 1fr 1fr 1fr',
             background: C.surface2,
             borderBottom: `1px solid ${C.rule}`,
-            minWidth: 560,
+            minWidth: 720,
           }}
         >
           <div style={{ padding: '10px 16px', fontFamily: C.mono, fontSize: 10, letterSpacing: 0.7, textTransform: 'uppercase', color: C.inkMute }}>Feature</div>
-          <div style={{ padding: '10px 16px', fontFamily: C.mono, fontSize: 10, letterSpacing: 0.7, textTransform: 'uppercase', color: C.ink, borderLeft: `1px solid ${C.rule}` }}>Pro · $20</div>
+          <div style={{ padding: '10px 16px', fontFamily: C.mono, fontSize: 10, letterSpacing: 0.7, textTransform: 'uppercase', color: C.ink, borderLeft: `1px solid ${C.rule}` }}>Pro · $12</div>
           <div style={{ padding: '10px 16px', fontFamily: C.mono, fontSize: 10, letterSpacing: 0.7, textTransform: 'uppercase', color: C.ink, borderLeft: `1px solid ${C.rule}`, background: 'rgba(170,176,238,.16)' }}>
-            Max · $100 <span style={{ color: C.purple }}>●</span>
+            Studio · $29 <span style={{ color: C.purple }}>●</span>
           </div>
+          <div style={{ padding: '10px 16px', fontFamily: C.mono, fontSize: 10, letterSpacing: 0.7, textTransform: 'uppercase', color: C.ink, borderLeft: `1px solid ${C.rule}` }}>Power · $79</div>
         </div>
         {rows.map((r, i) => (
           <div
             key={i}
             style={{
               display: 'grid',
-              gridTemplateColumns: '1.4fr 1fr 1fr',
+              gridTemplateColumns: '1.4fr 1fr 1fr 1fr',
               borderBottom: i === rows.length - 1 ? 'none' : `1px solid ${C.rule}`,
-              minWidth: 560,
+              minWidth: 720,
             }}
           >
             <div style={{ padding: '11px 16px', fontFamily: C.sans, fontSize: 13, color: C.ink }}>{r[0]}</div>
             <div style={{ padding: '11px 16px', fontFamily: C.mono, fontSize: 11, letterSpacing: 0.2, color: r[1] === '—' ? C.inkMute : C.inkSoft, borderLeft: `1px solid ${C.rule}` }}>{r[1]}</div>
-            <div style={{ padding: '11px 16px', fontFamily: C.mono, fontSize: 11, letterSpacing: 0.2, color: C.ink, borderLeft: `1px solid ${C.rule}`, background: 'rgba(170,176,238,.08)', fontWeight: 500 }}>{r[2]}</div>
+            <div style={{ padding: '11px 16px', fontFamily: C.mono, fontSize: 11, letterSpacing: 0.2, color: r[2] === '—' ? C.inkMute : C.ink, borderLeft: `1px solid ${C.rule}`, background: 'rgba(170,176,238,.08)', fontWeight: 500 }}>{r[2]}</div>
+            <div style={{ padding: '11px 16px', fontFamily: C.mono, fontSize: 11, letterSpacing: 0.2, color: r[3] === '—' ? C.inkMute : C.inkSoft, borderLeft: `1px solid ${C.rule}` }}>{r[3]}</div>
           </div>
         ))}
       </div>
@@ -485,16 +518,18 @@ function Matrix() {
 
 function FAQ() {
   const items = [
-    { q: 'Can I switch tiers mid-cycle?', a: 'Yes. Upgrades are prorated to the minute and billed immediately. Downgrades take effect at the start of the next cycle, so you never lose engine time you’ve already paid for.' },
-    { q: 'What happens to my sessions if I cancel?', a: 'Sessions move to read-only for 12 months. You can export stems, resume on the free tier, or come back to Pro/Max — nothing is deleted without explicit confirmation.' },
-    { q: 'Is the license really commercial?', a: 'Yes, on both paid tiers. Release on DSPs, sync to film, publish — no per-track fees, no surprise carve-outs. The exported audio is yours.' },
-    { q: 'Are there student / education rates?', a: 'Pro is 50% off with a verified .edu address or institutional email. Max is flat rate — the compute cost is the compute cost.' },
-    { q: 'Do I have to install anything?', a: 'No. doseedo runs in the browser. A desktop build (macOS / Windows) is available on both paid tiers and syncs to the same cloud sessions.' },
+    { q: 'How do credits work?', a: 'One credit covers one audio generation, five chat turns, or one Polygon attestation. Credits refill at the start of each billing cycle. Unused credits roll over up to 2× your monthly allotment — anything beyond that resets, so the studio never builds up infinite back-stock.' },
+    { q: 'What happens if I run out of credits?', a: 'Pro and Studio pause new generations until the next cycle (or you upgrade). Power keeps running and bills overage at $0.011 per credit on your usage line. Existing sessions, exports, and playback are never gated by credits — only new generation work.' },
+    { q: 'Can I switch tiers mid-cycle?', a: 'Yes. Upgrades are prorated to the minute and billed immediately, and your credit balance is topped up to the new tier. Downgrades take effect at the start of the next cycle, so you never lose credits you’ve already paid for.' },
+    { q: 'What happens to my sessions if I cancel?', a: 'Sessions move to read-only for 12 months. You can export stems, resume on the free tier, or come back to a paid plan — nothing is deleted without explicit confirmation.' },
+    { q: 'Is the license really commercial?', a: 'Yes, on every paid tier. Release on DSPs, sync to film, publish — no per-track fees, no surprise carve-outs. The exported audio is yours.' },
+    { q: 'Are there student / education rates?', a: 'Pro and Studio are 50% off with a verified .edu address or institutional email. Power is flat rate — the compute cost is the compute cost.' },
+    { q: 'Do I have to install anything?', a: 'No. doseedo runs in the browser. A desktop build (macOS / Windows) is available on every paid tier and syncs to the same cloud sessions.' },
   ];
   const [open, setOpen] = useState(0);
   return (
     <section style={{ marginBottom: 40 }}>
-      <SectHead title="Frequently asked" count="5 · signed by billing team" />
+      <SectHead title="Frequently asked" count="7 · signed by billing team" />
       <div style={{ background: C.surface, border: `1px solid ${C.rule}` }}>
         {items.map((it, i) => (
           <div key={i} style={{ borderTop: i > 0 ? `1px solid ${C.rule}` : 'none' }}>
@@ -586,7 +621,7 @@ function Closing() {
               cursor: 'pointer',
             }}
           >
-            Provision Pro · $20
+            Provision Power · $79
           </button>
           <button
             type="button"
@@ -606,7 +641,7 @@ function Closing() {
               gap: 10,
             }}
           >
-            <span>Provision Max · $100</span>
+            <span>Provision Studio · $29</span>
             <Arrow size={13} stroke={1.8} color={C.ink} />
           </button>
         </div>

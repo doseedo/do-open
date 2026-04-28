@@ -106,6 +106,30 @@ export async function checkVideoScoreRateLimit(userId: string): Promise<RateLimi
   return lim.limit(userId);
 }
 
+let _verifyLimiter: Ratelimit | null = null;
+function _getVerifyLimiter(): Ratelimit | null {
+  if (_verifyLimiter) return _verifyLimiter;
+  const redis = _getRedis();
+  if (!redis) return null;
+  // /verify is a public utility — keyed by IP, not user id. Tight enough
+  // that an automated scanner can't replay all of doseedo's outputs in
+  // bulk; loose enough that a curious viewer can drop a couple of files
+  // back-to-back without hitting it.
+  _verifyLimiter = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(10, '1 m'),
+    analytics: true,
+    prefix: 'rl:verify',
+  });
+  return _verifyLimiter;
+}
+
+export async function checkVerifyRateLimit(key: string): Promise<RateLimitResult> {
+  const lim = _getVerifyLimiter();
+  if (!lim) return { success: true, limit: 0, remaining: 0, reset: 0 };
+  return lim.limit(key);
+}
+
 export function rateLimitHeaders(r: RateLimitResult): Record<string, string> {
   if (!r.limit) return {};
   return {

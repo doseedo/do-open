@@ -382,15 +382,15 @@ image = (
         "torchvision==0.20.1",
         extra_index_url="https://download.pytorch.org/whl/cu121",
     )
-    # AudioSeal (inaudible watermark) + psycopg2 (attestation INSERT into
-    # Neon). Called from modal/stemphonic_watermark_hook.py — every audio
-    # output gets a fresh watermark seed before the Opus encode + R2
-    # upload. Best-effort: the hook returns the original bytes on failure.
-    # Pre-pull the AudioSeal weights so cold start doesn't depend on
-    # huggingface.co reachability.
+    # AudioSeal (inaudible watermark). Called from
+    # modal/stemphonic_watermark_hook.py — every audio output gets a
+    # fresh watermark seed before the Opus encode + R2 upload. The hook
+    # POSTs the attestation to the Fly auth-service over HTTP (reuses the
+    # AUTH_SERVICE_URL / INTERNAL_SECRET already in `doseedo-gate`), so
+    # no DB driver is needed in this image. Pre-pull the AudioSeal
+    # weights so cold start doesn't depend on huggingface.co reachability.
     .pip_install(
         "audioseal==0.1.4",
-        "psycopg2-binary==2.9.9",
     )
     .run_commands(
         "python -c \"from audioseal import AudioSeal; "
@@ -514,14 +514,6 @@ app = modal.App("doseedo-stemphonic")
         # recycles. The same INTERNAL_SECRET from doseedo-gate is reused to
         # call the auth-service POST /api/generations registration endpoint.
         modal.Secret.from_name("doseedo-r2"),
-        # Provides DATABASE_URL for the attestation INSERT in
-        # stemphonic_watermark_hook.py. Same Neon connection string the
-        # auth-service uses; scoped to its own secret so we can rotate
-        # without touching the auth gate.
-        # Create with:
-        #   modal secret create doseedo-attestation-write \
-        #     DATABASE_URL=postgres://user:pass@ep-xxx.aws.neon.tech/doseedo
-        modal.Secret.from_name("doseedo-attestation-write"),
     ],
     timeout=60 * 30,           # 30 min per request (long ACE-Step gens)
     scaledown_window=60 * 15,  # 15 min warm window — one active user keeps it hot
