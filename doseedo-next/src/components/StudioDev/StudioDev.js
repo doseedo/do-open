@@ -2524,9 +2524,6 @@ export default function StudioDev() {
         <nav className="wb-menu">
           <button className="wb-menu__item" onClick={() => undo()}>Undo</button>
           <button className="wb-menu__item" onClick={() => redo()}>Redo</button>
-          <button className="wb-menu__item" onClick={exportAudio}>Export</button>
-          <button className="wb-menu__item" onClick={toggleCinema}>Cinema</button>
-          <button className="wb-menu__item" onClick={() => navigate('/search')}>Search</button>
           <button className="wb-menu__item" onClick={() => navigate('/studio')}>Settings</button>
         </nav>
         <div className="wb-menubar__meta">
