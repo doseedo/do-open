@@ -39,6 +39,11 @@
 }
 .studio-dev .wb-menu__item:hover { color: var(--wb-ink); }
 .studio-dev .wb-menubar__meta { margin-left: auto; color: var(--wb-ink-mute); font-size: 10px; }
+.studio-dev .wb-user-avatar {
+  width: 22px; height: 22px; border-radius: 50%;
+  object-fit: cover; flex: 0 0 auto;
+  border: 1px solid var(--wb-ink-mute);
+}
 
 /* Tabs */
 .studio-dev .wb-tabs {

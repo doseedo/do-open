@@ -406,6 +406,7 @@ export default function StudioDev() {
   const [sessionBusExpanded, setSessionBusExpanded] = useState({}); // busId → boolean
   const [historyFilterMe, setHistoryFilterMe] = useState(false);    // History tab: only show my commits
   const [openAttestCommit, setOpenAttestCommit] = useState(null);   // commit id whose AttestationsPanel is expanded
+  const [shareCopied, setShareCopied] = useState(false);            // header Share button feedback flash
 
   // Server-side commit DAG (alembic 009 / commit_minter). When the active
   // session has been synced, this is the source of truth for the History
@@ -2532,6 +2533,38 @@ export default function StudioDev() {
           PROJECT: {(state.projectName || 'untitled').toLowerCase().replace(/\s+/g, '_')}.dsd · SR 48kHz · 24bit ·
           {' '}{autosaveStatus === 'saving' ? 'saving' : autosaveStatus === 'saved' ? 'saved' : autosaveStatus === 'failed' ? 'save failed' : 'idle'}
         </div>
+        {/* Current-user pfp + Share button. Other-user presence avatars
+            slot in between these once the auth-service exposes a
+            session-participants endpoint (see useEditStream.js — SSE today
+            carries edit ops only, not presence). */}
+        {clerk?.user && (
+          <img
+            className="wb-user-avatar"
+            src={clerk.user.imageUrl}
+            alt={clerk.user.fullName || 'You'}
+            title={clerk.user.fullName || clerk.user.primaryEmailAddress?.emailAddress || 'You'}
+          />
+        )}
+        <button
+          className="wb-menu__item"
+          onClick={async () => {
+            if (!state.activeSessionId) {
+              alert('This session hasn\'t been synced to the server yet — sync it first to get a shareable link.');
+              return;
+            }
+            const url = `${window.location.origin}/studio?session=${encodeURIComponent(state.activeSessionId)}`;
+            try {
+              await navigator.clipboard.writeText(url);
+              setShareCopied(true);
+              setTimeout(() => setShareCopied(false), 2000);
+            } catch {
+              window.prompt('Copy this link:', url);
+            }
+          }}
+          title="Copy a session link. Recipient must already be a collaborator on the auth-service — token-based invites need a backend mint endpoint."
+        >
+          {shareCopied ? 'Copied ✓' : 'Share'}
+        </button>
       </header>
 
       {/* ================== MAIN SPLIT ================== */}
