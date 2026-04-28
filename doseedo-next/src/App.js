@@ -34,6 +34,8 @@ import Terms from './components/Legal/Terms';
 import Help from './components/Legal/Help';
 import Feedback from './components/Legal/Feedback';
 import Plans from './components/Legal/Plans';
+import Verify from './components/Legal/Verify';
+import Docs from './components/Legal/Docs';
 import Models from './components/Models/Models';
 import CreationView from './components/CreationView/CreationView';
 import StudioDev from './components/StudioDev/StudioDev';
@@ -170,8 +172,11 @@ function AppContent() {
       p === '/search' ||
       p === '/tools' ||
       p === '/plans' ||
+      p === '/verify' ||
       p === '/whats-new' ||
       p === '/help' ||
+      p === '/docs' ||
+      p.startsWith('/docs/') ||
       p === '/feedback' ||
       p === '/about' ||
       p === '/privacy' ||
@@ -284,8 +289,10 @@ function AppContent() {
                       location.pathname === '/privacy' ? 'privacy' :
                       location.pathname === '/terms' ? 'terms' :
                       location.pathname === '/help' ? 'help' :
+                      location.pathname === '/docs' || location.pathname.startsWith('/docs/') ? 'docs' :
                       location.pathname === '/feedback' ? 'feedback' :
                       location.pathname === '/plans' ? 'plans' :
+                      location.pathname === '/verify' ? 'verify' :
                       location.pathname.startsWith('/research') ? 'research' :
                       location.pathname === '/downloads' ? 'downloads' :
                       location.pathname.startsWith('/creation/') ? 'creation' :
@@ -610,6 +617,7 @@ function AppContent() {
       );
     }
     if (currentView === 'whatsnew') return <WhatsNew />;
+    if (currentView === 'docs') return <Docs />;
     if (currentView === 'research') return <Research />;
     if (currentView === 'downloads') return <Downloads />;
     if (
@@ -618,7 +626,8 @@ function AppContent() {
       currentView === 'terms' ||
       currentView === 'help' ||
       currentView === 'feedback' ||
-      currentView === 'plans'
+      currentView === 'plans' ||
+      currentView === 'verify'
     ) {
       const LegalComponent =
         currentView === 'about'    ? About    :
@@ -626,6 +635,7 @@ function AppContent() {
         currentView === 'terms'    ? Terms    :
         currentView === 'help'     ? Help     :
         currentView === 'feedback' ? Feedback :
+        currentView === 'verify'   ? Verify   :
         Plans;
       return <LegalComponent />;
     }

@@ -118,6 +118,11 @@ const Icon = {
       <path d="M6 4h12v17l-6-4-6 4z" strokeLinejoin="round" />
     </svg>
   ),
+  book: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <path d="M4 4h7a3 3 0 0 1 3 3v14a2 2 0 0 0-2-2H4z M20 4h-7a3 3 0 0 0-3 3v14a2 2 0 0 1 2-2h8z" strokeLinejoin="round" />
+    </svg>
+  ),
 };
 
 // Single sidebar entry. Rendered as a <button> when interactive so keyboard +
@@ -271,6 +276,14 @@ const LeftSidebar = React.memo(({
                     >
                       <span className={styles.sideIcon}>{Icon.help}</span>
                       <span>Help</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.moreItem}
+                      onClick={() => { setShowMoreMenu(false); navigate('/docs'); }}
+                    >
+                      <span className={styles.sideIcon}>{Icon.book}</span>
+                      <span>Docs</span>
                     </button>
                     <button
                       type="button"
