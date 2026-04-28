@@ -57,6 +57,7 @@ import StudioDevChat from './StudioDevChat';
 import AutomationWindow from '../AutomationWindow/AutomationWindow';
 import OutOfCreditsModal from './OutOfCreditsModal';
 import StudioDevFileMenu from './StudioDevFileMenu';
+import AttestationsPanel from './AttestationsPanel';
 import { useAgentWebSocket } from '../ChatWindow/useAgentWebSocket';
 import { useLiveParamDeltas } from '../../hooks/useLiveParamDeltas';
 import { useSessionCommits } from '../../hooks/useSessionCommits';
