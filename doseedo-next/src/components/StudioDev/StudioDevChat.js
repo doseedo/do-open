@@ -20,6 +20,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { qwenChatStream } from '../../services/qwenChat';
+import { compactIfNeeded } from '../../services/chatCompact';
 import {
   listChatMessages,
   appendChatMessage,
@@ -221,7 +222,7 @@ export default function StudioDevChat({ onClose }) {
     // server has the row even if the assistant call fails.
     persistToServer({ role: 'user', content: text, clientOpId: userOp });
 
-    const qwenMessages = [
+    const rawQwenMessages = [
       { role: 'system', content: systemPrompt },
       ...messages
         .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -230,6 +231,20 @@ export default function StudioDevChat({ onClose }) {
     ];
 
     setBusy(true);
+    // Compact older turns when we're approaching the context window.
+    // Pure on no-op (returns the same array); on hit, the older middle
+    // is replaced by a single system summary.
+    let qwenMessages = rawQwenMessages;
+    try {
+      const result = await compactIfNeeded(rawQwenMessages);
+      if (result.compacted) {
+        console.log(`[chat] compacted ${result.originalTokens}→${result.newTokens} tokens`);
+      }
+      qwenMessages = result.messages;
+    } catch (compactErr) {
+      console.warn('[chat] compaction failed, sending full history:', compactErr?.message || compactErr);
+    }
+
     let finalText = '';
     try {
       const ctrl = new AbortController();
