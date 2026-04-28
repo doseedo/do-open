@@ -1,49 +1,24 @@
 /**
- * ShareModal — manage share-link invites for the active session.
+ * ShareModal — one share link, one role dropdown.
  *
- * Two paths:
- *   • "Copy collab link (existing collaborators only)" — the legacy URL
- *     `${origin}/studio?session=<sid>`. Recipient must already be on the
- *     session's ACL (they were a peer at some prior point), or they must
- *     also accept a share-token URL — without one they can only open
- *     sessions they own.
- *   • Invite link — owner mints a `dsk_live_`-style share token via
- *     `POST /api/sessions/{sid}/share` (sharesAPI.js), with role+expiry,
- *     then shares the resulting URL `${origin}/studio?session=<sid>&share_token=<hex>`.
- *     The /studio page already reads `?share_token=` (useSessionSync.js), so
- *     the recipient can view/edit per the role baked into the token.
+ * On open: probe ownership via GET /api/sessions/{sid}/shares. If owner,
+ * find or mint a 30-day link for the currently-selected role and show its
+ * URL with a Copy button. Switching the role dropdown swaps to the
+ * matching existing active link, or mints one if none exists. Non-owners
+ * see a single "ask the owner" message.
  *
- * Owner-only management: the create form + revoke buttons are visible only
- * when `GET /api/sessions/{sid}/shares` returns 200 (server enforces
- * ownership). Non-owners see only the legacy "copy" path.
+ * Backend contract: createShare ({ role, expiresInHours }) returns
+ * { token, role, expires_at, ... }; buildInviteUrl assembles
+ * `${origin}/studio?session=<sid>&share_token=<hex>`.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   listShares,
   createShare,
-  revokeShare,
   buildInviteUrl,
 } from '../../services/sharesAPI';
 
-const EXPIRY_OPTIONS = [
-  { label: '1 hour',  hours: 1 },
-  { label: '24 hours', hours: 24 },
-  { label: '7 days',  hours: 24 * 7 },
-  { label: '30 days', hours: 24 * 30 },
-  { label: 'Never',   hours: null },
-];
-
-function _fmtExpiry(iso) {
-  if (!iso) return 'Never expires';
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return 'Unknown';
-  const ms = t - Date.now();
-  if (ms <= 0) return 'Expired';
-  const h = Math.round(ms / 3_600_000);
-  if (h < 24) return `Expires in ${h}h`;
-  const d = Math.round(h / 24);
-  return `Expires in ${d}d`;
-}
+const DEFAULT_EXPIRY_HOURS = 24 * 30;
 
 function _isActive(share) {
   if (share.revoked_at) return false;
@@ -68,11 +43,9 @@ export default function ShareModal({ sessionId, onClose }) {
   const [shares, setShares] = useState([]);
   const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [role, setRole] = useState('view');
-  const [expiry, setExpiry] = useState(EXPIRY_OPTIONS[1]); // 24h default
-  const [copiedToken, setCopiedToken] = useState(null);
-  const [legacyCopied, setLegacyCopied] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState(null);
 
   // Initial load: probe ownership via listShares.
@@ -101,46 +74,35 @@ export default function ShareModal({ sessionId, onClose }) {
     return () => { cancelled = true; };
   }, [sessionId]);
 
-  const handleCreate = useCallback(async () => {
-    if (!sessionId || creating) return;
-    setCreating(true);
+  // Pick the most-recent active link matching the selected role; mint one
+  // if none exists. Owners only — non-owners can't create.
+  const activeForRole = useMemo(() => {
+    return shares
+      .filter(_isActive)
+      .filter((s) => s.role === role)
+      .sort((a, b) => Date.parse(b.created_at || 0) - Date.parse(a.created_at || 0))[0] || null;
+  }, [shares, role]);
+
+  useEffect(() => {
+    if (!sessionId || loading || !canManage || busy || activeForRole) return;
+    let cancelled = false;
+    setBusy(true);
     setError(null);
-    try {
-      const row = await createShare(sessionId, {
-        role,
-        expiresInHours: expiry.hours,
-      });
-      setShares((prev) => [row, ...prev]);
-      setCopiedToken(row.token);
-      await _copy(buildInviteUrl(sessionId, row.token));
-      setTimeout(() => setCopiedToken((cur) => (cur === row.token ? null : cur)), 2400);
-    } catch (e) {
-      setError(e?.message || 'Could not create invite link');
-    } finally {
-      setCreating(false);
-    }
-  }, [sessionId, role, expiry, creating]);
+    createShare(sessionId, { role, expiresInHours: DEFAULT_EXPIRY_HOURS })
+      .then((row) => { if (!cancelled) setShares((prev) => [row, ...prev]); })
+      .catch((e) => { if (!cancelled) setError(e?.message || 'Could not create invite link'); })
+      .finally(() => { if (!cancelled) setBusy(false); });
+    return () => { cancelled = true; };
+  }, [sessionId, loading, canManage, role, activeForRole, busy]);
 
-  const handleRevoke = useCallback(async (token) => {
-    if (!sessionId || !token) return;
-    if (!window.confirm('Revoke this invite link? Anyone using it will lose access.')) return;
-    try {
-      await revokeShare(sessionId, token);
-      setShares((prev) => prev.map((s) =>
-        s.token === token ? { ...s, revoked_at: new Date().toISOString() } : s
-      ));
-    } catch (e) {
-      setError(e?.message || 'Could not revoke invite link');
-    }
-  }, [sessionId]);
+  const url = activeForRole ? buildInviteUrl(sessionId, activeForRole.token) : '';
 
-  const handleCopyLegacy = useCallback(async () => {
-    if (!sessionId) return;
-    const url = `${window.location.origin}/studio?session=${encodeURIComponent(sessionId)}`;
+  const handleCopy = useCallback(async () => {
+    if (!url) return;
     await _copy(url);
-    setLegacyCopied(true);
-    setTimeout(() => setLegacyCopied(false), 2000);
-  }, [sessionId]);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [url]);
 
   // Close on ESC
   useEffect(() => {
@@ -149,14 +111,8 @@ export default function ShareModal({ sessionId, onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const activeShares = useMemo(
-    () => shares.filter(_isActive),
-    [shares]
-  );
-
   const cardStyle = {
-    width: 'min(92vw, 560px)',
-    maxHeight: '80vh',
+    width: 'min(92vw, 460px)',
     background: 'var(--hifi-surface)',
     border: '1px solid var(--hifi-rule-strong)',
     borderRadius: 8,
@@ -179,7 +135,7 @@ export default function ShareModal({ sessionId, onClose }) {
           >×</button>
         </div>
 
-        <div style={{ padding: '16px 18px', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {error && (
             <div style={{
               fontSize: 11,
@@ -191,164 +147,71 @@ export default function ShareModal({ sessionId, onClose }) {
             }}>{error}</div>
           )}
 
-          {/* Legacy copy path — visible to everyone */}
-          <section>
-            <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--wb-ink-mute)', marginBottom: 6 }}>
-              Copy collab link
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--wb-ink-soft)', marginBottom: 8 }}>
-              Direct session URL — only opens for collaborators who already have access.
-            </div>
-            <button
-              className="wb-menu__item"
-              onClick={handleCopyLegacy}
-              style={{
-                padding: '6px 12px',
-                border: '1px solid var(--wb-rule-strong)',
-                borderRadius: 4,
-                fontSize: 11,
-                background: 'transparent',
-                cursor: 'pointer',
-              }}
-            >{legacyCopied ? 'Copied ✓' : 'Copy session URL'}</button>
-          </section>
-
-          {/* Owner-only: create + manage invite links */}
           {loading && (
-            <div style={{ fontSize: 11, color: 'var(--wb-ink-mute)' }}>Loading share links…</div>
+            <div style={{ fontSize: 11, color: 'var(--wb-ink-mute)' }}>Loading…</div>
           )}
+
           {!loading && canManage && (
             <>
-              <section>
-                <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--wb-ink-mute)', marginBottom: 6 }}>
-                  Create invite link
-                </div>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                  <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    Role
-                    <select
-                      value={role}
-                      onChange={(e) => setRole(e.target.value)}
-                      style={{ fontSize: 11, padding: '3px 6px', background: 'var(--hifi-bg, var(--wb-bg))', color: 'inherit', border: '1px solid var(--wb-rule)', borderRadius: 3 }}
-                    >
-                      <option value="view">View only</option>
-                      <option value="edit">Can edit</option>
-                    </select>
-                  </label>
-                  <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    Expires
-                    <select
-                      value={expiry.label}
-                      onChange={(e) => {
-                        const opt = EXPIRY_OPTIONS.find((o) => o.label === e.target.value);
-                        if (opt) setExpiry(opt);
-                      }}
-                      style={{ fontSize: 11, padding: '3px 6px', background: 'var(--hifi-bg, var(--wb-bg))', color: 'inherit', border: '1px solid var(--wb-rule)', borderRadius: 3 }}
-                    >
-                      {EXPIRY_OPTIONS.map((opt) => (
-                        <option key={opt.label} value={opt.label}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    onClick={handleCreate}
-                    disabled={creating}
-                    className="wb-menu__item"
-                    style={{
-                      padding: '6px 12px',
-                      border: '1px solid var(--wb-rule-strong)',
-                      borderRadius: 4,
-                      fontSize: 11,
-                      background: creating ? 'var(--wb-surface-2, var(--wb-surface))' : 'var(--wb-ink)',
-                      color: creating ? 'var(--wb-ink-mute)' : 'var(--wb-bg)',
-                      cursor: creating ? 'wait' : 'pointer',
-                    }}
-                  >{creating ? 'Creating…' : 'Create & copy'}</button>
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--wb-ink-mute)' }}>
-                  Send the copied URL to anyone — they'll get {role === 'edit' ? 'edit' : 'view-only'} access.
-                </div>
-              </section>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--wb-ink-mute)' }}>
+                  People with this link can:
+                </span>
+                <select
+                  value={role}
+                  onChange={(e) => { setRole(e.target.value); setCopied(false); }}
+                  style={{
+                    fontSize: 12,
+                    padding: '6px 10px',
+                    background: 'var(--hifi-bg, var(--wb-bg))',
+                    color: 'inherit',
+                    border: '1px solid var(--wb-rule)',
+                    borderRadius: 4,
+                  }}
+                >
+                  <option value="view">View only</option>
+                  <option value="edit">Edit</option>
+                </select>
+              </label>
 
-              <section>
-                <div style={{ fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--wb-ink-mute)', marginBottom: 6 }}>
-                  Active invite links ({activeShares.length})
-                </div>
-                {activeShares.length === 0 && (
-                  <div style={{ fontSize: 11, color: 'var(--wb-ink-mute)', fontStyle: 'italic' }}>
-                    No active invite links.
-                  </div>
-                )}
-                {activeShares.length > 0 && (
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {activeShares.map((s) => {
-                      const url = buildInviteUrl(sessionId, s.token);
-                      const justCopied = copiedToken === s.token;
-                      return (
-                        <li
-                          key={s.token}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            padding: '6px 8px',
-                            border: '1px solid var(--wb-rule)',
-                            borderRadius: 4,
-                            fontSize: 11,
-                          }}
-                        >
-                          <span style={{
-                            padding: '1px 6px',
-                            border: '1px solid var(--wb-rule-strong)',
-                            borderRadius: 3,
-                            fontSize: 9,
-                            letterSpacing: 0.4,
-                            textTransform: 'uppercase',
-                          }}>{s.role}</span>
-                          <span style={{ color: 'var(--wb-ink-mute)', fontSize: 10 }}>{_fmtExpiry(s.expires_at)}</span>
-                          <span style={{ flex: 1, fontFamily: 'var(--wb-font-mono, monospace)', fontSize: 10, color: 'var(--wb-ink-soft)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {`…${s.token.slice(-12)}`}
-                          </span>
-                          <button
-                            onClick={async () => {
-                              await _copy(url);
-                              setCopiedToken(s.token);
-                              setTimeout(() => setCopiedToken((c) => (c === s.token ? null : c)), 2000);
-                            }}
-                            className="wb-menu__item"
-                            style={{
-                              padding: '3px 8px',
-                              border: '1px solid var(--wb-rule)',
-                              borderRadius: 3,
-                              fontSize: 10,
-                              background: 'transparent',
-                              cursor: 'pointer',
-                            }}
-                          >{justCopied ? 'Copied ✓' : 'Copy'}</button>
-                          <button
-                            onClick={() => handleRevoke(s.token)}
-                            className="wb-menu__item"
-                            style={{
-                              padding: '3px 8px',
-                              border: '1px solid rgba(255,87,87,0.3)',
-                              color: '#ff5757',
-                              borderRadius: 3,
-                              fontSize: 10,
-                              background: 'transparent',
-                              cursor: 'pointer',
-                            }}
-                          >Revoke</button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </section>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                <input
+                  type="text"
+                  readOnly
+                  value={busy && !url ? 'Creating link…' : (url || '—')}
+                  onFocus={(e) => e.target.select()}
+                  style={{
+                    flex: 1,
+                    fontFamily: 'var(--wb-font-mono, monospace)',
+                    fontSize: 11,
+                    padding: '6px 10px',
+                    background: 'var(--hifi-bg, var(--wb-bg))',
+                    color: 'var(--wb-ink-soft)',
+                    border: '1px solid var(--wb-rule)',
+                    borderRadius: 4,
+                  }}
+                />
+                <button
+                  onClick={handleCopy}
+                  disabled={!url || busy}
+                  className="wb-menu__item"
+                  style={{
+                    padding: '6px 14px',
+                    border: '1px solid var(--wb-rule-strong)',
+                    borderRadius: 4,
+                    fontSize: 11,
+                    background: !url || busy ? 'var(--wb-surface-2, var(--wb-surface))' : 'var(--wb-ink)',
+                    color: !url || busy ? 'var(--wb-ink-mute)' : 'var(--wb-bg)',
+                    cursor: !url || busy ? 'wait' : 'pointer',
+                  }}
+                >{copied ? 'Copied ✓' : 'Copy link'}</button>
+              </div>
             </>
           )}
+
           {!loading && !canManage && !error && (
             <div style={{ fontSize: 11, color: 'var(--wb-ink-mute)' }}>
-              Only the session owner can mint invite links.
+              Only the session owner can create a share link.
             </div>
           )}
         </div>
