@@ -74,15 +74,39 @@ function encodeWav16(audioBuffer) {
 
 /**
  * Compress an audio Blob/File for upload.
- * Returns a new Blob (audio/wav) downsampled to targetSr.
- * If the input is already smaller than maxBytes, returns it unchanged.
+ *
+ * Default path (`format: 'opus'`): encode to Opus 128 kbps OGG via
+ * audioEncode.encodeOpus128. ~10–40× smaller than WAV, transparent for
+ * music, decodable by ffmpeg on the Modal side. Used by the Modal-bound
+ * analyze/extract calls (extract-midi, classify-instrument,
+ * analyze-rhythm, detect-chords, repaint-meter).
+ *
+ * Legacy path (`format: 'wav'` or files already ≤ maxBytes): the old
+ * 22050 Hz mono WAV downsampler. Retained only so older Modal handlers
+ * that pin `expected_sample_rate=22050` keep working — every new caller
+ * should use the default Opus path.
  *
  * @param {Blob|File} blob       — input audio
  * @param {object}    opts
- * @param {number}    opts.targetSr — sample rate (default 22050)
- * @param {number}    opts.maxBytes — skip compression if input is smaller (default 25 MB)
+ * @param {'opus'|'wav'} [opts.format='opus']
+ * @param {number}    [opts.targetSr]   only used when format === 'wav' (default 22050)
+ * @param {number}    [opts.maxBytes]   skip compression if input ≤ this (default 25 MB) — wav path only
  */
 export async function compressAudioForUpload(blob, opts = {}) {
+  const format = opts.format || 'opus';
+
+  if (format === 'opus') {
+    const before = blob.size;
+    const { encodeOpus128 } = await import('../services/audioEncode');
+    const { blob: out } = await encodeOpus128(blob);
+    console.log(
+      `🎚️ compressAudioForUpload(opus): ${(before / 1024 / 1024).toFixed(1)}MB → ${(out.size / 1024 / 1024).toFixed(1)}MB`,
+    );
+    return out;
+  }
+
+  // Legacy WAV downsample — only run if the caller asked AND the file is
+  // big enough that 22050 mono buys something.
   const targetSr = opts.targetSr || DEFAULT_TARGET_SR;
   const maxBytes = opts.maxBytes || 25 * 1024 * 1024;
 
@@ -97,7 +121,7 @@ export async function compressAudioForUpload(blob, opts = {}) {
     const down = await downsample(decoded, targetSr, ctx);
     const out = encodeWav16(down);
     console.log(
-      `🎚️ compressAudioForUpload: ${(blob.size / 1024 / 1024).toFixed(1)}MB → ${(out.size / 1024 / 1024).toFixed(1)}MB (${decoded.sampleRate}Hz → ${targetSr}Hz, ${decoded.numberOfChannels}ch, ${decoded.duration.toFixed(1)}s)`,
+      `🎚️ compressAudioForUpload(wav): ${(blob.size / 1024 / 1024).toFixed(1)}MB → ${(out.size / 1024 / 1024).toFixed(1)}MB (${decoded.sampleRate}Hz → ${targetSr}Hz, ${decoded.numberOfChannels}ch, ${decoded.duration.toFixed(1)}s)`,
     );
     return out;
   } finally {

@@ -99,6 +99,44 @@ export function useSessionSync(dispatch) {
           // Attach the session UUID so the reducer can store it for the
           // edits producer to read (sessionEditsAPI routes by sessionId).
           serverPayload.activeSessionId = sid;
+
+          // Hydrate persisted source-audio rows. Keys: track.metadata
+          // .sourceAudioId → SessionAudio.id. We swap each track's
+          // audioUrl from a (now-dead) blob: URL to a fresh presigned R2
+          // GET so playback works after reload. Best-effort — if listing
+          // fails the session still loads, just without source audio.
+          try {
+            const { listSessionAudio } = await import('../services/sessionAudioAPI');
+            const rows = await listSessionAudio({ sessionId: sid, shareToken });
+            if (Array.isArray(rows) && rows.length > 0) {
+              const byId = new Map(rows.map((r) => [r.id, r]));
+              for (const bus of serverPayload.buses || []) {
+                for (const track of bus.tracks || []) {
+                  const sid2 = track?.metadata?.sourceAudioId;
+                  if (sid2 && byId.has(sid2)) {
+                    const row = byId.get(sid2);
+                    track.audioUrl = row.audio?.download_url || row.download_url;
+                    track.metadata = track.metadata || {};
+                    if (row.latent) {
+                      track.metadata.latentUrl = row.latent.download_url;
+                      track.metadata.sourceLatentSha = row.latent.sha256;
+                      track.metadata.sourceLatentFrames = row.latent.n_frames;
+                      track.metadata.sourceLatentVae = row.latent.vae_version;
+                    }
+                    if (row.midi) {
+                      track.metadata.midiUrl = row.midi.download_url;
+                      track.metadata.sourceMidiSha = row.midi.sha256;
+                      track.metadata.sourceMidiNotes = row.midi.n_notes;
+                    }
+                  }
+                }
+              }
+              console.log(`[session-sync] rehydrated ${rows.length} audio asset(s)`);
+            }
+          } catch (e) {
+            console.warn('[session-sync] audio rehydrate failed:', e?.message || e);
+          }
+
           dispatch({ type: 'LOAD_SESSION', payload: serverPayload });
           console.log(
             `✅ Hydrated session ${sid} from server — ${serverPayload.buses.length} buses, ` +

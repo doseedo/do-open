@@ -2,6 +2,15 @@ import { compressAudioForUpload } from '../utils/audioCompress';
 import { initLatentEncoder, encodeToLatent, audioFileToStereo48k } from './latentEncoder';
 import { uploadLatent } from './latentDemucs';
 
+// Modal endpoints inspect the upload's filename extension when picking a
+// demuxer. compressAudioForUpload now returns Opus 128 by default, so the
+// historic `audio.wav` filename would mislead the server. Strip whatever
+// extension the user sent and re-suffix with `.opus`.
+function _opusFilename(file) {
+  const base = ((file && file.name) || 'audio').replace(/\.[^.]+$/, '');
+  return `${base}.opus`;
+}
+
 /**
  * trackAnalysisAPI — per-upload analysis pipeline
  *
@@ -16,7 +25,10 @@ import { uploadLatent } from './latentDemucs';
 export async function extractMidi(audioFile) {
   const compressed = await compressAudioForUpload(audioFile);
   const fd = new FormData();
-  fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
+  // compressAudioForUpload defaults to Opus 128 — pin the filename
+  // extension so Modal's audio_to_fsq_tokens / sf.read pick the right
+  // demuxer (it inspects the path, not just the bytes).
+  fd.append('audioFile', compressed, _opusFilename(audioFile));
   const r = await fetch('/api/extract-midi', { method: 'POST', body: fd });
   if (!r.ok) throw new Error(`extract-midi HTTP ${r.status}`);
   const data = await r.json();
@@ -27,7 +39,10 @@ export async function extractMidi(audioFile) {
 export async function classifyInstrument(audioFile) {
   const compressed = await compressAudioForUpload(audioFile);
   const fd = new FormData();
-  fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
+  // compressAudioForUpload defaults to Opus 128 — pin the filename
+  // extension so Modal's audio_to_fsq_tokens / sf.read pick the right
+  // demuxer (it inspects the path, not just the bytes).
+  fd.append('audioFile', compressed, _opusFilename(audioFile));
   const r = await fetch('/api/classify-instrument', { method: 'POST', body: fd });
   if (!r.ok) throw new Error(`classify-instrument HTTP ${r.status}`);
   const data = await r.json();
@@ -55,7 +70,10 @@ export async function detectChordsAndTempo(audioFile) {
   // Returns { bpm, beats_per_bar, downbeat_offset, mode, chords }
   const compressed = await compressAudioForUpload(audioFile);
   const fd = new FormData();
-  fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
+  // compressAudioForUpload defaults to Opus 128 — pin the filename
+  // extension so Modal's audio_to_fsq_tokens / sf.read pick the right
+  // demuxer (it inspects the path, not just the bytes).
+  fd.append('audioFile', compressed, _opusFilename(audioFile));
   fd.append('mode', 'master');
   const r = await fetch('/api/detect-chords', { method: 'POST', body: fd });
   if (!r.ok) throw new Error(`detect-chords HTTP ${r.status}`);
@@ -84,7 +102,10 @@ export async function detectChordsAndTempo(audioFile) {
 export async function analyzeRhythm(audioFile) {
   const compressed = await compressAudioForUpload(audioFile);
   const fd = new FormData();
-  fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
+  // compressAudioForUpload defaults to Opus 128 — pin the filename
+  // extension so Modal's audio_to_fsq_tokens / sf.read pick the right
+  // demuxer (it inspects the path, not just the bytes).
+  fd.append('audioFile', compressed, _opusFilename(audioFile));
   const r = await fetch('/api/analyze-rhythm', { method: 'POST', body: fd });
   if (!r.ok) throw new Error(`analyze-rhythm HTTP ${r.status}`);
   const data = await r.json();
@@ -175,7 +196,10 @@ export async function separateStemsAuto(audioFile, opts = {}) {
   const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
   const compressed = await compressAudioForUpload(audioFile);
   const fd = new FormData();
-  fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
+  // compressAudioForUpload defaults to Opus 128 — pin the filename
+  // extension so Modal's audio_to_fsq_tokens / sf.read pick the right
+  // demuxer (it inspects the path, not just the bytes).
+  fd.append('audioFile', compressed, _opusFilename(audioFile));
   const r = await fetch('/separate-stems', { method: 'POST', body: fd, headers: authHeaders, credentials: 'include' });
   if (!r.ok) {
     if (r.status === 429) {
@@ -326,7 +350,10 @@ export async function regenStemForChord({
 }) {
   const compressed = await compressAudioForUpload(audioFile);
   const fd = new FormData();
-  fd.append('audioFile', compressed, audioFile.name || 'audio.wav');
+  // compressAudioForUpload defaults to Opus 128 — pin the filename
+  // extension so Modal's audio_to_fsq_tokens / sf.read pick the right
+  // demuxer (it inspects the path, not just the bytes).
+  fd.append('audioFile', compressed, _opusFilename(audioFile));
   if (midiFile) fd.append('midiFile', midiFile);
   fd.append('role', role || 'harmony');
   fd.append('old_chord', oldChord || '');

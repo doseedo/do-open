@@ -63,7 +63,8 @@ import { useLiveParamDeltas } from '../../hooks/useLiveParamDeltas';
 import { useSessionCommits } from '../../hooks/useSessionCommits';
 import { useCommitSyncer } from '../../hooks/useCommitSyncer';
 import { useAutoAttest } from '../../hooks/useAutoAttest';
-import { createSession as bootstrapServerSession } from '../../services/sessionSyncAPI';
+import { createSession as bootstrapServerSession, fetchMyProfile } from '../../services/sessionSyncAPI';
+import { uploadSessionAudio, listSessionAudio, attachTrackAsset } from '../../services/sessionAudioAPI';
 import { useEditStream } from '../../hooks/useEditStream';
 import { useCollabPresence } from '../../hooks/useCollabPresence';
 import PresenceAvatars from './PresenceAvatars';
@@ -487,6 +488,21 @@ export default function StudioDev() {
   // route normally and the History tab flips to useServer-true.
   // Placed AFTER `const clerk = useUser()` so the deps array doesn't
   // hit a TDZ on `clerk?.user` during render.
+  // User tier (free|pro|pro_plus|b2b|admin) — drives whether ingestFile
+  // encodes to Opus 128 client-side (default for free + pro) or sends
+  // lossless source bytes (pro+ with the upcoming "preserve lossless"
+  // toggle). Loaded once on mount; the auth-service ships it on
+  // /api/profiles/me alongside username/email.
+  const [userTier, setUserTier] = useState('free');
+  useEffect(() => {
+    if (!clerk?.user) return;
+    let cancelled = false;
+    fetchMyProfile()
+      .then((me) => { if (!cancelled && me?.generation_tier) setUserTier(me.generation_tier); })
+      .catch(() => { /* fall through to default 'free' */ });
+    return () => { cancelled = true; };
+  }, [clerk?.user]);
+
   const bootstrappingRef = useRef(false);
   useEffect(() => {
     if (state.activeSessionId) return;
@@ -1071,6 +1087,154 @@ export default function StudioDev() {
         masterNotesResolve([]);   // unblock downstream refinement
       }
     })();
+
+    // Durably persist the source audio. Free + Pro encode locally to Opus
+    // 128 first (≈10× smaller than WAV; transparent for music). Pro+ may
+    // upload the bytes as-is when a future "preserve lossless" toggle ships.
+    // The blob: URL above stays in place until this resolves; on success we
+    // swap track.audioUrl to the presigned R2 URL so reloads still play.
+    //
+    // Order is intentional: audio FIRST (small Opus, fastest path to a
+    // playable URL), then attach latent + midi as those finish encoding.
+    // Each PATCH is idempotent and dedup'd via BlobIndex on the server.
+    let trackAssetIdPromise = null;
+    if (state.activeSessionId) {
+      trackAssetIdPromise = uploadSessionAudio({
+        sessionId: state.activeSessionId,
+        file,
+        trackId,
+        tier: userTier,
+        preserveLossless: false,
+      })
+        .then((row) => {
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: {
+              busId, trackId,
+              updates: {
+                audioUrl: row.download_url,
+                metadata: {
+                  sourceAudioId: row.id,
+                  sourceAudioSha: row.blob_sha256,
+                  sourceAudioStored: row.stored_mime,
+                  sourceAudioOriginal: row.original_mime,
+                  sourceAudioLossless: row.is_lossless,
+                  sourceAudioBytes: row.bytes,
+                },
+              },
+            },
+          });
+          logPipeline('audio', `persisted ${(row.bytes / 1024).toFixed(0)} KB · ${row.stored_mime}`, 'ok');
+          return row.id;
+        })
+        .catch((err) => {
+          if (String(err?.message || '').startsWith('UPGRADE_REQUIRED:')) {
+            logPipeline('audio', 'lossless ingest requires Pro+ — keeping local copy only', 'warn');
+          } else {
+            logPipeline('audio', `persist failed: ${err?.message || err}`, 'warn');
+          }
+          return null;
+        });
+    }
+
+    // ── Latent attach ────────────────────────────────────────────────
+    // The `analyzeAudio(file)` call below already produces a latent via
+    // /api/upload-latent (Modal). We don't replicate that — instead, we
+    // run the SAME WebGPU encoder one more time inline and ship the bytes
+    // to auth-service so the latent lives next to the audio in BlobIndex.
+    // This is the canonical home; the Modal copy is a working-set cache.
+    if (state.activeSessionId) {
+      (async () => {
+        try {
+          const audioId = await trackAssetIdPromise;
+          if (!audioId) return;
+          const { initLatentEncoder, encodeToLatent, audioFileToStereo48k } =
+            await import('../../services/latentEncoder');
+          const { serializeDoae } = await import('../../services/latentDemucs');
+          const { getVaeVersion } = await import('../../services/latentDemucs');
+          await initLatentEncoder();
+          const { flat, numFrames } = await audioFileToStereo48k(file);
+          const flatTD = await encodeToLatent(flat, numFrames);
+          const T = flatTD.length / 64;
+          const vaeHash = await getVaeVersion();
+          const doae = serializeDoae(flatTD, T, 64, 25, vaeHash);
+          const updated = await attachTrackAsset({
+            sessionId: state.activeSessionId,
+            audioId,
+            kind: 'latent',
+            payload: doae,
+            meta: { n_frames: T, fps: 25, vae_version: vaeHash },
+          });
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: {
+              busId, trackId,
+              updates: { metadata: {
+                sourceLatentSha: updated?.latent?.sha256,
+                sourceLatentBytes: updated?.latent?.bytes,
+                sourceLatentFrames: T,
+                sourceLatentVae: vaeHash,
+                latentUrl: updated?.latent?.download_url || null,
+              } },
+            },
+          });
+          logPipeline('latent', `persisted ${(doae.byteLength / 1024).toFixed(0)} KB · ${T} frames`, 'ok');
+        } catch (err) {
+          logPipeline('latent', `persist failed: ${err?.message || err}`, 'warn');
+        }
+      })();
+    }
+
+    // ── MIDI attach ──────────────────────────────────────────────────
+    // The masterNotesPromise above resolves with BasicPitch notes when
+    // the Tier 1 transcription finishes. We turn those into a real .mid
+    // file and PATCH it onto the same row. If BasicPitch failed (empty
+    // array), we skip — there's nothing useful to store.
+    if (state.activeSessionId) {
+      (async () => {
+        try {
+          const [audioId, notes] = await Promise.all([
+            trackAssetIdPromise,
+            masterNotesPromise,
+          ]);
+          if (!audioId || !Array.isArray(notes) || notes.length === 0) return;
+          const { Midi } = await import('@tonejs/midi');
+          const midi = new Midi();
+          const tr = midi.addTrack();
+          for (const n of notes) {
+            tr.addNote({
+              midi: n.note ?? n.midi,
+              time: n.time,
+              duration: n.duration || 0.25,
+              velocity: (n.velocity ?? 90) / 127,
+            });
+          }
+          const buf = midi.toArray();
+          const updated = await attachTrackAsset({
+            sessionId: state.activeSessionId,
+            audioId,
+            kind: 'midi',
+            payload: buf,
+            meta: { n_notes: notes.length },
+          });
+          dispatch({
+            type: 'UPDATE_TRACK',
+            payload: {
+              busId, trackId,
+              updates: { metadata: {
+                sourceMidiSha: updated?.midi?.sha256,
+                sourceMidiBytes: updated?.midi?.bytes,
+                sourceMidiNotes: notes.length,
+                midiUrl: updated?.midi?.download_url || null,
+              } },
+            },
+          });
+          logPipeline('midi', `persisted ${notes.length} notes · ${(buf.byteLength / 1024).toFixed(0)} KB`, 'ok');
+        } catch (err) {
+          logPipeline('midi', `persist failed: ${err?.message || err}`, 'warn');
+        }
+      })();
+    }
 
     analyzeAudio(file).then((res) => {
       const cls = res.classification;

@@ -50,9 +50,17 @@ const StemSeparationTool = ({ tool, onBack }) => {
     setStatusMessage('Separating stems… this may take a few minutes.');
     setStems(null);
     try {
-      const formData = new FormData();
-      formData.append('audioFile', uploadedFile);
-      const uploadResponse = await fetch('/api/upload-audio', { method: 'POST', body: formData });
+      // /api/upload-audio was the dead A100 endpoint; migrated to the
+      // tier-aware /api/upload/r2 path. Free + Pro encode locally to Opus
+      // 128 first; Pro+ may upload the source bytes as-is.
+      const { encodeOpus128 } = await import('../../services/audioEncode');
+      const enc = await encodeOpus128(uploadedFile);
+      const fd = new FormData();
+      fd.append('file', new File([enc.blob], (uploadedFile.name || 'input').replace(/\.[^.]+$/, '') + '.opus', { type: 'audio/ogg' }));
+      fd.append('content_type', 'audio');
+      const uploadResponse = await fetch('/api/upload/r2', {
+        method: 'POST', body: fd, credentials: 'include',
+      });
       let audioUrl;
       if (uploadResponse.ok) {
         const uploadResult = await uploadResponse.json();
