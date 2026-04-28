@@ -34,6 +34,7 @@
 let _registry = new Map(); // key: trackId (any) → entry
 let _byGinstid = new Map(); // key: ginstid (number) → trackId
 let _byTrackIndex = new Map(); // key: trackIndex (number) → trackId
+let _byUuid = new Map(); // key: trackUuid (lowercased hex) → trackId
 
 const _listeners = new Set();
 
@@ -52,7 +53,24 @@ export function register(trackId, chain) {
   _registry.set(trackId, chain);
   if (typeof chain.ginstid === 'number') _byGinstid.set(chain.ginstid, trackId);
   if (typeof chain.trackIndex === 'number') _byTrackIndex.set(chain.trackIndex, trackId);
+  if (typeof chain.trackUuid === 'string' && chain.trackUuid) {
+    _byUuid.set(chain.trackUuid.toLowerCase(), trackId);
+  }
   _emitChange();
+}
+
+/**
+ * Look up a live chain entry by stable Logic UUID. Used by
+ * useEditStream's inbound plugin-op handlers — those address tracks by
+ * uuid (matching the producer wire shape) and need the chain to apply
+ * the audio-side update. Returns null when the uuid wasn't seen at
+ * register time (chain-less tracks).
+ */
+export function getByUuid(trackUuid) {
+  if (typeof trackUuid !== 'string' || !trackUuid) return null;
+  const tid = _byUuid.get(trackUuid.toLowerCase());
+  if (tid == null) return null;
+  return _registry.get(tid) || null;
 }
 
 /**
@@ -73,8 +91,20 @@ export function get(trackKey, slotIndex) {
     }
   }
   if (!entry || !Array.isArray(entry.slots)) return null;
+  // No slotIndex → caller wants the chain entry, not a specific slot.
+  // (LogicPluginRack and useEditStream's inbound handlers both need this.)
+  if (slotIndex === undefined || slotIndex === null) return entry;
   if (slotIndex < 0 || slotIndex >= entry.slots.length) return null;
   return entry.slots[slotIndex] || null;
+}
+
+/**
+ * Convenience alias: return the chain entry (or null) without the
+ * slot-index overload. Equivalent to `get(trackKey)` but reads more
+ * obviously at the call site when callers want the whole entry.
+ */
+export function getChain(trackKey) {
+  return get(trackKey);
 }
 
 /**
@@ -113,6 +143,7 @@ export function clear() {
   _registry = new Map();
   _byGinstid = new Map();
   _byTrackIndex = new Map();
+  _byUuid = new Map();
   _emitChange();
 }
 
@@ -127,6 +158,9 @@ export function unregister(trackId) {
   _registry.delete(trackId);
   if (typeof entry.ginstid === 'number') _byGinstid.delete(entry.ginstid);
   if (typeof entry.trackIndex === 'number') _byTrackIndex.delete(entry.trackIndex);
+  if (typeof entry.trackUuid === 'string' && entry.trackUuid) {
+    _byUuid.delete(entry.trackUuid.toLowerCase());
+  }
   _emitChange();
 }
 
@@ -155,8 +189,10 @@ export default {
   register,
   unregister,
   get,
+  getChain,
   getByGinstid,
   getByTrackIndex,
+  getByUuid,
   clear,
   subscribe,
   _debugSnapshot,

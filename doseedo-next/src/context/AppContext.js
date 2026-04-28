@@ -880,6 +880,37 @@ function appReducer(state, action) {
         }
       };
 
+    case 'UPDATE_TRACK_LOGIC_PLUGINS': {
+      // Replace a track's `logicPlugins` array. Used by useEditStream
+      // when an inbound peer plugin op arrives — the inbound handler
+      // computes the new array (after applying add/remove/param/bypass)
+      // and dispatches once. Identifying by stable Logic UUID so
+      // concurrent reorders on the other client don't address the wrong
+      // track. selectedTrack mirrors the new value when it points at
+      // the same track (otherwise its `logicPlugins` would go stale and
+      // TrackInfoSidebar's plugin rack would render outdated state).
+      const targetUuid = (action.payload?.trackUuid || '').toLowerCase();
+      if (!targetUuid) return state;
+      const newPlugins = Array.isArray(action.payload?.logicPlugins)
+        ? action.payload.logicPlugins : [];
+      let touched = false;
+      const newBuses = state.buses.map(bus => ({
+        ...bus,
+        tracks: (bus.tracks || []).map(t => {
+          const u = (t.uuid || '').toLowerCase();
+          if (u !== targetUuid) return t;
+          touched = true;
+          return { ...t, logicPlugins: newPlugins };
+        }),
+      }));
+      if (!touched) return state;
+      const sel = state.selectedTrack;
+      const newSelected = (sel && (sel.uuid || '').toLowerCase() === targetUuid)
+        ? { ...sel, logicPlugins: newPlugins }
+        : sel;
+      return { ...state, buses: newBuses, selectedTrack: newSelected };
+    }
+
     case 'UPDATE_BUS_GAIN':
       return {
         ...state,

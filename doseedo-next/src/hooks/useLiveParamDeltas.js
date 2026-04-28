@@ -97,7 +97,12 @@ export function applyParamDelta(delta) {
     return false;
   }
   try {
-    slot.setLogicParam(delta.param_id, delta.value);
+    // broadcast:false — this delta arrived FROM Logic via the WS
+    // relay loop, so re-emitting it via the edit log would round-trip
+    // back to the desktop dispatcher and write the same value into
+    // Logic again (no-op apply, wasted IPC, potential observer
+    // re-fire). Suppression keeps the loop one-shot.
+    slot.setLogicParam(delta.param_id, delta.value, { broadcast: false });
     return true;
   } catch (e) {
     if (typeof console !== 'undefined' && console.warn) {

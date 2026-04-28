@@ -15,13 +15,17 @@
  * already does the unique-per-(session, client_op_id) check, so the
  * incoming event is necessarily our own write.
  *
+ * Op translation lives in `editStreamApply.js` so unit tests can drive
+ * it without spinning up an EventSource.
+ *
  * The hook deliberately uses the browser's native EventSource. It
  * reconnects automatically and tracks `since` so a brief disconnect
  * doesn't drop events.
  */
 import { useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { recordOutboundOpId, isOutboundOpId } from '../services/sessionEditsAPI';
+import { isOutboundOpId } from '../services/sessionEditsAPI';
+import { applyOp } from './editStreamApply';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
@@ -78,60 +82,4 @@ export function useEditStream(sessionId) {
       es = null;
     };
   }, [sessionId, dispatch]);
-}
-
-// ── Op → reducer translation ────────────────────────────────────────────────
-
-function applyOp(edit, dispatch, state) {
-  const { op, args } = edit || {};
-  if (!op) return;
-
-  if (op === 'set_volume_v2') {
-    const trackUuid = args?.track_uuid;
-    const value = args?.value;
-    if (typeof trackUuid !== 'string' || typeof value !== 'number') return;
-    const track = findTrackByUuid(state, trackUuid);
-    if (!track) return;
-    dispatch({
-      type: 'UPDATE_TRACK',
-      payload: { trackId: track.id, busId: track._busId || null, updates: { gain: value }, skipHistory: true },
-    });
-    return;
-  }
-
-  if (op === 'set_volume') {
-    // v1 fallback — channel is positional. Best-effort: use logicTrackIndex
-    // matching, which is also positional.
-    const channel = args?.channel;
-    const value = args?.value;
-    if (typeof channel !== 'number' || typeof value !== 'number') return;
-    const track = findTrackByLogicIndex(state, channel - 1);
-    if (!track) return;
-    dispatch({
-      type: 'UPDATE_TRACK',
-      payload: { trackId: track.id, busId: track._busId || null, updates: { gain: value }, skipHistory: true },
-    });
-    return;
-  }
-
-  // Unknown op — ignore. New ops land here as we add handlers.
-}
-
-function findTrackByUuid(state, uuid) {
-  const norm = (uuid || '').toLowerCase();
-  for (const bus of state.buses || []) {
-    for (const t of bus.tracks || []) {
-      if ((t.uuid || '').toLowerCase() === norm) return { ...t, _busId: bus.id };
-    }
-  }
-  return null;
-}
-
-function findTrackByLogicIndex(state, idx) {
-  for (const bus of state.buses || []) {
-    for (const t of bus.tracks || []) {
-      if (t.logicTrackIndex === idx) return { ...t, _busId: bus.id };
-    }
-  }
-  return null;
 }

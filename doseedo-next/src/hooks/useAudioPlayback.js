@@ -190,9 +190,16 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         typeof track.logicTrackIndex === 'number' ? track.logicTrackIndex
         : typeof meta.logicTrackIndex === 'number' ? meta.logicTrackIndex
         : null;
+      const trackUuid = track.uuid || meta.uuid || null;
       liveTrackChainRegistry.register(track.id, {
         trackIndex,
         ginstid,
+        // trackUuid lets useEditStream's inbound plugin handlers match
+        // a peer edit (which addresses by uuid) onto the local chain
+        // (which is keyed by track.id). Registry never indexes by uuid
+        // itself — the snapshot walk in _applyToLiveSlot is bounded by
+        // O(tracks-with-chains), which is small.
+        trackUuid: trackUuid ? String(trackUuid).toLowerCase() : null,
         slots: chain.slots || [],
         // A2 owns disposal; the registry never invokes dispose itself.
         // We mirror it here as a no-op so unit tests can opt-in.
