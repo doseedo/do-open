@@ -392,7 +392,7 @@ export default function StudioDev() {
   const [loopDrag, setLoopDrag] = useState(null);
   // Layout — resizable widths/heights for the sidebar + timeline split.
   const [sidebarWidth, setSidebarWidth] = useState(260);
-  const [timelineHeight, setTimelineHeight] = useState(260);  // resizer defaults low — more canvas room for piano-roll / waveform
+  const [timelineHeight, setTimelineHeight] = useState(420);  // bigger default — DAW timeline gets more vertical real estate; user can still drag the resizer down
   const [sbResizing, setSbResizing] = useState(false);
   const [tlResizing, setTlResizing] = useState(false);
   const [snapMode, setSnapMode] = useState('beat');           // 'off' · 'sixteenth' · 'beat' · 'bar'
