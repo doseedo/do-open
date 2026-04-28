@@ -90,6 +90,36 @@ export async function appendChatMessage(sessionId, { role, content, clientOpId, 
 }
 
 /**
+ * Subscribe to live chat-message updates for a session. Returns a
+ * function that closes the stream. The auth-service publishes to
+ * `chat_messages:{sid}` after every successful POST and the SSE
+ * endpoint forwards each row as `event: message`. `since` is an ISO
+ * timestamp — pass the most recent message's `created_at` so a
+ * reconnect doesn't drop messages between drops.
+ *
+ * EventSource doesn't carry custom headers, so authentication piggy-
+ * backs on the cookie set by the same Clerk handshake the rest of the
+ * REST surface uses (credentials: 'include' on every fetch). If that
+ * cookie isn't present (very early in the page lifecycle) the server
+ * returns 401 and the client retries on the next session-id change.
+ */
+export function streamChatMessages(sessionId, { since, onMessage, onPing, onError } = {}) {
+  if (!sessionId || typeof EventSource === 'undefined') return () => {};
+  const url = new URL(
+    `${API_BASE}/api/sessions/${sessionId}/chat-messages/stream`,
+    window.location.origin,
+  );
+  if (since) url.searchParams.set('since', since);
+  const es = new EventSource(url.toString(), { withCredentials: true });
+  es.addEventListener('message', (ev) => {
+    try { onMessage?.(JSON.parse(ev.data)); } catch { /* ignore parse errors */ }
+  });
+  es.addEventListener('ping', () => { onPing?.(); });
+  es.onerror = (ev) => { onError?.(ev); };
+  return () => { try { es.close(); } catch { /* ignore */ } };
+}
+
+/**
  * Generate a UUID for use as `client_op_id`. Falls back to a
  * timestamp-randomness composite when crypto.randomUUID isn't
  * available (very old browsers).

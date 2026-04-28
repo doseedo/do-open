@@ -23,6 +23,7 @@ import { qwenChatStream } from '../../services/qwenChat';
 import {
   listChatMessages,
   appendChatMessage,
+  streamChatMessages,
   newClientOpId,
 } from '../../services/chatMessagesAPI';
 
@@ -92,13 +93,17 @@ export default function StudioDevChat({ onClose }) {
 
   // Reconcile from server whenever sessionId changes (and on mount).
   // Server returns newest-first; UI expects oldest-first. Falls back
-  // silently to the localStorage view if the fetch fails.
+  // silently to the localStorage view if the fetch fails. After the
+  // initial GET lands, open an SSE stream so concurrent edits from
+  // other clients (web tab, desktop session, peer) flow in live.
   useEffect(() => {
     setMessages(_loadHistory(sessionId));
     setServerSynced(false);
     setError(null);
     if (!sessionId) return;
     let cancelled = false;
+    let unsubscribe = () => {};
+
     listChatMessages(sessionId, { limit: SERVER_PAGE_LIMIT })
       .then((rows) => {
         if (cancelled) return;
@@ -106,17 +111,61 @@ export default function StudioDevChat({ onClose }) {
         setMessages(ordered);
         _saveHistory(sessionId, ordered);
         setServerSynced(true);
+
+        // Subscribe to live tail. `since` = timestamp of newest known
+        // message → server replays anything we missed between the GET
+        // and the SSE subscribe, then pushes new rows as they land.
+        const newest = ordered[ordered.length - 1];
+        const sinceArg = newest?.createdAt || null;
+        unsubscribe = streamChatMessages(sessionId, {
+          since: sinceArg,
+          onMessage: (row) => {
+            if (cancelled) return;
+            setMessages((prev) => {
+              // Dedupe by client_op_id (the value the local POST minted)
+              // and by server id. If we already have this message —
+              // because we sent it ourselves and the local optimistic
+              // append is still on screen — replace it with the server
+              // copy (gets the canonical id + created_at). Otherwise
+              // append.
+              const opId = row.client_op_id || null;
+              const idx = prev.findIndex((m) =>
+                (opId && m.clientOpId === opId)
+                || (m.id === row.id)
+              );
+              const mapped = _serverRowToLocal(row);
+              if (idx >= 0) {
+                if (prev[idx].fromServer && prev[idx].id === mapped.id) return prev;
+                const next = prev.slice();
+                next[idx] = { ...prev[idx], ...mapped };
+                _saveHistory(sessionId, next);
+                return next;
+              }
+              const next = prev.concat([mapped]);
+              _saveHistory(sessionId, next);
+              return next;
+            });
+          },
+          onError: () => {
+            // EventSource auto-reconnects on transport errors; nothing
+            // to do here. We log on the first error in case it's a
+            // genuine 401/403 that won't recover.
+            if (!cancelled) console.warn('[chat] SSE error (will auto-reconnect)');
+          },
+        });
       })
       .catch((err) => {
         if (cancelled) return;
-        // 401/403: Clerk token race; not a real failure. Other errors:
-        // log + keep the localStorage view.
         if (err?.status !== 401 && err?.status !== 403) {
           console.warn('[chat] listChatMessages failed; using localStorage cache:', err?.message || err);
         }
         setServerSynced(false);
       });
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [sessionId]);
 
   // Auto-scroll on new messages / token streaming.
