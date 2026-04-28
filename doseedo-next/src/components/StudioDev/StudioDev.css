@@ -2316,6 +2316,11 @@ input[type=text].sd-midi-lyric-input::placeholder {
 }
 /* Generate CTA — workbench primary button, full-width within the sidebar. */
 .sd-gen-actions { display: flex; margin-top: 14px; }
+.sd-gen-loading {
+  display: flex; justify-content: center; align-items: center;
+  margin-top: 8px;
+  pointer-events: none;
+}
 .sd-gen-submit {
   flex: 1;
   padding: 10px 16px;      /* slightly taller than the 8-px wb-btn default */
