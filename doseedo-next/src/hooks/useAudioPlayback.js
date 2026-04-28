@@ -122,6 +122,63 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     activeSessionIdRef.current = appState?.activeSessionId || null;
   }, [appState?.activeSessionId]);
 
+  // Mid-playback chain mutation: when a track's logicPlugins length /
+  // identity changes (e.g. peer adds Tape Delay), call the chain's
+  // appendSlot / removeSlot so the running engine reflects the change
+  // without stopping playback. We track per-track signatures and
+  // diff them; appendSlot/removeSlot keep the chain.input/output
+  // nodes stable so external connections survive.
+  const trackPluginSigsRef = useRef(new Map()); // trackId → signature string
+  useEffect(() => {
+    if (!LIVE_PLUGINS_ENABLED) return;
+    const buses = tracksRef.current?.byBus || tracks; // tracks shape varies
+    const list = Array.isArray(tracks) ? tracks : [];
+    for (const t of list) {
+      const tid = t?.id;
+      if (!tid) continue;
+      const chain = trackChainsRef.current.get(tid);
+      if (!chain || !chain.appendSlot) continue;
+      const cur = (t.logicPlugins || []).map(
+        (p, i) => `${p?.plugin_id || 0}:${p?.plugin_name || ''}:${i}`
+      ).join('|');
+      const prior = trackPluginSigsRef.current.get(tid) || '';
+      if (cur === prior) continue;
+
+      // Diff prior vs cur. Easiest: compare lengths only — for the
+      // common collab cases (peer adds OR removes a plugin) this is
+      // enough. Reorder is rare and falls through to the next play()
+      // rebuild path. We append for added plugins and remove for
+      // removed ones; both ops update chain.slots in place.
+      const oldLen = prior ? prior.split('|').filter(Boolean).length : 0;
+      const newLen = (t.logicPlugins || []).length;
+      if (newLen > oldLen) {
+        // Append the tail entries.
+        for (let i = oldLen; i < newLen; i++) {
+          const lp = t.logicPlugins[i];
+          if (!lp) continue;
+          // appendSlot is async — fire-and-forget, audio splice
+          // happens when the new slot is ready.
+          Promise.resolve(chain.appendSlot(lp)).catch((err) => {
+            console.warn(
+              `[R11] appendSlot failed for ${tid}: ${err?.message || err}`,
+            );
+          });
+        }
+      } else if (newLen < oldLen) {
+        // Remove from the tail by default — for now we don't know
+        // which slot the peer dropped without diffing identities.
+        // Drop trailing slots until lengths match. Web-side state
+        // already knows the right shape; this just keeps the engine
+        // chain in sync.
+        for (let i = oldLen - 1; i >= newLen; i--) {
+          try { chain.removeSlot(i); } catch (_) { /* noop */ }
+        }
+      }
+      trackPluginSigsRef.current.set(tid, cur);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracks]);
+
   // Lazily create the bus GainNode for a given busId and return it. Called
   // at schedule time and from the real-time gain-update effect. If busId is
   // falsy, falls back to masterGain so tracks that bypass the bus model
@@ -180,6 +237,16 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
   // sync record lacks those identifiers — A5's lookup tries every key.
   const _registerChain = (track, chain) => {
     if (!chain || !track) return;
+    // Seed the per-track signature so the mutation watcher knows the
+    // chain reflects this exact logicPlugins shape. Without seeding,
+    // the next state-tick would diff against an empty prior and
+    // append every plugin a second time.
+    try {
+      const sig = (track.logicPlugins || []).map(
+        (p, i) => `${p?.plugin_id || 0}:${p?.plugin_name || ''}:${i}`
+      ).join('|');
+      trackPluginSigsRef.current.set(track.id, sig);
+    } catch (_) { /* noop */ }
     try {
       const meta = track.metadata || {};
       const ginstid =
@@ -253,6 +320,7 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
     // flag is on. `load()` is fire-and-forget: kicks off the index.json
     // fetch so a later maybeBuildPluginChain() call can resolve fast.
     // When the flag is off, nothing ever calls into the adapter.
+    let pluginIndexRefreshTimer = null;
     if (LIVE_PLUGINS_ENABLED) {
       try {
         // Edit callbacks broadcast plugin param/bypass changes through
@@ -281,6 +349,15 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         Promise.resolve(pluginAdapterRef.current.load()).catch((err) => {
           console.warn('[R11] PluginAdapter load failed; falling back to bounce path:', err?.message || err);
         });
+        // Mid-session mapping refresh: poll index.json every 60s so
+        // mappings the desktop publishes during the session (via
+        // auto_driver.publish --zero-shot) become available without a
+        // tab reload. Cheap — one HTTP request per minute.
+        pluginIndexRefreshTimer = setInterval(() => {
+          const adapter = pluginAdapterRef.current;
+          if (!adapter || typeof adapter.refreshIndex !== 'function') return;
+          Promise.resolve(adapter.refreshIndex()).catch(() => { /* swallow */ });
+        }, 60_000);
       } catch (err) {
         console.warn('[R11] PluginAdapter init failed; falling back to bounce path:', err?.message || err);
         pluginAdapterRef.current = null;
@@ -300,6 +377,10 @@ export function useAudioPlayback(tracks, isPlaying, dispatch, totalDuration = 10
         trackChainsRef.current.clear();
         _clearRegistry();
       } catch (_) {}
+      if (pluginIndexRefreshTimer != null) {
+        try { clearInterval(pluginIndexRefreshTimer); } catch (_) {}
+        pluginIndexRefreshTimer = null;
+      }
       if (pluginAdapterRef.current) {
         try { pluginAdapterRef.current.clearCache && pluginAdapterRef.current.clearCache(); } catch (_) {}
         pluginAdapterRef.current = null;

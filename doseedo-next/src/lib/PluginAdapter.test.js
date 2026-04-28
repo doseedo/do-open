@@ -649,6 +649,33 @@ await test('lr_paired full split exposes setLeft/RightLogicParam dispatching to 
   slot.dispose();
 });
 
+await test('buildTrackChain.appendSlot adds a slot mid-flight', async () => {
+  const ctx = new MockOfflineAudioContext(2, sampleRate, sampleRate);
+  const adapter = new PluginAdapter(ctx, {
+    mappingsRegistry: { 154: compressorMapping },
+    fetchImpl: null,
+  });
+  const chain = await adapter.buildTrackChain({
+    id: 'track-x', uuid: 'beef0001',
+    logicPlugins: [],
+  });
+  // Empty chain still has the mutators. Append one Compressor.
+  assert.equal(chain.slots.length, 0);
+  assert.equal(typeof chain.appendSlot, 'function');
+  const newSlot = await chain.appendSlot({
+    plugin_id: '154', plugin_name: 'Compressor',
+    parameters: [{ id: 0, name: 'Threshold', value: -25 }],
+  });
+  assert.ok(newSlot, 'appendSlot returned a slot');
+  assert.equal(chain.slots.length, 1);
+
+  // removeSlot shrinks back to empty without disturbing input/output.
+  const removed = chain.removeSlot(0);
+  assert.equal(removed, true);
+  assert.equal(chain.slots.length, 0);
+  chain.dispose();
+});
+
 await test('strictSampleRate refuses to load on SR mismatch', async () => {
   const ctx = new MockOfflineAudioContext(2, sampleRate, sampleRate);
   // Mapping claims it was calibrated at half the context's SR.

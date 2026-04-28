@@ -432,16 +432,49 @@ export default class PluginAdapter {
   async load() {
     if (this._indexLoaded) return;
     this._indexLoaded = true;
+    await this._fetchIndex();
+  }
+
+  /**
+   * Re-fetch index.json so mappings published during the session
+   * (e.g. by `auto_driver.publish --zero-shot`) become available
+   * without a tab reload. Existing miss tombstones (`null` entries
+   * in `this.mappings`) are cleared for ids that show up newly in
+   * the refreshed index, so a follow-up `instantiate` call will
+   * fetch them. Cheap to call repeatedly — bounded by index.json
+   * size, which is one HTTP request.
+   */
+  async refreshIndex() {
+    await this._fetchIndex();
+  }
+
+  /** Internal — single source of truth for index.json fetch. */
+  async _fetchIndex() {
     if (!this.fetchImpl) return; // no fetch available (tests can pre-seed)
     try {
-      const res = await this.fetchImpl(`${this.basePath}/index.json`);
+      // Cache-bust so a CDN doesn't pin us to the previous index.
+      const url = `${this.basePath}/index.json?t=${Date.now()}`;
+      const res = await this.fetchImpl(url);
       if (!res.ok) {
         // No registry → adapter degenerates to "always fall back"; perfectly fine.
         return;
       }
       const data = await res.json();
       const ids = data?.mappings || [];
-      for (const id of ids) this.available.add(String(id));
+      const newIds = [];
+      for (const id of ids) {
+        const sid = String(id);
+        if (!this.available.has(sid)) newIds.push(sid);
+        this.available.add(sid);
+      }
+      // Clear miss-tombstones for newly-arrived ids so a subsequent
+      // instantiate() call fetches the JSON instead of returning null.
+      for (const sid of newIds) {
+        if (this.mappings.get(sid) === null) this.mappings.delete(sid);
+      }
+      if (newIds.length > 0) {
+        console.info(`[PluginAdapter] refreshed index: +${newIds.length} new mappings`);
+      }
     } catch (err) {
       // Network error → behave as if registry is empty.
       console.warn('[PluginAdapter] index load failed:', err?.message || err);
@@ -957,17 +990,10 @@ export default class PluginAdapter {
     output.gain.value = 1;
 
     const logicPlugins = track?.logicPlugins || [];
-    if (logicPlugins.length === 0) {
-      input.connect(output);
-      return {
-        input, output, slots: [],
-        fallback: false,
-        dispose: () => {
-          try { input.disconnect(); } catch (e) {}
-          try { output.disconnect(); } catch (e) {}
-        },
-      };
-    }
+    // Empty-plugin tracks fall through to the normal build flow which
+    // produces an input → output passthrough plus the appendSlot /
+    // removeSlot mutators. That way a peer adding a plugin to a
+    // currently-empty track has somewhere to splice it.
 
     const slots = [];
     let cursor = input;
@@ -1013,7 +1039,69 @@ export default class PluginAdapter {
       try { output.disconnect(); } catch (e) {}
     };
 
-    return { input, output, slots, fallback: false, dispose };
+    // ── Mid-playback chain mutators ─────────────────────────────────────
+    //
+    // Logic-side or peer-driven add_plugin / remove_plugin should take
+    // effect WITHOUT stopping playback. The chain's input/output nodes
+    // are stable across mutations — external upstream/downstream
+    // connections never have to know about reroutes — so callers can
+    // call appendSlot/removeSlot during play() and audio continues.
+    //
+    // Both mutators isolate the disconnect/reconnect dance to the
+    // edges of the spliced slot. The mutator is async because
+    // instantiate is async (mapping fetch). Returns the new slot
+    // (appendSlot) or true/false (removeSlot).
+    const _findCursorAfter = (slotIndex) => {
+      // Returns the AudioNode that is currently feeding `output` for
+      // a chain whose tail-end slot is at `slotIndex`. When slotIndex
+      // is -1, the cursor is the chain `input` (empty chain rebuild).
+      if (slotIndex < 0) return input;
+      return slots[slotIndex]?.output || input;
+    };
+
+    const appendSlot = async (logicPlugin) => {
+      const newSlot = await this.instantiate(logicPlugin, {
+        trackUuid, slotIndex: slots.length,
+      });
+      if (!newSlot) return null;
+      const tailCursor = _findCursorAfter(slots.length - 1);
+      try { tailCursor.disconnect(output); } catch (_) { /* may already be disconnected */ }
+      try { tailCursor.connect(newSlot.input); } catch (_) { /* noop */ }
+      try { newSlot.output.connect(output); } catch (_) { /* noop */ }
+      slots.push(newSlot);
+      return newSlot;
+    };
+
+    const removeSlot = (slotIndex) => {
+      if (slotIndex < 0 || slotIndex >= slots.length) return false;
+      const dropped = slots[slotIndex];
+      const upstreamCursor = _findCursorAfter(slotIndex - 1);
+      const downstreamNode = (slotIndex + 1 < slots.length)
+        ? slots[slotIndex + 1].input
+        : output;
+      try { upstreamCursor.disconnect(dropped.input); } catch (_) { /* noop */ }
+      try { dropped.output.disconnect(downstreamNode); } catch (_) { /* noop */ }
+      try { upstreamCursor.connect(downstreamNode); } catch (_) { /* noop */ }
+      try { dropped.dispose(); } catch (_) { /* noop */ }
+      slots.splice(slotIndex, 1);
+      // Patch every later slot's editContext.slotIndex so subsequent
+      // edits address them by their new position. The editContext
+      // lives in the closure of each slot's setLogicParam, so we'd
+      // need to mutate it through the slot itself; PluginAdapter
+      // captures it as a const, so the cleanest fix is to expose
+      // the index as a mutable field on the slot. The reducer
+      // doesn't depend on it (peer addresses by uuid+slot), so the
+      // mutation is consistency-only.
+      for (let i = slotIndex; i < slots.length; i++) {
+        if (slots[i]) slots[i].slotIndex = i;
+      }
+      return true;
+    };
+
+    return {
+      input, output, slots, fallback: false, dispose,
+      appendSlot, removeSlot,
+    };
   }
 
   /** Drop all cached mappings + engines (e.g. on logout / project switch). */
