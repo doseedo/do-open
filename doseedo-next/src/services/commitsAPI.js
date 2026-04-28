@@ -74,6 +74,21 @@ export async function getCommit(sessionId, commitId) {
   return _request(`/api/sessions/${sessionId}/commits/${commitId}`);
 }
 
+/**
+ * Mint a server-side commit. Body shape mirrors the FastAPI CommitCreate
+ * model in app/routers/commits.py:
+ *   { tree, parent_ids, label, action_type, rights, blob_refs,
+ *     author_origin, protected, ref_update, expected_*_hash }
+ *
+ * `parent_ids` are server-side commit UUIDs already in the session's DAG;
+ * pass [] for a root commit. The server canonicalizes `tree`, hashes it,
+ * and stores it; if `expected_tree_sha` is supplied it must match.
+ */
+export async function mintCommit(sessionId, body) {
+  if (!sessionId) throw new Error('mintCommit requires sessionId');
+  return _request(`/api/sessions/${sessionId}/commits`, { method: 'POST', body });
+}
+
 // ── Refs ────────────────────────────────────────────────────────────────────
 
 export async function listRefs(sessionId) {

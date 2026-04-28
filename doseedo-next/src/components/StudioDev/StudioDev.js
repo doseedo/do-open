@@ -61,6 +61,7 @@ import AttestationsPanel from './AttestationsPanel';
 import { useAgentWebSocket } from '../ChatWindow/useAgentWebSocket';
 import { useLiveParamDeltas } from '../../hooks/useLiveParamDeltas';
 import { useSessionCommits } from '../../hooks/useSessionCommits';
+import { useCommitSyncer } from '../../hooks/useCommitSyncer';
 import { useEditStream } from '../../hooks/useEditStream';
 import { useCollabPresence } from '../../hooks/useCollabPresence';
 import PresenceAvatars from './PresenceAvatars';
@@ -416,6 +417,12 @@ export default function StudioDev() {
   // tab; the localStorage `sessionHistory` falls back to caching when the
   // server is unreachable or the session hasn't been synced yet.
   const serverHistory = useSessionCommits(state.activeSessionId || null);
+
+  // Sync local-only sessionHistory commits up to the server commit DAG so
+  // the History tab flips to useServer-true and the Attest button on each
+  // row reaches a real server commit (otherwise every web commit shows
+  // the "sync this commit to the server first" placeholder forever).
+  useCommitSyncer(state.activeSessionId || null, state.sessionHistory, serverHistory);
 
   // Subscribe to the live edit stream — receives the desktop's fader
   // moves (and any other web client's edits) sub-second. Echoes of our
