@@ -1,34 +1,43 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import liveTrackChainRegistry from '../../lib/liveTrackChainRegistry';
+import { useApp } from '../../context/AppContext';
+import {
+  enqueueAddPlugin,
+  enqueueRemovePlugin,
+} from '../../services/sessionEditsAPI';
+import styles from './LogicPluginRack.module.css';
 
 /**
- * LogicPluginRack — minimal UI for the Logic plugins on a synced track.
+ * LogicPluginRack — bypass / Mix / add / remove UI for the Logic
+ * plugins on a synced track.
  *
- * For each plugin in `track.logicPlugins`, renders:
- *   - Plugin name + bypass toggle (calls slot.setBypassed → broadcasts
- *     via PluginAdapter.editCallbacks → enqueueSetPluginBypass).
- *   - Mix slider when the mapping declared `wet_param_id`. Drives
+ * For each plugin in `track.logicPlugins`:
+ *   - Plugin name + Bypass toggle (drives slot.setBypassed →
+ *     PluginAdapter.editCallbacks → enqueueSetPluginBypass).
+ *   - Mix slider when the mapping declares `wet_param_id`. Drives
  *     slot.setLogicParam(wetId, value) → enqueueSetPluginParam.
+ *   - Remove button → enqueueRemovePlugin (server replays into Logic
+ *     via the desktop's edit-dispatcher).
+ * Plus a footer "Add plugin" picker → enqueueAddPlugin.
  *
- * The component is intentionally small and unstyled — the bigger value
- * is wiring the controls into the running PluginAdapter slots so any
- * UI we add later can drive the same setBypassed/setLogicParam calls
- * and get sync-broadcast for free. Renders nothing when:
- *   - no track is selected
- *   - the track has no logicPlugins (or feature flag is off)
- *   - no live chain is registered for the track (i.e. mappings are
- *     missing and the bounce-cache fallback is in effect — bypass /
- *     wet sliders would be UI-only with no audio effect)
+ * The component is a thin presentation layer; all the state of record
+ * lives on the slot (engine + mapping). Renders nothing when the track
+ * has no logicPlugins or no live chain is registered (i.e. mappings
+ * are missing and the bounce-cache fallback is in effect — surfacing
+ * UI controls would be misleading because they'd have no audio effect).
  */
 function LogicPluginRack({ track }) {
+  const { state } = useApp();
   const [chain, setChain] = useState(null);
   const [, setTick] = useState(0);
+  const [adding, setAdding] = useState(false);
+  const [pluginToAdd, setPluginToAdd] = useState('');
 
   // The chain lives in the singleton registry (registered by
-  // useAudioPlayback when it builds a live chain). We poll the registry
-  // because chains are wired up async from playback start; a one-shot
-  // useEffect would miss them. Polling at 500ms is cheap — the registry
-  // lookup is a Map.get — and stops once we resolve a chain.
+  // useAudioPlayback when it builds a live chain). We poll the
+  // registry because chains are wired up async from playback start; a
+  // one-shot useEffect would miss them. Polling at 500ms is cheap (the
+  // registry lookup is a Map.get) and stops once we resolve a chain.
   useEffect(() => {
     if (!track?.id) {
       setChain(null);
@@ -49,13 +58,63 @@ function LogicPluginRack({ track }) {
   }, [track?.id]);
 
   const logicPlugins = track?.logicPlugins || track?.metadata?.logicPlugins || [];
-  if (!Array.isArray(logicPlugins) || logicPlugins.length === 0) return null;
-  if (!chain || !chain.slots) return null;
+  const trackUuid = track?.uuid || track?.metadata?.uuid || null;
+  const sessionId = state?.activeSessionId || null;
+
+  // Pull a list of available plugin names from any mapping the
+  // adapter has loaded so the operator can add a known-mappable
+  // plugin without typing names. We don't fetch /plugin-mappings
+  // from here — the adapter already has the registry; we just read
+  // names off existing slots' mappings as a starter list. Operators
+  // wanting an exhaustive list can extend with a fetch later.
+  const knownPluginNames = useMemo(() => {
+    const names = new Set();
+    if (chain?.slots) {
+      for (const s of chain.slots) {
+        const m = s?.getMapping?.();
+        const n = m?.plugin_name || m?.logic_plugin_name;
+        if (n) names.add(n);
+      }
+    }
+    return Array.from(names).sort();
+  }, [chain]);
+
+  const handleAdd = useCallback(async () => {
+    const name = (pluginToAdd || '').trim();
+    if (!name || !sessionId || !trackUuid) return;
+    setAdding(true);
+    try {
+      enqueueAddPlugin(sessionId, trackUuid, name);
+      setPluginToAdd('');
+    } finally {
+      setAdding(false);
+    }
+  }, [pluginToAdd, sessionId, trackUuid]);
+
+  const handleRemove = useCallback((slotIndex) => {
+    if (!sessionId || !trackUuid || typeof slotIndex !== 'number') return;
+    enqueueRemovePlugin(sessionId, trackUuid, slotIndex);
+  }, [sessionId, trackUuid]);
+
+  const hasPlugins = Array.isArray(logicPlugins) && logicPlugins.length > 0;
+  const showRack = hasPlugins && chain?.slots?.length;
+
+  // Even when no live chain is registered (mappings missing) we still
+  // surface the Add/Remove panel so the user can drop a plugin and
+  // have the desktop wire it up. We just hide the per-slot bypass /
+  // Mix rows because they wouldn't drive anything.
+  if (!hasPlugins && (!sessionId || !trackUuid)) return null;
 
   return (
-    <div style={{ marginTop: 12, padding: '8px 0', borderTop: '1px solid #333' }}>
-      <div style={{ fontWeight: 600, marginBottom: 6 }}>Logic Plugins</div>
-      {chain.slots.map((slot, idx) => {
+    <div className={styles.rack}>
+      <div className={styles.rackHeader}>
+        <span><i className={`fa-solid fa-plug ${styles.icon}`}></i>Logic Plugins</span>
+        {hasPlugins && !showRack && (
+          <span className={styles.empty}>fallback (no mapping)</span>
+        )}
+      </div>
+
+      {showRack && chain.slots.map((slot, idx) => {
         const lp = logicPlugins[idx] || {};
         return (
           <PluginSlotRow
@@ -64,14 +123,38 @@ function LogicPluginRack({ track }) {
             slot={slot}
             logicPlugin={lp}
             onChange={() => setTick((n) => n + 1)}
+            onRemove={trackUuid && sessionId ? () => handleRemove(idx) : null}
           />
         );
       })}
+
+      {trackUuid && sessionId && (
+        <div className={styles.addRow}>
+          <select
+            value={pluginToAdd}
+            onChange={(e) => setPluginToAdd(e.target.value)}
+            disabled={adding}
+          >
+            <option value="">Add plugin…</option>
+            {knownPluginNames.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className={styles.addButton}
+            onClick={handleAdd}
+            disabled={adding || !pluginToAdd}
+          >
+            Add
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-function PluginSlotRow({ slotIndex, slot, logicPlugin, onChange }) {
+function PluginSlotRow({ slotIndex, slot, logicPlugin, onChange, onRemove }) {
   // Local state so the UI re-renders on toggle without subscribing to
   // every slot's internal state. The slot's setBypassed / setLogicParam
   // are the source of truth; this state is just a render hint.
@@ -82,13 +165,14 @@ function PluginSlotRow({ slotIndex, slot, logicPlugin, onChange }) {
   const mapping = slot?.getMapping?.();
   const wetParamId = typeof mapping?.wet_param_id === 'number'
     ? mapping.wet_param_id : null;
-  const initialWet = (() => {
+
+  const initialWet = useMemo(() => {
     if (wetParamId == null) return null;
     const lpRow = (logicPlugin?.parameters || [])
       .find((p) => Number(p?.id) === wetParamId);
-    if (lpRow == null) return null;
+    if (lpRow == null) return 1;
     return Number(lpRow.value);
-  })();
+  }, [wetParamId, logicPlugin]);
   const [wet, setWet] = useState(initialWet);
 
   const handleBypassToggle = useCallback(() => {
@@ -109,33 +193,40 @@ function PluginSlotRow({ slotIndex, slot, logicPlugin, onChange }) {
   }, [slot, wetParamId, onChange]);
 
   return (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ flex: 1, fontSize: 13 }}>
+    <div className={styles.row}>
+      <div className={styles.rowHeader}>
+        <span className={styles.pluginName}>
           {slot?.pluginName || logicPlugin?.plugin_name || `Plugin ${slotIndex + 1}`}
         </span>
         {slot?.bypassSupported !== false && (
-          <label style={{ display: 'inline-flex', alignItems: 'center',
-                          gap: 4, fontSize: 12, cursor: 'pointer' }}>
+          <label className={styles.bypassToggle}>
             <input type="checkbox" checked={bypassed} onChange={handleBypassToggle} />
             <span>Bypass</span>
           </label>
         )}
+        {onRemove && (
+          <button
+            type="button"
+            className={styles.removeButton}
+            onClick={onRemove}
+            title="Remove plugin"
+          >
+            ✕
+          </button>
+        )}
       </div>
       {wetParamId != null && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8,
-                      paddingLeft: 12, marginTop: 4 }}>
-          <span style={{ fontSize: 11, opacity: 0.8 }}>Mix</span>
+        <div className={styles.mixRow}>
+          <span>Mix</span>
           <input
             type="range"
-            min={0} max={1} step={0.001}
+            min={0}
+            max={1}
+            step={0.001}
             value={wet ?? 1}
             onChange={handleWetChange}
-            style={{ flex: 1 }}
           />
-          <span style={{ fontSize: 11, opacity: 0.8, minWidth: 32, textAlign: 'right' }}>
-            {wet != null ? wet.toFixed(2) : '—'}
-          </span>
+          <span>{wet != null ? wet.toFixed(2) : '—'}</span>
         </div>
       )}
     </div>

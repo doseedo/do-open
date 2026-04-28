@@ -611,6 +611,116 @@ await test('indexed param bypasses curve + normalization (dropdown UX)', async (
   slot.dispose();
 });
 
+await test('strictSampleRate refuses to load on SR mismatch', async () => {
+  const ctx = new MockOfflineAudioContext(2, sampleRate, sampleRate);
+  // Mapping claims it was calibrated at half the context's SR.
+  const mismatchedMapping = {
+    ...compressorMapping,
+    expected_sample_rate: Math.round(sampleRate / 2),
+  };
+  // Default policy: warns and proceeds (slot non-null).
+  const lenient = new PluginAdapter(ctx, {
+    mappingsRegistry: { 154: mismatchedMapping },
+    fetchImpl: null,
+  });
+  const lenientSlot = await lenient.instantiate({
+    plugin_id: '154', plugin_name: 'Compressor',
+    parameters: [{ id: 0, name: 'Threshold', value: -20 }],
+  });
+  assert.ok(lenientSlot, 'default policy keeps the slot loadable');
+  lenientSlot.dispose();
+
+  // strictSampleRate: refuse to load (returns null).
+  const strict = new PluginAdapter(ctx, {
+    mappingsRegistry: { 154: mismatchedMapping },
+    fetchImpl: null,
+    strictSampleRate: true,
+  });
+  const strictSlot = await strict.instantiate({
+    plugin_id: '154', plugin_name: 'Compressor',
+    parameters: [{ id: 0, name: 'Threshold', value: -20 }],
+  });
+  assert.equal(strictSlot, null, 'strict policy returns null on mismatch');
+});
+
+await test('lr_paired routing exposes setLeftGain / setRightGain', async () => {
+  const lrMapping = {
+    plugin_id: '777',
+    plugin_name: 'StereoDelay',
+    web_topology: {
+      dspChain: [{ type: 'compressor', id: 'comp_core' }],
+      parameters: [{ id: 'threshold', label: 'Threshold', min: -60, max: 0, default: -20 }],
+      routing: { input: 'stereo', chain: [], output: 'stereo', mode: 'lr_paired' },
+    },
+    param_map: [
+      { logic_id: 0, logic_name: 'Threshold', web_param: 'threshold',
+        curve: 'linear', domain: [-60, 0], range: [-60, 0] },
+    ],
+    bypass_supported: true,
+  };
+  const ctx = new MockOfflineAudioContext(2, sampleRate, sampleRate);
+  // The mock doesn't implement createChannelSplitter / Merger; the wrap
+  // catches the failure and returns null, so input/output fall through
+  // to the engine. The slot's setLeftGain / setRightGain become silent
+  // no-ops in that case — which is the intended graceful degradation.
+  const adapter = new PluginAdapter(ctx, {
+    mappingsRegistry: { 777: lrMapping },
+    fetchImpl: null,
+  });
+  const slot = await adapter.instantiate({
+    plugin_id: '777',
+    plugin_name: 'StereoDelay',
+    parameters: [{ id: 0, name: 'Threshold', value: -20 }],
+  });
+  assert.equal(slot.routingMode, 'lr_paired');
+  assert.equal(typeof slot.setLeftGain, 'function');
+  assert.equal(typeof slot.setRightGain, 'function');
+  // No-op invocations should not throw.
+  slot.setLeftGain(0.5);
+  slot.setRightGain(1.5);
+  slot.dispose();
+});
+
+await test('editCallbacks fire onParamEdit + onBypassChange', async () => {
+  const ctx = new MockOfflineAudioContext(2, sampleRate, sampleRate);
+  const onParamEdit = (e) => calls.push(['param', e]);
+  const onBypassChange = (e) => calls.push(['bypass', e]);
+  const calls = [];
+  const adapter = new PluginAdapter(ctx, {
+    mappingsRegistry: { 154: compressorMapping },
+    fetchImpl: null,
+    editCallbacks: { onParamEdit, onBypassChange },
+  });
+  const slot = await adapter.instantiate(
+    {
+      plugin_id: '154',
+      plugin_name: 'Compressor',
+      parameters: [{ id: 0, name: 'Threshold', value: -20 }],
+    },
+    { trackUuid: 'abcd1234', slotIndex: 3 },
+  );
+  // Param edit broadcasts.
+  slot.setLogicParam(0, -10);
+  const paramCall = calls.find((c) => c[0] === 'param');
+  assert.ok(paramCall, 'expected onParamEdit fire');
+  assert.equal(paramCall[1].trackUuid, 'abcd1234');
+  assert.equal(paramCall[1].slot, 3);
+  assert.equal(paramCall[1].paramId, 0);
+  assert.equal(paramCall[1].value, -10);
+
+  // Suppressed broadcast (peer echo path).
+  calls.length = 0;
+  slot.setLogicParam(0, -30, { broadcast: false });
+  assert.equal(calls.length, 0, 'broadcast:false should not fire callback');
+
+  // Bypass edit broadcasts.
+  slot.setBypassed(true);
+  const bypassCall = calls.find((c) => c[0] === 'bypass');
+  assert.ok(bypassCall, 'expected onBypassChange fire');
+  assert.equal(bypassCall[1].bypassed, true);
+  slot.dispose();
+});
+
 await test('setBypassed wires lazy passthrough; dispose cleans up', async () => {
   const ctx = new MockOfflineAudioContext(2, sampleRate, sampleRate);
   const adapter = new PluginAdapter(ctx, {

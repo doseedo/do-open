@@ -116,26 +116,73 @@ function toNormalized(value, paramDef) {
 
 /**
  * For plugins that expose paired Left/Right knobs (Stereo Delay,
- * dual-mono saturators), `routing.mode === "lr_paired"` is the hint
- * that the engine should process L and R independently. We don't yet
- * duplicate the engine — that would double DSP cost — so this wrapper
- * just splits the input into two channels, runs them through the
- * engine in lockstep (the engine already handles stereo natively), and
- * remerges. The hint surfaces to the React layer via `slot.routingMode`
- * so plugin-rack UI can label paired params; full split-engine
- * processing is a Tier-2 follow-up.
+ * dual-mono level controls), `routing.mode === "lr_paired"` is the
+ * hint that the engine output should split into independent L/R post-
+ * gains. We don't duplicate the *whole* engine — that would double DSP
+ * cost — but we DO insert a ChannelSplitter at the output, run each
+ * channel through its own gain stage, and remerge. PluginAdapter
+ * exposes ``setLeftGain`` / ``setRightGain`` on the slot for paired-
+ * level params; rack UI can layout L and R columns and feed them
+ * independently. The DSP body is shared, which matches Logic for the
+ * common case of "left output level / right output level" being the
+ * only differing knobs (Stereo Delay's L/R taps are scheduled inside
+ * a shared multitap; their level controls are post-stage gain trims).
  *
- * Returning `null` here means "no wrap" — the caller uses the engine
- * directly as if mode were "stereo". This keeps the splice point
- * symmetrical with `_buildMidSideWrap`.
+ * Returns `{input, output, setLeftGain, setRightGain, dispose}`. The
+ * caller wires its `input` ahead of the engine and reads `output` as
+ * the slot's user-facing output. setLeftGain/setRightGain accept
+ * normalized [0..1] (0=silence, 1=unity, >1=boost up to 4x).
+ *
+ * Full split-engine processing (each channel through its own
+ * WebAudioDSPEngine) is still a Tier-2 follow-up — needed for plugins
+ * whose DSP itself differs per-channel (rare). The output-gain split
+ * here covers the common cases.
  */
-function _buildLrPairedWrap(_ctx, _engineIn, _engineOut) {
-  // Deliberate no-op for now. We could insert a ChannelSplitter +
-  // ChannelMerger here for symmetry with M-S, but a 2-input/2-output
-  // GainNode chain in WebAudio is already L/R-independent — the engine
-  // never cross-mixes channels unless a node explicitly does so. The
-  // metadata hint is what the UI needs; the audio path is correct as-is.
-  return null;
+function _buildLrPairedWrap(ctx, engineIn, engineOut) {
+  // Engine output → splitter → per-channel gain → merger → wrap output.
+  // Engine input is exposed unchanged so the caller's existing
+  // ``slot.input.connect(...)`` patterns work.
+  let splitter, leftGain, rightGain, merger, output;
+  try {
+    splitter = ctx.createChannelSplitter(2);
+    leftGain = ctx.createGain(); leftGain.gain.value = 1;
+    rightGain = ctx.createGain(); rightGain.gain.value = 1;
+    merger = ctx.createChannelMerger(2);
+    output = ctx.createGain();
+    engineOut.connect(splitter);
+    splitter.connect(leftGain, 0);
+    splitter.connect(rightGain, 1);
+    leftGain.connect(merger, 0, 0);
+    rightGain.connect(merger, 0, 1);
+    merger.connect(output);
+  } catch (e) {
+    // If the wrap fails for any reason (atypical channel counts,
+    // mock AudioContext without splitter/merger, broken graph), fall
+    // through to a passthrough so we don't mute audio. The caller
+    // still receives the engine output via the regular path.
+    return null;
+  }
+
+  return {
+    input: engineIn,
+    output,
+    setLeftGain: (v) => {
+      const t = (ctx.currentTime || 0) + 0.001;
+      try { leftGain.gain.setTargetAtTime(Math.max(0, Math.min(4, v)), t, 0.005); }
+      catch { leftGain.gain.value = Math.max(0, Math.min(4, v)); }
+    },
+    setRightGain: (v) => {
+      const t = (ctx.currentTime || 0) + 0.001;
+      try { rightGain.gain.setTargetAtTime(Math.max(0, Math.min(4, v)), t, 0.005); }
+      catch { rightGain.gain.value = Math.max(0, Math.min(4, v)); }
+    },
+    dispose: () => {
+      const ns = [splitter, leftGain, rightGain, merger, output];
+      for (const n of ns) {
+        try { n.disconnect(); } catch (_) { /* noop */ }
+      }
+    },
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -154,6 +201,14 @@ function _buildLrPairedWrap(_ctx, _engineIn, _engineOut) {
  * we created here without touching the engine itself.
  */
 function _buildMidSideWrap(ctx, engineIn, engineOut) {
+  // Bail when the AudioContext doesn't expose channel split/merge —
+  // typically a test mock. Caller treats null as "no wrap" and uses
+  // the engine output directly.
+  if (typeof ctx.createChannelSplitter !== 'function'
+      || typeof ctx.createChannelMerger !== 'function') {
+    return null;
+  }
+
   // Encoder: L/R → M/S. M = (L+R)/√2; S = (L-R)/√2.
   const inputSplit = ctx.createChannelSplitter(2);
   const negR = ctx.createGain(); negR.gain.value = -1;
@@ -261,6 +316,14 @@ export default class PluginAdapter {
     this.ctx = audioContext;
     this.basePath = options.basePath || MAPPINGS_BASE;
     this.strictMode = !!options.strictMode;
+    // strictSampleRate: when true, mappings whose expected_sample_rate
+    // disagrees with the AudioContext's sampleRate refuse to load (the
+    // adapter returns null, caller falls back to bounce-cache audio).
+    // Default false → log a console.warn and proceed; matches existing
+    // behaviour. Useful for plugins where SR matters audibly
+    // (oversampled limiters, IR-based reverbs) and silent miscalibration
+    // is worse than no audio.
+    this.strictSampleRate = !!options.strictSampleRate;
     // `fetchImpl: null` is honored as "no fetch" — useful for tests and
     // pre-seeded registries where a network roundtrip would be wrong.
     this.fetchImpl = (options.fetchImpl !== undefined)
@@ -422,16 +485,24 @@ export default class PluginAdapter {
 
     // Sample-rate sanity check. Most Logic plugins behave fine across
     // 44.1k/48k but oversampling-aware compressors and IR-based reverbs
-    // change behaviour with the host SR. We don't refuse to load — that
-    // would be a worse UX than slightly-off audio — but we surface the
-    // mismatch so the operator can act on it.
+    // change behaviour with the host SR. Default policy: warn and
+    // proceed — slightly-off audio beats no audio. With
+    // ``strictSampleRate``: refuse to load, caller falls back to
+    // bounce-cache.
     const expectedSR = mapping.expected_sample_rate;
     if (expectedSR && this.ctx?.sampleRate && expectedSR !== this.ctx.sampleRate) {
-      console.warn(
+      const msg =
         `[PluginAdapter] sample-rate mismatch for ${mapping.plugin_name || id}: ` +
         `mapping calibrated at ${expectedSR}Hz but AudioContext is ` +
-        `${this.ctx.sampleRate}Hz`
-      );
+        `${this.ctx.sampleRate}Hz`;
+      if (this.strictSampleRate) {
+        if (this.strictMode) {
+          throw new Error(msg + ' (strictSampleRate)');
+        }
+        console.warn(msg + ' — refusing to load (strictSampleRate)');
+        return null;
+      }
+      console.warn(msg);
     }
 
     // Build engine, inject our shared context, then build graph.
@@ -454,6 +525,7 @@ export default class PluginAdapter {
     let input;
     let output;
     let msNodes = null;
+    let lrNodes = null;
     if (!engineIn || !engineOut) {
       // Engine produced nothing usable — return a passthrough so the
       // caller's track chain stays intact.
@@ -467,17 +539,17 @@ export default class PluginAdapter {
       // and ChannelMerger nodes around the engine: this is the cheapest
       // M-S codec the WebAudio API offers and is sample-accurate.
       msNodes = _buildMidSideWrap(this.ctx, engineIn, engineOut);
-      input = msNodes.input;
-      output = msNodes.output;
+      input = msNodes?.input || engineIn;
+      output = msNodes?.output || engineOut;
     } else if ((dspConfig.routing?.mode || 'stereo') === 'lr_paired') {
-      // L/R-paired plugins (Stereo Delay, dual-mono saturators). The
-      // wrap is a no-op today — WebAudio's stereo path already keeps L
-      // and R independent — but we surface routingMode='lr_paired' on
-      // the slot so paired-knob UI can layout L and R columns. A
-      // future Tier-2 pass can swap in real split-engine processing.
-      const wrap = _buildLrPairedWrap(this.ctx, engineIn, engineOut);
-      input = wrap?.input || engineIn;
-      output = wrap?.output || engineOut;
+      // L/R-paired plugins (Stereo Delay, dual-mono level controls).
+      // The wrap inserts a ChannelSplitter + per-channel gain + merger
+      // at the engine output so paired-level params can be applied
+      // independently per channel. Full split-engine processing is
+      // still deferred — but the wrap covers the common case.
+      lrNodes = _buildLrPairedWrap(this.ctx, engineIn, engineOut);
+      input = lrNodes?.input || engineIn;
+      output = lrNodes?.output || engineOut;
     } else {
       input = engineIn;
       output = engineOut;
@@ -649,6 +721,7 @@ export default class PluginAdapter {
       try { if (enginePathGain) enginePathGain.disconnect(); } catch (e) { /* noop */ }
       try { if (bypassSumOut) bypassSumOut.disconnect(); } catch (e) { /* noop */ }
       try { if (msNodes) msNodes.dispose(); } catch (e) { /* noop */ }
+      try { if (lrNodes) lrNodes.dispose(); } catch (e) { /* noop */ }
       try { engine._teardownGraph(); } catch (e) { /* noop */ }
     };
 
@@ -666,6 +739,12 @@ export default class PluginAdapter {
       bypassSupported: mapping.bypass_supported !== false,
       hasWetParam: typeof mapping.wet_param_id === 'number',
       routingMode: dspConfig.routing?.mode || 'stereo',
+      // Paired-level setters surface on the slot only when the wrap
+      // actually built. Calling them when the wrap was a no-op is a
+      // silent no-op rather than a crash — UI can call them
+      // unconditionally without checking routingMode first.
+      setLeftGain: (v) => { lrNodes?.setLeftGain?.(v); },
+      setRightGain: (v) => { lrNodes?.setRightGain?.(v); },
       getMapping: () => mapping,
       dispose,
     };
