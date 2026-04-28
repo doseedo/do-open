@@ -77,6 +77,80 @@
 }
 .sessionInput::placeholder { color: var(--wb-ink-mute); }
 
+/* ── Filter bar ───────────────────────────────────────────────────── */
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.filterSearch {
+  flex: 1;
+  min-width: 220px;
+  max-width: 400px;
+  padding: 8px 12px;
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  border-radius: var(--wb-radius);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: 12px;
+}
+.filterSearch:focus {
+  outline: none;
+  border-color: var(--wb-ink);
+  background: #fff;
+}
+.filterSearch::placeholder { color: var(--wb-ink-mute); }
+
+.filterSelect {
+  padding: 8px 28px 8px 12px;
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-rule);
+  border-radius: var(--wb-radius);
+  color: var(--wb-ink);
+  font-family: var(--wb-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 4 L5 7 L8 4' stroke='%237c7e85' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.filterSelect:focus { outline: none; border-color: var(--wb-ink); }
+
+.filterError {
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--wb-accent-warm);
+  cursor: help;
+}
+
+/* ── Source badge (per-row tag: SYNC / WEB / COLLAB / LOCAL) ──────── */
+.sourceBadge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 1px 6px;
+  font-family: var(--wb-font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+.sourceBadge[data-source="local"]  { color: var(--wb-ink-mute); }
+.sourceBadge[data-source="sync"]   { color: var(--wb-accent); }
+.sourceBadge[data-source="web"]    { color: var(--wb-ink-soft); }
+.sourceBadge[data-source="collab"] { color: var(--wb-ok); }
+
 .sessionsContainer { width: 100%; }
 .sessionsList { width: 100%; }
 

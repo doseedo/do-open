@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import * as sessionService from '../../services/sessionService';
@@ -7,11 +7,10 @@ import ProjectCard from './ProjectCard';
 import styles from './Projects.module.css';
 
 const CHAT_STORAGE_PREFIX = 'chat-';
+const DAW_TYPES = new Set(['logic', 'ableton', 'fl', 'protools', 'desktop', 'daw']);
 
 // Mirrors StudioDevChat's persistence key. Returns the message count
-// (0 if no thread, or if the entry is malformed). Used to render the
-// 💬 badge on Projects rows so the user can see at-a-glance which
-// sessions already have a chat going.
+// (0 if no thread, or if the entry is malformed).
 function _chatMessageCount(sessionId) {
   if (!sessionId) return 0;
   try {
@@ -22,34 +21,51 @@ function _chatMessageCount(sessionId) {
   } catch { return 0; }
 }
 
+// Classify a server-synced session into a source bucket. The type
+// column came from the desktop bridge; visibility "private" stays sync/
+// web, anything else (unlisted/public) is treated as collab so shareable
+// sessions surface together.
+function _classifySynced(s) {
+  if (s.visibility && s.visibility !== 'private') return 'collab';
+  if (s.type && DAW_TYPES.has(String(s.type).toLowerCase())) return 'sync';
+  return 'web';
+}
+
+const SOURCE_LABEL = {
+  local:  'Local',
+  sync:   'Sync',
+  web:    'Web',
+  collab: 'Collab',
+};
+
 /**
  * Projects — flat sessions table.
  *
- * Distinct from /dashboard (which is the workbench home: slideshow +
- * Jump Back In + community feeds). /projects is the place to audit
- * every session with its track count, last-modified date, and access
- * to rename/delete. Uses the existing ProjectCard row component so the
- * wiring (save, rename, delete, load) is unchanged from the legacy
- * Dashboard table.
+ * Local + server-synced sessions are merged into a single list sorted
+ * by last-modified date (newest first). A source-filter dropdown +
+ * name search lets the user narrow without losing chronology — fixes
+ * the prior bug where the SYNC section always rendered above local
+ * regardless of date.
  */
 const Projects = ({ onCreateNew, onLoadProject }) => {
   const { state, dispatch } = useApp();
   const navigate = useNavigate();
-  const [projects, setProjects] = useState([]);
-  const [syncedSessions, setSyncedSessions] = useState([]);    // server rows from /api/sessions
+  const [projects, setProjects] = useState([]);              // local project names
+  const [syncedSessions, setSyncedSessions] = useState([]);  // /api/sessions
   const [syncedError, setSyncedError] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
+
+  // Filter state
+  const [sourceFilter, setSourceFilter] = useState('all');   // all | local | sync | web | collab
+  const [nameQuery, setNameQuery] = useState('');
 
   useEffect(() => { refreshProjects(); }, []);
 
   const refreshProjects = useCallback(() => {
     setProjects(sessionService.getProjects());
-    // Refresh the server-synced list in parallel — same blend desktop's
-    // chat_server.py:1442-1522 does (local DAW projects + remote sessions).
     sessionSyncAPI.listMySessions({ limit: 100 })
       .then((res) => setSyncedSessions(Array.isArray(res?.items) ? res.items : []))
       .catch((err) => {
-        // Silent on auth-not-ready (Clerk still loading); surface anything else.
         if (err?.status !== 401 && err?.status !== 403) {
           setSyncedError(err?.message || String(err));
         }
@@ -116,6 +132,91 @@ const Projects = ({ onCreateNew, onLoadProject }) => {
     refreshProjects();
   }, [projects, refreshProjects]);
 
+  // Build the unified, source-tagged, date-sorted list. Local sessions
+  // need a localStorage hit per name to read the timestamp; we cap that
+  // by memoizing on `projects` + `syncedSessions`.
+  const unifiedItems = useMemo(() => {
+    const localItems = projects.map((name) => {
+      const s = sessionService.loadSession(name);
+      const ts = s?.timestamp ? new Date(s.timestamp) : new Date(0);
+      return {
+        key: `local:${name}`,
+        source: 'local',
+        name,
+        updatedAt: ts,
+        // Carry the local-specific payload through to ProjectCard.
+        local: { name },
+      };
+    });
+
+    const remoteItems = syncedSessions.map((s) => {
+      const ts = s.updated_at ? new Date(s.updated_at)
+              : s.created_at ? new Date(s.created_at)
+              : new Date(0);
+      return {
+        key: `sync:${s.id}`,
+        source: _classifySynced(s),
+        name: s.name || s.id?.slice(0, 8) || 'Untitled',
+        updatedAt: ts,
+        sync: s,
+      };
+    });
+
+    return [...localItems, ...remoteItems].sort(
+      (a, b) => b.updatedAt - a.updatedAt
+    );
+  }, [projects, syncedSessions]);
+
+  // Apply filter + name search.
+  const visibleItems = useMemo(() => {
+    const q = nameQuery.trim().toLowerCase();
+    return unifiedItems.filter((it) => {
+      if (sourceFilter !== 'all' && it.source !== sourceFilter) return false;
+      if (q && !it.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [unifiedItems, sourceFilter, nameQuery]);
+
+  const sourceCounts = useMemo(() => {
+    const c = { all: unifiedItems.length, local: 0, sync: 0, web: 0, collab: 0 };
+    for (const it of unifiedItems) c[it.source] = (c[it.source] || 0) + 1;
+    return c;
+  }, [unifiedItems]);
+
+  const renderSyncedRow = (it, index) => {
+    const s = it.sync;
+    const messageCount = _chatMessageCount(s.id);
+    const updated = it.updatedAt.getTime() ? it.updatedAt.toLocaleDateString() : '—';
+    const open = () => {
+      navigate(`/studio?session=${encodeURIComponent(s.id)}`);
+      if (onLoadProject) onLoadProject(s.name || s.id);
+    };
+    const iconClass = it.source === 'collab' ? 'fa-solid fa-users'
+                    : it.source === 'sync'   ? 'fa-solid fa-cloud-arrow-up'
+                    :                          'fa-solid fa-cloud';
+    return (
+      <div
+        key={it.key}
+        className={styles.sessionRow}
+        onClick={open}
+        style={{ cursor: 'pointer' }}
+      >
+        <div className={styles.sessionNumber}>
+          <i className={iconClass} title={SOURCE_LABEL[it.source]} />
+        </div>
+        <div className={styles.sessionTitle}>
+          <span className={styles.sessionName}>{it.name}</span>
+          <span className={styles.sourceBadge} data-source={it.source}>{SOURCE_LABEL[it.source]}</span>
+        </div>
+        <div className={styles.sessionTracks}>{s.type || 'project'}</div>
+        <div className={styles.sessionDate}>{updated}</div>
+        <div className={styles.sessionDuration}>
+          {messageCount > 0 ? `💬 ${messageCount}` : '—'}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className={styles.projects}>
       <div className={styles.header}>
@@ -140,85 +241,70 @@ const Projects = ({ onCreateNew, onLoadProject }) => {
         />
       </div>
 
-      <div className={styles.sessionsContainer}>
-        {/* Synced section — server-side sessions from /api/sessions.
-            These are the projects the desktop app pushes (Logic / FL /
-            Ableton / web sessions bootstrapped via createSession).
-            Click to open in the studio with `?session=<uuid>`; if a
-            chat thread exists in localStorage for that uuid, show the
-            💬 badge with the message count. True web↔desktop chat sync
-            requires Phase B (auth-service chat_messages endpoint). */}
-        {(syncedSessions.length > 0 || syncedError) && (
-          <div className={styles.sessionsList} style={{ marginBottom: 24 }}>
-            <div className={styles.sessionsHeader}>
-              <div className={styles.headerNumber}>SYNC</div>
-              <div className={styles.headerTitle}>Title</div>
-              <div className={styles.headerTracks}>Type</div>
-              <div className={styles.headerDate}>Updated</div>
-              <div className={styles.headerDuration}>Chat</div>
-            </div>
-            {syncedError && (
-              <div className={styles.emptyState} style={{ padding: '16px 0', fontSize: 12, opacity: 0.7 }}>
-                Couldn't load synced sessions: {syncedError}
-              </div>
-            )}
-            {syncedSessions.map((s) => {
-              const messageCount = _chatMessageCount(s.id);
-              const updated = s.updated_at ? new Date(s.updated_at).toLocaleDateString() : '—';
-              const open = () => {
-                navigate(`/studio?session=${encodeURIComponent(s.id)}`);
-                if (onLoadProject) onLoadProject(s.name || s.id);
-              };
-              return (
-                <div
-                  key={s.id}
-                  className={styles.sessionRow}
-                  onClick={open}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <div className={styles.sessionNumber}>
-                    <i className="fa-solid fa-cloud" title="Server-synced session" />
-                  </div>
-                  <div className={styles.sessionTitle}>
-                    <span className={styles.sessionName}>{s.name || s.id.slice(0, 8)}</span>
-                  </div>
-                  <div className={styles.sessionTracks}>{s.type || 'project'}</div>
-                  <div className={styles.sessionDate}>{updated}</div>
-                  <div className={styles.sessionDuration}>
-                    {messageCount > 0 ? `💬 ${messageCount}` : '—'}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+      {/* Filters */}
+      <div className={styles.filterBar}>
+        <input
+          type="search"
+          placeholder="Search by name…"
+          value={nameQuery}
+          onChange={(e) => setNameQuery(e.target.value)}
+          className={styles.filterSearch}
+          aria-label="Search projects by name"
+        />
+        <select
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+          className={styles.filterSelect}
+          aria-label="Filter projects by source"
+        >
+          <option value="all">All sources ({sourceCounts.all})</option>
+          <option value="local">Local ({sourceCounts.local})</option>
+          <option value="sync">Sync ({sourceCounts.sync})</option>
+          <option value="web">Web ({sourceCounts.web})</option>
+          <option value="collab">Collab ({sourceCounts.collab})</option>
+        </select>
+        {syncedError && (
+          <span className={styles.filterError} title={syncedError}>
+            sync unavailable
+          </span>
         )}
+      </div>
 
-        {projects.length === 0 && syncedSessions.length === 0 ? (
+      <div className={styles.sessionsContainer}>
+        {visibleItems.length === 0 ? (
           <div className={styles.emptyState}>
             <i className="fa-solid fa-music"></i>
-            <h3>No sessions yet</h3>
-            <p>Create your first session to get started</p>
+            <h3>{unifiedItems.length === 0 ? 'No sessions yet' : 'No matches'}</h3>
+            <p>
+              {unifiedItems.length === 0
+                ? 'Create your first session to get started'
+                : 'Try a different filter or search term'}
+            </p>
           </div>
-        ) : projects.length > 0 && (
+        ) : (
           <div className={styles.sessionsList}>
             <div className={styles.sessionsHeader}>
               <div className={styles.headerNumber}>#</div>
               <div className={styles.headerTitle}>Title</div>
-              <div className={styles.headerTracks}>Tracks</div>
+              <div className={styles.headerTracks}>Type</div>
               <div className={styles.headerDate}>Date Modified</div>
-              <div className={styles.headerDuration}>Duration</div>
+              <div className={styles.headerDuration}>Chat</div>
             </div>
 
-            {projects.map((projectName, index) => (
-              <ProjectCard
-                key={projectName}
-                projectName={projectName}
-                index={index + 1}
-                onLoad={handleLoadProject}
-                onDelete={handleDeleteProject}
-                onRename={handleRenameProject}
-              />
-            ))}
+            {visibleItems.map((it, index) =>
+              it.source === 'local' ? (
+                <ProjectCard
+                  key={it.key}
+                  projectName={it.local.name}
+                  index={index + 1}
+                  onLoad={handleLoadProject}
+                  onDelete={handleDeleteProject}
+                  onRename={handleRenameProject}
+                />
+              ) : (
+                renderSyncedRow(it, index)
+              )
+            )}
           </div>
         )}
       </div>
