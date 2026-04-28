@@ -1238,38 +1238,59 @@
   pointer-events: none;
   padding: 24px;
 }
-/* Two side-by-side cards: drop-to-upload + create-empty-track. Cap the
- * combined width so the two cards stay visually balanced even on a
- * very wide timeline. Stacks vertically on narrower viewports. */
-.sd-empty-upload.sd-empty-upload-split {
-  gap: 12px;
-}
-.sd-empty-upload.sd-empty-upload-split .sd-empty-upload-inner {
-  flex: 1 1 0;
-  max-width: 320px;
-}
-@media (max-width: 720px) {
-  .sd-empty-upload.sd-empty-upload-split {
-    flex-direction: column;
-  }
-}
-/* Compact drop target. The whole card is a button so clicking it opens
- * the file picker — drag-drop on the timeline still works anywhere. */
-.sd-empty-upload-inner {
+/* Single bordered card holding both affordances side-by-side with an
+ * "or" divider between them. Each half is clickable independently —
+ * left opens the file picker, right creates an empty MIDI track. The
+ * dashed border lives on the outer card so the two halves read as one
+ * unit. Stacks vertically on narrow viewports with the divider rotated. */
+.sd-empty-upload-card {
   pointer-events: auto;
-  max-width: 320px; width: 100%;
+  display: flex; align-items: stretch;
+  width: 100%; max-width: 660px;
   background: var(--wb-surface);
   border: 1.5px dashed var(--wb-rule-strong);
   border-radius: var(--wb-radius);
-  padding: 14px 18px;
-  text-align: center;
   font-family: var(--wb-font-mono);
-  cursor: pointer;
+  overflow: hidden;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
-.sd-empty-upload-inner:hover {
-  border-color: var(--wb-ink);
-  background: var(--wb-bg);
+.sd-empty-upload-card:hover { border-color: var(--wb-ink); }
+.sd-empty-upload-half {
+  flex: 1 1 0;
+  background: transparent; border: 0;
+  padding: 14px 18px;
+  text-align: center;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.sd-empty-upload-half:hover { background: var(--wb-bg); }
+.sd-empty-upload-or {
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
+  position: relative;
+  padding: 0 6px;
+  color: var(--wb-ink-mute);
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: var(--wb-tracking-caps);
+}
+.sd-empty-upload-or::before {
+  content: ''; position: absolute;
+  top: 12px; bottom: 12px; left: 50%;
+  width: 1px; background: var(--wb-rule-strong);
+  transform: translateX(-50%);
+}
+.sd-empty-upload-or span {
+  position: relative; z-index: 1;
+  background: var(--wb-surface);
+  padding: 2px 4px;
+}
+@media (max-width: 720px) {
+  .sd-empty-upload-card { flex-direction: column; max-width: 320px; }
+  .sd-empty-upload-or::before {
+    top: 50%; bottom: auto; left: 12px; right: 12px;
+    width: auto; height: 1px; transform: translateY(-50%);
+  }
 }
 .sd-empty-upload-title {
   font-size: 11px; font-weight: 600;
@@ -1290,7 +1311,7 @@
   outline-offset: -6px;
   background: var(--wb-accent-soft);
 }
-.sd-timeline.sd-drag-over .sd-empty-upload-inner {
+.sd-timeline.sd-drag-over .sd-empty-upload-card {
   border-color: var(--wb-accent);
   background: var(--wb-bg);
 }

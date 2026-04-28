@@ -62,6 +62,9 @@ import { useAgentWebSocket } from '../ChatWindow/useAgentWebSocket';
 import { useLiveParamDeltas } from '../../hooks/useLiveParamDeltas';
 import { useSessionCommits } from '../../hooks/useSessionCommits';
 import { useEditStream } from '../../hooks/useEditStream';
+import { useCollabPresence } from '../../hooks/useCollabPresence';
+import PresenceAvatars from './PresenceAvatars';
+import ShareModal from './ShareModal';
 
 import './StudioDev.css';
 
@@ -406,7 +409,7 @@ export default function StudioDev() {
   const [sessionBusExpanded, setSessionBusExpanded] = useState({}); // busId → boolean
   const [historyFilterMe, setHistoryFilterMe] = useState(false);    // History tab: only show my commits
   const [openAttestCommit, setOpenAttestCommit] = useState(null);   // commit id whose AttestationsPanel is expanded
-  const [shareCopied, setShareCopied] = useState(false);            // header Share button feedback flash
+  // (Share button — copy-flash state lives in ShareModal now.)
 
   // Server-side commit DAG (alembic 009 / commit_minter). When the active
   // session has been synced, this is the source of truth for the History
@@ -419,6 +422,11 @@ export default function StudioDev() {
   // own writes are dropped via the outbound-op-id registry in
   // sessionEditsAPI; reconnects are automatic.
   useEditStream(state.activeSessionId || null);
+
+  // Share modal state — opened from the menubar Share button. Lazy-mount
+  // (only renders when open) so the listShares fetch fires on click, not
+  // on every studio open.
+  const [shareOpen, setShareOpen] = useState(false);
 
   // Cream-wash loading overlay shown on /studio entry until ONNX models
   // (latentEncoder / polypitch / etc.) report ready. Cleared on the first
@@ -459,6 +467,18 @@ export default function StudioDev() {
       avatarUrl: clerk.user.imageUrl || null,
     });
   }, [clerk?.user?.id, clerk?.user?.fullName, clerk?.user?.imageUrl]);
+
+  // Live collab presence — opens a WS to /ws/collab/{sid} when a session is
+  // active. Returns the OTHER peers (self is excluded). The hook gates on
+  // !sessionId internally so this is safe before a session loads.
+  const collabUsername = clerk?.user?.fullName
+    || clerk?.user?.primaryEmailAddress?.emailAddress
+    || clerk?.user?.username
+    || '';
+  const { peers: collabPeers, connected: collabConnected } = useCollabPresence(
+    state.activeSessionId || null,
+    collabUsername,
+  );
   const recorder = useAudioRecorder();
   const clipboardRef = useRef(null);  // for Cmd-C/X/V fallback when reducer copy paths aren't enough
 
@@ -2530,10 +2550,11 @@ export default function StudioDev() {
           PROJECT: {(state.projectName || 'untitled').toLowerCase().replace(/\s+/g, '_')}.dsd · SR 48kHz · 24bit ·
           {' '}{autosaveStatus === 'saving' ? 'saving' : autosaveStatus === 'saved' ? 'saved' : autosaveStatus === 'failed' ? 'save failed' : 'idle'}
         </div>
-        {/* Current-user pfp + Share button. Other-user presence avatars
-            slot in between these once the auth-service exposes a
-            session-participants endpoint (see useEditStream.js — SSE today
-            carries edit ops only, not presence). */}
+        {/* Other-user presence avatars (driven by useCollabPresence WS) +
+            current-user pfp + Share button. PresenceAvatars renders nothing
+            when no peers are connected, so the menubar stays compact when
+            you're solo. */}
+        <PresenceAvatars peers={collabPeers} connected={collabConnected} />
         {clerk?.user && (
           <img
             className="wb-user-avatar"
@@ -2544,24 +2565,15 @@ export default function StudioDev() {
         )}
         <button
           className="wb-menu__item"
-          onClick={async () => {
+          onClick={() => {
             if (!state.activeSessionId) {
               alert('This session hasn\'t been synced to the server yet — sync it first to get a shareable link.');
               return;
             }
-            const url = `${window.location.origin}/studio?session=${encodeURIComponent(state.activeSessionId)}`;
-            try {
-              await navigator.clipboard.writeText(url);
-              setShareCopied(true);
-              setTimeout(() => setShareCopied(false), 2000);
-            } catch {
-              window.prompt('Copy this link:', url);
-            }
+            setShareOpen(true);
           }}
-          title="Copy a session link. Recipient must already be a collaborator on the auth-service — token-based invites need a backend mint endpoint."
-        >
-          {shareCopied ? 'Copied ✓' : 'Share'}
-        </button>
+          title="Manage invite links and share this session"
+        >Share</button>
       </header>
 
       {/* ================== MAIN SPLIT ================== */}
@@ -3178,19 +3190,22 @@ export default function StudioDev() {
                   ))}
                 </div>
                 {timelineBuses.length === 0 && (
-                  <div className="sd-empty-upload sd-empty-upload-split">
-                    <button type="button" className="sd-empty-upload-inner" onClick={triggerUpload}>
-                      <div className="sd-empty-upload-title">Drop an audio file here</div>
-                      <div className="sd-empty-upload-body">WAV · MP3 · MIDI · FLAC · M4A</div>
-                    </button>
-                    <button
-                      type="button"
-                      className="sd-empty-upload-inner"
-                      onClick={() => { setActiveMode('midi'); addEmptyTrack(); }}
-                    >
-                      <div className="sd-empty-upload-title">Create a new track</div>
-                      <div className="sd-empty-upload-body">Empty MIDI · piano roll opens</div>
-                    </button>
+                  <div className="sd-empty-upload">
+                    <div className="sd-empty-upload-card">
+                      <button type="button" className="sd-empty-upload-half" onClick={triggerUpload}>
+                        <div className="sd-empty-upload-title">Drop an audio file here</div>
+                        <div className="sd-empty-upload-body">WAV · MP3 · MIDI · FLAC · M4A</div>
+                      </button>
+                      <div className="sd-empty-upload-or"><span>or</span></div>
+                      <button
+                        type="button"
+                        className="sd-empty-upload-half"
+                        onClick={() => { setActiveMode('midi'); addEmptyTrack(); }}
+                      >
+                        <div className="sd-empty-upload-title">Create a new track</div>
+                        <div className="sd-empty-upload-body">Empty MIDI · piano roll opens</div>
+                      </button>
+                    </div>
                   </div>
                 )}
                 {timelineBuses.map((bus, bi) => {
@@ -3927,6 +3942,12 @@ export default function StudioDev() {
       </div>
 
       <OutOfCreditsModal />
+      {shareOpen && (
+        <ShareModal
+          sessionId={state.activeSessionId}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </div>
   );
 }
