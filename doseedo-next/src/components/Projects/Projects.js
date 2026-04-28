@@ -220,7 +220,7 @@ const Projects = ({ onCreateNew, onLoadProject }) => {
   return (
     <div className={styles.projects}>
       <div className={styles.header}>
-        <h1 className={styles.title}>Projects</h1>
+        <h1 className={`${styles.title} page-title`}>Projects</h1>
         <button onClick={handleCreateNew} className={styles.createBtn}>
           <i className="fa-solid fa-plus"></i>
           <span>New Session</span>

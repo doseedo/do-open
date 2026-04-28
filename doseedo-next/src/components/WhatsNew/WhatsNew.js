@@ -37,7 +37,7 @@ const WhatsNew = () => {
   return (
     <div className={styles.whatsNewContainer}>
       <div className={styles.header}>
-        <h1 className={styles.title}>What's New</h1>
+        <h1 className={`${styles.title} page-title`}>What's New</h1>
         <p className={styles.subtitle}>Latest updates and features</p>
       </div>
 

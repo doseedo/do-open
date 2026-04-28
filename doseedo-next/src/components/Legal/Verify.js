@@ -102,7 +102,7 @@ function Hero() {
         § Verify · Provenance lookup
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.3fr) minmax(0,1fr)', gap: 60, alignItems: 'end' }}>
-        <h1 style={{ fontFamily: C.head, fontSize: 'clamp(32px, 4.2vw, 48px)', fontWeight: 600, letterSpacing: -1.2, lineHeight: 1.08, margin: 0 }}>
+        <h1 className="page-title">
           Did <span style={{ color: C.accent }}>doseedo</span> make this?
         </h1>
         <div style={{ fontFamily: C.sans, fontSize: 13, color: C.inkSoft, lineHeight: 1.6, paddingBottom: 4, maxWidth: 420 }}>

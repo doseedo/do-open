@@ -14,7 +14,7 @@ import styles from './Legal.module.css';
 const Help = () => (
   <div className={styles.legal}>
     <div className={styles.header}>
-      <h1 className={styles.title}>Help</h1>
+      <h1 className={`${styles.title} page-title`}>Help</h1>
       <p className={styles.lastUpdated}>Getting started with Doseedo</p>
     </div>
 

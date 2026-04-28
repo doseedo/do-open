@@ -519,7 +519,7 @@ const Research = () => {
   return (
     <div className={styles.research}>
       <div className={styles.header}>
-        <h1 className={styles.title}>Research</h1>
+        <h1 className={`${styles.title} page-title`}>Research</h1>
       </div>
 
       <div className={styles.sessionsContainer}>

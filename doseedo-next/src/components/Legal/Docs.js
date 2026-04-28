@@ -151,7 +151,7 @@ function PageHead({ kicker, title, lede }) {
       <div style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.8, textTransform: 'uppercase', color: C.inkMute, marginBottom: 10 }}>
         § {kicker}
       </div>
-      <h1 style={{ fontFamily: C.head, fontSize: 'clamp(28px, 3.4vw, 40px)', fontWeight: 600, letterSpacing: -0.8, lineHeight: 1.1, margin: 0 }}>
+      <h1 className="page-title">
         {title}
       </h1>
       {lede && (

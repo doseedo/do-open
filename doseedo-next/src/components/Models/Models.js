@@ -184,7 +184,7 @@ function Models() {
       {/* Header */}
       <div className={styles.head}>
         <div>
-          <h1 className={styles.title}>Models</h1>
+          <h1 className={`${styles.title} page-title`}>Models</h1>
           <div className={styles.sub}>
             <b>{counts.total} models</b> &nbsp;·&nbsp; browse · benchmark · deploy
           </div>

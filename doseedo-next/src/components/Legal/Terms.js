@@ -4,7 +4,7 @@ import styles from './Legal.module.css';
 const Terms = () => (
   <div className={styles.legal}>
     <div className={styles.header}>
-      <h1 className={styles.title}>Terms of Service</h1>
+      <h1 className={`${styles.title} page-title`}>Terms of Service</h1>
       <p className={styles.lastUpdated}>Last updated: April 25, 2026</p>
     </div>
 

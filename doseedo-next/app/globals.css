@@ -5,3 +5,32 @@
 
 html, body { margin: 0; padding: 0; }
 #root { min-height: 100vh; }
+
+/* ----------------------------------------------------------------------
+   Page header — the single canonical title style for every dashboard
+   subpage (Home, Search, Projects, Tools, Plugins, Models, Research,
+   What's New, Downloads, Help, Privacy, Terms, Plans, About, Feedback,
+   Verify, Docs, …).
+
+   Pages used to roll their own: Models 36 / Inter 600, Plugins 48 / 700,
+   Tools/Plans/Verify/Docs inline-styled Lora, the rest inheriting Inter
+   at varying sizes. Locking everything to one Lora Semibold rule here
+   keeps the visual rhythm consistent across the dashboard. The page
+   wrapper owns the y offset; this element zeros its own top margin so
+   the first title in every subpage lines up.
+   ---------------------------------------------------------------------- */
+
+/* `body` prefix raises specificity to (0,2,0) so the global rule beats
+   module-scoped `.Models_title__abc { font-size: 48px }` style declarations
+   regardless of stylesheet source order. */
+body .pageTitle,
+body .page-title {
+  font-family: 'Lora', Georgia, serif;
+  font-weight: 600;            /* Semibold */
+  font-size: 36px;
+  line-height: 1.15;
+  letter-spacing: -0.4px;
+  margin: 0 0 24px 0;
+  padding-top: 0;
+  color: inherit;
+}

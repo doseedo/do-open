@@ -435,7 +435,7 @@ const Plugins = () => {
   return (
     <div className={styles.plugins}>
       <div className={styles.header}>
-        <h1 className={styles.title}>Plugins</h1>
+        <h1 className={`${styles.title} page-title`}>Plugins</h1>
       </div>
 
       {/* Main Tabs */}

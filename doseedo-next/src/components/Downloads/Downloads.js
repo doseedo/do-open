@@ -47,7 +47,7 @@ const Downloads = () => {
   return (
     <div className={styles.downloads}>
       <div className={styles.header}>
-        <h1 className={styles.title}>Downloads</h1>
+        <h1 className={`${styles.title} page-title`}>Downloads</h1>
       </div>
 
       <div className={styles.sessionsContainer}>

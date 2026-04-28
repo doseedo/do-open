@@ -32,7 +32,7 @@ const Feedback = () => {
   return (
     <div className={styles.legal}>
       <div className={styles.header}>
-        <h1 className={styles.title}>Feedback</h1>
+        <h1 className={`${styles.title} page-title`}>Feedback</h1>
         <p className={styles.lastUpdated}>We read everything</p>
       </div>
 

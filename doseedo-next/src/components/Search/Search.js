@@ -87,7 +87,7 @@ const Search = () => {
   return (
     <div className={styles.searchContainer}>
       <div className={styles.searchHeader}>
-        <h1 className={styles.searchTitle}>Search</h1>
+        <h1 className={`${styles.searchTitle} page-title`}>Search</h1>
         <p className={styles.searchSubtitle}>Find your projects, files, and content</p>
       </div>
 
