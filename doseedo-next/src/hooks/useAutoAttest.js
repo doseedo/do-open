@@ -55,6 +55,19 @@ export function useAutoAttest({ sessionId, commits, currentUsername, enabled, re
   // passed (still useful if /me is unavailable but the two happen to match).
   const effectiveUsername = serverUsername || currentUsername || '';
 
+  // Poll-while-pending: once a commit has attestation_total > 0 but
+  // polygon_status !== 'confirmed', the publisher is the only thing that
+  // can flip it. Refetch server history every 15s so the pill turns green
+  // when the on-chain anchor lands, instead of staying grey forever.
+  const pendingAnchor = Array.isArray(commits)
+    ? commits.some((c) => (c.attestation_total || 0) > 0 && c.polygon_status !== 'confirmed')
+    : false;
+  useEffect(() => {
+    if (!enabled || !sessionId || !pendingAnchor || typeof refresh !== 'function') return;
+    const id = setInterval(() => { refresh().catch(() => { /* ignore */ }); }, 15_000);
+    return () => clearInterval(id);
+  }, [enabled, sessionId, pendingAnchor, refresh]);
+
   const isAttesting = useCallback((commitId) => {
     return inflightRef.current.has(commitId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
