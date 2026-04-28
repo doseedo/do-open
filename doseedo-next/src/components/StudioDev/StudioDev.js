@@ -62,6 +62,7 @@ import { useAgentWebSocket } from '../ChatWindow/useAgentWebSocket';
 import { useLiveParamDeltas } from '../../hooks/useLiveParamDeltas';
 import { useSessionCommits } from '../../hooks/useSessionCommits';
 import { useCommitSyncer } from '../../hooks/useCommitSyncer';
+import { createSession as bootstrapServerSession } from '../../services/sessionSyncAPI';
 import { useEditStream } from '../../hooks/useEditStream';
 import { useCollabPresence } from '../../hooks/useCollabPresence';
 import PresenceAvatars from './PresenceAvatars';
@@ -474,6 +475,38 @@ export default function StudioDev() {
       avatarUrl: clerk.user.imageUrl || null,
     });
   }, [clerk?.user?.id, clerk?.user?.fullName, clerk?.user?.imageUrl]);
+
+  // Web-only session bootstrap. If the user starts a brand-new project on
+  // the web (no ?session= param, no desktop sync), state.activeSessionId
+  // is null and useCommitSyncer above can't push commits anywhere. The
+  // moment a local commit lands, lazily POST /api/sessions to mint a
+  // server-side session row (idempotent-by-name on the auth-service) and
+  // dispatch the returned UUID. From then on commits + attestations
+  // route normally and the History tab flips to useServer-true.
+  // Placed AFTER `const clerk = useUser()` so the deps array doesn't
+  // hit a TDZ on `clerk?.user` during render.
+  const bootstrappingRef = useRef(false);
+  useEffect(() => {
+    if (state.activeSessionId) return;
+    if (bootstrappingRef.current) return;
+    if (!clerk?.user) return;
+    const localCommitCount = Object.keys(state.sessionHistory?.commits || {}).length;
+    if (localCommitCount === 0) return;
+    const projectName = state.projectName || 'Untitled Session';
+    bootstrappingRef.current = true;
+    bootstrapServerSession({ name: projectName })
+      .then((row) => {
+        if (!row?.id) return;
+        dispatch({ type: 'SET_ACTIVE_SESSION_ID', payload: row.id });
+        sessionService.setActiveProject(row.id);
+        sessionService.setLastSyncedSessionId(row.id);
+        console.log(`✅ Bootstrapped server session ${row.id} for "${projectName}"`);
+      })
+      .catch((err) => {
+        bootstrappingRef.current = false;
+        console.warn('[session-bootstrap] failed:', err?.message || err);
+      });
+  }, [state.activeSessionId, state.sessionHistory, state.projectName, clerk?.user, dispatch]);
 
   // Live collab presence — opens a WS to /ws/collab/{sid} when a session is
   // active. Returns the OTHER peers (self is excluded). The hook gates on
