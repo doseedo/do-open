@@ -382,6 +382,20 @@ image = (
         "torchvision==0.20.1",
         extra_index_url="https://download.pytorch.org/whl/cu121",
     )
+    # AudioSeal (inaudible watermark) + psycopg2 (attestation INSERT into
+    # Neon). Called from modal/stemphonic_watermark_hook.py — every audio
+    # output gets a fresh watermark seed before the Opus encode + R2
+    # upload. Best-effort: the hook returns the original bytes on failure.
+    # Pre-pull the AudioSeal weights so cold start doesn't depend on
+    # huggingface.co reachability.
+    .pip_install(
+        "audioseal==0.1.4",
+        "psycopg2-binary==2.9.9",
+    )
+    .run_commands(
+        "python -c \"from audioseal import AudioSeal; "
+        "AudioSeal.load_generator('audioseal_wm_16bits')\""
+    )
     # demucs — called by stemphonic_server._run_demucs_separation
     # (`import demucs.api; Separator(model="htdemucs_6s")`).
     #
@@ -500,6 +514,14 @@ app = modal.App("doseedo-stemphonic")
         # recycles. The same INTERNAL_SECRET from doseedo-gate is reused to
         # call the auth-service POST /api/generations registration endpoint.
         modal.Secret.from_name("doseedo-r2"),
+        # Provides DATABASE_URL for the attestation INSERT in
+        # stemphonic_watermark_hook.py. Same Neon connection string the
+        # auth-service uses; scoped to its own secret so we can rotate
+        # without touching the auth gate.
+        # Create with:
+        #   modal secret create doseedo-attestation-write \
+        #     DATABASE_URL=postgres://user:pass@ep-xxx.aws.neon.tech/doseedo
+        modal.Secret.from_name("doseedo-attestation-write"),
     ],
     timeout=60 * 30,           # 30 min per request (long ACE-Step gens)
     scaledown_window=60 * 15,  # 15 min warm window — one active user keeps it hot
@@ -957,8 +979,13 @@ class Stemphonic:
                     _task_r2_cache.pop(tid, None)
 
         def _register_generation(user_id, task_id, kind, r2_key, content_type,
-                                 filename, duration_sec=None, metadata=None):
-            """POST to auth-service /api/generations. Returns dict or None."""
+                                 filename, duration_sec=None, metadata=None,
+                                 sha256=None):
+            """POST to auth-service /api/generations. Returns dict or None.
+
+            When `sha256` is set the auth-service upserts a BlobIndex row so
+            duplicate generations (same loop-pack rendered for many sessions)
+            collapse to a single R2 object via ref_count."""
             if not _GEN_REGISTER_URL or not _INTERNAL_SECRET:
                 return None
             body = _gj.dumps({
@@ -970,6 +997,7 @@ class Stemphonic:
                 "filename": filename,
                 "duration_sec": duration_sec,
                 "metadata": metadata or {},
+                "sha256": sha256,
             }).encode()
             try:
                 req = _gur.Request(
@@ -998,14 +1026,50 @@ class Stemphonic:
 
         def _guess_content_type(filename: str) -> str:
             fn = filename.lower()
+            if fn.endswith(".opus") or fn.endswith(".ogg"): return "audio/ogg"
             if fn.endswith(".wav"):  return "audio/wav"
             if fn.endswith(".mp3"):  return "audio/mpeg"
             if fn.endswith(".flac"): return "audio/flac"
-            if fn.endswith(".ogg"):  return "audio/ogg"
             if fn.endswith(".mid") or fn.endswith(".midi"):
                 return "audio/midi"
             if fn.endswith(".pt"):   return "application/octet-stream"
             return "application/octet-stream"
+
+        def _sha256_bytes(data: bytes) -> str:
+            import hashlib as _hl
+            return _hl.sha256(data).hexdigest()
+
+        def _cas_key(sha256: str) -> str:
+            # Mirrors auth-service/app/routers/uploads.py:_cas_key — the
+            # BlobIndex upsert on the server side expects this exact layout.
+            return f"blobs/sha256/{sha256[:2]}/{sha256}"
+
+        def _encode_to_opus_bytes(local_path):
+            """Encode any wav/aiff/mp3/flac → Opus 128 kbps OGG bytes.
+
+            Returns (bytes, ".opus", "audio/ogg") on success or None on
+            ffmpeg failure (caller falls back to the original file)."""
+            try:
+                from audio_opus import encode_file as _opus_encode
+            except ImportError:
+                # Modal mounts modal/ at /root/modal — try the absolute path.
+                import importlib.util as _ilu, sys as _sys
+                spec = _ilu.spec_from_file_location(
+                    "audio_opus", "/root/modal/audio_opus.py"
+                )
+                if spec is None or spec.loader is None:
+                    return None
+                mod = _ilu.module_from_spec(spec)
+                _sys.modules["audio_opus"] = mod
+                spec.loader.exec_module(mod)
+                _opus_encode = mod.encode_file
+            try:
+                return _opus_encode(str(local_path))
+            except Exception as e:
+                _r2_log.warning(
+                    "opus encode failed for %s: %s — uploading original", local_path, e
+                )
+                return None
 
         def _persist_task_outputs(user_id, task_id, kind, output_dir):
             """Walk the on-disk output dir for a completed task, upload each
@@ -1040,11 +1104,95 @@ class Stemphonic:
                 if fp.suffix.lower() not in (".wav", ".mp3", ".flac", ".ogg",
                                              ".mid", ".midi"):
                     continue
-                rel = fp.relative_to(task_dir)
-                key = f"generations/{user_id}/{task_id}/{rel}"
-                ct = _guess_content_type(fp.name)
+
+                # Audio (non-MIDI) → embed inaudible watermark, then encode
+                # to Opus 128k OGG so we store ~1/40th the bytes of the
+                # source WAV. The watermark survives Opus 128k by design;
+                # AudioSeal is robust to that level of perceptual encoding.
+                # MIDI is tiny and skips both the watermark and the encode.
+                is_audio = fp.suffix.lower() in (".wav", ".mp3", ".flac", ".ogg")
+                upload_filename = fp.name
+                payload_bytes = None
+                generation_metadata = {}
+                if is_audio:
+                    # Watermark embed + attestation row. Both are best-
+                    # effort: a failure leaves the original WAV bytes
+                    # intact and the user-facing flow continues. The seed
+                    # (when present) gets stashed into the generation row
+                    # metadata so the auth-service / verifier can resolve
+                    # it back to this generation.
+                    try:
+                        from stemphonic_watermark_hook import embed_and_attest
+                    except ImportError:
+                        import importlib.util as _ilu, sys as _sys
+                        _spec = _ilu.spec_from_file_location(
+                            "stemphonic_watermark_hook",
+                            "/root/modal/stemphonic_watermark_hook.py",
+                        )
+                        if _spec is not None and _spec.loader is not None:
+                            _mod = _ilu.module_from_spec(_spec)
+                            _sys.modules["stemphonic_watermark_hook"] = _mod
+                            _spec.loader.exec_module(_mod)
+                            embed_and_attest = _mod.embed_and_attest
+                        else:
+                            embed_and_attest = None
+
+                    if embed_and_attest is not None:
+                        try:
+                            with open(fp, "rb") as _fh:
+                                _orig_bytes = _fh.read()
+                            _wm_bytes, _seed = embed_and_attest(
+                                _orig_bytes,
+                                generation_id=task_id,
+                                user_id=str(user_id) if user_id is not None else None,
+                                tier="unknown",  # TODO: plumb tier through gate response
+                                model_version="stemphonic-2026.04",
+                            )
+                            # Overwrite the on-disk file so /api/generate-stemphonic/download
+                            # serves the watermarked copy too (fp is what
+                            # send_file streams from).
+                            if _wm_bytes is not _orig_bytes:
+                                with open(fp, "wb") as _fh:
+                                    _fh.write(_wm_bytes)
+                            if _seed:
+                                generation_metadata["watermark_seed"] = _seed
+                        except Exception as _e:
+                            _r2_log.warning(
+                                "watermark hook crashed for task=%s file=%s: %s",
+                                task_id, fp.name, _e,
+                            )
+
+                    encoded = _encode_to_opus_bytes(fp)
+                    if encoded is not None:
+                        payload_bytes = encoded
+                        upload_filename = fp.stem + ".opus"
+
+                if payload_bytes is None:
+                    try:
+                        with open(fp, "rb") as _fh:
+                            payload_bytes = _fh.read()
+                    except OSError as e:
+                        _r2_log.warning("read failed %s: %s", fp, e)
+                        continue
+
+                ct = _guess_content_type(upload_filename)
+                sha256 = _sha256_bytes(payload_bytes)
+
+                # Content-addressed key — identical bytes (same loop pack
+                # rendered for many sessions) collapse to one R2 object,
+                # and the auth-service BlobIndex upsert bumps ref_count.
+                key = _cas_key(sha256)
                 try:
-                    uploaded_key = _r2_upload_file(str(fp), key, ct)
+                    client = _r2_client()
+                    if client is None:
+                        uploaded_key = None
+                    else:
+                        bucket = os.environ.get("R2_BUCKET")
+                        client.put_object(
+                            Bucket=bucket, Key=key,
+                            Body=payload_bytes, ContentType=ct,
+                        )
+                        uploaded_key = key
                 except Exception as e:
                     _r2_log.exception(
                         "R2 upload crashed for task=%s file=%s: %s", task_id, fp, e
@@ -1062,7 +1210,9 @@ class Stemphonic:
                     kind=kind,
                     r2_key=uploaded_key,
                     content_type=ct,
-                    filename=fp.name,
+                    filename=upload_filename,
+                    sha256=sha256,
+                    metadata=generation_metadata or None,
                 )
                 if reg is None:
                     # Registration failed — we already uploaded, but the row
@@ -1072,7 +1222,7 @@ class Stemphonic:
                         "key": uploaded_key,
                         "url": _r2_generate_download_url(uploaded_key) or "",
                         "generation_id": None,
-                        "filename": fp.name,
+                        "filename": upload_filename,
                     })
                     continue
 
@@ -1080,7 +1230,7 @@ class Stemphonic:
                     "key": reg.get("r2_key", uploaded_key),
                     "url": reg.get("download_url") or _r2_generate_download_url(uploaded_key) or "",
                     "generation_id": reg.get("id"),
-                    "filename": fp.name,
+                    "filename": upload_filename,
                 })
 
             with _task_lock:

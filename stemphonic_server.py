@@ -4945,7 +4945,14 @@ def upload_latent():
     """Browser POSTs a .doae binary (encoded locally via WebGPU encoder).
     Server validates the VAE version, writes to /scratch/cache/latents
     as a torch .pt for compatibility with the rest of the pipeline,
-    returns the new latent_id. NO wav round-trip."""
+    returns the new latent_id. NO wav round-trip.
+
+    Content-addressed dedup: identical .doae bodies (same audio re-uploaded
+    across sessions, same loop pack opened in many sessions) collapse to
+    a single .pt on disk. The hash → latent_id map persists in
+    `LATENT_DIR/.cas_index.json` so dedup survives container restarts as
+    long as /scratch is mounted (Modal volume keeps it).
+    """
     body = request.get_data() or b""
     try:
         L, fps, vae_hash = _parse_doae(body)
@@ -4957,6 +4964,27 @@ def upload_latent():
             "expected": _vae_version_hash(),
             "got": vae_hash,
         }), 409
+
+    import hashlib as _hl, json as _json
+    sha = _hl.sha256(body).hexdigest()
+    cas_index_path = os.path.join(LATENT_DIR, ".cas_index.json")
+    try:
+        with open(cas_index_path) as _fh:
+            cas_index = _json.load(_fh)
+    except (FileNotFoundError, _json.JSONDecodeError):
+        cas_index = {}
+
+    hit_id = cas_index.get(sha)
+    if hit_id and os.path.exists(os.path.join(LATENT_DIR, f"{hit_id}.pt")):
+        logger.info("[upload-latent] dedup hit sha=%s id=%s", sha[:12], hit_id)
+        return jsonify({
+            "latent_id": hit_id,
+            "n_frames": int(L.shape[0]),
+            "fps": int(fps),
+            "vae_version": vae_hash,
+            "deduped": True,
+        })
+
     latent_id = uuid.uuid4().hex[:12]
     latent_path = os.path.join(LATENT_DIR, f"{latent_id}.pt")
     torch.save({
@@ -4965,12 +4993,26 @@ def upload_latent():
         "fps": int(fps),
         "source": "browser-encode",
         "vae_version": vae_hash,
+        "sha256": sha,
     }, latent_path)
+    cas_index[sha] = latent_id
+    try:
+        tmp = cas_index_path + ".tmp"
+        with open(tmp, "w") as _fh:
+            _json.dump(cas_index, _fh)
+        os.replace(tmp, cas_index_path)
+    except Exception as _e:
+        # Index write failure is non-fatal — the .pt is still on disk and
+        # this upload's response below carries the latent_id. The next
+        # identical upload just won't dedup until the index is healthy again.
+        logger.warning("[upload-latent] cas_index write failed: %s", _e)
+
     return jsonify({
         "latent_id": latent_id,
         "n_frames": int(L.shape[0]),
         "fps": int(fps),
         "vae_version": vae_hash,
+        "deduped": False,
     })
 
 
