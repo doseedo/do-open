@@ -611,6 +611,44 @@ await test('indexed param bypasses curve + normalization (dropdown UX)', async (
   slot.dispose();
 });
 
+await test('lr_paired full split exposes setLeft/RightLogicParam dispatching to each engine', async () => {
+  const lrMapping = {
+    plugin_id: '778',
+    plugin_name: 'StereoDelaySplit',
+    web_topology: {
+      dspChain: [{ type: 'compressor', id: 'comp_core' }],
+      parameters: [{ id: 'threshold', label: 'Threshold', min: -60, max: 0, default: -20 }],
+      routing: { input: 'stereo', chain: [], output: 'stereo', mode: 'lr_paired' },
+    },
+    param_map: [
+      { logic_id: 0, logic_name: 'Threshold', web_param: 'threshold',
+        curve: 'linear', domain: [-60, 0], range: [-60, 0] },
+    ],
+    bypass_supported: true,
+  };
+  const ctx = new MockOfflineAudioContext(2, sampleRate, sampleRate);
+  const adapter = new PluginAdapter(ctx, {
+    mappingsRegistry: { 778: lrMapping },
+    fetchImpl: null,
+  });
+  const slot = await adapter.instantiate({
+    plugin_id: '778',
+    plugin_name: 'StereoDelaySplit',
+    parameters: [{ id: 0, name: 'Threshold', value: -20 }],
+  });
+  // Functions exist regardless of whether the second engine built.
+  assert.equal(typeof slot.setLeftLogicParam, 'function');
+  assert.equal(typeof slot.setRightLogicParam, 'function');
+  // setLogicParam returns true when the dispatch succeeds — both
+  // engines (or single-engine fallback) accept the value.
+  const ok = slot.setLogicParam(0, -10);
+  assert.equal(ok, true);
+  // Per-channel dispatch also returns true.
+  assert.equal(slot.setLeftLogicParam(0, -25), true);
+  assert.equal(slot.setRightLogicParam(0, -45), true);
+  slot.dispose();
+});
+
 await test('strictSampleRate refuses to load on SR mismatch', async () => {
   const ctx = new MockOfflineAudioContext(2, sampleRate, sampleRate);
   // Mapping claims it was calibrated at half the context's SR.

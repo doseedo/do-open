@@ -5,6 +5,7 @@ import {
   enqueueAddPlugin,
   enqueueRemovePlugin,
 } from '../../services/sessionEditsAPI';
+import { LOGIC_STOCK_PLUGINS, uniqueNames } from '../../lib/logicStockPlugins';
 import styles from './LogicPluginRack.module.css';
 
 /**
@@ -61,22 +62,25 @@ function LogicPluginRack({ track }) {
   const trackUuid = track?.uuid || track?.metadata?.uuid || null;
   const sessionId = state?.activeSessionId || null;
 
-  // Pull a list of available plugin names from any mapping the
-  // adapter has loaded so the operator can add a known-mappable
-  // plugin without typing names. We don't fetch /plugin-mappings
-  // from here — the adapter already has the registry; we just read
-  // names off existing slots' mappings as a starter list. Operators
-  // wanting an exhaustive list can extend with a fetch later.
-  const knownPluginNames = useMemo(() => {
-    const names = new Set();
+  // Autocomplete options: union of (a) Logic stock-plugin names from
+  // logicStockPlugins.js — the canonical vocabulary the desktop
+  // calibration harness understands — and (b) any plugin name the
+  // adapter has actively loaded a mapping for. The free-text input
+  // accepts anything outside this list too, so plugins we haven't
+  // catalogued (3rd-party AUs, future Logic releases) still broadcast
+  // correctly when typed.
+  const autocompleteNames = useMemo(() => {
+    const fromMappings = [];
     if (chain?.slots) {
       for (const s of chain.slots) {
         const m = s?.getMapping?.();
         const n = m?.plugin_name || m?.logic_plugin_name;
-        if (n) names.add(n);
+        if (n) fromMappings.push(n);
       }
     }
-    return Array.from(names).sort();
+    return uniqueNames(LOGIC_STOCK_PLUGINS, fromMappings).sort(
+      (a, b) => a.localeCompare(b)
+    );
   }, [chain]);
 
   const handleAdd = useCallback(async () => {
@@ -130,16 +134,29 @@ function LogicPluginRack({ track }) {
 
       {trackUuid && sessionId && (
         <div className={styles.addRow}>
-          <select
+          <input
+            type="text"
+            list="logic-stock-plugins"
             value={pluginToAdd}
             onChange={(e) => setPluginToAdd(e.target.value)}
+            placeholder="Add plugin…"
             disabled={adding}
-          >
-            <option value="">Add plugin…</option>
-            {knownPluginNames.map((n) => (
-              <option key={n} value={n}>{n}</option>
+            spellCheck={false}
+            autoComplete="off"
+            // Hitting Enter on the autocomplete row should add the plugin
+            // (mirrors the Add button) — saves a click for keyboard users.
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && pluginToAdd && !adding) {
+                e.preventDefault();
+                handleAdd();
+              }
+            }}
+          />
+          <datalist id="logic-stock-plugins">
+            {autocompleteNames.map((n) => (
+              <option key={n} value={n} />
             ))}
-          </select>
+          </datalist>
           <button
             type="button"
             className={styles.addButton}

@@ -111,6 +111,72 @@ function toNormalized(value, paramDef) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// L/R full split-engine wrapper
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Full split-engine routing for `lr_paired`: input ChannelSplitter
+ * routes L → engineL.input and R → engineR.input; engine outputs merge
+ * back to a stereo pair. Each engine processes one channel
+ * independently — knobs targeted via setLeftLogicParam /
+ * setRightLogicParam diverge per-channel. Doubles DSP cost; only built
+ * when the second engine instance constructed successfully (caller
+ * checks). Falls back to `_buildLrPairedWrap` (output-gain split) when
+ * the second engine refuses to build.
+ *
+ * `engines` shape: ``{left: {input, output}, right: {input, output}}``.
+ * Returns ``{input, output, dispose}``. Dispose disconnects every node
+ * we created here without touching the engines themselves (caller
+ * disposes engines separately).
+ */
+function _buildLrSplitEngineWrap(ctx, engines) {
+  if (typeof ctx.createChannelSplitter !== 'function'
+      || typeof ctx.createChannelMerger !== 'function') {
+    return null;
+  }
+  let inputSplit, lLeg, rLeg, merger, output;
+  try {
+    inputSplit = ctx.createChannelSplitter(2);
+    // Per-leg gain stages give us a stable handoff between the splitter
+    // (mono outputs) and each engine (stereo input expected). Each leg
+    // gain is unity; we never touch them at runtime — they exist purely
+    // so the splitter's mono channel can connect into a node that the
+    // engine's stereo input accepts.
+    lLeg = ctx.createGain();
+    rLeg = ctx.createGain();
+    merger = ctx.createChannelMerger(2);
+    output = ctx.createGain();
+
+    inputSplit.connect(lLeg, 0);
+    inputSplit.connect(rLeg, 1);
+    lLeg.connect(engines.left.input);
+    rLeg.connect(engines.right.input);
+    engines.left.output.connect(merger, 0, 0);
+    engines.right.output.connect(merger, 0, 1);
+    merger.connect(output);
+  } catch (e) {
+    return null;
+  }
+  // ChannelSplitter is the slot's input; downstream connects flow
+  // through its main port (it accepts a stereo input via channel 0).
+  // We expose `input` as a passthrough Gain wrapping the splitter so
+  // callers' connect/disconnect lifecycle stays predictable.
+  const inputGain = ctx.createGain();
+  try { inputGain.connect(inputSplit); } catch (e) { /* noop */ }
+
+  return {
+    input: inputGain,
+    output,
+    dispose: () => {
+      const ns = [inputGain, inputSplit, lLeg, rLeg, merger, output];
+      for (const n of ns) {
+        try { n.disconnect(); } catch (_) { /* noop */ }
+      }
+    },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // L/R-paired routing wrapper
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -505,7 +571,7 @@ export default class PluginAdapter {
       console.warn(msg);
     }
 
-    // Build engine, inject our shared context, then build graph.
+    // Build the primary engine, inject our shared context, then build graph.
     const engine = new WebAudioDSPEngine(dspConfig);
     engine.ctx = this.ctx;
     engine._buildGraph();
@@ -521,6 +587,30 @@ export default class PluginAdapter {
 
     const engineIn  = engine._chainInput || engine.masterGain;
     const engineOut = engine.masterGain;
+
+    // For lr_paired plugins, build a SECOND engine instance that
+    // processes only the right channel. The two engines start with
+    // identical params; setLeftLogicParam / setRightLogicParam diverge
+    // them on operator demand. setLogicParam (no L/R suffix) dispatches
+    // to both so the common case (a knob that should affect both
+    // channels equally) Just Works.
+    const wantLrPair = (dspConfig.routing?.mode || 'stereo') === 'lr_paired';
+    let engineRight = null;
+    let engineRightIn = null;
+    let engineRightOut = null;
+    if (wantLrPair && engineIn && engineOut) {
+      try {
+        engineRight = new WebAudioDSPEngine(dspConfig);
+        engineRight.ctx = this.ctx;
+        engineRight._buildGraph();
+        try { if (engineRight.analyser) engineRight.analyser.disconnect(); } catch (_) { /* noop */ }
+        engineRightIn  = engineRight._chainInput || engineRight.masterGain;
+        engineRightOut = engineRight.masterGain;
+      } catch (e) {
+        console.warn('[PluginAdapter] lr_paired second-engine build failed; falling back to shared-engine wrap:', e?.message || e);
+        engineRight = null;
+      }
+    }
 
     let input;
     let output;
@@ -541,12 +631,24 @@ export default class PluginAdapter {
       msNodes = _buildMidSideWrap(this.ctx, engineIn, engineOut);
       input = msNodes?.input || engineIn;
       output = msNodes?.output || engineOut;
-    } else if ((dspConfig.routing?.mode || 'stereo') === 'lr_paired') {
-      // L/R-paired plugins (Stereo Delay, dual-mono level controls).
-      // The wrap inserts a ChannelSplitter + per-channel gain + merger
-      // at the engine output so paired-level params can be applied
-      // independently per channel. Full split-engine processing is
-      // still deferred — but the wrap covers the common case.
+    } else if (wantLrPair && engineRight) {
+      // Full split-engine: input ChannelSplitter routes L → engineL,
+      // R → engineR; engine outputs merge into the slot output. Doubles
+      // DSP cost but lets paired params (Left Delay vs. Right Delay)
+      // diverge per channel.
+      lrNodes = _buildLrSplitEngineWrap(
+        this.ctx,
+        { left: { input: engineIn, output: engineOut },
+          right: { input: engineRightIn, output: engineRightOut } },
+      );
+      input = lrNodes?.input || engineIn;
+      output = lrNodes?.output || engineOut;
+    } else if (wantLrPair && !engineRight) {
+      // Second engine refused to build — fall back to the simpler
+      // output-gain split. setLeftGain / setRightGain still work; the
+      // setLeftLogicParam / setRightLogicParam paths become no-ops
+      // (only one engine to dispatch to), which we surface via
+      // hasIndependentLrEngines=false on the slot below.
       lrNodes = _buildLrPairedWrap(this.ctx, engineIn, engineOut);
       input = lrNodes?.input || engineIn;
       output = lrNodes?.output || engineOut;
@@ -585,6 +687,25 @@ export default class PluginAdapter {
       if (row.logic_name) rowByLogicName.set(row.logic_name, row);
     }
 
+    // Per-engine dispatcher — the body of setLogicParam minus the
+    // broadcast hook. Used both directly (single-engine plugins) and
+    // mirrored to engineLeft + engineRight for lr_paired splits.
+    const dispatchToEngine = (eng, row, value) => {
+      if (row.indexed) {
+        const intValue = Math.round(Number(value) || 0);
+        if (typeof eng.setIndexedParameter === 'function') {
+          eng.setIndexedParameter(row.web_param, intValue);
+        } else {
+          eng.setParameter(row.web_param, intValue);
+        }
+        return;
+      }
+      const webParamDef = webParamDefs[row.web_param];
+      const webValue = applyCurve(row.curve, value, row.domain, row.range, row.breakpoints);
+      const norm = toNormalized(webValue, webParamDef);
+      eng.setParameter(row.web_param, norm);
+    };
+
     const setLogicParam = (idOrName, value, opts = {}) => {
       let row = (typeof idOrName === 'number')
         ? rowByLogicId.get(idOrName)
@@ -621,28 +742,61 @@ export default class PluginAdapter {
         }
       }
 
-      // Indexed (dropdown) params bypass the curve / normalization stack
-      // entirely — the value IS the discrete index into value_strings.
-      // The engine receives the int directly; nodes that understand
-      // indexed pins (compressor mode, EQ band type, distortion shape)
-      // dispatch on it; nodes that don't accept it gracefully ignore.
-      if (row.indexed) {
-        const intValue = Math.round(Number(value) || 0);
-        if (typeof engine.setIndexedParameter === 'function') {
-          engine.setIndexedParameter(row.web_param, intValue);
-        } else {
-          // Fallback: send raw int through the regular setter. Engines
-          // that haven't implemented setIndexedParameter still receive
-          // the index and can do whatever passthrough they support.
-          engine.setParameter(row.web_param, intValue);
-        }
-        return true;
-      }
+      // Dispatch to primary engine, plus the right-channel engine when
+      // the lr_paired split built one — both stay in sync until the
+      // operator calls setLeftLogicParam / setRightLogicParam to
+      // diverge them.
+      dispatchToEngine(engine, row, value);
+      if (engineRight) dispatchToEngine(engineRight, row, value);
+      return true;
+    };
 
-      const webParamDef = webParamDefs[row.web_param];
-      const webValue = applyCurve(row.curve, value, row.domain, row.range, row.breakpoints);
-      const norm = toNormalized(webValue, webParamDef);
-      engine.setParameter(row.web_param, norm);
+    // Per-channel param targeting for lr_paired plugins. setLeft/Right
+    // operate on a single engine without echoing to the other; ideal
+    // for "Left Delay Time" / "Right Delay Time" knob pairs. When the
+    // slot doesn't have an independent right engine (single-engine
+    // fallback), setRight* maps onto the shared engine so the value
+    // still has SOME effect — the L/R divergence just collapses.
+    const setLeftLogicParam = (idOrName, value, opts = {}) => {
+      const row = rowByLogicId.get(idOrName) || rowByLogicName.get(idOrName);
+      if (!row) return false;
+      if (opts.broadcast !== false
+          && this.editCallbacks?.onParamEdit
+          && editContext?.trackUuid != null
+          && editContext?.slotIndex != null
+          && row.logic_id != null && !row.indexed) {
+        try {
+          this.editCallbacks.onParamEdit({
+            trackUuid: editContext.trackUuid,
+            slot: editContext.slotIndex,
+            paramId: row.logic_id,
+            value: Number(value),
+            channel: 'left',
+          });
+        } catch (e) { /* noop */ }
+      }
+      dispatchToEngine(engine, row, value);
+      return true;
+    };
+    const setRightLogicParam = (idOrName, value, opts = {}) => {
+      const row = rowByLogicId.get(idOrName) || rowByLogicName.get(idOrName);
+      if (!row) return false;
+      if (opts.broadcast !== false
+          && this.editCallbacks?.onParamEdit
+          && editContext?.trackUuid != null
+          && editContext?.slotIndex != null
+          && row.logic_id != null && !row.indexed) {
+        try {
+          this.editCallbacks.onParamEdit({
+            trackUuid: editContext.trackUuid,
+            slot: editContext.slotIndex,
+            paramId: row.logic_id,
+            value: Number(value),
+            channel: 'right',
+          });
+        } catch (e) { /* noop */ }
+      }
+      dispatchToEngine(engineRight || engine, row, value);
       return true;
     };
 
@@ -723,6 +877,7 @@ export default class PluginAdapter {
       try { if (msNodes) msNodes.dispose(); } catch (e) { /* noop */ }
       try { if (lrNodes) lrNodes.dispose(); } catch (e) { /* noop */ }
       try { engine._teardownGraph(); } catch (e) { /* noop */ }
+      try { if (engineRight) engineRight._teardownGraph(); } catch (e) { /* noop */ }
     };
 
     const slot = {
@@ -745,6 +900,15 @@ export default class PluginAdapter {
       // unconditionally without checking routingMode first.
       setLeftGain: (v) => { lrNodes?.setLeftGain?.(v); },
       setRightGain: (v) => { lrNodes?.setRightGain?.(v); },
+      // Per-channel param dispatchers for lr_paired splits. setLogicParam
+      // continues to update both engines symmetrically; these are the
+      // diverge knobs (Stereo Delay's Left Delay vs. Right Delay).
+      setLeftLogicParam,
+      setRightLogicParam,
+      // True when an independent right-channel engine actually built.
+      // Lets paired-knob UI know whether L/R divergence is real or
+      // collapses onto the shared single engine.
+      hasIndependentLrEngines: !!engineRight,
       getMapping: () => mapping,
       dispose,
     };
