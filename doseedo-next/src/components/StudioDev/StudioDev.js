@@ -3628,20 +3628,18 @@ export default function StudioDev() {
                             >
                               <i className="fa-solid fa-code-branch" style={{ fontSize: 10 }} /> Branch
                             </button>
-                            {useServer && (
-                              <button
-                                className="sd-btn ghost"
-                                onClick={() => setOpenAttestCommit((cur) => cur === commit.id ? null : commit.id)}
-                                title="Manage attestations (Level 2 gate)"
-                              >
-                                <i className="fa-solid fa-user-check" style={{ fontSize: 10 }} /> Attest
-                              </button>
-                            )}
+                            <button
+                              className="sd-btn ghost"
+                              onClick={() => setOpenAttestCommit((cur) => cur === commit.id ? null : commit.id)}
+                              title={commit._server ? 'Manage attestations (Level 2 gate)' : 'Attest — sync to server first to enable'}
+                            >
+                              <i className="fa-solid fa-user-check" style={{ fontSize: 10 }} /> Attest
+                            </button>
                           </div>
-                          {useServer && openAttestCommit === commit.id && (
+                          {openAttestCommit === commit.id && (
                             <AttestationsPanel
                               sessionId={state.activeSessionId}
-                              commit={commit._server}
+                              commit={commit._server || { id: commit.id, _localOnly: true }}
                               currentUsername={clerk?.user?.username || null}
                               onChanged={() => serverHistory.refresh()}
                             />

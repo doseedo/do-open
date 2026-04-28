@@ -20,8 +20,13 @@ import {
 } from '../../services/attestationsAPI';
 
 export default function AttestationsPanel({ sessionId, commit, currentUsername, onChanged }) {
+  // Local-only commits have no server row (commit DAG not synced yet) — the
+  // attestations endpoints would 404. Render a clear placeholder explaining
+  // what's needed instead of spinning forever on a request that can't succeed.
+  const isLocalOnly = !!commit?._localOnly || !sessionId;
+
   const [rows, setRows] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isLocalOnly);
   const [err, setErr] = useState(null);
 
   // "Add contributor" form state
@@ -31,6 +36,7 @@ export default function AttestationsPanel({ sessionId, commit, currentUsername, 
   const [submitting, setSubmitting] = useState(false);
 
   const refresh = useCallback(async () => {
+    if (isLocalOnly) return;
     setLoading(true);
     setErr(null);
     try {
@@ -42,9 +48,21 @@ export default function AttestationsPanel({ sessionId, commit, currentUsername, 
     } finally {
       setLoading(false);
     }
-  }, [sessionId, commit.id]);
+  }, [sessionId, commit.id, isLocalOnly]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  if (isLocalOnly) {
+    return (
+      <div className="sd-attest-panel">
+        <div className="sd-side-sub">
+          This commit hasn't been synced to the server yet — attestations require a
+          server-side commit. Push the session from desktop (or wait for the next
+          sync tick) and reopen this panel.
+        </div>
+      </div>
+    );
+  }
 
   const onAdd = async (e) => {
     e.preventDefault();
