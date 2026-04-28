@@ -205,6 +205,81 @@ export function enqueueVolumeEditV2(sessionId, trackUuid, value) {
   );
 }
 
+// ── Plugin ops (uuid-keyed; mirrors edit_dispatcher.py plugin handlers) ──────
+
+/**
+ * Single AU parameter set. `paramId` is the AUParameterAddress as
+ * enumerated by the desktop's `enumerate_au_params_live` and surfaced
+ * via the live param-delta channel / plugin mapping JSON. Dedups per
+ * (track, slot, param) so a knob drag at 60Hz emits one POST per flush.
+ */
+export function enqueueSetPluginParam(sessionId, trackUuid, slot, paramId, value) {
+  if (typeof trackUuid !== 'string' || trackUuid.length === 0) return;
+  if (typeof slot !== 'number' || slot < 0) return;
+  if (typeof paramId !== 'number') return;
+  if (typeof value !== 'number' || !Number.isFinite(value)) return;
+  enqueueEdit(
+    sessionId,
+    'set_plugin_param',
+    { track_uuid: trackUuid, slot, param_id: paramId, value },
+    { dedupKey: `set_plugin_param:${trackUuid}:${slot}:${paramId}` }
+  );
+}
+
+/**
+ * Batched AU set — many params on one plugin in a single round-trip.
+ * Used when applying a preset or when the user moves a macro that
+ * drives several params at once. `params` is `[{param_id, value}, …]`.
+ */
+export function enqueueSetPluginParamsBatch(sessionId, trackUuid, slot, params) {
+  if (typeof trackUuid !== 'string' || trackUuid.length === 0) return;
+  if (typeof slot !== 'number' || slot < 0) return;
+  if (!Array.isArray(params) || params.length === 0) return;
+  enqueueEdit(
+    sessionId,
+    'set_plugin_params_batch',
+    { track_uuid: trackUuid, slot, params },
+    { dedupKey: `set_plugin_params_batch:${trackUuid}:${slot}` }
+  );
+}
+
+/**
+ * Insert a stock-Logic or AU plugin by name on the next free slot
+ * (or `menuIndex` to pin a specific Logic menu position). The desktop
+ * resolves `menuIndex` from its persistent plugin cache when 0.
+ */
+export function enqueueAddPlugin(sessionId, trackUuid, pluginName, menuIndex = 0) {
+  if (typeof trackUuid !== 'string' || trackUuid.length === 0) return;
+  if (typeof pluginName !== 'string' || pluginName.length === 0) return;
+  enqueueEdit(
+    sessionId,
+    'add_plugin',
+    { track_uuid: trackUuid, plugin_name: pluginName, menu_index: menuIndex | 0 },
+    // No dedup — repeated add_plugin requests are repeated insertions.
+  );
+}
+
+export function enqueueRemovePlugin(sessionId, trackUuid, slot) {
+  if (typeof trackUuid !== 'string' || trackUuid.length === 0) return;
+  if (typeof slot !== 'number' || slot < 0) return;
+  enqueueEdit(
+    sessionId,
+    'remove_plugin',
+    { track_uuid: trackUuid, slot },
+  );
+}
+
+export function enqueueSetPluginBypass(sessionId, trackUuid, slot, bypassed) {
+  if (typeof trackUuid !== 'string' || trackUuid.length === 0) return;
+  if (typeof slot !== 'number' || slot < 0) return;
+  enqueueEdit(
+    sessionId,
+    'set_plugin_bypass',
+    { track_uuid: trackUuid, slot, bypassed: !!bypassed },
+    { dedupKey: `set_plugin_bypass:${trackUuid}:${slot}` }
+  );
+}
+
 /** Force-flush before navigation / unmount. */
 export async function flushSession(sessionId) {
   await _flush(sessionId);
