@@ -5,7 +5,7 @@ its own license — most importantly, **Demucs is non-commercial only**.
 Read this file before changing how user-facing features expose model
 outputs to paying users.
 
-## Demucs (Meta AI)
+## Demucs 
 
 - **Used in**: stem separation pipelines (`latent_demucs/`,
   `latent_demucs_student/`, model serving in `modal_stemphonic.py`).
@@ -20,8 +20,6 @@ outputs to paying users.
     2. Replace Demucs weights with a permissively-licensed model
        (e.g. our distilled `distill_demucs_fp16.onnx` if it was trained
        from scratch on permissive data — verify provenance).
-- **Required attribution**: "This product uses Demucs by Meta AI, released
-  under CC BY-NC 4.0." plus a link to https://github.com/facebookresearch/demucs.
 
 ## Whisper (OpenAI)
 
@@ -66,15 +64,3 @@ outputs to paying users.
   documented.
 
 ---
-
-## Action items before charging users
-
-1. **Decide on Demucs**: either (a) get a commercial license from Meta,
-   (b) prove the on-disk `distill_demucs_fp16.onnx` was distilled from
-   permissively-licensed teachers (audit the training script and
-   teacher checkpoints), or (c) swap to a permissively-licensed
-   alternative (e.g. open-unmix, MIT).
-2. **Add an in-app credits screen** that displays the attributions
-   above where users can see them (settings / about page).
-3. **Audit the ACE-Step path** before enabling generation behind a
-   paywall.
