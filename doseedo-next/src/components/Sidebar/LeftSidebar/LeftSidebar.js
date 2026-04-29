@@ -157,11 +157,11 @@ const SideItem = ({ icon, label, active, disabled, muted, onClick, tooltip }) =>
 
 const LeftSidebar = React.memo(({
   onBackToDashboard, onGoToHome, onGoToSearch, onGoToUserInfo, onGoToTools,
-  onGoToWhatsNew, onGoToPlans, onGoToDownloads, onGoToPlugins, onGoToModels,
+  onGoToWhatsNew, onGoToPlans, onGoToDownloads, onGoToPlugins,
   onToggleSearch: onToggleMidiBrowser, onShowGenerationPanel, onShowMidiBrowser,
   showMidiBrowser, onToggleChat, showChatWindow, onShowBookmarks, showBookmarks,
   isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView,
-  isWhatsNewView, isPlansView, isDownloadsView, isPluginsView, isModelsView,
+  isWhatsNewView, isPlansView, isDownloadsView, isPluginsView,
   isMoreView,
 }) => {
   const navigate = useNavigate();
@@ -188,7 +188,7 @@ const LeftSidebar = React.memo(({
   // legal/docs/plans/verify pages so they don't show the toggle either.
   const isSpecialView = isDashboardView || isHomeView || isSearchView || isUserInfoView
     || isToolsView || isWhatsNewView || isPlansView || isDownloadsView
-    || isPluginsView || isModelsView || isMoreView;
+    || isPluginsView || isMoreView;
 
   // The previous behavior force-expanded the sidebar on /studio and the
   // dashboard subpages and disabled the collapse caret. Now that the
@@ -261,7 +261,6 @@ const LeftSidebar = React.memo(({
           <SideItem icon={Icon.folder} label="Projects" active={isDashboardView} onClick={onBackToDashboard} />
           <SideItem icon={Icon.wrench} label="Tools" active={isToolsView} onClick={onGoToTools} />
           <SideItem icon={Icon.plugin} label="Plugins" active={isPluginsView} onClick={onGoToPlugins} />
-          <SideItem icon={Icon.models} label="Models" active={isModelsView} onClick={onGoToModels} />
         </div>
 
         <div className={styles.sideGroup}>

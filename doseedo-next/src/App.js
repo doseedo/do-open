@@ -522,11 +522,6 @@ function AppContent() {
     navigate('/plugins');
   };
 
-  // Handle navigation to Models catalog
-  const handleGoToModels = () => {
-    navigate('/models');
-  };
-
   // Toggle MIDI browser
   const handleToggleSearch = () => {
     setShowMidiBrowser(prev => !prev);
@@ -590,7 +585,6 @@ function AppContent() {
     isPlansView:     currentView === 'plans',
     isDownloadsView: currentView === 'downloads',
     isPluginsView:   currentView === 'plugins',
-    isModelsView:    currentView === 'models',
     // "More menu" pages — Plans, Verify, Docs, About, Privacy, Terms,
     // Help, Feedback. Treated like other dashboard subpages so the
     // LeftSidebar auto-expands and hides its collapse toggle. Only
@@ -706,7 +700,6 @@ function AppContent() {
         onGoToPlans={handleGoToPlans}
         onGoToDownloads={handleGoToDownloads}
         onGoToPlugins={handleGoToPlugins}
-        onGoToModels={handleGoToModels}
         onToggleSearch={handleToggleSearch}
         onShowGenerationPanel={handleShowGenerationPanel}
         onShowMidiBrowser={handleShowMidiBrowser}

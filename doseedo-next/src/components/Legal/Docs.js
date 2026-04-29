@@ -510,7 +510,7 @@ const PAGES = {
       <H2>Sidebar groups</H2>
       <Bullets items={[
         'Home / Search — the dashboard slides and the global search.',
-        'Create — Projects, New Session, Tools, Plugins, Models.',
+        'Create — Projects, New Session, Tools, Plugins.',
         'Info — Plans, What\'s New, Downloads, and the More dropdown (Help, About, Docs, Feedback).',
         'User chip — your tier and account access at the bottom.',
       ]} />
