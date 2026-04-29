@@ -3238,7 +3238,7 @@ export default function StudioDev() {
                          title="Click to select this bus (controls move to the right sidebar). Click the caret to collapse/expand.">
                       <button className="sd-bus-caret"
                               onClick={(e) => { e.stopPropagation(); toggleBusExpanded(bus.id); }}>
-                        <i className={`fa-solid fa-${bus.expanded ? 'caret-down' : 'caret-right'}`} />
+                        <i className={`fa-solid fa-chevron-${bus.expanded ? 'down' : 'right'}`} />
                       </button>
                       <div className="sd-bus-color" style={{ background: bus.color }} />
                       <input
@@ -3599,7 +3599,7 @@ export default function StudioDev() {
                         <i className={`fa-solid fa-${isPlaying ? 'stop' : 'play'}`} />
                       </button>
                       <button className="sd-session-caret" onClick={() => setSessionBusExpanded((m) => ({ ...m, [real.id]: !m[real.id] }))} title={isExpanded ? 'Collapse tracks' : 'Expand tracks'}>
-                        <i className={`fa-solid fa-caret-${isExpanded ? 'down' : 'right'}`} />
+                        <i className={`fa-solid fa-chevron-${isExpanded ? 'down' : 'right'}`} />
                       </button>
                       <button className="sd-session-name" onClick={() => dispatch({ type: 'SELECT_BUS', payload: { busId: real.id } })} title="Open bus info" style={{ color: wrapped.color }}>
                         {real.name || real.type || 'Bus'}

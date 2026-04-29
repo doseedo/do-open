@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './Models.module.css';
 import PageTopbar from '../Sidebar/PageTopbar';
+import PageEyebrow from '../Sidebar/PageEyebrow';
 
 // Placeholder catalog — replace with /api/models backend once wired.
 const MODEL_CATALOG = [
@@ -183,6 +184,7 @@ function Models() {
   return (
     <div className={styles.models}>
       <PageTopbar section="Create" title="Models" meta={`${counts.total} models`} />
+      <PageEyebrow section="Models" description="AI engines for your sessions" />
       {/* Header */}
       <div className={styles.head}>
         <div>

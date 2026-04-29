@@ -6,6 +6,7 @@ import { listCreations, getCreation, toggleLike, toggleFavorite, recordDownload,
 import WebAudioDSPEngine from '../../audio/WebAudioDSPEngine';
 import styles from './Plugins.module.css';
 import PageTopbar from '../Sidebar/PageTopbar';
+import PageEyebrow from '../Sidebar/PageEyebrow';
 
 // Client-side enrichment for known plugins (icons, colors, features, filter flags)
 const pluginMeta = {
@@ -436,6 +437,7 @@ const Plugins = () => {
   return (
     <div className={styles.plugins}>
       <PageTopbar section="Create" title="Plugins" />
+      <PageEyebrow section="Plugins" description="Effects, instruments, and kits" />
       <div className={styles.header}>
         <h1 className={`${styles.title} page-title`}>Plugins</h1>
       </div>

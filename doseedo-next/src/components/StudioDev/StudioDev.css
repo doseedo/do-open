@@ -958,6 +958,17 @@
 .sd-btn.ghost     { background: transparent; color: var(--hifi-ink); border: 1px solid var(--hifi-rule); padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
 .sd-btn.ghost.on  { border-color: var(--hifi-accent); color: var(--hifi-accent); }
 
+/* Workbench (cream) theme override: --hifi-ink is near-black on the
+ * studio-dev page, so the default rule above puts black text on the
+ * dark-navy --hifi-accent-deep background — unreadable. Force light
+ * text on solid sd-btn buttons here, matching the existing hover
+ * state. .secondary/.ghost keep their transparent backgrounds + dark
+ * ink, so they're left alone. */
+.studio-dev .sd-btn:not(.secondary):not(.ghost) { color: var(--wb-bg); }
+.studio-dev .sd-btn:not(.secondary):not(.ghost):hover:not(:disabled) {
+  color: var(--wb-bg);
+}
+
 /* Master meter */
 .sd-meter {
   width: 56px; height: 6px; border-radius: 3px;
@@ -1142,10 +1153,14 @@
 .sd-bus-name:focus { background: var(--wb-bg); }
 .sd-bus-row.selected { background: var(--wb-surface-2); border-bottom-color: var(--wb-accent); }
 
-/* Bus-level lane — workbench keeps this same grey as the paper bg so the
-   bus master reads as a distinct strip from the track lanes below. */
+/* Bus-level lane — keep transparent so the .sd-barlines grid behind the
+   lanes shows through the same way it does on track rows. The strong
+   bottom border + the colored bus master summary clip provide the
+   visual differentiation; an opaque background here would paint over
+   the barlines (they sit in the same z-index:auto positioned layer
+   and only render on lanes whose background lets them through). */
 .sd-lane.bus-lane {
-  background: var(--wb-surface);
+  background: transparent;
   border-bottom: 1px solid var(--wb-rule-strong);
 }
 .sd-clip.sd-summary {

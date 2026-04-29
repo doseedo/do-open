@@ -1,6 +1,7 @@
 import React from 'react';
 import styles from './WhatsNew.module.css';
 import PageTopbar from '../Sidebar/PageTopbar';
+import PageEyebrow from '../Sidebar/PageEyebrow';
 
 /**
  * WhatsNew Component
@@ -38,6 +39,7 @@ const WhatsNew = () => {
   return (
     <div className={styles.whatsNewContainer}>
       <PageTopbar section="Info" title="What's New" meta="latest updates" />
+      <PageEyebrow section="What's New" description="Release notes and changelog" />
       <div className={styles.header}>
         <h1 className={`${styles.title} page-title`}>What's New</h1>
         <p className={styles.subtitle}>Latest updates and features</p>

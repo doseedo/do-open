@@ -104,6 +104,12 @@
   padding-left: 40px;
   padding-right: 40px;
   scroll-snap-type: x proximity;
+  /* Snapport begins inside the 40px bleed padding so the first card's
+   * start (at content-box x=0) is the snap target at scrollLeft=0.
+   * Without this, the snap engine treats the scrollport edge (x=-40)
+   * as the target start, snapping the user forward whenever they
+   * scroll to 0. */
+  scroll-padding-left: 40px;
 }
 .jbi::-webkit-scrollbar { height: 6px; }
 .jbi::-webkit-scrollbar-thumb { background: var(--wb-rule-strong); border-radius: 3px; }

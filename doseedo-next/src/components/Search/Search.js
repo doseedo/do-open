@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styles from './Search.module.css';
 import * as sessionAPI from '../../services/sessionAPI';
 import PageTopbar from '../Sidebar/PageTopbar';
+import PageEyebrow from '../Sidebar/PageEyebrow';
 
 /**
  * Search Component
@@ -88,6 +89,7 @@ const Search = () => {
   return (
     <div className={styles.searchContainer}>
       <PageTopbar title="Search" meta="find projects, files, content" />
+      <PageEyebrow section="Search" description="Find projects, files, and content" />
       <div className={styles.searchHeader}>
         <h1 className={`${styles.searchTitle} page-title`}>Search</h1>
         <p className={styles.searchSubtitle}>Find your projects, files, and content</p>

@@ -11,10 +11,9 @@
  * BasicPitch in parallel for audio).
  */
 import React, { useMemo, useState } from 'react';
-import Lottie from 'lottie-react';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { useApp } from '../../context/AppContext';
 import { generateStemphonic, pollStemphonicUntilComplete } from '../../services/generationAPI';
-import doLoadingAnimation from './lottie/doloading.json';
 
 // Stemphonic 130k diffusion params. Ranges + defaults mirror the
 // production GenerationPanelOptimized call to generateStemphonic().
@@ -423,8 +422,8 @@ export default function StudioDevGenerate({ onClose, embedded = false, selectedI
         </div>
         {running && (
           <div className="sd-gen-loading" aria-hidden="true">
-            <Lottie
-              animationData={doLoadingAnimation}
+            <DotLottieReact
+              src="/assets/doloading.lottie"
               loop
               autoplay
               style={{ width: 80, height: 80 }}

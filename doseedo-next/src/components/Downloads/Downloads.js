@@ -1,6 +1,7 @@
 import React from 'react';
 import styles from './Downloads.module.css';
 import PageTopbar from '../Sidebar/PageTopbar';
+import PageEyebrow from '../Sidebar/PageEyebrow';
 
 const downloads = [
   {
@@ -48,6 +49,7 @@ const Downloads = () => {
   return (
     <div className={styles.downloads}>
       <PageTopbar section="Info" title="Downloads" />
+      <PageEyebrow section="Downloads" description="Renders and exports from your sessions" />
       <div className={styles.header}>
         <h1 className={`${styles.title} page-title`}>Downloads</h1>
       </div>
