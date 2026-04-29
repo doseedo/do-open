@@ -1088,6 +1088,7 @@
   font-size: 10px; letter-spacing: 0.3px;
   color: var(--wb-ink);
 }
+.sd-track-row { position: relative; }
 .sd-track-row.indented { padding-left: 22px; background: transparent; }
 /* Indented (inside-bus) tracks render two swatches: the parent bus
  * color first, then a track-specific shade of it. The 2px gap between
@@ -1101,6 +1102,48 @@
 .sd-track-row .sd-track-color {
   width: 3px; height: 18px; margin-right: 6px; border-radius: 0;
   flex-shrink: 0; position: relative;
+}
+
+/* Level-2 substem caret — barely visible by default, prominent on
+ * hover. Sits in the same 22px leading gutter that the bus caret
+ * uses on bus rows, so a drum stem visually echoes the bus expand
+ * affordance one level deeper. Only renders on tracks that opt in
+ * (currently the drums stem track via metadata.drumSubstems). */
+.sd-track-substem-caret {
+  position: absolute; left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 20px; height: 20px;
+  background: transparent; border: 0; padding: 0;
+  cursor: pointer; color: var(--wb-ink-soft);
+  display: grid; place-items: center;
+  opacity: 0.32;
+  transition: opacity 0.12s, color 0.12s;
+}
+.sd-track-substem-caret:hover { opacity: 0.9; color: var(--wb-ink); }
+
+/* Level-2 (substem) row — child of an in-bus track. Indent = 22 + 22
+ * so the substem name visually nests under the parent track's name.
+ * Three swatches (bus / parent stem / substem shade) preserve the
+ * full lineage at a glance: bus color → drums stem color → kick/
+ * snare/etc. shade. */
+.sd-track-row.indented-2 {
+  padding-left: 44px; background: transparent;
+  height: var(--row-h, 35px);
+}
+.sd-track-row .sd-track-substem-color {
+  width: 3px; height: 18px; margin-right: 6px; border-radius: 0;
+  flex-shrink: 0;
+}
+/* In a level-2 row the parent-stem swatch is no longer the last one
+ * before the name, so drop its 6px right-margin to 2px to match the
+ * bus → stem gap pattern; the new substem swatch supplies the 6px
+ * margin before the name instead. */
+.sd-track-row.indented-2 .sd-track-color {
+  margin-right: 2px;
+}
+.sd-track-row.indented-2 .sd-track-name {
+  font-size: 9px; opacity: 0.78;
+  letter-spacing: 0.5px; text-transform: uppercase;
 }
 .sd-track-row .sd-track-name  {
   margin-right: 10px; flex: 1; min-width: 0;

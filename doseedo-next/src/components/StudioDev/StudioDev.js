@@ -465,6 +465,12 @@ export default function StudioDev() {
   const [snapMode, setSnapMode] = useState('beat');           // 'off' · 'sixteenth' · 'beat' · 'bar'
   const tapTempoTimes = useRef([]);
   const [colorPickerFor, setColorPickerFor] = useState(null); // trackId whose color picker is open
+  // Track-id keyed expand state for "level-2 buses" — currently only
+  // the drums stem track (which has metadata.drumSubstems = {kick: url,
+  // snare: url, ...}) opts in. Generic shape so any track that gains a
+  // sub-asset map in the future plugs into the same caret + child-row
+  // render path with no per-type branches.
+  const [substemExpanded, setSubstemExpanded] = useState({});
   const [markers, setMarkers] = useState([]);                 // [{ time, name, color }]
   const [reorderDrag, setReorderDrag] = useState(null);       // { trackId, busId, startY }
   const [meterByTrack, setMeterByTrack] = useState({});       // trackId → 0..1 pseudo-level
@@ -3320,9 +3326,22 @@ export default function StudioDev() {
                       const real = tr._real;
                       const isSel = real && selectedTrack?.id === real.id;
                       const level = real ? (meterByTrack[real.id] ?? 0) : 0;
+                      // Level-2 bus support: a track that carries a
+                      // sub-asset map (currently only the drums stem
+                      // track via metadata.drumSubstems = {kick: url,
+                      // snare: url, ...}) gets its own expand caret +
+                      // child rows. The substemNames array drives the
+                      // child render; tr.color is the parent stem
+                      // color, each substem picks an in-theme shade.
+                      const subMap = real?.metadata?.drumSubstems;
+                      const substemNames = subMap && typeof subMap === 'object'
+                        ? Object.keys(subMap)
+                        : [];
+                      const hasSubstems = substemNames.length > 0;
+                      const subsOpen = hasSubstems && !!substemExpanded[real?.id];
                       return (
-                        <div key={real?.id || `${bus.id}-t-${i}`}
-                             className={`sd-track-row indented ${isSel ? 'selected' : ''}`}
+                        <React.Fragment key={real?.id || `${bus.id}-t-${i}`}>
+                        <div className={`sd-track-row indented ${isSel ? 'selected' : ''}`}
                              draggable={!!real}
                              onDragStart={(e) => {
                                if (!real) return;
@@ -3339,6 +3358,19 @@ export default function StudioDev() {
                                } catch (_) {}
                              }}
                              onClick={() => real && selectTrack(real.id, real._busId)}>
+                          {hasSubstems && (
+                            <button
+                              className="sd-track-substem-caret"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSubstemExpanded((m) => ({ ...m, [real.id]: !m[real.id] }));
+                              }}
+                              aria-label={subsOpen ? 'Collapse substems' : 'Expand substems'}
+                              title={subsOpen ? 'Hide kit substems' : 'Show kit substems'}
+                            >
+                              <i className={`fa-solid fa-chevron-${subsOpen ? 'down' : 'right'}`} />
+                            </button>
+                          )}
                           <div className="sd-track-bus-color"
                                style={{ background: bus.color }}
                                aria-hidden="true" />
@@ -3370,6 +3402,29 @@ export default function StudioDev() {
                             >S</button>
                           </div>
                         </div>
+                        {/* Level-2 substem rows — each rendered with the
+                            triple-swatch pattern (bus / parent stem /
+                            substem-shade) so the visual hierarchy reads
+                            bus → stem → substem at a glance. */}
+                        {subsOpen && substemNames.map((subName, si) => {
+                          const subColor = shadeOf(tr.color, si);
+                          return (
+                            <div key={`${real.id}-sub-${subName}`}
+                                 className="sd-track-row indented-2">
+                              <div className="sd-track-bus-color"
+                                   style={{ background: bus.color }}
+                                   aria-hidden="true" />
+                              <div className="sd-track-color"
+                                   style={{ background: tr.color }}
+                                   aria-hidden="true" />
+                              <div className="sd-track-substem-color"
+                                   style={{ background: subColor }}
+                                   aria-hidden="true" />
+                              <div className="sd-track-name">{subName}</div>
+                            </div>
+                          );
+                        })}
+                        </React.Fragment>
                       );
                     })}
                   </React.Fragment>
