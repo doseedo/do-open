@@ -127,6 +127,8 @@ const Icon = {
 
 // Single sidebar entry. Rendered as a <button> when interactive so keyboard +
 // screen-reader behaviour is correct; disabled items render a plain div.
+// The label is wrapped in its own span so collapsed-state CSS can hide it
+// (icon-only nav rail) while the click handler stays the same.
 const SideItem = ({ icon, label, active, disabled, muted, onClick, tooltip }) => {
   const cls = [
     styles.sideItem,
@@ -137,18 +139,18 @@ const SideItem = ({ icon, label, active, disabled, muted, onClick, tooltip }) =>
 
   if (disabled) {
     return (
-      <div className={cls} title={tooltip || ''}>
+      <div className={cls} title={tooltip || label || ''}>
         <span className={styles.sideIcon}>{icon}</span>
-        {label}
+        <span className={styles.sideItemLabel}>{label}</span>
         {tooltip && <span className={styles.sideTooltip}>{tooltip}</span>}
       </div>
     );
   }
 
   return (
-    <button type="button" className={cls} onClick={onClick}>
+    <button type="button" className={cls} onClick={onClick} title={label || ''}>
       <span className={styles.sideIcon}>{icon}</span>
-      {label}
+      <span className={styles.sideItemLabel}>{label}</span>
     </button>
   );
 };
@@ -204,6 +206,14 @@ const LeftSidebar = React.memo(({
   const userInitial = (userInfo?.username || 'G').charAt(0).toUpperCase();
   const userTier = userInfo?.subscriptionStatus || 'Free';
 
+  // The "More" dropdown can't gracefully float out of the 48px rail
+  // (the side has overflow:hidden so the popover would be clipped).
+  // Collapse it whenever the sidebar collapses so the user always
+  // re-opens it from the expanded state.
+  useEffect(() => {
+    if (!expanded) setShowMoreMenu(false);
+  }, [expanded]);
+
   return (
     <>
       {isMobile && (
@@ -241,114 +251,87 @@ const LeftSidebar = React.memo(({
           </button>
         )}
 
-        {/* DAW quick-toggle rail — single render path, sits right after
-            the brand area in both states. Collapsed: vertical column
-            inside the 48px rail. Expanded: horizontal row of the same
-            icons on one y-axis. See .toolbar / .sideExpanded .toolbar. */}
-        <div className={styles.toolbar}>
-          <button
-            className={`${styles.toolbarBtn} ${showBookmarks ? styles.toolbarBtnActive : ''}`}
-            onClick={onShowBookmarks}
-            title="Saved / Bookmarks"
-          >{Icon.bookmark}</button>
-          <button
-            className={`${styles.toolbarBtn} ${!showMidiBrowser && !showChatWindow && !showBookmarks ? styles.toolbarBtnActive : ''}`}
-            onClick={onShowGenerationPanel}
-            title="Generation Panel"
-          >{Icon.wand}</button>
-          <button
-            className={`${styles.toolbarBtn} ${showMidiBrowser ? styles.toolbarBtnActive : ''}`}
-            onClick={onShowMidiBrowser}
-            title="Browse MIDI Files"
-          >{Icon.search}</button>
-          <button
-            className={`${styles.toolbarBtn} ${showChatWindow ? styles.toolbarBtnActive : ''}`}
-            onClick={onToggleChat}
-            title="AI Chat Assistant"
-          >{Icon.chat}</button>
+        {/* Nav groups — same set of links in both states. CSS hides
+            the labels (and the group headers / user chip text) when
+            the sidebar is collapsed so the rail reads as an icon-only
+            nav. Click handlers are identical to the expanded state. */}
+        <div className={styles.sideGroup}>
+          <SideItem icon={Icon.home} label="Home" active={isHomeView} onClick={onGoToHome} />
+          <SideItem icon={Icon.search} label="Search" active={isSearchView} onClick={onGoToSearch} />
         </div>
 
-        {/* Menu groups (expanded only) */}
-        {expanded && (
-          <>
-            <div className={styles.sideGroup}>
-              <SideItem icon={Icon.home} label="Home" active={isHomeView} onClick={onGoToHome} />
-              <SideItem icon={Icon.search} label="Search" active={isSearchView} onClick={onGoToSearch} />
-            </div>
+        <div className={styles.sideGroup}>
+          <div className={styles.sideLabel}>Create</div>
+          <SideItem icon={Icon.plus} label="New Session" onClick={onBackToDashboard} />
+          <SideItem icon={Icon.folder} label="Projects" active={isDashboardView} onClick={onBackToDashboard} />
+          <SideItem icon={Icon.wrench} label="Tools" active={isToolsView} onClick={onGoToTools} />
+          <SideItem icon={Icon.plugin} label="Plugins" active={isPluginsView} onClick={onGoToPlugins} />
+          <SideItem icon={Icon.models} label="Models" active={isModelsView} onClick={onGoToModels} />
+        </div>
 
-            <div className={styles.sideGroup}>
-              <div className={styles.sideLabel}>Create</div>
-              <SideItem icon={Icon.plus} label="New Session" onClick={onBackToDashboard} />
-              <SideItem icon={Icon.folder} label="Projects" active={isDashboardView} onClick={onBackToDashboard} />
-              <SideItem icon={Icon.wrench} label="Tools" active={isToolsView} onClick={onGoToTools} />
-              <SideItem icon={Icon.plugin} label="Plugins" active={isPluginsView} onClick={onGoToPlugins} />
-              <SideItem icon={Icon.models} label="Models" active={isModelsView} onClick={onGoToModels} />
-            </div>
+        <div className={styles.sideGroup}>
+          <div className={styles.sideLabel}>Info</div>
+          <SideItem icon={Icon.research} label="Research" active={isResearchView} onClick={onGoToResearch} />
+          <SideItem icon={Icon.news} label="What's New" active={isWhatsNewView} onClick={onGoToWhatsNew} />
+          <SideItem icon={Icon.download} label="Downloads" active={isDownloadsView} onClick={onGoToDownloads} />
 
-            <div className={styles.sideGroup}>
-              <div className={styles.sideLabel}>Info</div>
-              <SideItem icon={Icon.research} label="Research" active={isResearchView} onClick={onGoToResearch} />
-              <SideItem icon={Icon.news} label="What's New" active={isWhatsNewView} onClick={onGoToWhatsNew} />
-              <SideItem icon={Icon.download} label="Downloads" active={isDownloadsView} onClick={onGoToDownloads} />
-
-              <div className={styles.moreMenu}>
-                <SideItem
-                  icon={Icon.more}
-                  label="More"
-                  active={showMoreMenu}
-                  onClick={() => setShowMoreMenu((v) => !v)}
-                />
-                {showMoreMenu && (
-                  <div className={styles.moreDropdown}>
-                    <button
-                      type="button"
-                      className={styles.moreItem}
-                      onClick={() => { setShowMoreMenu(false); navigate('/help'); }}
-                    >
-                      <span className={styles.sideIcon}>{Icon.help}</span>
-                      <span>Help</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.moreItem}
-                      onClick={() => { setShowMoreMenu(false); navigate('/docs'); }}
-                    >
-                      <span className={styles.sideIcon}>{Icon.book}</span>
-                      <span>Docs</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.moreItem}
-                      onClick={() => { setShowMoreMenu(false); navigate('/about'); }}
-                    >
-                      <span className={styles.sideIcon}>{Icon.info}</span>
-                      <span>About</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.moreItem}
-                      onClick={() => { setShowMoreMenu(false); navigate('/feedback'); }}
-                    >
-                      <span className={styles.sideIcon}>{Icon.message}</span>
-                      <span>Feedback</span>
-                    </button>
-                  </div>
-                )}
+          <div className={styles.moreMenu}>
+            <SideItem
+              icon={Icon.more}
+              label="More"
+              active={showMoreMenu}
+              onClick={() => setShowMoreMenu((v) => !v)}
+            />
+            {showMoreMenu && (
+              <div className={styles.moreDropdown}>
+                <button
+                  type="button"
+                  className={styles.moreItem}
+                  onClick={() => { setShowMoreMenu(false); navigate('/help'); }}
+                >
+                  <span className={styles.sideIcon}>{Icon.help}</span>
+                  <span>Help</span>
+                </button>
+                <button
+                  type="button"
+                  className={styles.moreItem}
+                  onClick={() => { setShowMoreMenu(false); navigate('/docs'); }}
+                >
+                  <span className={styles.sideIcon}>{Icon.book}</span>
+                  <span>Docs</span>
+                </button>
+                <button
+                  type="button"
+                  className={styles.moreItem}
+                  onClick={() => { setShowMoreMenu(false); navigate('/about'); }}
+                >
+                  <span className={styles.sideIcon}>{Icon.info}</span>
+                  <span>About</span>
+                </button>
+                <button
+                  type="button"
+                  className={styles.moreItem}
+                  onClick={() => { setShowMoreMenu(false); navigate('/feedback'); }}
+                >
+                  <span className={styles.sideIcon}>{Icon.message}</span>
+                  <span>Feedback</span>
+                </button>
               </div>
-            </div>
+            )}
+          </div>
+        </div>
 
-            <div className={styles.sideSpacer} />
+        <div className={styles.sideSpacer} />
 
-            {/* User chip */}
-            <button type="button" className={styles.sideUser} onClick={onGoToUserInfo}>
-              <div className={styles.sideAvatar}>{userInitial}</div>
-              <div>
-                <div className={styles.sideUserName}>{userInfo?.username || 'Guest'}</div>
-                <div className={styles.sideUserTier}>{userTier}</div>
-              </div>
-            </button>
-          </>
-        )}
+        {/* User chip — collapsed state shows just the avatar; CSS
+            hides .sideUserName / .sideUserTier in the 48px rail. */}
+        <button type="button" className={styles.sideUser} onClick={onGoToUserInfo} title={userInfo?.username || 'Guest'}>
+          <div className={styles.sideAvatar}>{userInitial}</div>
+          <div className={styles.sideUserMeta}>
+            <div className={styles.sideUserName}>{userInfo?.username || 'Guest'}</div>
+            <div className={styles.sideUserTier}>{userTier}</div>
+          </div>
+        </button>
 
       </aside>
     </>
