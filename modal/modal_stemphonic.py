@@ -788,7 +788,24 @@ class Stemphonic:
             if api_key_header:
                 gate_headers["X-API-Key"] = api_key_header
 
-            body = _json.dumps({"endpoint": request.path}).encode()
+            # Forward client's per-export watermark preference. Looks
+            # for `watermark` in JSON body or `?watermark=` query string.
+            # Default True; the gate enforces free-tier override.
+            wm_pref = True
+            try:
+                qv = request.args.get("watermark")
+                if qv is not None:
+                    wm_pref = str(qv).lower() not in ("0", "false", "no")
+                else:
+                    rb = request.get_json(silent=True) or {}
+                    if isinstance(rb, dict) and "watermark" in rb:
+                        wm_pref = bool(rb.get("watermark"))
+            except Exception:
+                pass
+            body = _json.dumps({
+                "endpoint": request.path,
+                "watermark": wm_pref,
+            }).encode()
 
             try:
                 req = urllib.request.Request(
@@ -815,6 +832,13 @@ class Stemphonic:
                     # ConsumeResponse always carries a `tier` string —
                     # default to "unknown" defensively.
                     g.gate_tier = str(gate_body.get("tier") or "unknown")
+                    # Per-export watermark opt-out: the gate echoes back
+                    # `watermark` (default True). Free tier ignores any
+                    # client-side request and is always watermarked; paid
+                    # tiers may pass watermark=false to skip the audio-
+                    # side mark. The chain row is registered either way.
+                    embed_flag = gate_body.get("watermark", True)
+                    g.gate_watermark_embed = bool(embed_flag) if g.gate_tier.lower() != "free" else True
                     return
 
             except urllib.error.HTTPError as e:
@@ -1069,7 +1093,7 @@ class Stemphonic:
                 )
                 return None
 
-        def _persist_task_outputs(user_id, task_id, kind, output_dir, *, tier="unknown"):
+        def _persist_task_outputs(user_id, task_id, kind, output_dir, *, tier="unknown", watermark_embed=True):
             """Walk the on-disk output dir for a completed task, upload each
             file to R2, register each with auth-service, and return a list of
             {key, url, generation_id, filename} dicts. Caches per-task so we
@@ -1136,29 +1160,28 @@ class Stemphonic:
                             embed_and_attest = None
 
                     if embed_and_attest is not None:
-                        try:
-                            with open(fp, "rb") as _fh:
-                                _orig_bytes = _fh.read()
-                            _wm_bytes, _seed = embed_and_attest(
-                                _orig_bytes,
-                                generation_id=task_id,
-                                user_id=str(user_id) if user_id is not None else None,
-                                tier=tier or "unknown",
-                                model_version="stemphonic-2026.04",
-                            )
-                            # Overwrite the on-disk file so /api/generate-stemphonic/download
-                            # serves the watermarked copy too (fp is what
-                            # send_file streams from).
-                            if _wm_bytes is not _orig_bytes:
-                                with open(fp, "wb") as _fh:
-                                    _fh.write(_wm_bytes)
-                            if _seed:
-                                generation_metadata["watermark_seed"] = _seed
-                        except Exception as _e:
-                            _r2_log.warning(
-                                "watermark hook crashed for task=%s file=%s: %s",
-                                task_id, fp.name, _e,
-                            )
+                        # Embed (best-effort) + register (required). A
+                        # registration failure raises; we let it bubble
+                        # so the polling endpoint surfaces a 500 and the
+                        # user retries. The previous best-effort posture
+                        # let unindexed files ship — that's incompatible
+                        # with the public /verify guarantee.
+                        with open(fp, "rb") as _fh:
+                            _orig_bytes = _fh.read()
+                        _wm_bytes, _audio_sha, _seed = embed_and_attest(
+                            _orig_bytes,
+                            generation_id=task_id,
+                            user_id=str(user_id) if user_id is not None else None,
+                            tier=tier or "unknown",
+                            model_version="stemphonic-2026.04",
+                            embed=watermark_embed,
+                        )
+                        if _wm_bytes is not _orig_bytes:
+                            with open(fp, "wb") as _fh:
+                                _fh.write(_wm_bytes)
+                        generation_metadata["audio_sha256"] = _audio_sha
+                        if _seed:
+                            generation_metadata["watermark_seed"] = _seed
 
                     encoded = _encode_to_opus_bytes(fp)
                     if encoded is not None:
@@ -1274,12 +1297,14 @@ class Stemphonic:
                         for entry in (body.get("results") or []):
                             if isinstance(entry, dict) and entry.get("task_id"):
                                 task_ids.append(entry["task_id"])
+                    embed_flag = getattr(g, "gate_watermark_embed", True)
                     for tid in task_ids:
                         with _task_lock:
                             _task_owners[tid] = {
                                 "user_id": user_id,
                                 "tier": tier,
                                 "kind": kind,
+                                "watermark_embed": embed_flag,
                                 "created_at": _gt.time(),
                             }
 
@@ -1300,6 +1325,7 @@ class Stemphonic:
                             persisted = _persist_task_outputs(
                                 user_id, task_id, "separate-stems", output_dir,
                                 tier=tier,
+                                watermark_embed=getattr(g, "gate_watermark_embed", True),
                             )
                             if persisted:
                                 body["r2"] = persisted if len(persisted) > 1 else persisted[0]
@@ -1349,6 +1375,7 @@ class Stemphonic:
                             owner.get("kind", default_kind),
                             output_dir,
                             tier=owner.get("tier", "unknown"),
+                            watermark_embed=owner.get("watermark_embed", True),
                         )
                     except Exception as e:
                         _r2_log.exception(

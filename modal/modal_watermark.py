@@ -1,37 +1,36 @@
 """Doseedo audio watermark service — CPU container running AudioSeal.
 
-Two endpoints on the same container:
+Endpoints (all bearer-gated against VLLM_API_KEY):
 
-  POST /embed    — Bearer-gated. multipart/form-data with field "file"
-                   (audio bytes) and form field "payload" (16 hex bytes
-                   that uniquely identify the generation).
-                   Returns: audio/wav body with the watermark embedded.
-                   Headers: x-doseedo-seed (hex of payload).
+  POST /embed    multipart/form-data { file: audio, payload: 32-hex }
+                 Returns: audio/wav body with the watermark embedded at
+                 the source's native sample rate, stereo when the input
+                 is stereo. Mono inputs stay mono.
+                 Headers: x-doseedo-seed, x-doseedo-sr, x-doseedo-sha256.
 
-  POST /detect   — Bearer-gated. multipart/form-data with field "file".
-                   Returns JSON:
-                     { "found": bool,
-                       "seed":  "<32-hex>" | null,
-                       "confidence": 0.0–1.0,
-                       "duration_sec": float,
-                       "scanned_at": ISO-8601 }
+  POST /detect   multipart/form-data { file: audio }
+                 Returns JSON:
+                   { "found": bool,
+                     "confidence": 0.0–1.0,
+                     "audio_sha256": "<64-hex>",   // sha256 of the upload
+                     "duration_sec": float,
+                     "scanned_at": ISO-8601 }
+                 NOTE: we no longer return a seed prefix — the audio
+                 carrier is a 16-bit signal that cannot uniquely
+                 identify a registered row. The verifier hashes the
+                 uploaded bytes and looks the row up by audio_sha256.
 
-  GET  /health   — public.
+  GET  /health   public.
 
-Auth: same VLLM_API_KEY bearer the rest of the stack uses.
-
-Deploy:  modal deploy modal/modal_watermark.py
-
-Watermark backend: AudioSeal (Meta, Apache-2.0). Light enough to run on
-CPU — embed/detect on a 4-min stereo file is ~150 ms on a 4-vCPU box.
-We keep a single container warm (min=0 with snapshot) — cold start with
-the AudioSeal weights baked into the image is ~6-8 s.
-
-Why FastAPI is at MODULE scope:
-Same reason as modal_video_scoring.py — Pydantic v2 needs `UploadFile`
-in `globalns` to resolve annotations on FastAPI route registration.
+Why native sample rate / stereo:
+    AudioSeal's `get_watermark` accepts (B, C, T) at any sample rate the
+    generator supports (it resamples internally to its 16 kHz training
+    rate but writes the additive watermark back at the input rate). We
+    keep the user's audio at the source rate to avoid a hard quality
+    regression on every paid-tier export.
 """
 
+import hashlib
 import io
 import logging
 import os
@@ -42,7 +41,8 @@ from typing import Optional
 
 import modal
 
-# FastAPI imports MUST be at module scope (see header).
+# FastAPI imports MUST be at module scope (Pydantic v2 needs UploadFile
+# in globalns to resolve annotations on FastAPI route registration).
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
 
@@ -63,8 +63,6 @@ image = (
         "fastapi==0.115.0",
         "python-multipart==0.0.9",
     )
-    # Pre-pull AudioSeal weights so cold start doesn't depend on
-    # huggingface.co reachability.
     .run_commands(
         "python -c \"from audioseal import AudioSeal; "
         "AudioSeal.load_generator('audioseal_wm_16bits'); "
@@ -83,7 +81,6 @@ _STATE = {
     "generator": None,
     "detector": None,
     "api_key": None,
-    "sample_rate": 16000,  # AudioSeal native rate; we resample I/O around this
 }
 
 
@@ -99,7 +96,6 @@ logging.basicConfig(level=logging.INFO)
 def _require_auth(authorization: str) -> None:
     expected = _STATE.get("api_key")
     if not expected:
-        # Auth not configured server-side — refuse rather than fail open.
         raise HTTPException(status_code=503, detail="auth not configured")
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="missing bearer")
@@ -108,15 +104,14 @@ def _require_auth(authorization: str) -> None:
 
 
 def _payload_to_bits(payload_hex: str):
-    """Convert 32-char hex (16 bytes = 128 bits) to a torch tensor of ±1
-    that AudioSeal accepts as the watermark message. We use the first 16
-    bits as the AudioSeal message; the full 128-bit hash is stored in the
-    Polygon attestation."""
+    """Map the first 2 bytes of the 32-hex seed to AudioSeal-16's 16-bit
+    message. The full seed is stored server-side; the on-audio carrier
+    only conveys 16 bits and is treated as a 'doseedo signal' classifier
+    — uniqueness comes from audio_sha256, not this prefix."""
     import torch
 
     if len(payload_hex) < 4:
         raise HTTPException(status_code=400, detail="payload too short")
-    # AudioSeal-16 takes a 16-bit message. Truncate.
     raw = bytes.fromhex(payload_hex)[:2]
     bits = []
     for b in raw:
@@ -127,19 +122,10 @@ def _payload_to_bits(payload_hex: str):
     return torch.tensor([bits[:16]], dtype=torch.int32)
 
 
-def _bits_to_hex(bits) -> str:
-    """Inverse of _payload_to_bits — pack a 16-bit message back to 4 hex
-    chars. Caller pads with the rest of the on-chain payload."""
-    val = 0
-    for b in bits:
-        val = (val << 1) | int(b)
-    return f"{val:04x}"
-
-
-def _load_audio_to_tensor(data: bytes, target_sr: int):
-    """Decode arbitrary audio bytes to a mono float32 tensor at target_sr.
-    Falls back to ffmpeg via soundfile -> torchaudio if the input format
-    isn't WAV. Returns (waveform[1, T], sample_rate)."""
+def _load_audio_native(data: bytes):
+    """Decode arbitrary audio bytes preserving native sample rate AND
+    channel count. Returns (waveform[C, T], sr) as a torch float32
+    tensor. Mono inputs come back with C=1; stereo with C=2."""
     import numpy as np
     import soundfile as sf
     import torch
@@ -148,7 +134,6 @@ def _load_audio_to_tensor(data: bytes, target_sr: int):
     try:
         wav, sr = sf.read(io.BytesIO(data), dtype="float32", always_2d=True)
     except Exception:
-        # soundfile can't handle MP3/Opus directly. Punt to torchaudio.
         path = f"/tmp/wm_in_{uuid.uuid4().hex}"
         with open(path, "wb") as fh:
             fh.write(data)
@@ -161,26 +146,40 @@ def _load_audio_to_tensor(data: bytes, target_sr: int):
             except OSError:
                 pass
 
-    # Mono mix-down for the model. Stereo embed roundtrips the same payload
-    # on both channels in the production pipeline; the detector only needs
-    # one channel.
-    if wav.ndim == 2 and wav.shape[1] > 1:
-        wav = wav.mean(axis=1, keepdims=True)
-    elif wav.ndim == 1:
+    if wav.ndim == 1:
         wav = wav.reshape(-1, 1)
-    waveform = torch.from_numpy(wav.T.astype("float32"))  # (1, T)
-
-    if sr != target_sr:
-        waveform = torchaudio.functional.resample(waveform, sr, target_sr)
-    return waveform, target_sr
+    waveform = torch.from_numpy(wav.T.astype("float32"))  # (C, T)
+    return waveform, int(sr)
 
 
 def _tensor_to_wav(waveform, sr: int) -> bytes:
+    """Encode a (C, T) tensor to WAV bytes at native sr."""
     import soundfile as sf
 
+    arr = waveform.cpu().numpy()
+    if arr.ndim == 2 and arr.shape[0] in (1, 2):
+        arr = arr.T  # soundfile wants (T, C)
+    elif arr.ndim == 1:
+        pass  # mono is fine as-is
     buf = io.BytesIO()
-    sf.write(buf, waveform.squeeze(0).cpu().numpy(), sr, subtype="PCM_16", format="WAV")
+    sf.write(buf, arr, sr, subtype="PCM_16", format="WAV")
     return buf.getvalue()
+
+
+def _embed_native(waveform, sr: int, msg_bits) -> "torch.Tensor":
+    """Embed the watermark per channel at the native sample rate.
+    AudioSeal's generator accepts (B, 1, T); we run it once per channel
+    and stack so stereo stays stereo. Returns the watermarked tensor
+    shaped (C, T) at sr."""
+    import torch
+
+    gen = _STATE["generator"]
+    out_channels = []
+    for ch in range(waveform.shape[0]):
+        x = waveform[ch:ch + 1].unsqueeze(0)  # (1, 1, T)
+        wm = gen.get_watermark(x, sample_rate=sr, message=msg_bits)
+        out_channels.append((x + wm).squeeze(0).squeeze(0))
+    return torch.stack(out_channels, dim=0)  # (C, T)
 
 
 @api.get("/health")
@@ -188,7 +187,7 @@ async def health():
     return JSONResponse({
         "ok": _STATE["generator"] is not None and _STATE["detector"] is not None,
         "model": "audioseal_wm_16bits / audioseal_detector_16bits",
-        "sample_rate": _STATE["sample_rate"],
+        "embed_mode": "native_rate_stereo",
     })
 
 
@@ -205,26 +204,25 @@ async def embed_endpoint(
     if not data:
         raise HTTPException(status_code=400, detail="empty upload")
 
-    waveform, sr = _load_audio_to_tensor(data, _STATE["sample_rate"])
+    waveform, sr = _load_audio_native(data)
     msg_bits = _payload_to_bits(payload)
     with torch.no_grad():
-        # AudioSeal generator takes (B, 1, T) and returns watermark to add.
-        wm = _STATE["generator"].get_watermark(
-            waveform.unsqueeze(0),
-            sample_rate=sr,
-            message=msg_bits,
-        )
-        watermarked = waveform.unsqueeze(0) + wm
+        watermarked = _embed_native(waveform, sr, msg_bits)
 
-    body = _tensor_to_wav(watermarked.squeeze(0), sr)
+    body = _tensor_to_wav(watermarked, sr)
+    sha = hashlib.sha256(body).hexdigest()
     log.info(
-        "embed ok bytes_in=%d bytes_out=%d payload=%s",
-        len(data), len(body), payload[:16],
+        "embed ok bytes_in=%d bytes_out=%d sr=%d ch=%d payload=%s sha=%s",
+        len(data), len(body), sr, waveform.shape[0], payload[:16], sha[:12],
     )
     return Response(
         content=body,
         media_type="audio/wav",
-        headers={"x-doseedo-seed": payload, "x-doseedo-sr": str(sr)},
+        headers={
+            "x-doseedo-seed": payload,
+            "x-doseedo-sr": str(sr),
+            "x-doseedo-sha256": sha,
+        },
     )
 
 
@@ -240,48 +238,42 @@ async def detect_endpoint(
     if not data:
         raise HTTPException(status_code=400, detail="empty upload")
 
+    audio_sha256 = hashlib.sha256(data).hexdigest()
+
     t0 = time.time()
-    waveform, sr = _load_audio_to_tensor(data, _STATE["sample_rate"])
+    waveform, sr = _load_audio_native(data)
     duration = float(waveform.shape[-1]) / sr
 
+    # Detector takes (B, 1, T) mono. Mix to mono for the classifier;
+    # this does not affect the audio we return — we don't return audio.
+    mono = waveform.mean(dim=0, keepdim=True).unsqueeze(0)  # (1, 1, T)
     with torch.no_grad():
-        result, message = _STATE["detector"].detect_watermark(
-            waveform.unsqueeze(0), sample_rate=sr,
+        result, _message = _STATE["detector"].detect_watermark(
+            mono, sample_rate=sr,
         )
-        # `result` is the detection probability. Across audioseal
-        # versions it can be either a Python float, a 0-d tensor, or a
-        # (B,) tensor — normalise to a single float defensively.
         if hasattr(result, "squeeze"):
             sq = result.squeeze()
             prob = float(sq.item() if hasattr(sq, "item") else sq)
         else:
             prob = float(result)
-        # `message` is (B, 16) bits when the detection succeeded.
-        bits = []
-        if message is not None and hasattr(message, "squeeze"):
-            try:
-                bits = message.squeeze(0).tolist()
-            except Exception:
-                bits = []
 
     found = prob >= 0.5
-    seed = _bits_to_hex(bits) if found else None
 
     log.info(
-        "detect prob=%.3f found=%s duration_sec=%.2f elapsed_ms=%d",
-        prob, found, duration, int((time.time() - t0) * 1000),
+        "detect prob=%.3f found=%s sha=%s duration_sec=%.2f elapsed_ms=%d",
+        prob, found, audio_sha256[:12], duration, int((time.time() - t0) * 1000),
     )
     return JSONResponse({
         "found": found,
-        "seed": seed,
         "confidence": prob,
+        "audio_sha256": audio_sha256,
         "duration_sec": duration,
         "scanned_at": datetime.now(timezone.utc).isoformat(),
     })
 
 
 # ---------------------------------------------------------------------------
-# Modal class — holds per-container state, exposes the FastAPI app
+# Modal class
 # ---------------------------------------------------------------------------
 
 @app.cls(
@@ -292,15 +284,13 @@ async def detect_endpoint(
         modal.Secret.from_name("doseedo-chatbot-gate"),  # provides VLLM_API_KEY
     ],
     min_containers=0,
-    scaledown_window=600,  # 10 min — verify traffic is bursty
+    scaledown_window=600,
     enable_memory_snapshot=True,
 )
 @modal.concurrent(max_inputs=8)
 class Watermark:
     @modal.enter(snap=True)
     def _load_models(self):
-        # Heavy imports only at boot. The image build pre-pulled the
-        # AudioSeal weights so this doesn't hit the network at runtime.
         from audioseal import AudioSeal
 
         _STATE["generator"] = AudioSeal.load_generator("audioseal_wm_16bits")
@@ -309,8 +299,6 @@ class Watermark:
 
     @modal.enter(snap=False)
     def _load_secrets(self):
-        # Secrets are injected post-snapshot to avoid baking them into the
-        # checkpoint.
         _STATE["api_key"] = os.environ.get("VLLM_API_KEY") or os.environ.get(
             "VLLM_GATE_TOKEN"
         )
@@ -322,32 +310,3 @@ class Watermark:
     @modal.asgi_app()
     def asgi(self):
         return api
-
-
-# ---------------------------------------------------------------------------
-# Helpers exposed to other Modal apps (e.g. stemphonic_server) — call via
-# `Watermark().embed_local(...)` from inside the same Modal workspace to
-# skip the HTTP hop. The Stemphonic worker imports this module after each
-# generation and calls `embed_inline()` to embed the payload before
-# uploading the stem to R2.
-# ---------------------------------------------------------------------------
-
-def embed_inline(audio_bytes: bytes, payload_hex: str) -> bytes:
-    """Synchronous in-process embed. Used by the Stemphonic worker — does
-    not require the FastAPI surface to be up. Caller must have run
-    `_load_models()` first (the Stemphonic image should pip-install
-    audioseal too)."""
-    import torch
-
-    if _STATE["generator"] is None:
-        from audioseal import AudioSeal
-
-        _STATE["generator"] = AudioSeal.load_generator("audioseal_wm_16bits")
-    waveform, sr = _load_audio_to_tensor(audio_bytes, 16000)
-    msg = _payload_to_bits(payload_hex)
-    with torch.no_grad():
-        wm = _STATE["generator"].get_watermark(
-            waveform.unsqueeze(0), sample_rate=sr, message=msg,
-        )
-        out = waveform.unsqueeze(0) + wm
-    return _tensor_to_wav(out.squeeze(0), sr)
