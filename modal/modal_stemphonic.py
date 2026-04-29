@@ -1112,11 +1112,8 @@ class Stemphonic:
             for fp in task_dir.rglob("*"):
                 if not fp.is_file():
                     continue
-                # Skip intermediate / per-task private artifacts. Anything
-                # named input_*, stem_input*, midi_*, or under drum_substems/
-                # is a pre-generation input or a sub-stem cache — the user-
-                # facing output is the top-level WAV/MIDI written by the
-                # route itself.
+                # Skip intermediate / per-task private artifacts. input_* and
+                # stem_input* are pre-generation inputs.
                 if fp.name.startswith("input_") or fp.name.startswith("stem_input"):
                     continue
                 if fp.name.startswith("midi_") and fp.suffix.lower() not in (".mid", ".midi"):
@@ -1126,6 +1123,17 @@ class Stemphonic:
                 if fp.suffix.lower() not in (".wav", ".mp3", ".flac", ".ogg",
                                              ".mid", ".midi"):
                     continue
+                # Files under drum_substems/ are MDX23C-DrumSep teacher
+                # outputs (kick/snare/hh/toms/ride/crash). They get the same
+                # opus-encode + R2 + auth-service registration as the main
+                # stems, but registered with kind="drum-substem" and a
+                # metadata link back to the parent task so the frontend
+                # can rebuild .metadata.drumSubstems off persisted R2 URLs
+                # instead of the ephemeral /separate-stems/drum-substem/...
+                # paths. Watermark embed is skipped for substems — the
+                # parent drums.wav is already watermarked and re-marking
+                # each derivative wastes the AudioSeal pass.
+                is_drum_substem = (fp.parent.name == "drum_substems")
 
                 # Audio (non-MIDI) → embed inaudible watermark, then encode
                 # to Opus 128k OGG so we store ~1/40th the bytes of the
@@ -1168,13 +1176,17 @@ class Stemphonic:
                         # with the public /verify guarantee.
                         with open(fp, "rb") as _fh:
                             _orig_bytes = _fh.read()
+                        # Substems skip the audio-side mark — only the
+                        # chain-row registration runs (embed=False) so each
+                        # substem still has its sha indexed.
+                        _embed_flag = watermark_embed and not is_drum_substem
                         _wm_bytes, _audio_sha, _seed = embed_and_attest(
                             _orig_bytes,
                             generation_id=task_id,
                             user_id=str(user_id) if user_id is not None else None,
                             tier=tier or "unknown",
                             model_version="stemphonic-2026.04",
-                            embed=watermark_embed,
+                            embed=_embed_flag,
                         )
                         if _wm_bytes is not _orig_bytes:
                             with open(fp, "wb") as _fh:
@@ -1225,6 +1237,23 @@ class Stemphonic:
                     # existing send_file route still works.
                     continue
 
+                # Drum substems carry parent linkage in metadata so the
+                # auth-service can group them with the parent task without
+                # a schema change. The auth-service `kind` stays the same
+                # as the parent task to avoid surprising any kind-enum
+                # validation on the server side; the substem-vs-parent
+                # distinction lives in metadata (parent_task_id + substem_
+                # name + subkind="drum-substem"). Frontend reads the
+                # persisted entry's local `kind` annotation, not the row's
+                # kind, so this is purely a server-side hygiene choice.
+                if is_drum_substem:
+                    generation_metadata = {
+                        **generation_metadata,
+                        "subkind": "drum-substem",
+                        "parent_task_id": task_id,
+                        "substem_name": fp.stem,
+                    }
+
                 reg = _register_generation(
                     user_id=user_id,
                     task_id=task_id,
@@ -1235,6 +1264,15 @@ class Stemphonic:
                     sha256=sha256,
                     metadata=generation_metadata or None,
                 )
+                # Per-entry annotation lets the after_request hook pick
+                # substems out of the persisted list and rewrite the
+                # response's drum_substem_urls to the R2 URLs.
+                entry_extra = {}
+                if is_drum_substem:
+                    entry_extra = {
+                        "kind": "drum-substem",
+                        "substem_name": fp.stem,
+                    }
                 if reg is None:
                     # Registration failed — we already uploaded, but the row
                     # didn't land. Include the key anyway so frontend can
@@ -1244,6 +1282,7 @@ class Stemphonic:
                         "url": _r2_generate_download_url(uploaded_key) or "",
                         "generation_id": None,
                         "filename": upload_filename,
+                        **entry_extra,
                     })
                     continue
 
@@ -1252,11 +1291,40 @@ class Stemphonic:
                     "url": reg.get("download_url") or _r2_generate_download_url(uploaded_key) or "",
                     "generation_id": reg.get("id"),
                     "filename": upload_filename,
+                    **entry_extra,
                 })
 
             with _task_lock:
                 _task_r2_cache[task_id] = persisted
             return persisted
+
+        def _rewrite_drum_substem_urls(body, persisted):
+            """Replace `drum_substem_urls` in a /separate-stems response
+            with R2 URLs from the persisted file list.
+
+            Backend's _run_drum_teacher writes
+              {kick: "/separate-stems/drum-substem/<task>/kick.wav", ...}
+            into the response — those paths are ephemeral on the demucs
+            machine. After R2 upload, each substem entry in `persisted`
+            carries kind="drum-substem" + substem_name. We map those to a
+            durable URL the frontend can store in metadata.drumSubstems
+            and reload across sessions without 404s. No-op when there are
+            no substem entries (e.g., backend MDX23C ckpt missing)."""
+            try:
+                if not isinstance(body, dict):
+                    return
+                substem_map = {}
+                for p in persisted or []:
+                    if p.get("kind") != "drum-substem":
+                        continue
+                    name = p.get("substem_name")
+                    url = p.get("url")
+                    if name and url:
+                        substem_map[name] = url
+                if substem_map:
+                    body["drum_substem_urls"] = substem_map
+            except Exception as e:
+                _r2_log.warning("drum substem url rewrite failed: %s", e)
 
         @stemphonic_server.app.after_request
         def _r2_persist_and_register(response):
@@ -1328,6 +1396,10 @@ class Stemphonic:
                                 watermark_embed=getattr(g, "gate_watermark_embed", True),
                             )
                             if persisted:
+                                # Rewrite drum_substem_urls in the response to
+                                # the R2 URLs from persistence so the frontend
+                                # stores durable links in metadata.drumSubstems.
+                                _rewrite_drum_substem_urls(body, persisted)
                                 body["r2"] = persisted if len(persisted) > 1 else persisted[0]
                                 response.set_data(_gj.dumps(body))
                         except Exception as e:
@@ -1384,6 +1456,8 @@ class Stemphonic:
                         persisted = []
 
                     if persisted:
+                        # Same drum_substem_urls rewrite as the inline path.
+                        _rewrite_drum_substem_urls(body, persisted)
                         # Use an array when multiple files, object when one.
                         body["r2"] = persisted if len(persisted) > 1 else persisted[0]
                         response.set_data(_gj.dumps(body))
