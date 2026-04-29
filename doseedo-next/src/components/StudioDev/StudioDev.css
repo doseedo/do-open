@@ -308,7 +308,15 @@
   background: var(--wb-surface);
   border-right: 1px solid var(--wb-rule);
   padding: 0;
-  overflow: auto;
+  /* overflow-y: auto so the palette + embedded generate panel scroll
+   * inside the rail when the user opens an instrument's subgroup AND
+   * expands the advanced params dropdown. overflow-x: hidden prevents
+   * any wide child (e.g. a 2-col adv-grid slider row) from spilling
+   * past the 260px column. min-width: 0 lets flex children shrink. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-width: 0;
+  min-height: 0;
   display: flex; flex-direction: column;
   font-family: var(--wb-font-mono) !important;
   font-size: 11px;                 /* matches .wb-inst */
@@ -316,6 +324,9 @@
   color: var(--wb-ink);
   -webkit-font-smoothing: antialiased;
 }
+/* Direct children of the sidebar must not establish a fixed-width
+ * track or otherwise force horizontal overflow. */
+.sd-sidebar > * { min-width: 0; max-width: 100%; }
 .sd-sidebar *:not(input):not(textarea):not(select) {
   font-family: var(--wb-font-mono) !important;
 }
@@ -2488,11 +2499,26 @@ input[type=text].sd-midi-lyric-input::placeholder {
   padding: 14px; background: var(--hifi-surface-2);
   border: 1px solid var(--hifi-rule); border-radius: 4px;
   display: flex; flex-direction: column; gap: 10px;
+  /* Lock the panel inside its parent so sliders / labels never bleed
+   * past the sidebar's 260px column. min-width: 0 lets the inner
+   * 2-col grid shrink with the panel. */
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 .sd-adv-grid {
   display: grid; grid-template-columns: 1fr 1fr;
   gap: 10px 14px;
+  /* Keep the grid inside the .sd-adv padding box even when a slider
+   * label / value is wider than its column. */
+  min-width: 0;
 }
+.sd-adv-grid > .sd-adv-slider { min-width: 0; }
+.sd-adv-slider input[type=range] { min-width: 0; }
+.sd-adv-head { min-width: 0; }
+.sd-adv-label,
+.sd-adv-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sd-adv-slider {
   display: flex; flex-direction: column; gap: 4px;
 }
