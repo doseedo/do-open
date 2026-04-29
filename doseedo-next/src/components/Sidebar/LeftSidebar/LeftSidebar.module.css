@@ -22,7 +22,11 @@
   display: flex;
   flex-direction: column;
   font-family: var(--wb-font-mono);
-  padding: 14px 0;
+  /* Top padding removed so the brand row / collapsed toggle sits at
+   * y=0 of the viewport — flush with .studio-dev .wb-menubar. The
+   * 14px gap between the brand strip and the menu groups is now
+   * recreated via .sideBrand / .sideToggle's margin-bottom. */
+  padding: 0 0 14px 0;
   box-sizing: border-box;
 }
 
@@ -30,25 +34,32 @@
   width: 220px;
 }
 
-/* ---- Brand header (expanded) ---- */
+/* ---- Brand header (expanded) ----
+ * Geometry mirrors .studio-dev .wb-menubar (padding 8px 16px,
+ * 1px rule-strong border-bottom) so the doseedo / v0.3 row sits on
+ * the same y-axis as the menubar in /studio. The 14px margin-bottom
+ * recreates the breathing room that used to come from .side's
+ * top padding (now removed). */
 .sideBrand {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 18px 22px;
+  padding: 8px 16px;
+  margin: 0 0 14px 0;
+  border-bottom: 1px solid var(--wb-rule-strong);
   flex-shrink: 0;
 }
 
 .sideMark {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   display: grid;
   place-items: center;
   background: var(--wb-ink);
   color: var(--wb-bg);
   font-family: var(--wb-font-mono);
   font-weight: 700;
-  font-size: 10px;
+  font-size: 9px;
   flex-shrink: 0;
 }
 
@@ -85,20 +96,20 @@
 }
 
 /* ---- Collapsed-state toggle button ----
- * Geometry mirrors .studio-dev .wb-menubar (padding 8px 16px,
- * font-size 11px, 1px rule-strong border-bottom) so the hamburger
- * sits on the same y-axis as the menubar in /studio. The negative
- * margin-top cancels .side's `padding: 14px 0` so the toggle's top
- * edge aligns with the viewport top (y=0), same as the menubar. */
+ * Geometry mirrors .studio-dev .wb-menubar exactly (padding 8px 16px,
+ * 1px rule-strong border-bottom, no fixed height — content + padding
+ * drive the box). With .side's top padding removed, the toggle's top
+ * edge sits at viewport y=0 just like the menubar. The 14px
+ * margin-bottom replaces the gap that used to come from .side's
+ * top padding so the menu groups underneath aren't flush. */
 .sideToggle {
   padding: 8px 16px;
-  margin: -14px 0 0 0;
+  margin: 0 0 14px 0;
   text-align: center;
   cursor: pointer;
   border: 0;
   border-bottom: 1px solid var(--wb-rule-strong);
   color: var(--wb-ink-soft);
-  height: 31px;
   box-sizing: border-box;
   display: grid;
   place-items: center;

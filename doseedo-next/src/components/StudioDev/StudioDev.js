@@ -94,6 +94,7 @@ const ICON_PATHS = {
   synth:  'M3 7h18v10H3z M6 17v2 M10 17v2 M14 17v2 M18 17v2',
   close:  'M6 6l12 12 M18 6l-12 12',
   trash:  'M4 6h16 M8 6V4h8v2 M6 6l1 14h10l1-14',
+  metronome: 'M9 4h6l4 16H5z M12 4l5 13 M14.5 11h2',
 };
 function Icon({ k, size = 16, stroke = 1.4, color = 'currentColor', fill = 'none' }) {
   return (
@@ -226,6 +227,8 @@ const INSTRUMENT_GROUPS = [
   { id: 'strings', label: 'Strings', img: '/assets/icons/violin.png',       type: 'strings' },
   { id: 'brass',   label: 'Brass',   img: '/assets/icons/trumpetens.png',   type: 'brass' },
   { id: 'winds',   label: 'Winds',   img: '/assets/icons/sax.png',          type: 'winds' },
+  { id: 'vocals',  label: 'Vocals',  img: '/assets/icons/microphone.png',   type: 'vocals' },
+  { id: 'drums',   label: 'Drums',   img: '/assets/icons/drumkit.png',      type: 'drums' },
 ];
 const INSTRUMENT_SUBGROUPS = {
   piano:   [
@@ -255,18 +258,22 @@ const INSTRUMENT_SUBGROUPS = {
     { id: 'flute',          label: 'Flute',    sub: 'Concert',   img: '/assets/icons/flute.png' },
     { id: 'sax',            label: 'Sax',      sub: 'Tenor',     img: '/assets/icons/sax.png' },
   ],
+  // Vocals + Drums used to live behind dedicated top-level tabs in the
+  // palette. They're now expandable groups in the same list, mirroring
+  // the strings/brass/winds dropdown pattern. The previous flat
+  // VOCAL_GROUPS / DRUM_GROUPS arrays are reused as the subgroup rows.
+  vocals: [
+    { id: 'lead_vox',  label: 'Lead',      sub: 'Solo',    img: '/assets/icons/microphone.png' },
+    { id: 'bg_vox',    label: 'BGVs',      sub: 'Stack',   img: '/assets/icons/microphone.png' },
+    { id: 'choir',     label: 'Choir',     sub: 'Section', img: '/assets/icons/microphone.png' },
+    { id: 'synth_vox', label: 'Synth Vox', sub: 'Synth',   img: '/assets/icons/microphone.png' },
+  ],
+  drums: [
+    { id: 'drum_kit',   label: 'Drum Kit',   sub: 'Acoustic',   img: '/assets/icons/drumkit.png' },
+    { id: 'electronic', label: 'Electronic', sub: 'Synth',      img: '/assets/icons/elecdrums.png' },
+    { id: 'percussion', label: 'Percussion', sub: 'Aux',        img: '/assets/icons/drumkit.png' },
+  ],
 };
-const DRUM_GROUPS = [
-  { id: 'drum_kit',   label: 'Drum Kit',   img: '/assets/icons/drumkit.png' },
-  { id: 'electronic', label: 'Electronic', img: '/assets/icons/elecdrums.png' },
-  { id: 'percussion', label: 'Percussion', img: '/assets/icons/drumkit.png' },
-];
-const VOCAL_GROUPS = [
-  { id: 'lead_vox',  label: 'Lead',      img: '/assets/icons/microphone.png' },
-  { id: 'bg_vox',    label: 'BGVs',      img: '/assets/icons/microphone.png' },
-  { id: 'choir',     label: 'Choir',     img: '/assets/icons/microphone.png' },
-  { id: 'synth_vox', label: 'Synth Vox', img: '/assets/icons/microphone.png' },
-];
 const MODES = [
   { icon: 'video', label: 'Video',   key: 'video' },
   { icon: 'midi',  label: 'MIDI',    key: 'midi'  },
@@ -353,8 +360,10 @@ export default function StudioDev() {
   // instance change.
   useLiveParamDeltas(chatWs.wsRef);
 
-  const [activeTab, setActiveTab] = useState('Instruments');
-  // For the Instruments tab: null → show group tiles, group-id → show its subgroups.
+  // null → no group expanded; group-id → show its subgroups inline.
+  // The top-level Instruments / Vocals / Drums tabs were removed in
+  // favor of a single unified group list (vocals + drums live at the
+  // bottom and behave like every other expandable group).
   const [activeInstGroup, setActiveInstGroup] = useState(null);
   // Palette source tab: 'live' shows the default instrument / drum / vocal
   // tree; 'custom' is a user-curated collection (empty placeholder for now
@@ -1771,6 +1780,20 @@ export default function StudioDev() {
   const setTrackReverb = (trackId, busId, reverb) => dispatch({ type: 'UPDATE_TRACK_REVERB', payload: { trackId, busId, reverb } });
   const deleteTrack = (trackId, busId) => dispatch({ type: 'REMOVE_TRACK', payload: { trackId, busId } });
   const toggleMetronome = () => dispatch({ type: 'TOGGLE_METRONOME' });
+
+  // Single-button metronome: a click toggles, four quick clicks set
+  // tempo via tapTempo. Toggle fires only on the FIRST click of a tap
+  // session (last tap >2s ago) so the metronome doesn't flicker while
+  // the user is tapping out a tempo. The tapTempo() call always runs
+  // and sets BPM once 4 timestamps land within the 2s window.
+  const onMetronomeClick = useCallback(() => {
+    const now = performance.now();
+    const ts = tapTempoTimes.current;
+    const last = ts.length ? ts[ts.length - 1] : 0;
+    const isNewSession = !last || now - last > 2000;
+    if (isNewSession) toggleMetronome();
+    tapTempo();
+  }, [tapTempo]);
   const setMasterGain = (g) => dispatch({ type: 'UPDATE_MASTER_GAIN', payload: Math.max(0, Math.min(1, g)) });
   const undo = useCallback(() => dispatch({ type: 'UNDO' }), [dispatch]);
   const redo = useCallback(() => dispatch({ type: 'REDO' }), [dispatch]);
@@ -2787,13 +2810,6 @@ export default function StudioDev() {
               <div className="sd-side-title">Studio</div>
               <div className="sd-side-sub">Your instruments and sources</div>
 
-              <div className="sd-tabs" role="tablist">
-                {['Instruments', 'Vocals', 'Drums'].map((t) => (
-                  <button key={t} className={`sd-tab ${t === activeTab ? 'active' : ''}`}
-                          role="tab" onClick={() => setActiveTab(t)}>{t}</button>
-                ))}
-              </div>
-
               <div className="sd-label" data-count="3"><span>Sources</span></div>
               <div className="sd-grid-3">
                 <button className="sd-tile" onClick={triggerUpload}>
@@ -2952,8 +2968,10 @@ export default function StudioDev() {
                 {/* Workbench-style list palette — Live source. */}
                 {paletteSource === 'live' && <>
 
-                {/* ---- Instruments: expandable group → subgroup tree ---- */}
-                {activeTab === 'Instruments' && INSTRUMENT_GROUPS.map((g, idx) => {
+                {/* ---- Unified group list — every group (incl. Vocals
+                     and Drums at the bottom) uses the same expand-to-
+                     subgroups pattern that strings/brass/winds use. */}
+                {INSTRUMENT_GROUPS.map((g, idx) => {
                   const open = activeInstGroup === g.id;
                   const subs = INSTRUMENT_SUBGROUPS[g.id] || [];
                   return (
@@ -2986,32 +3004,6 @@ export default function StudioDev() {
                     </React.Fragment>
                   );
                 })}
-
-                {/* ---- Drums: flat list ---- */}
-                {activeTab === 'Drums' && DRUM_GROUPS.map((g, idx) => (
-                  <button key={g.id}
-                          className={`sd-inst-row ${selectedInstrument?.subgroup === g.id ? 'on' : ''}`}
-                          onClick={() => setSelectedInstrument({
-                            id: g.id, label: g.label,
-                            group: 'drums', subgroup: g.id,
-                          })}>
-                    <span className="sd-inst-row-num">{String(idx + 1).padStart(2, '0')}</span>
-                    <span className="sd-inst-row-name">{g.label}</span>
-                  </button>
-                ))}
-
-                {/* ---- Vocals: flat list ---- */}
-                {activeTab === 'Vocals' && VOCAL_GROUPS.map((g, idx) => (
-                  <button key={g.id}
-                          className={`sd-inst-row ${selectedInstrument?.subgroup === g.id ? 'on' : ''}`}
-                          onClick={() => setSelectedInstrument({
-                            id: g.id, label: g.label,
-                            group: 'vocals', subgroup: g.id,
-                          })}>
-                    <span className="sd-inst-row-num">{String(idx + 1).padStart(2, '0')}</span>
-                    <span className="sd-inst-row-name">{g.label}</span>
-                  </button>
-                ))}
                 </>}
               </div>
 
@@ -3125,8 +3117,6 @@ export default function StudioDev() {
                        value={Math.round(state.bpm || 120)}
                        onChange={(e) => setBpm(parseFloat(e.target.value))} />
                 <span className="sd-kv-u">bpm</span>
-                <button className="sd-btn ghost" style={{ padding: '2px 6px', fontSize: 10 }}
-                        onClick={tapTempo} title="Tap 4× to set tempo">Tap</button>
               </div>
               <div className="sd-divider" />
               <div className="sd-kv">
@@ -3143,14 +3133,15 @@ export default function StudioDev() {
                 </select>
               </div>
               <div className="sd-divider" />
-              {/* Metronome toggle */}
+              {/* Metronome — click toggles; 4 quick taps set tempo. */}
               <button
-                className={`sd-btn ghost ${state.metronomeEnabled ? 'on' : ''}`}
-                onClick={toggleMetronome}
-                title="Metronome"
+                className={`sd-btn ghost ${state.isMetronomeOn ? 'on' : ''}`}
+                onClick={onMetronomeClick}
+                title="Click toggle metronome · tap 4× to set tempo"
+                style={{ padding: 0, width: 28, height: 24 }}
+                aria-label="Metronome"
               >
-                <span style={{ fontFamily: 'var(--hifi-mono)', fontSize: 10 }}>♩</span>
-                {state.metronomeEnabled ? 'Click on' : 'Click'}
+                <Icon k="metronome" size={14} />
               </button>
               {/* Timeline zoom — buttons route to X or Y depending on direction.
                   X scales the timeline horizontally (clip widths); Y scales
