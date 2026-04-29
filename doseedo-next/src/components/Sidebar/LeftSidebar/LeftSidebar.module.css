@@ -35,17 +35,20 @@
 }
 
 /* ---- Brand header (expanded) ----
- * Geometry mirrors .studio-dev .wb-menubar (padding 8px 16px,
- * 1px rule-strong border-bottom) so the doseedo / v0.3 row sits on
- * the same y-axis as the menubar in /studio. The 14px margin-bottom
- * recreates the breathing room that used to come from .side's
- * top padding (now removed). */
+ * Pinned to 46px to match .studio-dev .wb-menubar's actual rendered
+ * height (its tallest child, .sd-filemenu-btn at ~28px content,
+ * dominates → 28 + 16 padding + 1 border ≈ 45-46px). The earlier
+ * "padding-only, content-driven" approach undershot because the
+ * sideMark + brandname is only ~14px tall; an explicit height locks
+ * the y-axis alignment regardless of font/SVG sizing differences. */
 .sideBrand {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
+  height: 46px;
+  padding: 0 16px;
   margin: 0 0 14px 0;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--wb-rule-strong);
   flex-shrink: 0;
 }
@@ -96,14 +99,15 @@
 }
 
 /* ---- Collapsed-state toggle button ----
- * Geometry mirrors .studio-dev .wb-menubar exactly (padding 8px 16px,
- * 1px rule-strong border-bottom, no fixed height — content + padding
- * drive the box). With .side's top padding removed, the toggle's top
- * edge sits at viewport y=0 just like the menubar. The 14px
- * margin-bottom replaces the gap that used to come from .side's
- * top padding so the menu groups underneath aren't flush. */
+ * Pinned to 46px to match .studio-dev .wb-menubar (see .sideBrand for
+ * the height derivation). The 14px hamburger SVG is centered inside
+ * the locked 46px box via grid place-items. The previous content-
+ * driven sizing collapsed to ~31px and the original height:48px ran
+ * a couple px over, so neither aligned with the menubar's bottom
+ * edge — pinning to 46 fixes both ends at once. */
 .sideToggle {
-  padding: 8px 16px;
+  height: 46px;
+  padding: 0;
   margin: 0 0 14px 0;
   text-align: center;
   cursor: pointer;
