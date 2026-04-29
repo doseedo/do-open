@@ -31,9 +31,15 @@
   font-size: 11px;
   position: relative;
 }
+/* Push the brand past the collapsed LeftSidebar's 48px footprint so
+ * the d-mark + "DOSEEDO v0.42.1" sit fully visible in the menubar
+ * gutter when the sidebar is collapsed. left:16 used to put the
+ * d-mark behind the sidebar's hamburger toggle (user saw "OSEEDO
+ * v0.42.1"). When the sidebar is expanded (220px), the brand stays
+ * fully behind the sidebar overlay either way — no duplicate. */
 .studio-dev .wb-brand {
   display: flex; align-items: center; gap: 8px;
-  position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+  position: absolute; left: 56px; top: 50%; transform: translateY(-50%);
 }
 /* Divider previously separated wb-brand from .sd-filemenu-btn. With
  * the brand now floating in the absolute gutter, the in-flow divider
