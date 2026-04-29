@@ -3707,8 +3707,8 @@ export default function StudioDev() {
                 return (
                   <div key={real.id} className="sd-session-bus">
                     <div className="sd-session-bus-row">
-                      <button className="sd-session-play" onClick={() => playBus(real)} title={isPlaying ? 'Stop' : 'Play (solo bus)'}>
-                        <i className={`fa-solid fa-${isPlaying ? 'stop' : 'play'}`} />
+                      <button className="sd-session-play" onClick={() => playBus(real)} title={isPlaying ? 'Pause' : 'Play (solo bus)'}>
+                        <i className={`fa-solid fa-${isPlaying ? 'pause' : 'play'}`} />
                       </button>
                       <button className="sd-session-caret" onClick={() => setSessionBusExpanded((m) => ({ ...m, [real.id]: !m[real.id] }))} title={isExpanded ? 'Collapse tracks' : 'Expand tracks'}>
                         <i className={`fa-solid fa-chevron-${isExpanded ? 'down' : 'right'}`} />
@@ -3727,8 +3727,8 @@ export default function StudioDev() {
                           const tPlaying = !!t.isSolo && state.isPlaying;
                           return (
                             <div key={t.id} className="sd-session-track-row">
-                              <button className="sd-session-play sd-session-play-sm" onClick={() => playTrack(t, real.id)} title={tPlaying ? 'Stop' : 'Play (solo track)'}>
-                                <i className={`fa-solid fa-${tPlaying ? 'stop' : 'play'}`} />
+                              <button className="sd-session-play sd-session-play-sm" onClick={() => playTrack(t, real.id)} title={tPlaying ? 'Pause' : 'Play (solo track)'}>
+                                <i className={`fa-solid fa-${tPlaying ? 'pause' : 'play'}`} />
                               </button>
                               <button className="sd-session-trackname" onClick={() => dispatch({ type: 'SELECT_TRACK', payload: { trackId: t.id, busId: real.id } })}>
                                 {t.name || t.metadata?.stemType || t.id}
