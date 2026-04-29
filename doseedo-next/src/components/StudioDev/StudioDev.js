@@ -655,6 +655,11 @@ export default function StudioDev() {
   const [stemSepRunning, setStemSepRunning] = useState(false);
   const [timelineZoom, setTimelineZoom] = useState(1);  // 1 = 32s window, 2 = 16s, 0.5 = 64s
   const [dragClip, setDragClip] = useState(null);        // {trackId, busId, origStart, startPx}
+  // Bus-level drag — moves every track inside the bus by the same
+  // delta so internal phasing is preserved. Mirrors dragClip's lane-
+  // px-to-seconds math; dispatches one UPDATE_TRACK_PROPS per child.
+  const [dragBus, setDragBus] = useState(null);          // {busId, origStarts:{trackId:sec}, startPx, laneW}
+  const didBusDragRef = useRef(false);                   // suppress the bus-master click that follows a drag
   // Lane row Y zoom multiplier × 38px base. Default 1.5625 = 1.25 × 1.25
   // (two zoom-in steps at the toolbar's 1.25 factor) so timeline rows
   // open noticeably taller without the user reaching for the Y zoom
@@ -2530,6 +2535,42 @@ export default function StudioDev() {
     };
   }, [dragClip, timelineZoom, state.bpm, dispatch]);
 
+  // Bus drag — same lane math as dragClip, but applies the same
+  // adjusted delta to EVERY track in the bus. We snap the earliest
+  // track's new start to the grid so the bus's leftmost edge lands
+  // on a beat, then shift every other track by that snapped delta to
+  // preserve internal phasing.
+  useEffect(() => {
+    if (!dragBus) return;
+    const onMove = (e) => {
+      const dx = e.clientX - dragBus.startPx;
+      if (Math.abs(dx) < 2) return;
+      didBusDragRef.current = true;
+      const laneSec = TIMELINE_SECONDS / timelineZoom;
+      const dt = (dx / dragBus.laneW) * laneSec;
+      const ids = Object.keys(dragBus.origStarts);
+      if (ids.length === 0) return;
+      let earliest = Infinity;
+      for (const id of ids) earliest = Math.min(earliest, dragBus.origStarts[id]);
+      const snappedEarliest = Math.max(0, snapSec(earliest + dt));
+      const adjustedDelta = snappedEarliest - earliest;
+      for (const id of ids) {
+        const next = Math.max(0, dragBus.origStarts[id] + adjustedDelta);
+        dispatch({
+          type: 'UPDATE_TRACK_PROPS',
+          payload: { trackId: id, startPosition: next },
+        });
+      }
+    };
+    const onUp = () => setDragBus(null);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragBus, timelineZoom, dispatch]);
+
   const timeMs = (state.playheadPosition || 0) * 1000;
   // playheadPct is relative to TIMELINE_SECONDS. When timelineZoom > 1 the
   // visible slice is TIMELINE_SECONDS / zoom, so we multiply in the render
@@ -3549,9 +3590,44 @@ export default function StudioDev() {
                              left: `${masterLeft}%`, width: `${masterWidth}%`,
                              background: `${bus.color}22`,
                              border: `1px solid ${bus.color}66`,
+                             cursor: 'grab',
+                           }}
+                           onMouseDown={(e) => {
+                             // Bus-level drag: pick up every child track's
+                             // origStart so the move loop can apply the
+                             // same delta to all of them. Same handler
+                             // pattern as track clips' onClipMouseDown.
+                             if (e.button !== 0) return;
+                             const real = bus._real;
+                             if (!real) return;
+                             const laneEl = e.currentTarget.closest('.sd-lane');
+                             if (!laneEl) return;
+                             e.stopPropagation();
+                             e.preventDefault();
+                             const r = laneEl.getBoundingClientRect();
+                             const origStarts = {};
+                             for (const t of (real.tracks || [])) {
+                               origStarts[t.id] = t.startPosition || 0;
+                             }
+                             didBusDragRef.current = false;
+                             setDragBus({
+                               busId: real.id,
+                               origStarts,
+                               startPx: e.clientX,
+                               laneW: r.width,
+                             });
                            }}
                            onClick={(e) => {
                              e.stopPropagation();
+                             // Suppress the click that synth-fires after a
+                             // drag — opening the piano roll on every
+                             // drop would be jarring. The flag is set in
+                             // the bus-drag move loop and reset here so
+                             // the next genuine click goes through.
+                             if (didBusDragRef.current) {
+                               didBusDragRef.current = false;
+                               return;
+                             }
                              // Single click on the bus master opens the
                              // master piano roll directly. Empty bus →
                              // create + select a fresh MIDI track in
