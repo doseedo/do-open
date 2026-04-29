@@ -311,7 +311,8 @@
   margin-top: 2px;
 }
 
-/* ---- Collapsed-state toolbar (DAW quick-toggles) ---- */
+/* ---- DAW quick-toggle rail ---- */
+/* Collapsed (48px rail): vertical column of 32px icon buttons. */
 .toolbar {
   display: flex;
   flex-direction: column;
@@ -321,8 +322,17 @@
   opacity: 1;
   transition: opacity 0.2s ease;
 }
+/* Expanded (220px rail): same buttons, but on a single y-axis row
+ * (flex-direction: row) — all four icons sit at the same height,
+ * just below the brand row, before the menu groups. 14px horizontal
+ * padding lines them up with the sidebar's content gutter. */
 .sideExpanded .toolbar {
-  display: none;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 14px;
+  border-bottom: 1px solid var(--wb-rule);
 }
 .toolbarBtn {
   background: var(--wb-bg);

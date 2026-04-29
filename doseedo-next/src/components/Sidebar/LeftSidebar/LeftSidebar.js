@@ -241,6 +241,33 @@ const LeftSidebar = React.memo(({
           </button>
         )}
 
+        {/* DAW quick-toggle rail — single render path, sits right after
+            the brand area in both states. Collapsed: vertical column
+            inside the 48px rail. Expanded: horizontal row of the same
+            icons on one y-axis. See .toolbar / .sideExpanded .toolbar. */}
+        <div className={styles.toolbar}>
+          <button
+            className={`${styles.toolbarBtn} ${showBookmarks ? styles.toolbarBtnActive : ''}`}
+            onClick={onShowBookmarks}
+            title="Saved / Bookmarks"
+          >{Icon.bookmark}</button>
+          <button
+            className={`${styles.toolbarBtn} ${!showMidiBrowser && !showChatWindow && !showBookmarks ? styles.toolbarBtnActive : ''}`}
+            onClick={onShowGenerationPanel}
+            title="Generation Panel"
+          >{Icon.wand}</button>
+          <button
+            className={`${styles.toolbarBtn} ${showMidiBrowser ? styles.toolbarBtnActive : ''}`}
+            onClick={onShowMidiBrowser}
+            title="Browse MIDI Files"
+          >{Icon.search}</button>
+          <button
+            className={`${styles.toolbarBtn} ${showChatWindow ? styles.toolbarBtnActive : ''}`}
+            onClick={onToggleChat}
+            title="AI Chat Assistant"
+          >{Icon.chat}</button>
+        </div>
+
         {/* Menu groups (expanded only) */}
         {expanded && (
           <>
@@ -321,32 +348,6 @@ const LeftSidebar = React.memo(({
               </div>
             </button>
           </>
-        )}
-
-        {/* Collapsed-state tool rail (DAW quick-toggles) */}
-        {!expanded && (
-          <div className={styles.toolbar}>
-            <button
-              className={`${styles.toolbarBtn} ${showBookmarks ? styles.toolbarBtnActive : ''}`}
-              onClick={onShowBookmarks}
-              title="Saved / Bookmarks"
-            >{Icon.bookmark}</button>
-            <button
-              className={`${styles.toolbarBtn} ${!showMidiBrowser && !showChatWindow && !showBookmarks ? styles.toolbarBtnActive : ''}`}
-              onClick={onShowGenerationPanel}
-              title="Generation Panel"
-            >{Icon.wand}</button>
-            <button
-              className={`${styles.toolbarBtn} ${showMidiBrowser ? styles.toolbarBtnActive : ''}`}
-              onClick={onShowMidiBrowser}
-              title="Browse MIDI Files"
-            >{Icon.search}</button>
-            <button
-              className={`${styles.toolbarBtn} ${showChatWindow ? styles.toolbarBtnActive : ''}`}
-              onClick={onToggleChat}
-              title="AI Chat Assistant"
-            >{Icon.chat}</button>
-          </div>
         )}
 
       </aside>
