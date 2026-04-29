@@ -3173,7 +3173,18 @@ export default function StudioDev() {
                 <input type="number" className="sd-kv-v sd-kv-input"
                        value={Math.round(state.bpm || 120)}
                        onChange={(e) => setBpm(parseFloat(e.target.value))} />
-                <span className="sd-kv-u">bpm</span>
+                {/* Metronome — replaces the old "bpm" unit label so the
+                    transport's BPM control reads as a single tempo +
+                    metronome pair. Click toggles; 4 quick taps set tempo. */}
+                <button
+                  className={`sd-btn ghost ${state.isMetronomeOn ? 'on' : ''}`}
+                  onClick={onMetronomeClick}
+                  title="Click toggle metronome · tap 4× to set tempo"
+                  style={{ padding: 0, width: 28, height: 24 }}
+                  aria-label="Metronome"
+                >
+                  <Icon k="metronome" size={14} />
+                </button>
               </div>
               <div className="sd-divider" />
               <div className="sd-kv">
@@ -3189,17 +3200,9 @@ export default function StudioDev() {
                   ))}
                 </select>
               </div>
-              <div className="sd-divider" />
-              {/* Metronome — click toggles; 4 quick taps set tempo. */}
-              <button
-                className={`sd-btn ghost ${state.isMetronomeOn ? 'on' : ''}`}
-                onClick={onMetronomeClick}
-                title="Click toggle metronome · tap 4× to set tempo"
-                style={{ padding: 0, width: 28, height: 24 }}
-                aria-label="Metronome"
-              >
-                <Icon k="metronome" size={14} />
-              </button>
+              {/* Spacer ahead of Zoom pushes the zoom controls flush
+                  to the right edge of the transport bar. */}
+              <div className="sd-spacer" />
               {/* Timeline zoom — buttons route to X or Y depending on direction.
                   X scales the timeline horizontally (clip widths); Y scales
                   lane row heights. Direction is stored in state.zoomMode so
@@ -3232,7 +3235,6 @@ export default function StudioDev() {
                           else setTimelineZoom((z) => Math.min(8, z * 1.5));
                         }}>+</button>
               </div>
-              <div className="sd-spacer" />
             </div>
 
             {/* Single shared automation window. Toggled via TrackInfoSidebar's
