@@ -2824,7 +2824,7 @@ export default function StudioDev() {
   };
 
   return (
-    <div className="studio-dev" style={{ left: state.sidebar.isExpanded ? 220 : 48 }}>
+    <div className="studio-dev">
       <div
         className={`sd-loading-overlay ${studioLoading ? '' : 'sd-loading-overlay--hidden'}`}
         role="status"
@@ -2858,8 +2858,12 @@ export default function StudioDev() {
       {/* ================== MAIN SPLIT ================== */}
       {/* The shared LeftSidebar nav rail is rendered once at the App
           root (src/App.js) so it persists across route changes — no
-          unmount/remount jump when navigating /dashboard ↔ /studio. */}
-      <div className="sd-main">
+          unmount/remount jump when navigating /dashboard ↔ /studio.
+          paddingLeft moved here from .studio-dev so only the canvas
+          + studio-internal sidebars react to LeftSidebar expand —
+          .wb-menubar above stays anchored at viewport x=0 and uses
+          its own 220px gutter to keep items past the sidebar. */}
+      <div className="sd-main" style={{ paddingLeft: state.sidebar.isExpanded ? 220 : 48 }}>
         {/* -------- LEFT SIDEBAR (swaps content by panel) -------- */}
         <aside className="sd-sidebar" style={{ width: sidebarWidth, flex: `0 0 ${sidebarWidth}px` }}>
           {sidebarPanel === 'instruments' && (
