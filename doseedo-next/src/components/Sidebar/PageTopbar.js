@@ -33,7 +33,7 @@ export default function PageTopbar({
       alignItems: 'center',
       gap: 14,
       padding: '0 36px',
-      height: 48,
+      height: 44,
       borderBottom: '1px solid var(--wb-rule, rgba(255,255,255,0.08))',
       background: 'var(--wb-surface, rgba(255,255,255,0.02))',
       fontFamily: 'var(--wb-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',

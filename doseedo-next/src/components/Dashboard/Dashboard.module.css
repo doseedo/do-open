@@ -15,13 +15,17 @@
   min-width: 0;
 }
 
-/* ---- Top bar ---- */
+/* ---- Top bar ----
+ * 44px height locks this strip to the same y-axis box as
+ * .studio-dev .wb-menubar and .sideBrand / .sideToggle so every
+ * dashboard subpage's header chrome lines up with the studio's
+ * menubar across page transitions. */
 .topbar {
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 0 36px;
-  height: 48px;
+  height: 44px;
   border-bottom: 1px solid var(--wb-rule);
   background: var(--wb-surface);
   font-family: var(--wb-font-mono);
