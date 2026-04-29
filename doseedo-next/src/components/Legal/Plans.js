@@ -8,10 +8,37 @@ import React, { useEffect, useState } from 'react';
  * App.js wraps this component with <LeftSidebar/> so we only render the
  * content region (hero + plans grid + free strip + matrix + FAQ + closing).
  *
- * No Stripe wiring yet — the Provision buttons are visual-only. When the
- * real flow lands, wire them through the Fly auth-service
- * (https://doseedo-api.fly.dev).
+ * Provision buttons POST to /api/billing/checkout, which is rewritten by
+ * next.config.js to the Fly auth-service. The auth-service owns the
+ * Stripe SDK + webhook + tier table; this client just sends the chosen
+ * { tier, billing } pair and follows the returned Checkout URL.
  */
+
+async function startCheckout({ tier, billing }) {
+  const r = await fetch('/api/billing/checkout', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tier, billing }),
+  });
+  if (r.status === 401) {
+    // Not signed in — send through Clerk and come back to /plans.
+    window.location.href = `/sign-in?redirect_url=${encodeURIComponent('/plans')}`;
+    return;
+  }
+  if (!r.ok) {
+    let msg = `Checkout failed (${r.status})`;
+    try {
+      const body = await r.json();
+      if (body?.error) msg = body.error;
+    } catch {}
+    // eslint-disable-next-line no-alert
+    alert(msg);
+    return;
+  }
+  const { url } = await r.json();
+  if (url) window.location.href = url;
+}
 
 const C = {
   bg: '#e8e6e1',
@@ -151,6 +178,16 @@ function PlanCard({ plan, billing, featured }) {
   const price = billing === 'yearly' ? Math.round(plan.price * 0.8) : plan.price;
   const yearTotal = price * 12;
   const savings = (plan.price - price) * 12;
+  const [submitting, setSubmitting] = useState(false);
+  const onProvision = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await startCheckout({ tier: plan.name.toLowerCase(), billing });
+    } finally {
+      setSubmitting(false);
+    }
+  };
   return (
     <div
       style={{
@@ -226,6 +263,8 @@ function PlanCard({ plan, billing, featured }) {
 
       <button
         type="button"
+        onClick={onProvision}
+        disabled={submitting}
         style={{
           background: featured ? C.purple : C.ink,
           color: featured ? C.ink : C.bg,
@@ -241,11 +280,12 @@ function PlanCard({ plan, billing, featured }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          cursor: 'pointer',
+          cursor: submitting ? 'wait' : 'pointer',
+          opacity: submitting ? 0.6 : 1,
           gap: 12,
         }}
       >
-        <span>{plan.cta}</span>
+        <span>{submitting ? 'Connecting Stripe…' : plan.cta}</span>
         <Arrow size={13} color={featured ? C.ink : C.bg} stroke={1.8} />
       </button>
 
