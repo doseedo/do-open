@@ -1,8 +1,10 @@
 import React from 'react';
 import styles from './Legal.module.css';
+import PageTopbar from '../Sidebar/PageTopbar';
 
 const Privacy = () => (
   <div className={styles.legal}>
+    <PageTopbar section="More" title="Privacy" meta="last updated 2026-04-25" />
     <div className={styles.header}>
       <h1 className={`${styles.title} page-title`}>Privacy Policy</h1>
       <p className={styles.lastUpdated}>Last updated: April 25, 2026</p>

@@ -1,8 +1,10 @@
 import React from 'react';
 import styles from './Legal.module.css';
+import PageTopbar from '../Sidebar/PageTopbar';
 
 const About = () => (
   <div className={styles.legal}>
+    <PageTopbar section="More" title="About" meta="our mission" />
     <div className={styles.header}>
       <h1 className={`${styles.title} page-title`}>About Doseedo</h1>
     </div>

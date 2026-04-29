@@ -5,6 +5,7 @@ import * as sessionService from '../../services/sessionService';
 import * as sessionSyncAPI from '../../services/sessionSyncAPI';
 import ProjectCard from './ProjectCard';
 import styles from './Projects.module.css';
+import PageTopbar from '../Sidebar/PageTopbar';
 
 const CHAT_STORAGE_PREFIX = 'chat-';
 const DAW_TYPES = new Set(['logic', 'ableton', 'fl', 'protools', 'desktop', 'daw']);
@@ -219,6 +220,7 @@ const Projects = ({ onCreateNew, onLoadProject }) => {
 
   return (
     <div className={styles.projects}>
+      <PageTopbar section="Create" title="Projects" />
       <div className={styles.header}>
         <h1 className={`${styles.title} page-title`}>Projects</h1>
         <button onClick={handleCreateNew} className={styles.createBtn}>

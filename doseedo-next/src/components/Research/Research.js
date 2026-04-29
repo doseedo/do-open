@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import styles from './Research.module.css';
+import PageTopbar from '../Sidebar/PageTopbar';
 
 const papers = [
   {
@@ -518,6 +519,7 @@ const Research = () => {
   // Research list view
   return (
     <div className={styles.research}>
+      <PageTopbar section="Info" title="Research" />
       <div className={styles.header}>
         <h1 className={`${styles.title} page-title`}>Research</h1>
       </div>

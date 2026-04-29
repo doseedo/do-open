@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import styles from './Legal.module.css';
+import PageTopbar from '../Sidebar/PageTopbar';
 
 /**
  * Feedback page — served at /feedback.
@@ -31,6 +32,7 @@ const Feedback = () => {
 
   return (
     <div className={styles.legal}>
+      <PageTopbar section="More" title="Feedback" meta="we read everything" />
       <div className={styles.header}>
         <h1 className={`${styles.title} page-title`}>Feedback</h1>
         <p className={styles.lastUpdated}>We read everything</p>

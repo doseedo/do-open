@@ -1,5 +1,6 @@
 import React from 'react';
 import styles from './Legal.module.css';
+import PageTopbar from '../Sidebar/PageTopbar';
 
 /**
  * Help page — served at /help.
@@ -13,6 +14,7 @@ import styles from './Legal.module.css';
  */
 const Help = () => (
   <div className={styles.legal}>
+    <PageTopbar section="More" title="Help" meta="getting started" />
     <div className={styles.header}>
       <h1 className={`${styles.title} page-title`}>Help</h1>
       <p className={styles.lastUpdated}>Getting started with Doseedo</p>

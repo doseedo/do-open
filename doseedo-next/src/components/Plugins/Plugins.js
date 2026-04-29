@@ -5,6 +5,7 @@ import { listMyProjects, deleteProject, loadProject, generateCode } from '../../
 import { listCreations, getCreation, toggleLike, toggleFavorite, recordDownload, forkCreation, getMyFavorites } from '../../services/communityAPI';
 import WebAudioDSPEngine from '../../audio/WebAudioDSPEngine';
 import styles from './Plugins.module.css';
+import PageTopbar from '../Sidebar/PageTopbar';
 
 // Client-side enrichment for known plugins (icons, colors, features, filter flags)
 const pluginMeta = {
@@ -434,6 +435,7 @@ const Plugins = () => {
   // Grid listing
   return (
     <div className={styles.plugins}>
+      <PageTopbar section="Create" title="Plugins" />
       <div className={styles.header}>
         <h1 className={`${styles.title} page-title`}>Plugins</h1>
       </div>
