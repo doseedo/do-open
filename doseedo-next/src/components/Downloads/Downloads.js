@@ -3,38 +3,41 @@ import styles from './Downloads.module.css';
 import PageTopbar from '../Sidebar/PageTopbar';
 import PageEyebrow from '../Sidebar/PageEyebrow';
 
+// Direct download URL for the latest macOS desktop release. Points at
+// the canonical GitHub Releases "latest" alias so the page never needs
+// to be republished when a new build ships — drop the .dmg under that
+// asset name on the next release and this link picks it up.
+//
+// If the artifact ships under a different name (e.g. signed/notarized
+// build with a version suffix), update DESKTOP_MAC_DMG_URL to point at
+// the actual asset URL.
+const DESKTOP_MAC_DMG_URL =
+  'https://github.com/doseedo/Do/releases/latest/download/Doseedo-mac.dmg';
+
 const downloads = [
-  {
-    id: 'ios-controller',
-    title: 'Doseedo Controller (iOS)',
-    date: 'TestFlight',
-    description: 'Companion iOS app for remote transport, track arming, and MIDI-over-Wi-Fi to your Doseedo session.',
-    icon: 'fa-mobile-screen',
-    color: 'rgba(186, 156, 255, 0.2)',
-    href: 'https://testflight.apple.com/join/doseedo-controller',
-    external: true,
-    status: 'Beta',
-  },
   {
     id: 'macos-desktop',
     title: 'Doseedo for macOS',
-    date: 'Coming soon',
-    description: 'Native desktop build with offline rendering, Audio Unit host, and a standalone local stem engine.',
-    icon: 'fa-display',
-    color: 'rgba(102, 126, 234, 0.2)',
-    status: 'Planned',
-    disabled: true,
+    date: 'Latest release',
+    description:
+      'Native desktop build with offline rendering, Audio Unit host, and a standalone local stem engine.',
+    icon: 'fa-apple',
+    brand: true,
+    color: 'rgba(232, 223, 200, 0.18)',
+    href: DESKTOP_MAC_DMG_URL,
+    external: true,
+    status: 'Available',
   },
   {
-    id: 'windows-desktop',
-    title: 'Doseedo for Windows',
+    id: 'ios-controller',
+    title: 'Doseedo Controller (iOS)',
     date: 'Coming soon',
-    description: 'Native Windows build with VST3 host and local GPU-accelerated stem separation.',
-    icon: 'fa-windows',
-    color: 'rgba(88, 166, 255, 0.2)',
-    status: 'Planned',
+    description:
+      'Companion iOS app for remote transport, track arming, and MIDI-over-Wi-Fi to your Doseedo session.',
+    icon: 'fa-mobile-screen',
+    color: 'rgba(186, 156, 255, 0.16)',
+    status: 'Coming soon',
     disabled: true,
-    brand: true,
   },
 ];
 
@@ -83,7 +86,7 @@ const Downloads = () => {
               <div className={styles.sessionStatus}>
                 <span
                   className={`${styles.statusBadge} ${
-                    item.status === 'Beta' ? styles.badgeBeta : styles.badgePlanned
+                    item.status === 'Available' ? styles.badgeBeta : styles.badgePlanned
                   }`}
                 >
                   {item.status}
