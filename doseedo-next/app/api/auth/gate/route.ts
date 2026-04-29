@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { checkGateRateLimit, rateLimitHeaders } from '@/lib/ratelimit';
 
 /**
  * Beta password-gate validation.
@@ -37,7 +38,22 @@ function tsEqual(a: string, b: string): boolean {
   return eq && a.length === b.length;
 }
 
+function clientIp(req: NextRequest): string {
+  const xff = req.headers.get('x-forwarded-for');
+  if (xff) return xff.split(',')[0].trim();
+  return req.headers.get('cf-connecting-ip') || 'anon';
+}
+
 export async function POST(req: NextRequest) {
+  const ip = clientIp(req);
+  const rl = await checkGateRateLimit(ip);
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: 'too many attempts — wait a minute' },
+      { status: 429, headers: rateLimitHeaders(rl) },
+    );
+  }
+
   const expected = process.env.PROTECTED_PASSWORD || '';
   if (!expected) {
     // Misconfiguration — fail open with 503 rather than letting anyone

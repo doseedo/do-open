@@ -9,7 +9,8 @@ import React, { useEffect, useState } from 'react';
  * content region (hero + plans grid + free strip + matrix + FAQ + closing).
  *
  * No Stripe wiring yet — the Provision buttons are visual-only. When the
- * real flow lands, wire them through the auth Cloud Run service.
+ * real flow lands, wire them through the Fly auth-service
+ * (https://doseedo-api.fly.dev).
  */
 
 const C = {

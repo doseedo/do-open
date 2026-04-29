@@ -281,16 +281,19 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   try {
-    const r = await fetch(`${WATERMARK_ORIGIN}/health`);
+    const r = await fetch(`${WATERMARK_ORIGIN}/health`, { cache: 'no-store' });
     const body = await r.text();
     return new NextResponse(body, {
       status: r.status,
-      headers: { 'content-type': r.headers.get('content-type') || 'application/json' },
+      headers: {
+        'content-type': r.headers.get('content-type') || 'application/json',
+        'cache-control': 'no-store',
+      },
     });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: String(err), origin: WATERMARK_ORIGIN },
-      { status: 502 },
+      { status: 502, headers: { 'cache-control': 'no-store' } },
     );
   }
 }

@@ -12,10 +12,14 @@ import React, { useEffect, useRef, useState } from 'react';
  * on warm off-white). App.js wraps with <LeftSidebar/> so we only render
  * the content region.
  *
- * No detector or chain lookup wired yet — the verifyFile() call is a stub
- * that returns mocked positive/negative/error results so the UI can be
- * exercised end-to-end. When the real detector ships, replace the body of
- * verifyFile() with a fetch to /api/verify (auth Cloud Run service).
+ * Wired end-to-end:
+ *   client →  POST /api/verify (Vercel Edge, IP-rate-limited)
+ *           → Modal /detect (modal/modal_watermark.py, AudioSeal)
+ *           → on hit, GET https://doseedo-api.fly.dev/api/provenance/watermark/{seed}
+ *             (Fly auth-service, app/routers/watermark_attestations.py)
+ *           → returns gen_id + tier + Polygon tx (commitRecord on the
+ *             contract at 0xDBA1.., published by the Fly worker
+ *             auth-service/app/workers/provenance_publisher.py).
  */
 
 const C = {

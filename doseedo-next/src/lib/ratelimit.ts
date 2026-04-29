@@ -130,6 +130,30 @@ export async function checkVerifyRateLimit(key: string): Promise<RateLimitResult
   return lim.limit(key);
 }
 
+let _gateLimiter: Ratelimit | null = null;
+function _getGateLimiter(): Ratelimit | null {
+  if (_gateLimiter) return _gateLimiter;
+  const redis = _getRedis();
+  if (!redis) return null;
+  // Beta password gate at /api/auth/gate. Tight ceiling — 5 attempts /
+  // minute / IP keeps a brute-force scanner from grinding on the secret
+  // even though we use a constant-time compare. Real users hit the form
+  // at most once or twice.
+  _gateLimiter = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(5, '1 m'),
+    analytics: true,
+    prefix: 'rl:gate',
+  });
+  return _gateLimiter;
+}
+
+export async function checkGateRateLimit(key: string): Promise<RateLimitResult> {
+  const lim = _getGateLimiter();
+  if (!lim) return { success: true, limit: 0, remaining: 0, reset: 0 };
+  return lim.limit(key);
+}
+
 export function rateLimitHeaders(r: RateLimitResult): Record<string, string> {
   if (!r.limit) return {};
   return {

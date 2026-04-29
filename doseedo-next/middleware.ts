@@ -36,7 +36,13 @@ export default hasClerkSecret
 
 export const config = {
   matcher: [
-    // Skip Next.js internals, static files, and /api/* (those are rewrites to backends).
-    '/((?!_next|.*\\..*|api).*)',
+    // Skip Next.js internals and static files. We deliberately INCLUDE
+    // /api/* — Clerk's `auth()` helper needs clerkMiddleware() to have
+    // run upstream of the route handler, otherwise it throws
+    // "auth() was called but Clerk can't detect usage of clerkMiddleware()"
+    // and every gated API route 500s. The landing-rewrite block below
+    // bails on anything that isn't `/`, so widening the matcher just
+    // attaches the auth context without changing behavior elsewhere.
+    '/((?!_next|.*\\..*).*)',
   ],
 };
