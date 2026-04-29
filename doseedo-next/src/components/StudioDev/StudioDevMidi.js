@@ -1391,27 +1391,25 @@ export default function StudioDevMidi() {
       );
     }
 
+    // Match the audio-pane "Pick a track." empty state — flat
+    // sd-wave-empty layout, no wb-canvas grid background or
+    // wb-empty container chrome. Keeps the New MIDI track CTA so
+    // users can still bootstrap a fresh track from the empty view.
     return (
-      <div className="wb-canvas">
-        <div className="wb-canvas__grid" aria-hidden="true" />
-        <div className="wb-empty">
-          <div className="wb-empty__status">
-            <div className="wb-empty__dot" />
-            STATUS · NO TRACK SELECTED
-          </div>
-          <h1 className="wb-empty__title">Piano roll idle.</h1>
-          <p className="wb-empty__body">
-            Select a track in the timeline or pick an instrument in the sidebar to start writing notes.
-          </p>
-          <div className="wb-empty__actions">
-            <button
-              type="button"
-              className="wb-btn wb-btn--primary"
-              onClick={createNewMidiTrackAndBus}
-            >
-              <i className="fa-solid fa-plus" /> New MIDI track
-            </button>
-          </div>
+      <div className="sd-wave-empty">
+        <div className="sd-wave-empty-eyebrow">— status · no track selected —</div>
+        <div className="sd-wave-empty-title">Piano roll idle.</div>
+        <div className="sd-wave-empty-body">
+          Select a track in the timeline or pick an instrument in the sidebar to start writing notes.
+        </div>
+        <div style={{ marginTop: 18 }}>
+          <button
+            type="button"
+            className="wb-btn wb-btn--primary"
+            onClick={createNewMidiTrackAndBus}
+          >
+            <i className="fa-solid fa-plus" /> New MIDI track
+          </button>
         </div>
       </div>
     );
