@@ -1086,6 +1086,15 @@ body.left-sidebar-expanded .studio-dev .wb-menubar > .wb-divider:first-of-type {
   color: var(--wb-ink);
 }
 .sd-track-row.indented { padding-left: 22px; background: transparent; }
+/* Indented (inside-bus) tracks render two swatches: the parent bus
+ * color first, then a track-specific shade of it. The 2px gap between
+ * them keeps each as a distinct boundary. The total leading width
+ * (3 + 2 + 3 + 6 = 14px) matches .sd-bus-color's 3 + 11 = 14px so the
+ * track name starts at the same x as the bus name above. */
+.sd-track-row .sd-track-bus-color {
+  width: 3px; height: 18px; margin-right: 2px; border-radius: 0;
+  flex-shrink: 0; opacity: 0.85;
+}
 .sd-track-row .sd-track-color {
   width: 3px; height: 18px; margin-right: 6px; border-radius: 0;
   flex-shrink: 0; position: relative;
@@ -1149,8 +1158,12 @@ body.left-sidebar-expanded .studio-dev .wb-menubar > .wb-divider:first-of-type {
   color: var(--wb-ink-soft); display: grid; place-items: center;
 }
 .sd-bus-caret:hover { color: var(--wb-ink); }
+/* Bus color sits in the same gutter as track rows. The 11px right
+ * margin (= 3px track-color + 2px gap + 6px track-name margin) keeps
+ * the bus name's start x equal to the track name's start x even
+ * though tracks have a second swatch (see .sd-track-bus-color). */
 .sd-bus-color {
-  width: 3px; height: 18px; margin-right: 6px; border-radius: 0;
+  width: 3px; height: 18px; margin-right: 11px; border-radius: 0;
   flex-shrink: 0;
 }
 .sd-bus-name {
@@ -1160,7 +1173,7 @@ body.left-sidebar-expanded .studio-dev .wb-menubar > .wb-divider:first-of-type {
   font-family: var(--wb-font-mono);
   font-size: 10px; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.4px;
-  padding: 2px 4px; min-width: 0; margin: 0 6px;
+  padding: 2px 0; min-width: 0; margin: 0;
 }
 .sd-bus-name:focus { background: var(--wb-bg); }
 .sd-bus-row.selected { background: var(--wb-surface-2); border-bottom-color: var(--wb-accent); }

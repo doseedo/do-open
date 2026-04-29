@@ -300,6 +300,60 @@ function colorFor(type = '') {
   return TRACK_COLORS.other;
 }
 
+/* HSL helpers + shadeOf — used to derive each in-bus track's swatch
+ * color from the parent bus color. SHADE_OFFSETS is a fixed rotation
+ * of (lightness, saturation) deltas; idx-based lookup guarantees no
+ * two tracks within the same bus pick the same shade until the bus
+ * exceeds 7 tracks (then it rotates). The l-clamp keeps shades
+ * legible against both light and dark backgrounds. */
+function _hexToHsl(hex) {
+  const m = String(hex || '').replace('#', '').match(/.{2}/g);
+  if (!m || m.length < 3) return { h: 0, s: 0, l: 50 };
+  const [r, g, b] = m.slice(0, 3).map((h) => parseInt(h, 16) / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+  if (max === min) { h = s = 0; }
+  else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  return { h: h * 360, s: s * 100, l: l * 100 };
+}
+function _hslToHex({ h, s, l }) {
+  l = Math.max(0, Math.min(100, l)) / 100;
+  s = Math.max(0, Math.min(100, s)) / 100;
+  h = ((h % 360) + 360) % 360 / 360;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => {
+    const k = (n + h * 12) % 12;
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+  };
+  const toHex = (v) => v.toString(16).padStart(2, '0');
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+const SHADE_OFFSETS = [
+  { l:  14, s:  -8 },
+  { l: -10, s:   4 },
+  { l:  22, s: -16 },
+  { l: -18, s:   8 },
+  { l:   6, s:  14 },
+  { l:  -6, s: -10 },
+  { l:  28, s: -22 },
+];
+function shadeOf(baseHex, idx = 0) {
+  const hsl = _hexToHsl(baseHex);
+  const off = SHADE_OFFSETS[((idx % SHADE_OFFSETS.length) + SHADE_OFFSETS.length) % SHADE_OFFSETS.length];
+  return _hslToHex({
+    h: hsl.h,
+    s: Math.max(0, Math.min(100, hsl.s + off.s)),
+    l: Math.max(20, Math.min(80, hsl.l + off.l)),
+  });
+}
+
 function fmtTime(ms) {
   const s = Math.floor(ms / 1000), t = Math.floor((ms % 1000) / 100);
   const mm = String(Math.floor(s / 60)).padStart(2, '0');
@@ -2573,7 +2627,7 @@ export default function StudioDev() {
         // state for playback / regen but the timeline shows only the
         // 6 stems so the tracklist doesn't double-count.
         .filter((t) => !t.metadata?.isBusMaster)
-        .map((t) => {
+        .map((t, ti) => {
           const type = (t.metadata?.stemType || t.metadata?.instrument || t.name || '').toLowerCase();
           // Multi-clip tracks from desktop session-sync land in
           // metadata.clips with Logic's region schema. When present, render
@@ -2596,7 +2650,10 @@ export default function StudioDev() {
           return {
             _real: { ...t, _busId: bus.id },
             name: t.name || t.metadata?.stemType || t.id,
-            color: colorFor(type),
+            // Track color = a deterministic in-theme shade of the
+            // parent bus color. Index-keyed so siblings stay distinct
+            // (no duplicate shades within a bus until > 7 tracks).
+            color: shadeOf(color, ti),
             clips,
           };
         }),
@@ -3276,6 +3333,9 @@ export default function StudioDev() {
                                } catch (_) {}
                              }}
                              onClick={() => real && selectTrack(real.id, real._busId)}>
+                          <div className="sd-track-bus-color"
+                               style={{ background: bus.color }}
+                               aria-hidden="true" />
                           <div className="sd-track-color"
                                style={{ background: real?.metadata?.customColor || tr.color, cursor: real ? 'pointer' : 'default' }}
                                onClick={(e) => { e.stopPropagation(); if (real) setColorPickerFor((x) => x === real.id ? null : real.id); }} />
