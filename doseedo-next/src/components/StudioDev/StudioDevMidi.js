@@ -189,6 +189,31 @@ export default function StudioDevMidi() {
     return null;
   }, [state.buses, selectedTrack]);
 
+  // Once-per-track centering: when the user opens a track, scroll the
+  // piano roll to put the existing notes' median pitch (or C4=60 for
+  // empty tracks) near the vertical center of the canvas. Default
+  // scrollY=0 puts C8 at the top — way too high for typical music.
+  // Skip drum tracks (they have their own narrow pitch lane) and the
+  // initial empty selectedTrack state.
+  const _scrolledForTrackRef = useRef(null);
+  useEffect(() => {
+    if (!selectedTrack) return;
+    if (_scrolledForTrackRef.current === selectedTrack.id) return;
+    _scrolledForTrackRef.current = selectedTrack.id;
+    if (isDrum) return;
+    const md = selectedTrack?.midiData || selectedTrack?.metadata?.midiData;
+    const list = (md?.notes || []).filter((n) => Number.isFinite(n.note));
+    let target = 60; // C4 default
+    if (list.length > 0) {
+      const sorted = list.map((n) => n.note).sort((a, b) => a - b);
+      target = sorted[Math.floor(sorted.length / 2)];
+    }
+    const visibleH = (size?.h || 400) - RULER_H;
+    const targetY = (maxPitch - target) * rowH - visibleH / 2;
+    setScrollY(Math.max(0, targetY));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTrack?.id]);
+
   const notes = useMemo(() => {
     const md = selectedTrack?.midiData || selectedTrack?.metadata?.midiData;
     const raw = md?.notes || [];
