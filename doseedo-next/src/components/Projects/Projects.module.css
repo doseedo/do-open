@@ -176,7 +176,10 @@
 
 .sessionRow {
   display: grid;
-  grid-template-columns: 40px minmax(200px, 1fr) 80px 140px 100px 50px;
+  /* First column widened from 40 → 70 to fit a leading expand caret
+   * (see .expandCaret) plus the existing index/play affordance.
+   * Mirrors .sd-session-bus-row in /studio: caret first, then play. */
+  grid-template-columns: 70px minmax(200px, 1fr) 80px 140px 100px 50px;
   gap: 12px;
   padding: 8px 14px;
   border-radius: var(--wb-radius);
@@ -190,10 +193,82 @@
 .sessionNumber {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 6px;
   color: var(--wb-ink-mute);
   font-family: var(--wb-font-mono);
   font-size: 11px;
+}
+
+/* Expand-to-tracks caret — sits to the left of the play / index slot.
+ * Same chevron flip pattern as .sd-bus-caret in the studio. */
+.expandCaret {
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--wb-ink-soft);
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  transition: color 0.12s, background 0.12s;
+  font-size: 10px;
+}
+.expandCaret:hover { color: var(--wb-ink); background: var(--wb-rule); }
+.expandCaret:disabled { cursor: default; }
+
+/* Sub-list of stems / tracks shown when a project row is expanded. */
+.stemList {
+  margin: 4px 0 12px;
+  padding: 4px 0 4px 70px; /* lines up with .sessionRow's first content col */
+  border-left: 2px solid var(--wb-rule);
+  margin-left: 14px;
+}
+.stemRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  border-radius: var(--wb-radius-sm);
+}
+.stemRow:hover { background: var(--wb-surface-2); }
+.stemPlayBtn {
+  width: 22px;
+  height: 22px;
+  background: var(--wb-ink);
+  border: 0;
+  border-radius: 50%;
+  color: var(--wb-bg);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  flex-shrink: 0;
+  transition: background 0.12s ease;
+}
+.stemPlayBtn:hover { background: var(--wb-accent); }
+.stemPlayBtn i { margin-left: 1px; }
+.stemName {
+  flex: 1;
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+  color: var(--wb-ink);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stemBusName {
+  font-family: var(--wb-font-mono);
+  font-size: 10px;
+  color: var(--wb-ink-mute);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
 }
 
 .playBtn {

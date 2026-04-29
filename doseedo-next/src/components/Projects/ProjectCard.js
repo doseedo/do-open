@@ -15,6 +15,11 @@ const ProjectCard = ({ projectName, index, onLoad, onDelete, onRename }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  // Expand-to-reveal-tracks (mirrors /studio's .sd-session-list pattern).
+  // Caret renders to the left of the play button; when open we list each
+  // stem/track from the persisted session.state.buses with its own play
+  // affordance.
+  const [expanded, setExpanded] = useState(false);
 
   // Load session metadata for display
   const sessionData = sessionService.loadSession(projectName);
@@ -25,6 +30,15 @@ const ProjectCard = ({ projectName, index, onLoad, onDelete, onRename }) => {
   const trackCount = sessionData?.state?.buses?.reduce((count, bus) => {
     return count + (bus.tracks?.length || 0);
   }, 0) || 0;
+
+  // Flat list of {bus, track} pairs for the expanded stem rows. Skip
+  // hidden bus-master placeholder tracks the same way the studio session
+  // list does.
+  const stemRows = (sessionData?.state?.buses || []).flatMap((bus) =>
+    (bus.tracks || [])
+      .filter((t) => !t.metadata?.isBusMaster)
+      .map((t) => ({ bus, track: t }))
+  );
 
   // Generate random duration for placeholder
   const duration = '3:24';
@@ -76,15 +90,40 @@ const ProjectCard = ({ projectName, index, onLoad, onDelete, onRename }) => {
     setShowUploadModal(true);
   };
 
+  const handleCaretClick = (e) => {
+    e.stopPropagation();
+    setExpanded((v) => !v);
+  };
+
+  const handleStemPlayClick = (e, bus, track) => {
+    e.stopPropagation();
+    // Stem rows reuse the project-load handler — once the session is
+    // open in /studio the user can solo this specific track. Wiring a
+    // per-stem deep link (?session&track=…) is a follow-up.
+    if (onLoad) onLoad(projectName);
+  };
+
   return (
+    <>
     <div
       className={styles.sessionRow}
       onClick={handleRowClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Index / Play Button */}
+      {/* Caret + Play / Index — caret always visible to the left of the
+          play affordance, mirroring .sd-session-list in /studio. */}
       <div className={styles.sessionNumber}>
+        <button
+          className={styles.expandCaret}
+          onClick={handleCaretClick}
+          title={expanded ? 'Hide tracks' : 'Show tracks'}
+          aria-label={expanded ? 'Collapse tracks' : 'Expand tracks'}
+          disabled={stemRows.length === 0}
+          style={stemRows.length === 0 ? { visibility: 'hidden' } : undefined}
+        >
+          <i className={`fa-solid fa-chevron-${expanded ? 'down' : 'right'}`} />
+        </button>
         {isHovered ? (
           <button className={styles.playBtn} onClick={handlePlayClick}>
             <i className="fa-solid fa-play"></i>
@@ -178,6 +217,35 @@ const ProjectCard = ({ projectName, index, onLoad, onDelete, onRename }) => {
         />
       )}
     </div>
+    {/* Expanded stem rows — one per track from the persisted session.
+        Mirrors the .sd-session-list track-row pattern: small play
+        button + track name. Click a stem to load the session in the
+        studio (where the user can solo it). */}
+    {expanded && stemRows.length > 0 && (
+      <div className={styles.stemList}>
+        {stemRows.map(({ bus, track }) => (
+          <div
+            key={`${bus.id}/${track.id}`}
+            className={styles.stemRow}
+            onClick={(e) => handleStemPlayClick(e, bus, track)}
+          >
+            <button
+              className={styles.stemPlayBtn}
+              onClick={(e) => handleStemPlayClick(e, bus, track)}
+              title="Play (load session)"
+              aria-label="Play stem"
+            >
+              <i className="fa-solid fa-play" />
+            </button>
+            <span className={styles.stemName}>
+              {track.name || track.metadata?.stemType || track.id}
+            </span>
+            <span className={styles.stemBusName}>{bus.name || bus.type || 'Bus'}</span>
+          </div>
+        ))}
+      </div>
+    )}
+    </>
   );
 };
 
