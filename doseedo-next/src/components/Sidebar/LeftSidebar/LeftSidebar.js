@@ -251,8 +251,8 @@ const LeftSidebar = React.memo(({
 
             <div className={styles.sideGroup}>
               <div className={styles.sideLabel}>Create</div>
+              <SideItem icon={Icon.plus} label="New Session" onClick={onBackToDashboard} />
               <SideItem icon={Icon.folder} label="Projects" active={isDashboardView} onClick={onBackToDashboard} />
-              <SideItem icon={Icon.plus} label="New Session" muted disabled tooltip="Coming soon" />
               <SideItem icon={Icon.wrench} label="Tools" active={isToolsView} onClick={onGoToTools} />
               <SideItem icon={Icon.plugin} label="Plugins" active={isPluginsView} onClick={onGoToPlugins} />
               <SideItem icon={Icon.models} label="Models" active={isModelsView} onClick={onGoToModels} />

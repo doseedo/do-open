@@ -84,16 +84,21 @@
   color: var(--wb-ink);
 }
 
-/* ---- Collapsed-state toggle button ---- */
+/* ---- Collapsed-state toggle button ----
+ * Geometry mirrors .studio-dev .wb-menubar (padding 8px 16px,
+ * font-size 11px, 1px rule-strong border-bottom) so the hamburger
+ * sits on the same y-axis as the menubar in /studio. The negative
+ * margin-top cancels .side's `padding: 14px 0` so the toggle's top
+ * edge aligns with the viewport top (y=0), same as the menubar. */
 .sideToggle {
-  padding: 14px;
-  margin: 0;
+  padding: 8px 16px;
+  margin: -14px 0 0 0;
   text-align: center;
   cursor: pointer;
   border: 0;
-  border-bottom: 1px solid var(--wb-rule);
+  border-bottom: 1px solid var(--wb-rule-strong);
   color: var(--wb-ink-soft);
-  height: 48px;
+  height: 31px;
   box-sizing: border-box;
   display: grid;
   place-items: center;
