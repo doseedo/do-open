@@ -1600,6 +1600,49 @@
   padding: 2px 0;
 }
 
+/* Kebab dropdown — wraps the kebab button so the popover can be
+ * absolute-positioned relative to it. The popover floats over the
+ * session list; the document-level mousedown listener (see
+ * sessionKebabOpen useEffect) closes it when the user clicks
+ * outside `.sd-session-kebab-wrap`. */
+.sd-session-kebab-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.sd-session-kebab-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 132px;
+  background: var(--hifi-surface);
+  border: 1px solid var(--hifi-rule-strong);
+  border-radius: 4px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  z-index: 1100;
+}
+.sd-session-kebab-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px;
+  background: transparent; border: 0;
+  cursor: pointer;
+  color: var(--hifi-ink-soft);
+  font-family: var(--hifi-mono);
+  font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase;
+  text-align: left;
+  border-radius: 3px;
+  transition: background 0.12s, color 0.12s;
+}
+.sd-session-kebab-item:hover {
+  background: var(--hifi-surface-2);
+  color: var(--hifi-ink);
+}
+.sd-session-kebab-item i { font-size: 11px; width: 12px; text-align: center; }
+
 .sd-history-placeholder { padding: 8px 0; }
 .sd-right-hint {
   margin-top: 12px; color: var(--hifi-ink-mute);

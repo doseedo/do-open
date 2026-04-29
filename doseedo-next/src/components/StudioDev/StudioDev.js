@@ -507,6 +507,20 @@ export default function StudioDev() {
   // (only renders when open) so the listShares fetch fires on click, not
   // on every studio open.
   const [shareOpen, setShareOpen] = useState(false);
+  // Per-row kebab dropdown in the right session list. Keyed by a string
+  // like `bus:<id>` or `track:<id>` so only one menu is open at a time.
+  // Click anywhere closes (see the document-level mousedown listener).
+  const [sessionKebabOpen, setSessionKebabOpen] = useState(null);
+  useEffect(() => {
+    if (!sessionKebabOpen) return;
+    const onDocClick = (e) => {
+      if (!e.target.closest?.('.sd-session-kebab-wrap')) {
+        setSessionKebabOpen(null);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [sessionKebabOpen]);
 
   // Cream-wash loading overlay shown on /studio entry until ONNX models
   // (latentEncoder / polypitch / etc.) report ready. Cleared on the first
@@ -2830,6 +2844,51 @@ export default function StudioDev() {
     }
   }, [dispatch, state.isPlaying]);
 
+  /* ---------- Download helpers (session-list kebab → Download) ---------- */
+  // Synthesize a download by anchoring an <a download> at the audio URL.
+  // Cross-origin downloads still attach the suggested filename when the
+  // server sends Content-Disposition; otherwise the browser saves it
+  // under the URL's last path segment, which is fine for our R2 keys.
+  const _triggerDownload = useCallback((url, filename) => {
+    if (!url) return;
+    try {
+      const a = document.createElement('a');
+      a.href = url;
+      if (filename) a.download = filename;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      // Fallback: open the URL — user can save-as.
+      window.open(url, '_blank', 'noopener');
+    }
+  }, []);
+  const downloadTrack = useCallback((track) => {
+    const url = track?.audioUrl;
+    if (!url) {
+      alert(`No audio file for "${track?.name || 'track'}" yet — generate or record one first.`);
+      return;
+    }
+    const safe = (track.name || track.id || 'track').replace(/[^\w.-]+/g, '_');
+    _triggerDownload(url, `${safe}.${url.split('.').pop().split('?')[0] || 'wav'}`);
+  }, [_triggerDownload]);
+  const downloadBus = useCallback((bus) => {
+    // No real bounce/render endpoint yet — fall back to downloading every
+    // visible child track. Browsers may rate-limit / prompt on the 2nd+
+    // download; a true bus mixdown is a follow-up.
+    const tracks = (bus?.tracks || []).filter((t) => t.audioUrl && !t.metadata?.isBusMaster);
+    if (tracks.length === 0) {
+      alert(`No audio in "${bus?.name || 'bus'}" yet.`);
+      return;
+    }
+    tracks.forEach((t, i) => {
+      // Stagger so the browser registers each as a separate download.
+      setTimeout(() => downloadTrack(t), i * 120);
+    });
+  }, [downloadTrack]);
+
   /* ---------- Canvas content ---------- */
   // Always render the active mode's component. Each mode handles its own
   // empty state internally, so a never-used /studio-dev still looks right
@@ -3793,9 +3852,51 @@ export default function StudioDev() {
                         {real.name || real.type || 'Bus'}
                       </button>
                       <span className="sd-session-count">{visibleTracks.length}</span>
-                      <button className="sd-session-kebab" onClick={() => dispatch({ type: 'SELECT_BUS', payload: { busId: real.id } })} title="Bus info">
-                        <i className="fa-solid fa-ellipsis" />
-                      </button>
+                      <span className="sd-session-kebab-wrap">
+                        <button
+                          className="sd-session-kebab"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const k = `bus:${real.id}`;
+                            setSessionKebabOpen((cur) => (cur === k ? null : k));
+                          }}
+                          title="More — download or share"
+                        >
+                          <i className="fa-solid fa-ellipsis" />
+                        </button>
+                        {sessionKebabOpen === `bus:${real.id}` && (
+                          <div className="sd-session-kebab-menu" role="menu">
+                            <button
+                              type="button"
+                              className="sd-session-kebab-item"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSessionKebabOpen(null);
+                                downloadBus(real);
+                              }}
+                            >
+                              <i className="fa-solid fa-download" />
+                              <span>Download</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="sd-session-kebab-item"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSessionKebabOpen(null);
+                                if (!state.activeSessionId) {
+                                  alert("This session hasn't been synced to the server yet — sync it first to get a shareable link.");
+                                  return;
+                                }
+                                setShareOpen(true);
+                              }}
+                            >
+                              <i className="fa-solid fa-link" />
+                              <span>Share</span>
+                            </button>
+                          </div>
+                        )}
+                      </span>
                     </div>
                     {isExpanded && visibleTracks.length > 0 && (
                       <div className="sd-session-tracks">
@@ -3809,9 +3910,51 @@ export default function StudioDev() {
                               <button className="sd-session-trackname" onClick={() => dispatch({ type: 'SELECT_TRACK', payload: { trackId: t.id, busId: real.id } })}>
                                 {t.name || t.metadata?.stemType || t.id}
                               </button>
-                              <button className="sd-session-kebab" onClick={() => dispatch({ type: 'SELECT_TRACK', payload: { trackId: t.id, busId: real.id } })} title="Track info">
-                                <i className="fa-solid fa-ellipsis" />
-                              </button>
+                              <span className="sd-session-kebab-wrap">
+                                <button
+                                  className="sd-session-kebab"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const k = `track:${t.id}`;
+                                    setSessionKebabOpen((cur) => (cur === k ? null : k));
+                                  }}
+                                  title="More — download or share"
+                                >
+                                  <i className="fa-solid fa-ellipsis" />
+                                </button>
+                                {sessionKebabOpen === `track:${t.id}` && (
+                                  <div className="sd-session-kebab-menu" role="menu">
+                                    <button
+                                      type="button"
+                                      className="sd-session-kebab-item"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSessionKebabOpen(null);
+                                        downloadTrack(t);
+                                      }}
+                                    >
+                                      <i className="fa-solid fa-download" />
+                                      <span>Download</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="sd-session-kebab-item"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSessionKebabOpen(null);
+                                        if (!state.activeSessionId) {
+                                          alert("This session hasn't been synced to the server yet — sync it first to get a shareable link.");
+                                          return;
+                                        }
+                                        setShareOpen(true);
+                                      }}
+                                    >
+                                      <i className="fa-solid fa-link" />
+                                      <span>Share</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </span>
                             </div>
                           );
                         })}
