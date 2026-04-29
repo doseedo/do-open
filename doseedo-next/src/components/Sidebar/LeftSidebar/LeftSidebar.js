@@ -157,11 +157,11 @@ const SideItem = ({ icon, label, active, disabled, muted, onClick, tooltip }) =>
 
 const LeftSidebar = React.memo(({
   onBackToDashboard, onGoToHome, onGoToSearch, onGoToUserInfo, onGoToTools,
-  onGoToWhatsNew, onGoToResearch, onGoToDownloads, onGoToPlugins, onGoToModels,
+  onGoToWhatsNew, onGoToPlans, onGoToDownloads, onGoToPlugins, onGoToModels,
   onToggleSearch: onToggleMidiBrowser, onShowGenerationPanel, onShowMidiBrowser,
   showMidiBrowser, onToggleChat, showChatWindow, onShowBookmarks, showBookmarks,
   isDashboardView, isHomeView, isSearchView, isUserInfoView, isToolsView,
-  isWhatsNewView, isResearchView, isDownloadsView, isPluginsView, isModelsView,
+  isWhatsNewView, isPlansView, isDownloadsView, isPluginsView, isModelsView,
   isMoreView,
 }) => {
   const navigate = useNavigate();
@@ -187,7 +187,7 @@ const LeftSidebar = React.memo(({
   // show the manual collapse button. `isMoreView` covers the More-menu
   // legal/docs/plans/verify pages so they don't show the toggle either.
   const isSpecialView = isDashboardView || isHomeView || isSearchView || isUserInfoView
-    || isToolsView || isWhatsNewView || isResearchView || isDownloadsView
+    || isToolsView || isWhatsNewView || isPlansView || isDownloadsView
     || isPluginsView || isModelsView || isMoreView;
 
   // The previous behavior force-expanded the sidebar on /studio and the
@@ -266,7 +266,7 @@ const LeftSidebar = React.memo(({
 
         <div className={styles.sideGroup}>
           <div className={styles.sideLabel}>Info</div>
-          <SideItem icon={Icon.research} label="Research" active={isResearchView} onClick={onGoToResearch} />
+          <SideItem icon={Icon.research} label="Plans" active={isPlansView} onClick={onGoToPlans} />
           <SideItem icon={Icon.news} label="What's New" active={isWhatsNewView} onClick={onGoToWhatsNew} />
           <SideItem icon={Icon.download} label="Downloads" active={isDownloadsView} onClick={onGoToDownloads} />
 

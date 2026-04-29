@@ -505,9 +505,11 @@ function AppContent() {
     navigate('/whats-new');
   };
 
-  // Handle navigation to research
-  const handleGoToResearch = () => {
-    navigate('/research');
+  // Handle navigation to plans (replaces the previous Research entry
+  // in the LeftSidebar's Info group; the /research route still works
+  // for direct links / docs but isn't surfaced in the sidebar anymore).
+  const handleGoToPlans = () => {
+    navigate('/plans');
   };
 
   // Handle navigation to downloads
@@ -585,7 +587,7 @@ function AppContent() {
     isUserInfoView:  currentView === 'userinfo',
     isToolsView:     currentView === 'tools',
     isWhatsNewView:  currentView === 'whatsnew',
-    isResearchView:  currentView === 'research',
+    isPlansView:     currentView === 'plans',
     isDownloadsView: currentView === 'downloads',
     isPluginsView:   currentView === 'plugins',
     isModelsView:    currentView === 'models',
@@ -594,10 +596,10 @@ function AppContent() {
     // LeftSidebar auto-expands and hides its collapse toggle. Only
     // /studio and /plugins/create show the collapse button.
     isMoreView:
-      currentView === 'plans'    || currentView === 'verify' ||
-      currentView === 'docs'     || currentView === 'about'  ||
-      currentView === 'privacy'  || currentView === 'terms'  ||
-      currentView === 'help'     || currentView === 'feedback',
+      currentView === 'verify'   || currentView === 'docs'     ||
+      currentView === 'about'    || currentView === 'privacy'  ||
+      currentView === 'terms'    || currentView === 'help'     ||
+      currentView === 'feedback' || currentView === 'research',
   };
 
   // Route content selector — returns just the route's content, no chrome.
@@ -701,7 +703,7 @@ function AppContent() {
         onGoToUserInfo={handleGoToUserInfo}
         onGoToTools={handleGoToTools}
         onGoToWhatsNew={handleGoToWhatsNew}
-        onGoToResearch={handleGoToResearch}
+        onGoToPlans={handleGoToPlans}
         onGoToDownloads={handleGoToDownloads}
         onGoToPlugins={handleGoToPlugins}
         onGoToModels={handleGoToModels}

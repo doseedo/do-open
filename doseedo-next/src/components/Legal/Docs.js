@@ -511,7 +511,7 @@ const PAGES = {
       <Bullets items={[
         'Home / Search — the dashboard slides and the global search.',
         'Create — Projects, New Session, Tools, Plugins, Models.',
-        'Info — Research, What\'s New, Downloads, and the More dropdown (Help, About, Docs, Feedback).',
+        'Info — Plans, What\'s New, Downloads, and the More dropdown (Help, About, Docs, Feedback).',
         'User chip — your tier and account access at the bottom.',
       ]} />
       <H2>Tool rail (collapsed)</H2>
