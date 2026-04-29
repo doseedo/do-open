@@ -14,14 +14,10 @@ const R2_CDN   = process.env.NEXT_PUBLIC_R2_CDN_ORIGIN   || 'https://pub-93d4c82
 const nextConfig = {
   reactStrictMode: true,
 
-  // Don't block production builds on TS errors in the CRA-era src/ tree.
-  // polypitch/pipeline/Pipeline.ts is actively being refactored and
-  // temporary TS2304s (undeclared-yet-imports) were making Vercel fall
-  // back to months-old builds. The app's runtime behaviour is still
-  // exercised by src/App.js, and TS errors surface locally via `npm run
-  // type-check` or the IDE. Flip back once the polypitch work settles.
+  // TS errors block production builds. The polypitch refactor that
+  // forced this off has settled and `npm run type-check` is clean.
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
 
   // Emit browser source maps in production so Sentry can un-minify stack
@@ -114,6 +110,14 @@ const nextConfig = {
       // the Modal vLLM deployment, with VLLM_API_KEY injected from Vercel
       // env vars). No rewrite here: a route handler at /api/chat takes
       // precedence over rewrites and lets us keep the key off the wire.
+
+      // Stripe billing — handled by the Fly auth-service. Stripe SDK,
+      // price IDs, and the webhook all live there; this rewrite just
+      // hands the signed-in checkout request through. The webhook
+      // (https://doseedo-api.fly.dev/api/billing/webhook) is registered
+      // directly with Stripe and does NOT route via Vercel.
+      { source: '/api/billing/checkout',     destination: `${AUTH}/api/billing/checkout` },
+      { source: '/api/billing/portal',       destination: `${AUTH}/api/billing/portal` },
 
       // Modal (stemphonic + all ML inference — the stemphonic_server WSGI
       // app exposes ~30 routes, most of which were previously behind the

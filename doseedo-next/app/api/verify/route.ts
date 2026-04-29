@@ -7,28 +7,30 @@ import { checkVerifyRateLimit, rateLimitHeaders } from '@/lib/ratelimit';
  *   POST  multipart/form-data { file: <audio> }
  *   →     200 JSON
  *           {
- *             status: 'verified' | 'not_found',
- *             confidence: number,
- *             // when status === 'verified':
+ *             status: 'verified' | 'verified_pending' | 'not_found',
+ *             watermarkConfidence: number,
+ *             // when status === 'verified' or 'verified_pending':
  *             generationId, generatedAt, model, tier,
- *             attribution, wallet|null,
- *             attestationHash, attestationTx, polygonScanUrl,
- *             watermarkConfidence
+ *             attribution, audioSha256, attestationHash,
+ *             attestationTx | null, polygonScanUrl | null
  *           }
  *
  * Pipeline:
- *   1. IP-rate-limit (no Clerk gate — /verify is a public utility).
- *   2. Stream the upload to the Modal watermark detector
- *      (modal/modal_watermark.py).
- *   3. If a watermark seed is returned, GET it from the Fly auth-service
- *      attestation registry (auth-service/app/routers/watermark_attestations.py).
- *   4. Fold detector + attestation into a single response shape.
+ *   1. IP rate-limit (no Clerk gate — /verify is public).
+ *   2. Stream the upload to the Modal watermark detector. Detector
+ *      hashes the bytes with SHA-256 and returns it alongside the
+ *      classifier confidence.
+ *   3. Look the audio_sha256 up against the auth-service registry.
+ *      The detector confidence is a "is this a doseedo file?" signal;
+ *      the SHA-256 is the unique identifier into the row.
+ *   4. Resolved row that's already on-chain → 'verified' with tx link.
+ *      Resolved row but publisher hasn't anchored yet → 'verified_pending'.
+ *      No row → 'not_found' (not a doseedo file, or re-encoded copy
+ *      whose bytes no longer match the registered hash).
  *
- * Why we hit auth-service rather than Neon directly: auth-service owns
- * every DB table in `bassify`. The Stemphonic watermark hook also
- * registers attestations through auth-service — this endpoint mirrors
- * the same boundary so /verify can never see a partial-write state and
- * GDPR redactions (auth-service-side) propagate to /verify for free.
+ * Network: POLYGON_NETWORK ('amoy' | 'mainnet') drives the explorer
+ * base URL. Set it once on the deployment and the same value flows
+ * everywhere (verify, Privacy/Verify pages, StudioDev pill).
  */
 
 export const runtime = 'nodejs';
@@ -42,11 +44,12 @@ const WATERMARK_ORIGIN =
 const AUTH_SERVICE_URL =
   (process.env.NEXT_PUBLIC_AUTH_ORIGIN || 'https://doseedo-api.fly.dev').replace(/\/$/, '');
 
+const POLYGON_NETWORK = (process.env.POLYGON_NETWORK || 'mainnet').toLowerCase();
 const POLYGON_SCAN_BASE =
-  process.env.POLYGON_SCAN_BASE || 'https://polygonscan.com/tx/';
+  POLYGON_NETWORK === 'amoy'
+    ? 'https://amoy.polygonscan.com/tx/'
+    : 'https://polygonscan.com/tx/';
 
-// 100 MB cap. Reject a slow uploader before we burn maxDuration on the
-// stream. Modal would accept more; we don't want to pay for that I/O.
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
@@ -85,12 +88,12 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
 
 type WatermarkAttestationOut = {
   id: string;
-  seed: string;
+  audio_sha256: string;
+  seed: string | null;
   generation_id: string;
   user_id: number | null;
   tier: string;
   model_version: string;
-  wallet: string | null;
   record_hash: string;
   metadata_uri: string | null;
   polygon_status: string | null;
@@ -102,12 +105,12 @@ type WatermarkAttestationOut = {
   created_at: string;
 };
 
-async function lookupAttestation(seed: string): Promise<
+async function lookupAttestation(audioSha256: string): Promise<
   { row: WatermarkAttestationOut } | { redacted: true } | null
 > {
   try {
     const r = await fetch(
-      `${AUTH_SERVICE_URL}/api/provenance/watermark/${encodeURIComponent(seed)}`,
+      `${AUTH_SERVICE_URL}/api/provenance/watermark/${encodeURIComponent(audioSha256)}`,
       {
         headers: { Accept: 'application/json' },
         cache: 'no-store',
@@ -122,7 +125,7 @@ async function lookupAttestation(seed: string): Promise<
           tag: 'auth-service-lookup-failed',
           service: 'verify',
           status: r.status,
-          seed_prefix: seed.slice(0, 8),
+          sha_prefix: audioSha256.slice(0, 12),
         }),
       );
       return null;
@@ -146,6 +149,13 @@ function clientIp(req: NextRequest): string {
   const xff = req.headers.get('x-forwarded-for');
   if (xff) return xff.split(',')[0].trim();
   return req.headers.get('cf-connecting-ip') || 'anon';
+}
+
+function buildPolygonScanUrl(network: string | null, tx: string): string {
+  const base = (network || POLYGON_NETWORK) === 'amoy'
+    ? 'https://amoy.polygonscan.com/tx/'
+    : POLYGON_SCAN_BASE;
+  return `${base}${tx}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -210,22 +220,18 @@ export async function POST(req: NextRequest) {
 
   const detect = (await upstream.json()) as {
     found: boolean;
-    seed: string | null;
     confidence: number;
+    audio_sha256: string;
     duration_sec: number;
     scanned_at: string;
   };
 
-  if (!detect.found || !detect.seed) {
-    return NextResponse.json({
-      status: 'not_found' as const,
-      confidence: detect.confidence,
-      duration_sec: detect.duration_sec,
-      scanned_at: detect.scanned_at,
-    });
-  }
-
-  const lookup = await lookupAttestation(detect.seed);
+  // SHA-256 of the uploaded bytes is the unique key. The classifier
+  // confidence is reported back to the user but doesn't drive the
+  // verified/not-found split — a paid-tier export with no audio-side
+  // mark still resolves cleanly via SHA-256, and a re-encoded copy
+  // that retained the mark but lost byte-equality won't.
+  const lookup = await lookupAttestation(detect.audio_sha256);
 
   if (lookup && 'redacted' in lookup) {
     return NextResponse.json({
@@ -235,8 +241,8 @@ export async function POST(req: NextRequest) {
       model: 'redacted',
       tier: 'redacted',
       attribution: 'doseedo (record redacted at user request)',
-      wallet: null,
-      attestationHash: '0x' + detect.seed,
+      audioSha256: detect.audio_sha256,
+      attestationHash: null,
       attestationTx: null,
       polygonScanUrl: null,
       watermarkConfidence: detect.confidence,
@@ -244,37 +250,36 @@ export async function POST(req: NextRequest) {
   }
 
   if (!lookup) {
-    // We saw a watermark we don't have on file. Either the registration
-    // hop failed at gen-time or the indexer is lagging. Return verified
-    // with limited fields so the user still gets a useful answer — the
-    // watermark itself proves origin.
     return NextResponse.json({
-      status: 'verified' as const,
-      generationId: 'unindexed',
-      generatedAt: detect.scanned_at,
-      model: 'unknown',
-      tier: 'unknown',
-      attribution: 'doseedo (pre-registry or indexer lag)',
-      wallet: null,
-      attestationHash: '0x' + detect.seed,
-      attestationTx: null,
-      polygonScanUrl: null,
+      status: 'not_found' as const,
       watermarkConfidence: detect.confidence,
+      duration_sec: detect.duration_sec,
+      scanned_at: detect.scanned_at,
     });
   }
 
-  const att = lookup.row;
+  // Narrowed manually: the prior guards eliminated `null` and the
+  // `redacted` branch, but the discriminated-union narrowing here is
+  // imperfect because `redacted` and `row` aren't on a single discriminator.
+  const att = (lookup as { row: WatermarkAttestationOut }).row;
+  const anchored = att.polygon_status === 'confirmed' || att.polygon_status === 'final';
+  const txUrl = anchored && att.polygon_tx_hash
+    ? buildPolygonScanUrl(att.polygon_network, att.polygon_tx_hash)
+    : null;
+
   return NextResponse.json({
-    status: 'verified' as const,
+    status: anchored ? ('verified' as const) : ('verified_pending' as const),
     generationId: att.generation_id,
     generatedAt: att.created_at,
     model: att.model_version,
     tier: att.tier,
     attribution: att.user_id ? `doseedo user · ${att.user_id}` : 'doseedo anonymous',
-    wallet: att.wallet,
+    audioSha256: att.audio_sha256,
     attestationHash: '0x' + att.record_hash,
-    attestationTx: att.polygon_tx_hash,
-    polygonScanUrl: att.polygon_tx_hash ? `${POLYGON_SCAN_BASE}${att.polygon_tx_hash}` : null,
+    attestationTx: anchored ? att.polygon_tx_hash : null,
+    polygonScanUrl: txUrl,
+    polygonStatus: att.polygon_status,
+    polygonNetwork: att.polygon_network,
     watermarkConfidence: detect.confidence,
   });
 }

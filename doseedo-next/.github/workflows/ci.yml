@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: doseedo-next/package-lock.json
+
+      - name: Install
+        working-directory: doseedo-next
+        run: npm ci
+
+      # Lint is intentionally skipped: `next lint` runs an interactive
+      # first-time setup because eslint isn't a dev dependency yet. Add
+      # eslint + eslint-config-next + .eslintrc.json and wire this back
+      # in.
+
+      - name: Type check
+        working-directory: doseedo-next
+        run: npm run type-check
+
+      - name: Test
+        working-directory: doseedo-next
+        run: npm test
+
+      - name: Build
+        working-directory: doseedo-next
+        env:
+          # Builds need to succeed without secrets in PRs from forks. The
+          # postbuild Sentry upload no-ops when SENTRY_AUTH_TOKEN is unset.
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: npm run build

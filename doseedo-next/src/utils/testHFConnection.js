@@ -21,7 +21,7 @@ export async function testHFConnection() {
 
   try {
     // Check if configured
-    results.configured = hfAPI.isHFConfigured();
+    results.configured = await hfAPI.isHFConfigured();
     console.log('✓ Configuration check:', results.configured ? 'PASS' : 'FAIL');
 
     if (!results.configured) {
@@ -74,7 +74,7 @@ export async function testMusicGeneration() {
   console.log('🎵 Testing music generation...');
 
   try {
-    if (!hfAPI.isHFConfigured()) {
+    if (!(await hfAPI.isHFConfigured())) {
       throw new Error('HF API not configured');
     }
 
