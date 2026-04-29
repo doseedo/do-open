@@ -111,9 +111,30 @@
    * scroll to 0. */
   scroll-padding-left: 40px;
 }
+/* Scrollbar hidden until the user interacts with the rail (hover or
+ * scroll-driven focus). Firefox uses `scrollbar-color`; WebKit hides
+ * via a transparent thumb that fades in on hover. The track height
+ * is reserved either way so card layout doesn't shift on hover. */
+.jbi {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.2s ease;
+}
+.jbi:hover,
+.jbi:focus-within {
+  scrollbar-color: var(--wb-rule-strong) transparent;
+}
 .jbi::-webkit-scrollbar { height: 6px; }
-.jbi::-webkit-scrollbar-thumb { background: var(--wb-rule-strong); border-radius: 3px; }
 .jbi::-webkit-scrollbar-track { background: transparent; }
+.jbi::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+.jbi:hover::-webkit-scrollbar-thumb,
+.jbi:focus-within::-webkit-scrollbar-thumb {
+  background: var(--wb-rule-strong);
+}
 
 .sessCard {
   background: var(--wb-surface);
