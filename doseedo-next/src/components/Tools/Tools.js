@@ -830,12 +830,15 @@ const Tools = () => {
       <Topbar availableCount={availableCount} />
       <div
         style={{
+          // Left-align with the rest of the dashboard subpages — no
+          // `margin: 0 auto`, so Tools' content sits at the same x as
+          // Search / Models / Plugins / Research instead of being
+          // centered inside (viewport - 220).
           flex: 1,
           overflow: 'auto',
           padding: '36px 40px 80px',
           maxWidth: 1200,
           width: '100%',
-          margin: '0 auto',
           boxSizing: 'border-box',
         }}
       >
