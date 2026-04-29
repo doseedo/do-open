@@ -5,22 +5,34 @@ import React, { useEffect, useRef, useState } from 'react';
  *
  * Public utility: drop an audio file, get back the on-chain attestation
  * record for the generation that produced it. Backed by an inaudible
- * watermark embedded at gen-time and a Polygon attestation referenced by
- * the watermark seed.
- *
- * Aesthetic matches /plans (paper/workbench, Inter / JetBrains Mono / Lora
- * on warm off-white). App.js wraps with <LeftSidebar/> so we only render
- * the content region.
+ * watermark embedded at gen-time and a Polygon attestation indexed by
+ * the SHA-256 of the watermarked PCM bytes.
  *
  * Wired end-to-end:
- *   client →  POST /api/verify (Vercel Edge, IP-rate-limited)
- *           → Modal /detect (modal/modal_watermark.py, AudioSeal)
- *           → on hit, GET https://doseedo-api.fly.dev/api/provenance/watermark/{seed}
+ *   client →  POST /api/verify (rate-limited)
+ *           → Modal /detect (modal/modal_watermark.py, AudioSeal — and
+ *             returns the SHA-256 of the upload)
+ *           → GET /api/provenance/watermark/{audio_sha256}
  *             (Fly auth-service, app/routers/watermark_attestations.py)
  *           → returns gen_id + tier + Polygon tx (commitRecord on the
- *             contract at 0xDBA1.., published by the Fly worker
+ *             registry contract, published by the Fly worker
  *             auth-service/app/workers/provenance_publisher.py).
+ *
+ * Two verified states:
+ *   verified         — registry hit AND publisher anchored on Polygon.
+ *   verified_pending — registry hit, publisher anchor still pending.
+ *                      We show the canonical record + record_hash but
+ *                      no Polygon tx until it lands.
  */
+
+const POLYGON_NETWORK = (
+  (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_POLYGON_NETWORK) || 'mainnet'
+).toLowerCase();
+const POLYGON_CONTRACT_ADDRESS =
+  (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_POLYGON_CONTRACT_ADDRESS) ||
+  '0xDBA18211B918db19e0404FC56577745292D1d7Bb';
+const POLYGON_SCAN_BASE =
+  POLYGON_NETWORK === 'amoy' ? 'https://amoy.polygonscan.com' : 'https://polygonscan.com';
 
 const C = {
   bg: '#e8e6e1',
@@ -207,6 +219,7 @@ function ResultPanel({ state, file, result, error, onReset }) {
 
   const headColor =
     state === 'verified' ? C.good :
+    state === 'verified_pending' ? C.accent :
     state === 'not_found' ? C.inkMute :
     state === 'error' ? C.warm :
     C.inkSoft;
@@ -214,20 +227,27 @@ function ResultPanel({ state, file, result, error, onReset }) {
   const headLabel =
     state === 'scanning' ? 'Scanning…' :
     state === 'verified' ? 'Verified · doseedo creation' :
-    state === 'not_found' ? 'No doseedo watermark detected' :
+    state === 'verified_pending' ? 'Verified · anchor pending' :
+    state === 'not_found' ? 'No matching doseedo record' :
     state === 'error' ? 'Verification failed' :
     '';
 
   const rows = [];
-  if (state === 'verified' && result) {
+  if ((state === 'verified' || state === 'verified_pending') && result) {
     rows.push(['Generation ID', result.generationId]);
     rows.push(['Generated at', new Date(result.generatedAt).toUTCString()]);
     rows.push(['Model', result.model]);
     rows.push(['Tier at gen-time', result.tier]);
     rows.push(['Attribution', result.attribution]);
-    rows.push(['Wallet', result.wallet || '— not bound']);
-    rows.push(['Attestation hash', result.attestationHash]);
-    rows.push(['Polygon tx', result.attestationTx, result.polygonScanUrl]);
+    rows.push(['Audio SHA-256', result.audioSha256]);
+    if (result.attestationHash) {
+      rows.push(['Record hash', result.attestationHash]);
+    }
+    if (result.attestationTx) {
+      rows.push(['Polygon tx', result.attestationTx, result.polygonScanUrl]);
+    } else if (state === 'verified_pending') {
+      rows.push(['Polygon tx', 'pending — publisher will anchor in a few minutes']);
+    }
     rows.push(['Watermark confidence', `${(result.watermarkConfidence * 100).toFixed(1)}%`]);
   }
 
@@ -278,19 +298,19 @@ function ResultPanel({ state, file, result, error, onReset }) {
 
         {state === 'scanning' && (
           <div style={{ padding: '24px 18px', fontFamily: C.mono, fontSize: 11, color: C.inkSoft, letterSpacing: 0.3 }}>
-            <div style={{ marginBottom: 6 }}>· extracting watermark payload</div>
-            <div style={{ marginBottom: 6, color: C.inkMute }}>· hashing seed → attestation lookup</div>
-            <div style={{ color: C.inkMute }}>· querying polygon registry</div>
+            <div style={{ marginBottom: 6 }}>· hashing audio (sha-256)</div>
+            <div style={{ marginBottom: 6, color: C.inkMute }}>· running watermark detector</div>
+            <div style={{ color: C.inkMute }}>· looking up record by sha-256</div>
           </div>
         )}
 
         {state === 'not_found' && (
           <div style={{ padding: '20px 18px' }}>
             <div style={{ fontFamily: C.sans, fontSize: 13, color: C.inkSoft, lineHeight: 1.6, maxWidth: 640 }}>
-              The detector ran cleanly but found no doseedo watermark in this file. Either it wasn’t generated by doseedo, or the watermark was destroyed by aggressive re-encoding (very low-bitrate MP3, vocoder reprocessing, drastic time-stretch).
+              No matching doseedo record. Either the file wasn’t generated by doseedo, or it’s a re-encoded copy whose bytes no longer match what we shipped — the on-chain proof is bound to the exact SHA-256 we registered.
             </div>
             <div style={{ fontFamily: C.mono, fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', color: C.inkMute, marginTop: 10 }}>
-              Result · DSD-VERIFY-NEG · no chain lookup performed
+              Result · DSD-VERIFY-NEG · no chain lookup match
             </div>
           </div>
         )}
@@ -303,7 +323,7 @@ function ResultPanel({ state, file, result, error, onReset }) {
           </div>
         )}
 
-        {state === 'verified' && rows.length > 0 && (
+        {(state === 'verified' || state === 'verified_pending') && rows.length > 0 && (
           <div>
             {rows.map(([k, v, href], i) => (
               <div
@@ -335,15 +355,17 @@ function ResultPanel({ state, file, result, error, onReset }) {
               style={{
                 padding: '12px 18px',
                 borderTop: `1px solid ${C.rule}`,
-                background: 'rgba(47,125,79,.06)',
+                background: state === 'verified' ? 'rgba(47,125,79,.06)' : 'rgba(29,76,122,.06)',
                 fontFamily: C.mono,
                 fontSize: 10,
                 letterSpacing: 0.6,
                 textTransform: 'uppercase',
-                color: C.good,
+                color: state === 'verified' ? C.good : C.accent,
               }}
             >
-              ✓ chain match · doseedo stands behind this generation
+              {state === 'verified'
+                ? '✓ chain match · doseedo stands behind this generation'
+                : '✓ registered · chain anchor lands in a few minutes'}
             </div>
           </div>
         )}
@@ -362,12 +384,12 @@ function HowItWorks() {
     {
       n: '02',
       head: 'Attestation on Polygon',
-      body: 'At the same moment, a keccak256 hash of the watermark seed plus generation metadata (model, timestamp, tier) is committed to the doseedo registry contract on Polygon mainnet. The on-chain footprint is one bytes32 + a metadata URI pointing back here — no audio, no personal data, just the proof anchor.',
+      body: 'At the same moment we hash the watermarked PCM (SHA-256), build a canonical record (audio hash + gen ID + tier + model + UTC timestamp, RFC-8785 / JCS), and commit keccak256 of that record to the doseedo registry contract. The on-chain footprint is one bytes32 + a short metadata URI — no audio, no personal data, just the proof anchor.',
     },
     {
       n: '03',
       head: 'Anyone can verify',
-      body: 'Drop the file here. The detector extracts the watermark payload and looks up the matching record. If it’s ours, you get the gen ID, timestamp, and chain proof. If not, the file never leaves your browser — no watermark, no upload.',
+      body: 'Drop the file here. We hash the bytes, run the detector for the doseedo signal, and resolve the SHA-256 to a registered record. If the record is on chain you get the gen ID, timestamp, and Polygon tx. If not, you get a clean negative.',
     },
   ];
   return (
@@ -394,11 +416,11 @@ function HowItWorks() {
 
 function FAQ() {
   const items = [
-    { q: 'Does verification upload my file?', a: 'Yes — the watermark detector runs on our infra, so the file is uploaded over TLS to the doseedo scanner, scanned, and discarded immediately. We log the scan result (found/not-found, confidence, duration) but never the audio itself. If you need offline verification, we can ship a CLI binary on request — email support.' },
-    { q: 'Can the watermark be removed?', a: 'It’s designed to survive normal post-production: MP3 / Opus encoding, EQ, time-stretch, normalisation, even analog re-recording. Aggressive neural vocoder reprocessing or extreme bandwidth limiting can destroy it. That’s a known trade-off — the signal has to stay inaudible.' },
-    { q: 'What does the on-chain record actually contain?', a: 'A hash of the watermark seed, the generation timestamp, the model version, and the tier at gen-time. No user identity, no audio, no PII. If a user explicitly chose to publish to a wallet, the wallet address is also recorded.' },
-    { q: 'Why Polygon?', a: 'Cheap finality and EVM tooling. Each attestation is a single tx on Polygon mainnet — committing one keccak256 hash + a short metadata URI through the doseedo registry contract. Reorg-safe with a finality re-check pass; failures retry with exponential backoff.' },
-    { q: 'Can I opt out of the watermark?', a: 'On Studio and Power, yes — clean exports are a per-generation toggle. On Pro it’s on by default but can be turned off for individual exports. Free tier exports are always watermarked. The attestation always exists; only the audio-side mark is configurable.' },
+    { q: 'Does verification upload my file?', a: 'Yes — the detector runs on our infra, so the file is uploaded over TLS, hashed and scanned, and discarded. We log the scan result (found/not-found, confidence, duration, sha-256 prefix) but never the audio itself.' },
+    { q: 'What does the on-chain record actually contain?', a: 'A keccak256 of the canonical record: SHA-256 of the audio + generation ID + tier-at-gen-time + model version + UTC timestamp, JCS-canonicalized (RFC 8785). No user identity, no audio, no PII. The on-chain payload is one bytes32 plus a short metadata URI pointing back here.' },
+    { q: 'I re-encoded my file. Will it still verify?', a: 'Probably not. The chain proof is bound to the SHA-256 of the exact bytes we shipped. The audio watermark itself is robust to MP3/Opus encoding, EQ, time-stretch, and analog re-recording, but a re-encode changes the SHA-256 — so the detector may still see the doseedo signal while the registry lookup misses. If you need to verify a re-encoded file, send the original.' },
+    { q: 'Why Polygon?', a: 'Cheap finality and EVM tooling. Each attestation is a single tx — committing one keccak256 hash + a short metadata URI through the registry contract. Reorg-safe with a finality re-check pass; failures retry on the publisher with exponential backoff.' },
+    { q: 'Can I opt out of the watermark?', a: 'Pro, Studio, and Power exports support a per-export "clean" toggle that skips the audio-side mark. Free tier is always watermarked. The Polygon attestation is created either way — opting out only affects the audio carrier, not the chain proof.' },
   ];
   const [open, setOpen] = useState(0);
   return (
@@ -501,7 +523,7 @@ function Closing() {
             See plans
           </a>
           <a
-            href="https://polygonscan.com/address/0x0000000000000000000000000000000000000000"
+            href={`${POLYGON_SCAN_BASE}/address/${POLYGON_CONTRACT_ADDRESS}`}
             target="_blank"
             rel="noreferrer"
             style={{
@@ -575,8 +597,13 @@ const Verify = () => {
     setState('scanning');
     try {
       const r = await verifyFile(f);
-      setResult(r.status === 'verified' ? r : null);
-      setState(r.status === 'verified' ? 'verified' : 'not_found');
+      const verified = r.status === 'verified' || r.status === 'verified_pending';
+      setResult(verified ? r : null);
+      setState(
+        r.status === 'verified' ? 'verified' :
+        r.status === 'verified_pending' ? 'verified_pending' :
+        'not_found',
+      );
     } catch (e) {
       setError(e.message || 'unknown error');
       setState('error');

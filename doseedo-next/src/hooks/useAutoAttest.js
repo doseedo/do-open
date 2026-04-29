@@ -60,7 +60,7 @@ export function useAutoAttest({ sessionId, commits, currentUsername, enabled, re
   // can flip it. Refetch server history every 15s so the pill turns green
   // when the on-chain anchor lands, instead of staying grey forever.
   const pendingAnchor = Array.isArray(commits)
-    ? commits.some((c) => (c.attestation_total || 0) > 0 && c.polygon_status !== 'confirmed')
+    ? commits.some((c) => (c.attestation_total || 0) > 0 && c.polygon_status !== 'confirmed' && c.polygon_status !== 'final')
     : false;
   useEffect(() => {
     if (!enabled || !sessionId || !pendingAnchor || typeof refresh !== 'function') return;
@@ -82,7 +82,7 @@ export function useAutoAttest({ sessionId, commits, currentUsername, enabled, re
       if (failedRef.current.has(c.id)) return false;
       if (inflightRef.current.has(c.id)) return false;
       if ((c.attestation_total || 0) > 0) return false;          // someone already attested
-      if (c.polygon_status === 'confirmed') return false;        // already on chain
+      if ((c.polygon_status === 'confirmed' || c.polygon_status === 'final')) return false;        // already on chain
       return true;
     });
     if (targets.length === 0) return;

@@ -3820,13 +3820,13 @@ export default function StudioDev() {
                             //                          auto-attest off
                             const srv = commit._server;
                             if (!srv) return null;
-                            const polyConfirmed = srv.polygon_status === 'confirmed';
+                            const polyConfirmed = srv.polygon_status === 'confirmed' || srv.polygon_status === 'final';
                             const total = srv.attestation_total || 0;
                             const inFlight = autoAttestIsAttesting(commit.id);
                             const txUrl = polyConfirmed && srv.polygon_tx_hash
-                              ? (srv.polygon_network === 'mainnet'
-                                  ? `https://polygonscan.com/tx/${srv.polygon_tx_hash}`
-                                  : `https://amoy.polygonscan.com/tx/${srv.polygon_tx_hash}`)
+                              ? (srv.polygon_network === 'amoy'
+                                  ? `https://amoy.polygonscan.com/tx/${srv.polygon_tx_hash}`
+                                  : `https://polygonscan.com/tx/${srv.polygon_tx_hash}`)
                               : null;
                             if (polyConfirmed) {
                               return (
