@@ -190,19 +190,16 @@ const LeftSidebar = React.memo(({
     || isToolsView || isWhatsNewView || isResearchView || isDownloadsView
     || isPluginsView || isModelsView || isMoreView;
 
-  useEffect(() => {
-    if (!isMobile && isSpecialView && !state.sidebar.isExpanded) {
-      dispatch({ type: 'TOGGLE_SIDEBAR' });
-    }
-  }, [isSpecialView, state.sidebar.isExpanded, dispatch, isMobile]);
-
+  // The previous behavior force-expanded the sidebar on /studio and the
+  // dashboard subpages and disabled the collapse caret. Now that the
+  // collapsed (48px) rail renders the same nav icons as the expanded
+  // view, the user should be able to collapse anywhere — toggle is
+  // always live and `expanded` derives purely from state.
   const toggleSidebar = useCallback(() => {
-    if (isMobile || !isSpecialView) {
-      dispatch({ type: 'TOGGLE_SIDEBAR' });
-    }
-  }, [isSpecialView, dispatch, isMobile]);
+    dispatch({ type: 'TOGGLE_SIDEBAR' });
+  }, [dispatch]);
 
-  const expanded = (!isMobile && isSpecialView) || state.sidebar.isExpanded;
+  const expanded = !!state.sidebar.isExpanded;
   const userInitial = (userInfo?.username || 'G').charAt(0).toUpperCase();
   const userTier = userInfo?.subscriptionStatus || 'Free';
 
@@ -237,13 +234,11 @@ const LeftSidebar = React.memo(({
             <div className={styles.sideBrandname}>
               doseedo<span> / v0.3</span>
             </div>
-            {!isSpecialView && (
-              <button className={styles.sideCollapseBtn} onClick={toggleSidebar} aria-label="Collapse">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M15 6l-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            )}
+            <button className={styles.sideCollapseBtn} onClick={toggleSidebar} aria-label="Collapse">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M15 6l-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
           </div>
         ) : (
           <button className={styles.sideToggle} onClick={toggleSidebar} aria-label="Open menu">
