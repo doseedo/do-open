@@ -15,15 +15,30 @@
   font-family: var(--wb-font-mono); font-size: 12px;
 }
 
-/* Menubar */
+/* Menubar — reserves 220px of leading padding (= the LeftSidebar's
+ * expanded width) so .sd-filemenu-btn / Undo / Redo / Settings always
+ * sit beyond the sidebar's max footprint. The sidebar can grow from
+ * 48 → 220px without covering or appearing to shift any menubar item.
+ * The brand is positioned absolutely inside that reserved gutter so
+ * it shows when the sidebar is collapsed and is overlaid (z-index
+ * 1000 vs studio-dev's 1) by the sidebar's own brand row when
+ * expanded — no JS reaction needed. */
 .studio-dev .wb-menubar {
   display: flex; align-items: center; gap: 16px;
-  padding: 8px 16px;
+  padding: 8px 16px 8px 220px;
   background: var(--wb-surface);
   border-bottom: 1px solid var(--wb-rule-strong);
   font-size: 11px;
+  position: relative;
 }
-.studio-dev .wb-brand { display: flex; align-items: center; gap: 8px; }
+.studio-dev .wb-brand {
+  display: flex; align-items: center; gap: 8px;
+  position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+}
+/* Divider previously separated wb-brand from .sd-filemenu-btn. With
+ * the brand now floating in the absolute gutter, the in-flow divider
+ * would print right before the File menu — drop it. */
+.studio-dev .wb-menubar > .wb-divider { display: none; }
 .studio-dev .wb-brand__mark {
   width: 14px; height: 14px; display: grid; place-items: center;
   background: var(--wb-ink); color: var(--wb-bg);
@@ -32,18 +47,6 @@
 .studio-dev .wb-brand__name { letter-spacing: 0.6px; text-transform: uppercase; font-weight: 500; }
 .studio-dev .wb-brand__version { color: var(--wb-ink-mute); font-size: 10px; }
 .studio-dev .wb-divider { color: var(--wb-ink-mute); }
-
-/* When the LeftSidebar is expanded, its .sideBrand row already shows
- * the doseedo / version brand at the same y. Hide the menubar's
- * duplicate .wb-brand (and its trailing divider) but keep the layout
- * space — visibility:hidden so .sd-filemenu-btn and the rest of the
- * menubar items stay anchored at their current x instead of sliding
- * left to fill the gap. The sidebar's expanded brand visually fills
- * the empty space because it overlays the same region. */
-body.left-sidebar-expanded .studio-dev .wb-brand,
-body.left-sidebar-expanded .studio-dev .wb-menubar > .wb-divider:first-of-type {
-  visibility: hidden;
-}
 .studio-dev .wb-menu { display: flex; gap: 14px; }
 .studio-dev .wb-menu__item {
   color: var(--wb-ink-soft); cursor: pointer;

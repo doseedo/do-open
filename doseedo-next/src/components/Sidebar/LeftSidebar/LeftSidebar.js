@@ -204,15 +204,6 @@ const LeftSidebar = React.memo(({
   const userInitial = (userInfo?.username || 'G').charAt(0).toUpperCase();
   const userTier = userInfo?.subscriptionStatus || 'Free';
 
-  // Toggle a body class so other layouts (notably the studio's
-  // .wb-menubar) can react. The studio menubar uses this to hide its
-  // own .wb-brand when the sidebar's expanded brand row is overlaying
-  // the same x range — keeps the rest of the menubar items anchored.
-  useEffect(() => {
-    document.body.classList.toggle('left-sidebar-expanded', expanded);
-    return () => document.body.classList.remove('left-sidebar-expanded');
-  }, [expanded]);
-
   return (
     <>
       {isMobile && (
